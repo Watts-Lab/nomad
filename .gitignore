@@ -1,0 +1,12 @@
+# Exclude Cython files
+*.c
+*.pyx
+*.pxd
+*.pxi
+*.so
+*.dll
+*.dylib
+
+# Exclude Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
