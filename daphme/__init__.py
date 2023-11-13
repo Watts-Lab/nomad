@@ -1,1 +1,1 @@
-from .test import subset_to_geo
+from test import subset_to_geo
