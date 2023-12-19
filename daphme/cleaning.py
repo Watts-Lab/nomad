@@ -1,12 +1,18 @@
 from sedona.spark import *
 
-def clean_coords(df):
+def clean_coords(df, spark):
     """
-    Takes in a spark dataframe with columns
-        'latitude', containing latitudes in EPSG:4326
-        'longitude', containing longitudes in EPSG:4326
+    Parameters
+    ----------
+    df: Spark dataframe with columns
+        'latitude', containing latitudes of type Double() in EPSG:4326
+        'longitude', containing longitudes of type Double() in EPSG:4326
+        
+    spark: Spark Session
     
-    Returns a spark dataframe with a new column 'mercator_coord' containing point geometries (lat, long) in EPSG:3857
+    Returns
+    ----------
+    Spark dataframe with a new column 'mercator_coord' containing point geometries (lat, long) in EPSG:3857
     """
     
     df.createOrReplaceTempView("df")
