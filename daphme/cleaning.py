@@ -71,7 +71,7 @@ def to_mercator(df: DataFrame,
                 spark: SparkSession,
                 longitude_col: str = "longitude", 
                 latitude_col: str = "latitude") -> DataFrame:
-    """Converts geographic coordinates from EPSG:4326 to EPSG:3857 (Web Mercator projection) and appends the result as a new column 'mercator_coord' to the input DataFrame.
+    """Converts geographic coordinates from EPSG:4326 (WGS 84) to EPSG:3857 (Web Mercator projection).
     
     Parameters
     ----------
@@ -84,7 +84,10 @@ def to_mercator(df: DataFrame,
     Returns
     ----------
     DataFrame
-        A new Spark DataFrame with all original columns from 'df' and an additional column 'mercator_coord' containing the geometry (point) of the original latitude and longitude values transformed to the EPSG:3857 coordinate system.
+        A new Spark DataFrame with all original columns from 'df' and additional columns:
+        - 'x': The x coordinate (longitude) in EPSG:3857 coordinate system.
+        - 'y': The y coordinate (latitude) in EPSG:3857 coordinate system.
+        - 'mercator_coord': The point geometry (longitude, latitude) in EPSG:3857 coordinate system.
 
     Example
     ----------
@@ -96,15 +99,19 @@ def to_mercator(df: DataFrame,
     df.createOrReplaceTempView("df")
     
     query = f"""
+    WITH mercator_df AS (
         SELECT *,
-               ST_FlipCoordinates(
-                   ST_Transform(
-                       ST_MakePoint({longitude_col}, {latitude_col}), 
-                       'EPSG:4326', 'EPSG:3857'
-                   )
+               ST_Transform(
+                   ST_MakePoint({longitude_col}, {latitude_col}), 
+                   'EPSG:4326', 'EPSG:3857'
                ) AS mercator_coord
         FROM df
-        """
+    )
+    SELECT *,
+           ST_X(mercator_coord) AS x,
+           ST_Y(mercator_coord) AS y
+    FROM mercator_df
+    """
     
     return spark.sql(query)
 
@@ -139,7 +146,7 @@ def coarse_filter(df: DataFrame,
     Returns
     ----------
     DataFrame
-        A new Spark DataFrame filtered to include only rows where the point (longitude, latitude) falls within the specified geometric boundary defined by 'bounding_wkt'. This DataFrame includes all original columns from 'df'.
+        A new Spark DataFrame filtered to include only rows where the point (longitude, latitude) falls within the specified geometric boundary defined by 'bounding_wkt'. This DataFrame includes all original columns from 'df' and an additional column 'in_geo' that is true if the point falls within the specified geometric boundary and false otherwise.
 
     Example
     ----------
@@ -153,15 +160,21 @@ def coarse_filter(df: DataFrame,
     df.createOrReplaceTempView("temp_df")
     
     query = f"""
-        WITH UniqueIDs AS (
-            SELECT DISTINCT {id_col} AS id
+        WITH temp_df AS (
+            SELECT *,
+                   ST_Contains(ST_GeomFromWKT('{bounding_wkt}'), coordinate) AS in_geo
             FROM temp_df
-            WHERE ST_Contains(ST_GeomFromWKT('{bounding_wkt}'), coordinate)
+        ),
+
+        UniqueIDs AS (
+            SELECT DISTINCT {id_col} 
+            FROM temp_df
+            WHERE in_geo
         )
 
         SELECT t.*
         FROM temp_df t
-        INNER JOIN UniqueIDs u ON t.{id_col} = u.id
+        WHERE t.{id_col} IN (SELECT {id_col} FROM UniqueIDs)
         """
     
     return spark.sql(query)
