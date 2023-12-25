@@ -4,34 +4,56 @@ from sedona.spark import *
 
 def to_local_time(df: DataFrame, 
                   timezone_to: str,
-                  timestamp_col: str = "timestamp") -> DataFrame:
-    """
+                  timestamp_col: str = "timestamp",
+                  epoch_unit: str = "seconds") -> DataFrame:
+    """Transforms a column of epoch times in a Spark DataFrame to a local time zone specified timezone_to. Additional columns for date, hour, and day of the week are also added to the DataFrame.
+
     Parameters
     ----------
-    df: Spark dataframe with a column named timestamp_col, which contains timestamps
-            
-    timezone: a valid timezone identifier for the local timezone of the data. E.g.,"America/New_York", "UTC" 
-    
-    timestamp_col: (optional) name of the column containing timestamps
-    
+    df : DataFrame
+        A Spark DataFrame containing a column with epoch times to be converted.
+
+    timezone_to : str
+        A valid timezone identifier for the local timezone of the data (e.g., "America/New_York", "UTC").
+
+    timestamp_col : str (default "timestamp")
+        The name of the column in 'df' containing epoch times.
+
+    epoch_unit : str (default "seconds")
+        The unit of epoch time in the 'timestamp_col'. Acceptable values include "seconds", "milliseconds", 
+        "microseconds", and "nanoseconds". Defaults to "seconds" if not specified.
+
     Returns
     ----------
-    Spark dataframe with additional columns
-        'local_timestamp'
-        'date'
-        'date_hour'
-        'day_of_week' (1 for Sunday, 2 for Monday, ..., 7 for Saturday)
+    DataFrame
+        A new Spark DataFrame with all original columns from 'df' and the following additional columns:
+            - 'local_timestamp': The local timestamp derived from the original epoch time.
+            - 'date': The date extracted from 'local_timestamp'.
+            - 'date_hour': The date and hour extracted from 'local_timestamp'.
+            - 'day_of_week': The day of the week (1 for Sunday, 2 for Monday, ..., 7 for Saturday) derived from 'local_timestamp'.
+
+    Example
+    ----------
+    >>> # Assuming a SparkSession `spark` and a DataFrame `df` with a 'timestamp' column are predefined.
+    >>> timezone_str = "America/New_York"
+    >>> converted_df = to_local_time(df, timezone_str)
+    >>> converted_df.show()
     """
-    
-    # Convert timestamp to local timestamp
+
+    divisor = {
+        "seconds": 1,
+        "milliseconds": 1000,
+        "microseconds": 1000000,
+        "nanoseconds": 1000000000
+    }.get(epoch_unit, 1)
+
     df = df.withColumn(
         "local_timestamp",
         F.from_utc_timestamp(
-            F.to_timestamp(F.col(timestamp_col) / 1000),  # divide by 1000 for milliseconds
-            timezone_to  # convert from UTC to timezone specified by timezone_to
+            F.to_timestamp(F.col(timestamp_col) / divisor),
+            timezone_to
         ))
 
-    # Add date, date_hour, and day_of_week columns
     df = df.withColumn(
         "date",
         F.to_date(F.col("local_timestamp"))
@@ -45,30 +67,101 @@ def to_local_time(df: DataFrame,
 
     return df
 
-def to_mercator(df: DataFrame, spark: SparkSession):
-    """
+def to_mercator(df: DataFrame, 
+                spark: SparkSession,
+                longitude_col: str = "longitude", 
+                latitude_col: str = "latitude") -> DataFrame:
+    """Converts geographic coordinates from EPSG:4326 to EPSG:3857 (Web Mercator projection) and appends the result as a new column 'mercator_coord' to the input DataFrame.
+    
     Parameters
     ----------
-    df: Spark dataframe with columns
-        'latitude', containing latitudes of type Double() in EPSG:4326
-        'longitude', containing longitudes of type Double() in EPSG:4326
-        
-    spark: Spark Session
-    
+    df : DataFrame
+        A Spark DataFrame containing columns corresponding to longitude and latitude values in EPSG:4326.
+
+    spark : SparkSession
+        The active SparkSession instance used to execute Spark SQL operations.
+
     Returns
     ----------
-    Spark dataframe with a new column 'mercator_coord' containing point geometries (lat, long) in EPSG:3857
+    DataFrame
+        A new Spark DataFrame with all original columns from 'df' and an additional column 'mercator_coord' containing the geometry (point) of the original latitude and longitude values transformed to the EPSG:3857 coordinate system.
+
+    Example
+    ----------
+    >>> # Assuming a SparkSession `spark` and a DataFrame `df` are predefined
+    >>> mercator_df = to_mercator(df, spark)
+    >>> mercator_df.show()
     """
     
     df.createOrReplaceTempView("df")
-    df = spark.sql("""
+    
+    query = f"""
         SELECT *,
                ST_FlipCoordinates(
                    ST_Transform(
-                       ST_MakePoint(longitude, latitude), 
+                       ST_MakePoint({longitude_col}, {latitude_col}), 
                        'EPSG:4326', 'EPSG:3857'
                    )
                ) AS mercator_coord
         FROM df
-        """)
-    return df
+        """
+    
+    return spark.sql(query)
+
+def coarse_filter(df: DataFrame, 
+                  bounding_wkt: str, 
+                  spark: SparkSession,
+                  longitude_col: str = "longitude", 
+                  latitude_col: str = "latitude", 
+                  id_col: str = "id") -> DataFrame:
+    """Filters a DataFrame based on whether geographical points (defined by longitude and latitude) fall within a specified geometry.
+
+    Parameters
+    ----------
+    df : DataFrame
+        The Spark DataFrame to be filtered. It should contain columns corresponding to longitude and latitude values, as well as an id column.
+    
+    bounding_wkt : str
+        The Well-Known Text (WKT) string representing the bounding geometry within which points are tested for inclusion. The WKT should define a polygon in the EPSG:4326 coordinate reference system.
+    
+    spark : SparkSession
+        The active SparkSession instance used to execute Spark operations.
+    
+    longitude_col : str, default "longitude"
+        The name of the column in 'df' containing longitude values. Longitude values should be in the EPSG:4326 coordinate reference system.
+    
+    latitude_col : str, default "latitude"
+        The name of the column in 'df' containing latitude values. Latitude values should be in the EPSG:4326 coordinate reference system.
+    
+    id_col : str, default "id"
+        The name of the column in 'df' containing user IDs.
+    
+    Returns
+    ----------
+    DataFrame
+        A new Spark DataFrame filtered to include only rows where the point (longitude, latitude) falls within the specified geometric boundary defined by 'bounding_wkt'. This DataFrame includes all original columns from 'df'.
+
+    Example
+    ----------
+    >>> # Assuming a SparkSession `spark` and a DataFrame `df` are predefined
+    >>> bounding_wkt = "POLYGON((...))"  # Replace with actual WKT
+    >>> filtered_df = coarse_filter(df, bounding_wkt, spark)
+    >>> filtered_df.show()
+    """
+    
+    df = df.withColumn("coordinate", F.expr(f"ST_MakePoint({longitude_col}, {latitude_col})"))
+    df.createOrReplaceTempView("temp_df")
+    
+    query = f"""
+        WITH UniqueIDs AS (
+            SELECT DISTINCT {id_col} AS id
+            FROM temp_df
+            WHERE ST_Contains(ST_GeomFromWKT('{bounding_wkt}'), coordinate)
+        )
+
+        SELECT t.*
+        FROM temp_df t
+        INNER JOIN UniqueIDs u ON t.{id_col} = u.id
+        """
+    
+    return spark.sql(query)
