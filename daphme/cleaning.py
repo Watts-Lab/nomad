@@ -27,7 +27,7 @@ def to_local_time(df: DataFrame,
     df = df.withColumn(
         "local_timestamp",
         F.from_utc_timestamp(
-            F.to_timestamp(F.col(timestamp_col) / 100),  # divide by 1000 for milliseconds
+            F.to_timestamp(F.col(timestamp_col) / 1000),  # divide by 1000 for milliseconds
             timezone_to  # convert from UTC to timezone specified by timezone_to
         ))
 
