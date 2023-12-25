@@ -1,6 +1,51 @@
+from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
 from sedona.spark import *
 
-def clean_coords(df, spark):
+def to_local_time(df: DataFrame, 
+                  timezone_to: str,
+                  timestamp_col: str = "timestamp") -> DataFrame:
+    """
+    Parameters
+    ----------
+    df: Spark dataframe with a column named timestamp_col, which contains timestamps
+            
+    timezone: a valid timezone identifier for the local timezone of the data. E.g.,"America/New_York", "UTC" 
+    
+    timestamp_col: (optional) name of the column containing timestamps
+    
+    Returns
+    ----------
+    Spark dataframe with additional columns
+        'local_timestamp'
+        'date'
+        'date_hour'
+        'day_of_week' (1 for Sunday, 2 for Monday, ..., 7 for Saturday)
+    """
+    
+    # Convert timestamp to local timestamp
+    df = df.withColumn(
+        "local_timestamp",
+        F.from_utc_timestamp(
+            F.to_timestamp(F.col(timestamp_col) / 100),  # divide by 1000 for milliseconds
+            timezone_to  # convert from UTC to timezone specified by timezone_to
+        ))
+
+    # Add date, date_hour, and day_of_week columns
+    df = df.withColumn(
+        "date",
+        F.to_date(F.col("local_timestamp"))
+    ).withColumn(
+        "date_hour",
+        F.date_format(F.col("local_timestamp"), "yyyy-MM-dd HH")
+    ).withColumn(
+        "day_of_week",
+        F.dayofweek(F.col("local_timestamp"))
+    )
+
+    return df
+
+def to_mercator(df: DataFrame, spark: SparkSession):
     """
     Parameters
     ----------
