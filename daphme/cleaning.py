@@ -1,10 +1,19 @@
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 from sedona.spark import *
+from daphme.constants import (
+    UID,
+    TIMESTAMP,
+    LATITUDE,
+    LONGITUDE,
+    MERCATOR_COORD,
+    MERCATOR_X,
+    MERCATOR_Y
+)
 
 def to_local_time(df: DataFrame, 
                   timezone_to: str,
-                  timestamp_col: str = "timestamp",
+                  timestamp_col: str = TIMESTAMP,
                   epoch_unit: str = "seconds") -> DataFrame:
     """Transforms a column of epoch times in a Spark DataFrame to a local time zone specified timezone_to. Additional columns for date, hour, and day of the week are also added to the DataFrame.
 
@@ -69,8 +78,8 @@ def to_local_time(df: DataFrame,
 
 def to_mercator(df: DataFrame, 
                 spark: SparkSession,
-                longitude_col: str = "longitude", 
-                latitude_col: str = "latitude") -> DataFrame:
+                longitude_col: str = LONGITUDE, 
+                latitude_col: str = LATITUDE) -> DataFrame:
     """Converts geographic coordinates from EPSG:4326 (WGS 84) to EPSG:3857 (Web Mercator projection).
     
     Parameters
@@ -104,12 +113,12 @@ def to_mercator(df: DataFrame,
                ST_Transform(
                    ST_MakePoint({longitude_col}, {latitude_col}), 
                    'EPSG:4326', 'EPSG:3857'
-               ) AS mercator_coord
+               ) AS {MERCATOR_COORD}
         FROM df
     )
     SELECT *,
-           ST_X(mercator_coord) AS x,
-           ST_Y(mercator_coord) AS y
+           ST_X(mercator_coord) AS {MERCATOR_X},
+           ST_Y(mercator_coord) AS {MERCATOR_Y}
     FROM mercator_df
     """
     
@@ -118,9 +127,9 @@ def to_mercator(df: DataFrame,
 def coarse_filter(df: DataFrame, 
                   bounding_wkt: str, 
                   spark: SparkSession,
-                  longitude_col: str = "longitude", 
-                  latitude_col: str = "latitude", 
-                  id_col: str = "id") -> DataFrame:
+                  longitude_col: str = LONGITUDE, 
+                  latitude_col: str = LATITUDE, 
+                  id_col: str = UID) -> DataFrame:
     """Filters a DataFrame based on whether geographical points (defined by longitude and latitude) fall within a specified geometry.
 
     Parameters
