@@ -6,9 +6,13 @@ from datetime import datetime
 from math import sqrt
 from tick.hawkes import SimuHawkes, HawkesKernelExp
 
-def brownian(n, dt, sigma, radius):
+def brownian(n, dt, sigma, radius, p):
     """
-    Generate an instance of two-dimensional Brownian motion.
+    Generate an instance of two-dimensional Brownian motion constrained within a circle
+    with some probability of staying still.
+    
+    The Weiner process is given by X(t) = N(0, sigma^2 * t), 
+    or iteratively as X(t + dt) = X(t) + N(0, sigma^2 * dt).
     
     Arguments
     ---------
@@ -21,6 +25,8 @@ def brownian(n, dt, sigma, radius):
         time t has a normal distribution with mean 0 and variance sigma^2 * t.
     radius: float 
         radius of the circle that bounds the simulated motion.
+    p: float, 0 <= p <= 1
+        probability of staying still
 
     Returns
     -------
@@ -28,19 +34,24 @@ def brownian(n, dt, sigma, radius):
     """
     
     out = np.empty((n,2))
-    out[0,:] = (0,0)
+    point = (0,0)
+    out[0,:] = point
+    stay_probs = np.random.binomial(1, p, n)
     
     for t in range(n-1):
-            
-        r = np.random.normal(loc=0, scale=sigma * np.sqrt(dt), size=2)
-        p = out[t,:] + r
         
-        # redraw if new point falls outside circle
-        while norm(p) >= radius:
-            r = np.random.normal(loc=0, scale=sigma * np.sqrt(dt), size=2)
-            p = out[t,:] + r
+        # move with probability 1-p
+        if stay_probs[t] == 0:
             
-        out[t+1,:] = p
+            r = np.random.normal(loc=0, scale=sigma * np.sqrt(dt), size=2)
+            point = out[t,:] + r
+
+            # redraw if new point falls outside circle
+            while norm(point) >= radius:
+                r = np.random.normal(loc=0, scale=sigma * np.sqrt(dt), size=2)
+                point = out[t,:] + r
+            
+        out[t+1,:] = point
         
     return out
 
@@ -55,6 +66,7 @@ def simulate_traj(stays, moves, seed=None):
         - c (numpy array of shape (2,)): The center coordinates of the stay.
         - r (int): The radius of the stay.
         - t (int): The duration of the stay in time units.
+        - p (float): The probability of staying still (0 <= p <= 1)
     moves : list of int
         A list of integers specifying the duration of each move between stays. The length of this list
         must be one less than the length of `stays`.
@@ -78,9 +90,9 @@ def simulate_traj(stays, moves, seed=None):
     
     for i in range(n_stays):
     
-        (center, radius, time) = stays[i]
+        (center, radius, time, p_still) = stays[i]
         
-        stay_traj = brownian(time, 1, sigma=0.5*radius, radius=radius) + center.reshape(1, -1)
+        stay_traj = brownian(time, 1, sigma=radius/1.96, radius=radius, p=p_still) + center.reshape(1, -1)
         
         if (i+1 < n_stays):
             travel_traj = np.linspace(stay_traj[-1, :], stays[i+1][0], moves[i], axis=0)
@@ -97,7 +109,7 @@ def simulate_traj(stays, moves, seed=None):
     
     return df
 
-def sample_traj(traj, freq, seed=None):
+def sample_traj(traj, freq, nu=20, seed=None):
     """
     Sample from simulated trajectory, drawn using a self-exciting Hawkes process.
     
@@ -108,7 +120,10 @@ def sample_traj(traj, freq, seed=None):
     freq : 0 or 1
         0 = low frequency (average of 3 pings/hour)
         1 = high frequency (average of 12 pings/hour)
-    seed : int
+    nu: float
+        sampling noise. Pings are sampled as (true x + eps_x, true y + eps_y)
+        where (eps_x, eps_y) ~ N(0, nu/1.96).
+    seed : int0
         The seed for random number generation.
     """
     
@@ -133,5 +148,9 @@ def sample_traj(traj, freq, seed=None):
     samples = [int(t) for t in timestamps[0] * 60]
     df = traj.iloc[samples]
     df = df.drop_duplicates('local_timestamp')
+    
+    # Add sampling noise
+    noise = np.random.normal(loc=0, scale=nu/1.96, size=(df.shape[0],2))
+    df[['x','y']] = df[['x','y']] + noise
     
     return df

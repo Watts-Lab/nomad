@@ -3,35 +3,40 @@ import pandas as pd
 import numpy as np
 import numpy.random as npr
 
-# =========================== #
-#    DBSCAN IMPLEMENTATION    #
-# =========================== #
-
-'''
-min_num_elements: A cluster must have at least (min_num_elements+1) points to be considered a cluster
-'''
 def extract_middle(data):
-    current = data.iloc[0]['cluster']     # Test case: current = 1
-    x = (data.cluster != current).values  # Test case: [False, False, True]
-    if len(np.where(x)[0]) == 0:          # there is no inbetween
+    """
+    TODO
+    
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        User pings with 'x' (EPSG:3857), 'y' (EPSG:3857) columns, indexed by 'unix_timestamp'
+
+    Returns
+    -------
+    tuple (i,j)
+        First and last indices of the "middle" of the cluster
+    """    
+    current = data.iloc[0]['cluster']     
+    x = (data.cluster != current).values  
+    if len(np.where(x)[0]) == 0:        # There is no inbetween
         return(len(data), len(data))
     else:
-        i = np.where(x)[0][0]   # first index where the cluster is not the value of the first entry's cluster
-        
-    if len(np.where(~x[i:])[0]) == 0:   # there is no current again (i.e., the first cluster does not reappear, so the middle is actually the tail)
+        i = np.where(x)[0][0]           # First index where the cluster is not the value of the first entry's cluster
+    if len(np.where(~x[i:])[0]) == 0:   # There is no current again (i.e., the first cluster does not reappear, so the middle is actually the tail)
         return(i, len(data))
-    else:   # current reappears
+    else:                               # Current reappears
         j = i + np.where(~x[i:])[0][0]
     return(i, j)
 
-def find_neighbors(df, time_thresh, dist_thresh):
+def find_neighbors(data, time_thresh, dist_thresh):
     """
     Identifies neighboring pings for each user ping within specified time and distance thresholds.
 
     Parameters
     ----------
     df : pandas.DataFrame
-        User pings with 'unix_timestamp' (integer), 'x' (EPSG:3857), 'y' (EPSG:3857) columns.
+        User pings with 'x' (EPSG:3857), 'y' (EPSG:3857) columns, indexed by 'unix_timestamp'
     time_thresh : int
         Time threshold in minutes.
     dist_thresh : float
@@ -42,7 +47,8 @@ def find_neighbors(df, time_thresh, dist_thresh):
     dict
         Neighbors indexed by unix timestamp, with values as sets of neighboring unix timestamps.
     """    
-    unix_timestamps, x, y = df[['unix_timestamp', 'x', 'y']].values.T
+    
+    unix_timestamps, x, y = data.index.values, data['x'].values, data['y'].values
 
     # Time threshold calculation using broadcasting
     within_threshold = np.triu(np.abs(unix_timestamps[:, np.newaxis] - unix_timestamps) <= (time_thresh * 60), k=1)
@@ -55,114 +61,152 @@ def find_neighbors(df, time_thresh, dist_thresh):
     # Building the neighbor dictionary
     neighbor_dict = defaultdict(set)
     for i, j in zip(t_pairs[0][neighbor_pairs], t_pairs[1][neighbor_pairs]):
-        neighbor_dict[unix_timestamps[i]].add(unix_timestamps[j])
+        neighbor_dict[unix_timestamps[i].item()].add(unix_timestamps[j].item())
+        neighbor_dict[unix_timestamps[j].item()].add(unix_timestamps[i].item())
 
     return neighbor_dict
 
+def dbscan(data, time_thresh, dist_thresh, min_pts, neighbor_dict=None):
+    """
+    Implements DBSCAN.
 
-def dbscan(data, time_thresh, dist_thresh, min_pts):
-    df = data.copy(deep=True)
-    c = -1
-    neighbor_dict = find_neighbors(df, time_thresh, dist_thresh)
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        User pings with 'x' (EPSG:3857), 'y' (EPSG:3857) columns, indexed by 'unix_timestamp'
+    time_thresh : int
+        Time threshold in minutes.
+    dist_thresh : float
+        Distance threshold in meters.
+    min_pts: int
+        A cluster must have at least (min_pts+1) points to be considered a cluster.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Contains two columns 'cluster' (int), 'core' (int) labeling each ping with their cluster id and core id or noise, indexed by 'unix_timestamp'
+    """    
+    if not neighbor_dict:
+        neighbor_dict = find_neighbors(data, time_thresh, dist_thresh)
+    else:
+        valid_times = set(data.index)
+        neighbor_dict = defaultdict(set, {k: v.intersection(valid_times) for k, v in neighbor_dict.items() if k in valid_times})
     
-    df['cluster'] = -2
-    for idx in df.index:
-        time = df.unix_timestamp[idx]
-        if df.cluster[idx] == -2:   # unprocessed point
-            if len(neighbor_dict[time]) < min_pts:
-                df.at[idx, 'cluster'] = -1
+    cluster_df = pd.Series(-2, index=data.index, name='cluster')
+    core_df = pd.Series(-1, index=data.index, name='core')
+    
+    cid = -1                                              # Initialize cluster label
+    for i, cluster in cluster_df.items():
+        if cluster < 0:                                   # Check if point is not yet in a cluster
+            if len(neighbor_dict[i]) < min_pts:
+                cluster_df[i] = -1                        # Mark as noise if below min_pts
             else:
-                c = c + 1
-                df.at[idx, 'cluster'] = c
-                S = neighbor_dict[time].copy()
-                while len(S)>0:
-                    point = S.pop()
-                    point = df.index[df['unix_timestamp'] == point][0]
-                    if df.loc[point, 'cluster'] >= 0:   # point is already a core/border point
-                        continue
-                    
-                    df.loc[point, 'cluster'] = c
-                    if len(neighbor_dict[point]) >= min_pts:
-                        S = S.union(neighbor_dict[point].copy())
-                        
-    return df[['identifier','local_timestamp','unix_timestamp','x','y', 'cluster']]
+                cid += 1
+                cluster_df[i] = cid                       # Assign new cluster label
+                core_df[i] = cid                          # Assign new core label
+                S = list(neighbor_dict[i])                # Initialize stack with neighbors
+                
+                while S:
+                    j = S.pop()
+                    if cluster_df[j] < 0:                 # Process if not yet in a cluster
+                        cluster_df[j] = cid
+                        if len(neighbor_dict[j]) >= min_pts:
+                            core_df[j] = cid              # Assign core label
+                            for k in neighbor_dict[j]:
+                                if cluster_df[k] < 0:
+                                    S.append(k)           # Add new neighbors
+    
+    return pd.DataFrame({'cluster': cluster_df, 'core': core_df})
 
-def process_clusters(df, time_thresh, dist_thresh, min_pts, output, min_duration=4):
-    try:
-        df = df.loc[df.cluster!=-1]
-        if len(df) == 0:
+def process_clusters(data, time_thresh, dist_thresh, min_pts, output, cluster_df=None, neighbor_dict=None, min_duration=4):
+    """
+    TODO
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        User pings with 'unix_timestamp' (integer), 'x' (EPSG:3857), 'y' (EPSG:3857) columns, indexed by 'unix_timestamp'
+    time_thresh : int
+        Time threshold in minutes.
+    dist_thresh : float
+        Distance threshold in meters.
+    min_pts: int
+        A cluster must have at least (min_pts+1) points to be considered a cluster.
+    output: pandas.DataFrame
+        TODO
+    cluster_df : pandas.DataFrame
+        Output of dbscan
+    neighbor_dict: dictionary
+        TODO 
+    min_duration: int
+        A cluster must have duration at least 'min_duration' to be considered a cluster.
+
+    Returns
+    -------
+    List
+        (start, duration, x_mean, y_mean, n, max_gap, radius) of each (post-processed) cluster
+    """    
+    if not neighbor_dict:
+        neighbor_dict = find_neighbors(data, time_thresh, dist_thresh)
+    if cluster_df is None:    # First call of process_clusters
+        cluster_df = dbscan(data=data, time_thresh=time_thresh, dist_thresh=dist_thresh, min_pts=min_pts, neighbor_dict=neighbor_dict)
+    if len(cluster_df) < min_pts:
+        return False
+        
+    cluster_df = cluster_df[cluster_df['cluster'] != -1]    # Remove noise pings
+    
+    # All pings are in the same cluster
+    if len(cluster_df['cluster'].unique()) == 1:
+        x = dbscan(data=data.loc[cluster_df.index], time_thresh=time_thresh, dist_thresh=dist_thresh, min_pts=min_pts, neighbor_dict=neighbor_dict)   # We rerun dbscan because possibly these points no longer hold their own
+        y = x.loc[x['cluster'] != -1] 
+        z = x.loc[x['core'] != -1]
+        
+        # There is exactly 1 cluster of all the same values
+        if len(y) > 0:
+            duration = int((y.index.max() - y.index.min()) // 60)    # Assumes unix_timestamp is in seconds
+            if duration > min_duration:
+                cid = max(output['cluster']) + 1   # Create new cluster id
+                output['cluster'].loc[y.index] = cid
+                output['core'].loc[z.index] = cid
+            return True
+        elif len(y)==0:    # The points in df, despite originally being part of a cluster, no longer hold their own
             return False
-        elif len(df.cluster.unique()) == 1:   #recognize that they are all same value
-            x = dbscan(data=df, time_thresh=time_thresh, dist_thresh=dist_thresh, min_pts=min_pts)   # we rerun dbscan because possibly these points no longer hold their own
-            y = x.loc[x.cluster != -1] 
-            if len(y) > 0:   # there is exactly 1 cluster of all the same values
-                start = y.local_timestamp.min().isoformat()
-                duration = int((y.local_timestamp.max() - y.local_timestamp.min()).total_seconds() // 60)
-                n = len(y)
-                x_mean = np.mean(y.x)
-                y_mean = np.mean(y.y)
-                radius = np.sqrt(np.mean(np.sum((y[['x','y']].to_numpy() - np.mean(y[['x','y']].to_numpy(), axis=0))**2, axis=1)))
-                max_gap = int(y.local_timestamp.diff().max().total_seconds() // 60)
-                if duration > min_duration:
-                    output += [(start, duration, x_mean, y_mean, n, max_gap, radius)]
-                return True
-            elif len(y)==0: # the points in df, despite originally being part of a cluster, no longer hold their own
-                return False
-        else: # >1 unique value for cluster
-            i, j = extract_middle(df) # indices of the "middle" of the cluster (i.e., the head is the first contiguous cluster, and the middle follows that)
-            # print(i,j)
-            # recurisvely processes clusters
-            if process_clusters(df[i:j].copy(), time_thresh, dist_thresh, min_pts, output): # valid cluster in the middle
-                process_clusters(df[:i].copy(), time_thresh, dist_thresh, min_pts, output) #we process the initial stub
-                process_clusters(df[j:].copy(), time_thresh, dist_thresh, min_pts, output) #we process the "tail"
-                return True
-            else: # no valid cluster in the middle
-                return process_clusters(pd.concat( [df[:i].copy(),df[j:].copy()] ), time_thresh, dist_thresh, min_pts, output) #what if this is out of bounds?
-    except Exception as e:
-        sys.exit(f'{e}')
+        
+    # There is more than one cluster
+    else:        
+        i, j = extract_middle(cluster_df)    # Indices of the "middle" of the cluster (i.e., the head is the first contiguous cluster, and the middle follows that)
+        # Recursively processes clusters
+        if process_clusters(data, time_thresh, dist_thresh, min_pts, output, cluster_df[i:j]): # Valid cluster in the middle
+            process_clusters(data, time_thresh, dist_thresh, min_pts, output, cluster_df[:i])  # Process the initial stub
+            process_clusters(data, time_thresh, dist_thresh, min_pts, output, cluster_df[j:])  # Process the "tail"
+            return True
+        else: # No valid cluster in the middle
+            return process_clusters(data, time_thresh, dist_thresh, min_pts, output, pd.concat( [cluster_df[:i],cluster_df[j:]] )) #what if this is out of bounds?
         
 def temporal_dbscan(data, time_thresh, dist_thresh, min_pts):
-    output = []
-    #data['local_timestamp'] = data['local_timestamp'].apply(lambda x: parser.parse(x))
-    data['local_timestamp'] = pd.to_datetime(data['local_timestamp']) #the parser was giving me issues
-    data = data.sort_values('local_timestamp')
-    data = data.set_index('local_timestamp', drop=False)
-    data.index.name = 'index'
-    first_clusters = dbscan(data=data, time_thresh=time_thresh, dist_thresh=dist_thresh, min_pts=min_pts)
-    process_clusters(df=first_clusters, time_thresh=time_thresh, dist_thresh=dist_thresh, min_pts=min_pts, output=output, min_duration=4)
-    pdf = pd.DataFrame(output, columns=['start','duration','x','y','num_points', 'max_gap', 'radius'])
-    pdf['identifier'] = str(data.identifier.iloc[0])
-    
-    return pdf
+    """
+    TODO
 
-def dbscan_patches(df, i, seed=None):
-    #i = 0 is coarse dbscan, i = 1 is fine dbscan
-    if seed:
-        npr.seed(seed)
-    else:
-        seed = npr.randint(0,1000,1)[0]
-        npr.seed(seed)
-        print(seed)
-    
-    params = [(480, 120, 2), (110, 70, 3)][i]    
-    
-    #Compute clusters
-    clusters = temporal_dbscan(df.copy(), *params)
-    
-    clusters['start'] = pd.to_datetime(clusters.start)
-    clusters['end'] = clusters.start + pd.to_timedelta(clusters.duration,'m')
-    df['local_timestamp'] = pd.to_datetime(df.local_timestamp)
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        User pings with 'unix_timestamp' (integer), 'x' (EPSG:3857), 'y' (EPSG:3857) columns.
+    time_thresh : int
+        Time threshold in minutes.
+    dist_thresh : float
+        Distance threshold in meters.
+    min_pts: int
+        A cluster must have at least (min_pts+1) points to be considered a cluster.
 
-    #Add patches for each cluster
-    cluster_pings = []
-    for idx, row in clusters.iterrows():
-        cluster_pings += [df.loc[(df.local_timestamp>=row.start)&(df.local_timestamp<=row.end), ['x','y']]]
-        
-    return(cluster_pings)
+    Returns
+    -------
+    TODO
+    """    
+    data = data.set_index('unix_timestamp', drop=False)
+    output = pd.DataFrame({'cluster': -1, 'core': -1}, index=data.index)
+    process_clusters(data=data, time_thresh=time_thresh, dist_thresh=dist_thresh, min_pts=min_pts, output=output, min_duration=4)
 
-# =========================== #
-#   LACHESIS IMPLEMENTATION   #
-# =========================== #
+    return output
 
 def medoid(coords):
     """
@@ -215,7 +259,7 @@ def diameter(coords):
     
     return np.max(distances)
 
-def lachesis(traj, delta_dur, delta_roam):
+def lachesis(traj, dur_min, dt_max, delta_roam):
     """
     Extracts stays from raw location data.
 
@@ -224,11 +268,15 @@ def lachesis(traj, delta_dur, delta_roam):
     traj: numpy array
         simulated trajectory from simulate_traj.
     
-    delta_dur: float
-        Minimum duration for a stay (stay duration).
+    dur_min: float
+        Minimum duration for a stay (stay duration), in minutes.
+        
+    dt_max: float
+        maximum duration permitted between consecutive pings in a stay, in minutes.
+        dt_max should be greater than dur_min.
         
     delta_roam: float
-        Maximum roaming distance for a stay (roaming distance).
+        Maximum roaming distance for a stay (roaming distance), in meters.
 
     Returns
     -------
@@ -241,12 +289,15 @@ def lachesis(traj, delta_dur, delta_roam):
     while i < len(traj)-1:
         
         j_star = next((j for j in range(i, len(traj)) if 
-                       traj['unix_timestamp'].iloc[j] - traj['unix_timestamp'].iloc[i] >= delta_dur), -1)
+                       traj['unix_timestamp'].iloc[j] - traj['unix_timestamp'].iloc[i] >= dur_min * 60), -1)
         
         if j_star == -1 or diameter(coords[i:j_star+1]) > delta_roam:
             i += 1
         else:
-            j_star = next((j for j in range(j_star, len(traj)) if diameter(coords[i:j+1]) > delta_roam), len(traj)) - 1
+            j_star = next((j for j in range(j_star, len(traj)) if 
+                               diameter(coords[i:j+1]) > delta_roam or
+                               traj['unix_timestamp'].iloc[j] - traj['unix_timestamp'].iloc[j-1] > dt_max * 60), 
+                          len(traj)) - 1
             
             stay_medoid = medoid(coords[i:j_star+1])
             start = traj['local_timestamp'].iloc[i]
@@ -263,7 +314,7 @@ def lachesis_patches(traj, i):
     
     #i = 0 is coarse, i = 1 is fine
     
-    params = [(10*60, 400), (10*60, 200)][i]    #TODO 
+    params = [(10, 120, 400), (10, 60, 200)][i] 
     
     #Compute clusters
     clusters = lachesis(traj, *params)
