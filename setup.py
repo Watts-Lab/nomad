@@ -11,7 +11,6 @@ setup(
         'datetime',
         'math',
         'tick',
-        'collections',
     ],
 )
 
