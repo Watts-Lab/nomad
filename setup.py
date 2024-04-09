@@ -9,7 +9,6 @@ setup(
     author_email='your.email@example.com',
     description='Placeholder',
     url='https://github.com/Watts-Lab/daphme',
-    packages=find_packages(), 
     install_requires=[
         'pandas',
         'numpy',
