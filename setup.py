@@ -3,7 +3,7 @@
 from setuptools import setup
 
 setup(
-    name='daphme1',
+    name='daphme',
     version='0.0.1',
     install_requires=[
         'pandas',
