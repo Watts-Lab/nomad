@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 
-import setuptools
+from setuptools import setup
 
-if __name__ == "__main__":
-    setuptools.setup()
+setup(
+    name='daphme',
+    version='0.0.1',
+)
 
