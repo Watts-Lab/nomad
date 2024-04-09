@@ -9,7 +9,6 @@ setup(
         'pandas',
         'numpy',
         'datetime',
-        'math',
         'tick',
     ],
 )
