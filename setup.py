@@ -3,7 +3,15 @@
 from setuptools import setup
 
 setup(
-    name='daphme',
+    name='daphme1',
     version='0.0.1',
+    install_requires=[
+        'pandas',
+        'numpy',
+        'datetime',
+        'math',
+        'tick',
+        'collections',
+    ],
 )
 
