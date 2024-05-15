@@ -172,6 +172,10 @@ def process_clusters(data, time_thresh, dist_thresh, min_pts, output, cluster_df
         elif len(y)==0:    # The points in df, despite originally being part of a cluster, no longer hold their own
             return False
         
+    # There are no clusters
+    elif len(cluster_df['cluster'].unique()) == 0:
+        return False
+        
     # There is more than one cluster
     else:        
         i, j = extract_middle(cluster_df)    # Indices of the "middle" of the cluster (i.e., the head is the first contiguous cluster, and the middle follows that)
