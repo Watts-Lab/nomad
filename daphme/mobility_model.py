@@ -137,20 +137,20 @@ def sample_traj(traj, freq, nu=20, seed=None):
     baseline = [2, 9][freq]    # baseline intensity
     alpha = [1/3, 1/4][freq]   # intensity of the kernel
     decay = 4.6                # decay of the kernel
-    
+
     kernel = HawkesKernelExp(alpha, decay)
     hawkes = SimuHawkes(n_nodes=1, end_time=len(traj)/60, verbose=False, seed=int(seed))
     hawkes.set_kernel(0, 0, kernel)
     hawkes.set_baseline(0, baseline)
     hawkes.simulate()
     timestamps = hawkes.timestamps
-    
+
     samples = [int(t) for t in timestamps[0] * 60]
     df = traj.iloc[samples]
     df = df.drop_duplicates('local_timestamp')
-    
+
     # Add sampling noise
-    noise = np.random.normal(loc=0, scale=nu/1.96, size=(df.shape[0],2))
+    noise = np.random.normal(loc=0, scale=nu/1.96, size=(df.shape[0], 2))
     df[['x','y']] = df[['x','y']] + noise
-    
+
     return df
