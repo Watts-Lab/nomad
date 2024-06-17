@@ -1,7 +1,6 @@
 from collections import defaultdict
 import pandas as pd
 import numpy as np
-import numpy.random as npr
 
 def extract_middle(data):
     """
@@ -17,8 +16,8 @@ def extract_middle(data):
     tuple (i,j)
         First and last indices of the "middle" of the cluster
     """    
-    current = data.iloc[0]['cluster']     
-    x = (data.cluster != current).values  
+    current = data.iloc[0]['cluster']
+    x = (data.cluster != current).values
     if len(np.where(x)[0]) == 0:        # There is no inbetween
         return(len(data), len(data))
     else:
@@ -145,22 +144,22 @@ def process_clusters(data, time_thresh, dist_thresh, min_pts, output, cluster_df
     -------
     List
         (start, duration, x_mean, y_mean, n, max_gap, radius) of each (post-processed) cluster
-    """    
+    """
     if not neighbor_dict:
         neighbor_dict = find_neighbors(data, time_thresh, dist_thresh)
     if cluster_df is None:    # First call of process_clusters
         cluster_df = dbscan(data=data, time_thresh=time_thresh, dist_thresh=dist_thresh, min_pts=min_pts, neighbor_dict=neighbor_dict)
     if len(cluster_df) < min_pts:
         return False
-        
+
     cluster_df = cluster_df[cluster_df['cluster'] != -1]    # Remove noise pings
-    
+
     # All pings are in the same cluster
     if len(cluster_df['cluster'].unique()) == 1:
-        x = dbscan(data=data.loc[cluster_df.index], time_thresh=time_thresh, dist_thresh=dist_thresh, min_pts=min_pts, neighbor_dict=neighbor_dict)   # We rerun dbscan because possibly these points no longer hold their own
-        y = x.loc[x['cluster'] != -1] 
+        x = dbscan(data=data.loc[cluster_df.index], time_thresh=time_thresh, dist_thresh=dist_thresh, min_pts=min_pts, neighbor_dict=neighbor_dict)  # We rerun dbscan because possibly these points no longer hold their own
+        y = x.loc[x['cluster'] != -1]
         z = x.loc[x['core'] != -1]
-        
+
         # There is exactly 1 cluster of all the same values
         if len(y) > 0:
             duration = int((y.index.max() - y.index.min()) // 60)    # Assumes unix_timestamp is in seconds
@@ -169,24 +168,24 @@ def process_clusters(data, time_thresh, dist_thresh, min_pts, output, cluster_df
                 output['cluster'].loc[y.index] = cid
                 output['core'].loc[z.index] = cid
             return True
-        elif len(y)==0:    # The points in df, despite originally being part of a cluster, no longer hold their own
+        elif len(y) == 0:  # The points in df, despite originally being part of a cluster, no longer hold their own
             return False
-        
+
     # There are no clusters
     elif len(cluster_df['cluster'].unique()) == 0:
         return False
-        
+
     # There is more than one cluster
-    else:        
+    else:
         i, j = extract_middle(cluster_df)    # Indices of the "middle" of the cluster (i.e., the head is the first contiguous cluster, and the middle follows that)
         # Recursively processes clusters
-        if process_clusters(data, time_thresh, dist_thresh, min_pts, output, cluster_df[i:j]): # Valid cluster in the middle
-            process_clusters(data, time_thresh, dist_thresh, min_pts, output, cluster_df[:i])  # Process the initial stub
-            process_clusters(data, time_thresh, dist_thresh, min_pts, output, cluster_df[j:])  # Process the "tail"
+        if process_clusters(data, time_thresh, dist_thresh, min_pts, output, cluster_df.iloc[i:j]): # Valid cluster in the middle
+            process_clusters(data, time_thresh, dist_thresh, min_pts, output, cluster_df.iloc[:i])  # Process the initial stub
+            process_clusters(data, time_thresh, dist_thresh, min_pts, output, cluster_df.iloc[j:])  # Process the "tail"
             return True
         else: # No valid cluster in the middle
-            return process_clusters(data, time_thresh, dist_thresh, min_pts, output, pd.concat( [cluster_df[:i],cluster_df[j:]] )) #what if this is out of bounds?
-        
+            return process_clusters(data, time_thresh, dist_thresh, min_pts, output, pd.concat( [cluster_df.iloc[:i],cluster_df.iloc[j:]] )) #what if this is out of bounds?
+
 def temporal_dbscan(data, time_thresh, dist_thresh, min_pts):
     """
     TODO
@@ -314,14 +313,13 @@ def lachesis(traj, dur_min, dt_max, delta_roam):
     stays = pd.DataFrame(stays, columns = ['medoid_x', 'medoid_y', 'start_time', 'end_time'])
     return stays
 
-def lachesis_patches(traj, i):
+def lachesis_patches(traj, dur_min, dt_max, delta_roam):
     
     #i = 0 is coarse, i = 1 is fine
-    
-    params = [(10, 120, 400), (10, 60, 200)][i] 
+    #params = [(10, 120, 400), (10, 60, 200)][i] 
     
     #Compute clusters
-    clusters = lachesis(traj, *params)
+    clusters = lachesis(traj, dur_min, dt_max, delta_roam)
 
     #Add patches for each cluster
     cluster_pings = []
