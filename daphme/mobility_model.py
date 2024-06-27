@@ -112,6 +112,63 @@ def simulate_traj(stays, moves, seed=None):
     return df
 
 
+def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, seed=None):
+    """
+    Sample from simulated trajectory, drawn using hierarchical Poisson processes.
+
+    Parameters
+    ----------
+    traj: numpy array
+        simulated trajectory from simulate_traj
+    beta_start: float
+        mean of Poisson controlling burst start times
+    beta_durations: float
+        mean of Exponential controlling burst durations
+    beta_ping: float
+        mean of Poisson controlling ping sampling within a burst
+    seed : int0
+        The seed for random number generation.
+    """
+
+    if seed:
+        npr.seed(seed)
+    else:
+        seed = npr.randint(0, 1000, 1)[0]
+        npr.seed(seed)
+        print("Seed:", seed)
+
+    # Sample starting points of bursts
+    inter_arrival_times = np.random.exponential(scale=beta_start, size=len(traj))
+    burst_start_points = np.cumsum(inter_arrival_times).astype(int)
+    burst_start_points = burst_start_points[burst_start_points < len(traj)]
+
+    # Sample durations of each burst
+    burst_durations = np.random.exponential(scale=beta_durations, size=len(burst_start_points)).astype(int)
+
+    # Sample pings within each burst
+    sampled_trajectories = []
+    next_start = 0
+    for start, duration in zip(burst_start_points, burst_durations):
+        # handle overlapping bursts by truncating start of next burst to end of previous burst
+        if start < next_start:
+            start = next_start
+        burst_end = start + duration
+        if burst_end >= len(traj):
+            burst_end = len(traj) - 1
+        burst_indices = np.arange(start, burst_end)
+
+        ping_intervals = np.random.exponential(scale=beta_ping, size=len(burst_indices))
+        ping_times = np.unique(np.cumsum(ping_intervals).astype(int))
+        ping_times = ping_times[ping_times < duration] + start
+
+        sampled_trajectories.append(traj.iloc[ping_times])
+        next_start = burst_end
+
+    sampled_traj = pd.concat(sampled_trajectories).sort_values(by='unix_timestamp')
+    sampled_traj = sampled_traj.drop_duplicates('local_timestamp')
+
+    return sampled_traj
+
 def sample_traj(traj, baseline, alpha, decay, nu=20, seed=None):
     """
     Sample from simulated trajectory, drawn using a self-exciting Hawkes process.

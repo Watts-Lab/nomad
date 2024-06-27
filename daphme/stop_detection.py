@@ -1,11 +1,13 @@
 from collections import defaultdict
 import pandas as pd
 import numpy as np
+from datetime import datetime
+
 
 def extract_middle(data):
     """
     TODO
-    
+
     Parameters
     ----------
     df : pandas.DataFrame
@@ -28,6 +30,7 @@ def extract_middle(data):
         j = i + np.where(~x[i:])[0][0]
     return(i, j)
 
+
 def find_neighbors(data, time_thresh, dist_thresh):
     """
     Identifies neighboring pings for each user ping within specified time and distance thresholds.
@@ -45,8 +48,8 @@ def find_neighbors(data, time_thresh, dist_thresh):
     -------
     dict
         Neighbors indexed by unix timestamp, with values as sets of neighboring unix timestamps.
-    """    
-    
+    """
+
     unix_timestamps, x, y = data.index.values, data['x'].values, data['y'].values
 
     # Time threshold calculation using broadcasting
@@ -64,6 +67,7 @@ def find_neighbors(data, time_thresh, dist_thresh):
         neighbor_dict[unix_timestamps[j].item()].add(unix_timestamps[i].item())
 
     return neighbor_dict
+
 
 def dbscan(data, time_thresh, dist_thresh, min_pts, neighbor_dict=None):
     """
@@ -84,16 +88,16 @@ def dbscan(data, time_thresh, dist_thresh, min_pts, neighbor_dict=None):
     -------
     pandas.DataFrame
         Contains two columns 'cluster' (int), 'core' (int) labeling each ping with their cluster id and core id or noise, indexed by 'unix_timestamp'
-    """    
+    """
     if not neighbor_dict:
         neighbor_dict = find_neighbors(data, time_thresh, dist_thresh)
     else:
         valid_times = set(data.index)
         neighbor_dict = defaultdict(set, {k: v.intersection(valid_times) for k, v in neighbor_dict.items() if k in valid_times})
-    
+
     cluster_df = pd.Series(-2, index=data.index, name='cluster')
     core_df = pd.Series(-1, index=data.index, name='core')
-    
+
     cid = -1                                              # Initialize cluster label
     for i, cluster in cluster_df.items():
         if cluster < 0:                                   # Check if point is not yet in a cluster
@@ -104,7 +108,7 @@ def dbscan(data, time_thresh, dist_thresh, min_pts, neighbor_dict=None):
                 cluster_df[i] = cid                       # Assign new cluster label
                 core_df[i] = cid                          # Assign new core label
                 S = list(neighbor_dict[i])                # Initialize stack with neighbors
-                
+
                 while S:
                     j = S.pop()
                     if cluster_df[j] < 0:                 # Process if not yet in a cluster
@@ -114,8 +118,9 @@ def dbscan(data, time_thresh, dist_thresh, min_pts, neighbor_dict=None):
                             for k in neighbor_dict[j]:
                                 if cluster_df[k] < 0:
                                     S.append(k)           # Add new neighbors
-    
+
     return pd.DataFrame({'cluster': cluster_df, 'core': core_df})
+
 
 def process_clusters(data, time_thresh, dist_thresh, min_pts, output, cluster_df=None, neighbor_dict=None, min_duration=4):
     """
@@ -186,6 +191,7 @@ def process_clusters(data, time_thresh, dist_thresh, min_pts, output, cluster_df
         else: # No valid cluster in the middle
             return process_clusters(data, time_thresh, dist_thresh, min_pts, output, pd.concat( [cluster_df.iloc[:i],cluster_df.iloc[j:]] )) #what if this is out of bounds?
 
+
 def temporal_dbscan(data, time_thresh, dist_thresh, min_pts):
     """
     TODO
@@ -204,12 +210,13 @@ def temporal_dbscan(data, time_thresh, dist_thresh, min_pts):
     Returns
     -------
     TODO
-    """    
+    """
     data = data.set_index('unix_timestamp', drop=False)
     output = pd.DataFrame({'cluster': -1, 'core': -1}, index=data.index)
     process_clusters(data=data, time_thresh=time_thresh, dist_thresh=dist_thresh, min_pts=min_pts, output=output, min_duration=4)
 
     return output
+
 
 def medoid(coords):
     """
@@ -225,18 +232,19 @@ def medoid(coords):
     -------
     numpy array of shape (1,2) denoting medroid coordinates.
     """
-    
+
     # Create matrix of all pairwise distances
     x = coords[:, 0]
     y = coords[:, 1]
     x_diff = x[:, np.newaxis] - x
     y_diff = y[:, np.newaxis] - y
     distances = np.sqrt(x_diff**2 + y_diff**2)
-    
+
     max_distances = np.amax(distances, axis=1)
     medoid_index = np.argmin(max_distances)
-    
+
     return coords[medoid_index,:]
+
 
 def diameter(coords):
     """
@@ -252,15 +260,16 @@ def diameter(coords):
     -------
     float denoting diameter.
     """
-    
+
     # Create matrix of all pairwise distances
     x = coords[:, 0]
     y = coords[:, 1]
     x_diff = x[:, np.newaxis] - x
     y_diff = y[:, np.newaxis] - y
     distances = np.sqrt(x_diff**2 + y_diff**2)
-    
+
     return np.max(distances)
+
 
 def lachesis(traj, dur_min, dt_max, delta_roam):
     """
@@ -270,14 +279,14 @@ def lachesis(traj, dur_min, dt_max, delta_roam):
     ----------
     traj: numpy array
         simulated trajectory from simulate_traj.
-    
+
     dur_min: float
         Minimum duration for a stay (stay duration), in minutes.
-        
+
     dt_max: float
         maximum duration permitted between consecutive pings in a stay, in minutes.
         dt_max should be greater than dur_min.
-        
+
     delta_roam: float
         Maximum roaming distance for a stay (roaming distance), in meters.
 
@@ -285,15 +294,15 @@ def lachesis(traj, dur_min, dt_max, delta_roam):
     -------
     pandas array with columns 'medoid_x', 'medoid_y', 'start_time', 'end_time'
     """
-    
+
     coords = traj[['x', 'y']].to_numpy()
     stays = np.empty((0,4))
     i = 0
     while i < len(traj)-1:
-        
+
         j_star = next((j for j in range(i, len(traj)) if 
                        traj['unix_timestamp'].iloc[j] - traj['unix_timestamp'].iloc[i] >= dur_min * 60), -1)
-        
+
         if j_star == -1 or diameter(coords[i:j_star+1]) > delta_roam:
             i += 1
         else:
@@ -301,23 +310,24 @@ def lachesis(traj, dur_min, dt_max, delta_roam):
                                diameter(coords[i:j+1]) > delta_roam or
                                traj['unix_timestamp'].iloc[j] - traj['unix_timestamp'].iloc[j-1] > dt_max * 60), 
                           len(traj)) - 1
-            
+
             stay_medoid = medoid(coords[i:j_star+1])
             start = traj['local_timestamp'].iloc[i]
             end   = traj['local_timestamp'].iloc[j_star]
             stay  = np.array([[stay_medoid[0], stay_medoid[1], start, end]])
             stays = np.concatenate((stays, stay), axis=0)
-            
+
             i = j_star + 1
-            
+
     stays = pd.DataFrame(stays, columns = ['medoid_x', 'medoid_y', 'start_time', 'end_time'])
     return stays
 
+
 def lachesis_patches(traj, dur_min, dt_max, delta_roam):
-    
+
     #i = 0 is coarse, i = 1 is fine
     #params = [(10, 120, 400), (10, 60, 200)][i] 
-    
+
     #Compute clusters
     clusters = lachesis(traj, dur_min, dt_max, delta_roam)
 
@@ -325,5 +335,67 @@ def lachesis_patches(traj, dur_min, dt_max, delta_roam):
     cluster_pings = []
     for idx, row in clusters.iterrows():
         cluster_pings += [traj.loc[(traj.local_timestamp>=row.start_time)&(traj.local_timestamp<=row.end_time), ['x','y']]]
-        
+
     return(cluster_pings)
+
+
+def generate_stop_table(data, dbscan_df):
+    """
+    TODO: user id, ts, duration, centroid coord, max time gap, radius, etc.
+
+    Returns
+    -------
+    TODO
+    """
+    num_clusters = sum(dbscan_df.cluster.unique() > -1)
+
+    stop_table = pd.DataFrame(
+        columns=['unix_timestamp', 'local_timestamp', 'duration', 'centroid_x', 'centroid_y', 'radius'])
+
+    for cid in range(num_clusters):
+        cpings = dbscan_df[dbscan_df.cluster == cid]
+        cdata = data.loc[cpings.index]
+        unix_timestamp = cdata.index.min()
+        local_timestamp = datetime.fromtimestamp(unix_timestamp)
+        duration = int((cdata.index.max() - cdata.index.min()) // 60)
+        x_mean = np.mean(cdata['x'])
+        y_mean = np.mean(cdata['y'])
+        radius = np.sqrt(np.mean(np.sum((cdata[['x','y']].to_numpy() 
+                                         - np.mean(cdata[['x','y']].to_numpy(), axis=0))**2, axis=1)))
+
+        entry = {'unix_timestamp': unix_timestamp,
+                 'local_timestamp': local_timestamp,
+                 'duration': duration,
+                 'centroid_x': x_mean,
+                 'centroid_y': y_mean,
+                 'radius': radius}
+        entry = pd.DataFrame([entry])
+        stop_table = pd.concat([stop_table, entry], ignore_index=True)
+
+    stop_table = stop_table.sort_values(by=['unix_timestamp'])
+    return stop_table.reset_index(drop=True)
+
+
+def stop_statistics(data, dbscan_df):
+    """
+    INCOMPLETE
+
+    TODO: user-level metrics: number of clusters, radius of gyration,
+    time resolution param? 
+    """
+    num_clusters = sum(dbscan_df.cluster.unique() > -1)
+    total_stop_time = 0
+
+    for cid in range(num_clusters):
+        cpings = dbscan_df[dbscan_df.cluster == cid]
+        cdata = data.loc[cpings.index]
+        duration = int((cdata.index.max() - cdata.index.min()) // 60)
+        n = len(cdata)
+        x_mean = np.mean(cdata['x'])
+        y_mean = np.mean(cdata['y'])
+        radius = np.sqrt(np.mean(np.sum((cdata[['x','y']].to_numpy() 
+                                         - np.mean(cdata[['x','y']].to_numpy(), axis=0))**2, axis=1)))
+
+        total_stop_time += duration
+
+    return [num_clusters, total_stop_time]
