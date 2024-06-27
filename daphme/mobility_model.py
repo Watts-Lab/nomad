@@ -138,36 +138,49 @@ def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, seed=None):
         print("Seed:", seed)
 
     # Sample starting points of bursts
-    inter_arrival_times = np.random.exponential(scale=beta_start, size=len(traj))
+    inter_arrival_times = npr.exponential(scale=beta_start, size=len(traj))
     burst_start_points = np.cumsum(inter_arrival_times).astype(int)
     burst_start_points = burst_start_points[burst_start_points < len(traj)]
 
     # Sample durations of each burst
     burst_durations = np.random.exponential(scale=beta_durations, size=len(burst_start_points)).astype(int)
 
+    # Create start_points and end_points
+    burst_end_points = burst_start_points + burst_durations
+    burst_end_points = np.minimum(burst_end_points, len(traj) - 1)
+
+    # Adjust end_points to handle overlaps
+    for i in range(len(burst_start_points) - 1):
+        if burst_end_points[i] > burst_start_points[i + 1]:
+            burst_end_points[i] = burst_start_points[i + 1]
+
     # Sample pings within each burst
     sampled_trajectories = []
-    next_start = 0
-    for start, duration in zip(burst_start_points, burst_durations):
-        # handle overlapping bursts by truncating start of next burst to end of previous burst
-        if start < next_start:
-            start = next_start
-        burst_end = start + duration
-        if burst_end >= len(traj):
-            burst_end = len(traj) - 1
-        burst_indices = np.arange(start, burst_end)
+    for start, end in zip(burst_start_points, burst_end_points):
+        burst_indices = np.arange(start, end)
+
+        if len(burst_indices) == 0:
+            continue
 
         ping_intervals = np.random.exponential(scale=beta_ping, size=len(burst_indices))
         ping_times = np.unique(np.cumsum(ping_intervals).astype(int))
-        ping_times = ping_times[ping_times < duration] + start
+        ping_times = ping_times[ping_times < (end - start)] + start
 
-        sampled_trajectories.append(traj.iloc[ping_times])
-        next_start = burst_end
+        if len(ping_times) == 0:
+            continue
+
+        burst_data = traj.iloc[ping_times].copy()
+        burst_data['first_ping'] = 0
+        if not burst_data.empty:
+            burst_data.iloc[0, burst_data.columns.get_loc('first_ping')] = 1
+
+        sampled_trajectories.append(burst_data)
 
     sampled_traj = pd.concat(sampled_trajectories).sort_values(by='unix_timestamp')
     sampled_traj = sampled_traj.drop_duplicates('local_timestamp')
 
     return sampled_traj
+
 
 def sample_traj(traj, baseline, alpha, decay, nu=20, seed=None):
     """
