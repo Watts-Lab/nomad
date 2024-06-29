@@ -28,6 +28,8 @@ class Street:
         self.geometry = box(coordinates[0], coordinates[1],
                             coordinates[0]+1, coordinates[1]+1)
 
+        self.id = f's-x{coordinates[0]}-y{coordinates[1]}'
+
     def add_neighbor(self, neighbor):
         if neighbor is None or not check_adjacent(self.geometry, neighbor.geometry):
             return False
@@ -329,6 +331,11 @@ class Agent:
         sparse_traj = sparse_traj.set_index('unix_timestamp', drop=False)
         self.sparse_traj = sparse_traj
 
+    # def temporal_dbscan(self, time_thresh, dist_thresh, min_pts):
+    #     self.tdbscan_out = sd.temporal_dbscan(self.sparse_traj, time_thresh, dist_thresh, min_pts)
+    #     stop_table = sd.generate_stop_table(self.sparse_traj, self.tdbscan_out)
+    #     stop_table['location'] = stop_table.apply(lambda row: self.city.get_block((row.centroid_x, row.centroid_y)).id, axis=1)
+    #     self.stop_table = stop_table
 
 def ortho_coord(multilines, distance, offset, eps=0.001):  # Calculus approach. Probably super slow.
     point = multilines.interpolate(distance)
