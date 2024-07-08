@@ -19,6 +19,16 @@ LONGITUDE = 'longitude'
 DATE = 'date'
 DATE_HOUR = 'date_hour'
 DAY_OF_WEEK = 'day_of_week'
+ALLOWED_BUILDINGS = {
+    0: ['home'], 1: ['home'], 2: ['home'], 3: ['home'], 4: ['home'], 5: ['home'], 6: ['home'], 7: ['home'],
+    8: ['retail', 'work', 'park'],
+    9: ['work'], 10: ['work'], 11: ['work'],
+    12: ['retail', 'park'],
+    13: ['retail', 'park'],
+    14: ['work'], 15: ['work'], 16: ['work'], 17: ['work'],
+    18: ['retail', 'park', 'home'], 19: ['retail', 'park', 'home'],
+    20: ['home'], 21: ['home'], 22: ['home'], 23: ['home']
+}
 
 
 DEFAULT_SPEEDS = {'park': 2/1.96,

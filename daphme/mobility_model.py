@@ -175,8 +175,12 @@ def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, seed=None):
             burst_data.iloc[0, burst_data.columns.get_loc('first_ping')] = 1
 
         sampled_trajectories.append(burst_data)
+    
+    if sampled_trajectories:
+        sampled_traj = pd.concat(sampled_trajectories).sort_values(by='unix_timestamp')
+    else:  # empty
+        sampled_traj = pd.DataFrame(columns=list(traj.columns) + ['first_ping'])
 
-    sampled_traj = pd.concat(sampled_trajectories).sort_values(by='unix_timestamp')
     sampled_traj = sampled_traj.drop_duplicates('local_timestamp')
 
     return sampled_traj

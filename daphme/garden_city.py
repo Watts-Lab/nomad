@@ -395,8 +395,8 @@ class Population:
         self.roster = {}
         self.city = city
 
-    def add_agent(self, agent):
-        if agent.identifier in self.roster:
+    def add_agent(self, agent, verbose=True):
+        if verbose and agent.identifier in self.roster:
             print("Agent identifier already exists in population. Replacing corresponding agent.")
         self.roster[agent.identifier] = agent
 
@@ -619,7 +619,7 @@ class Population:
             elif 9 <= hour < 12 or 13.5 <= hour < 17.5:
                 return b_types[b_types['type'] == 'work'].index
             elif 12 <= hour < 13.5:
-                return b_types[b_types['type'] == 'retail'].index
+                return b_types[(b_types['type'] == 'retail') | (b_types['type'] == 'park')].index
             elif 17.5 <= hour < 20:
                 return b_types[b_types['type'] != 'work'].index
             return b_types[b_types['type'] == 'home'].index
