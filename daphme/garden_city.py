@@ -195,11 +195,15 @@ class City:
 
         # Compute shortest path between every pair of street coordinates
         self.shortest_paths = {street: {} for street in self.streets.keys()}
+        self.gravity = {street: {} for street in self.streets.keys()}
         for s_from in self.shortest_paths.keys():
             self.shortest_paths[s_from] = {street: [] for street in self.streets.keys()}
+            self.gravity[s_from] = {street: -1 for street in self.streets.keys()}
             for s_to in self.shortest_paths[s_from].keys():
                 path = BFS_shortest_path(graph=self.street_graph, start=s_from, end=s_to)
                 self.shortest_paths[s_from][s_to] = path
+                d = len(path) - 1
+                self.gravity[s_from][s_to] = 1/(d**2) if d > 0 else float('inf')
 
     def save(self, filename):
         """Save the city object to a file."""
