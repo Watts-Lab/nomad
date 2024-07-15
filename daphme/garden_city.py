@@ -9,11 +9,15 @@ import numpy.random as npr
 from matplotlib.ticker import MaxNLocator
 from matplotlib import cm
 import funkybob
+import networkx as nx
+import nx_parallel as nxp
 
 import mobility_model as mmod
 import stop_detection as sd
-from constants import DEFAULT_SPEEDS, FAST_SPEEDS, SLOW_SPEEDS, DEFAULT_STILL_PROBS, FAST_STILL_PROBS, SLOW_STILL_PROBS
+from constants import DEFAULT_SPEEDS, FAST_SPEEDS, SLOW_SPEEDS, DEFAULT_STILL_PROBS
+from constants import FAST_STILL_PROBS, SLOW_STILL_PROBS, ALLOWED_BUILDINGS, DEFAULT_STAY_PROBS
 
+import pdb
 
 # =============================================================================
 # STREETS
@@ -90,26 +94,23 @@ class Building:
 
 
 class City:
-    def __init__(self, dimensions=(0, 0)):
+    def __init__(self,
+                 dimensions=(0, 0),
+                 still_probs=DEFAULT_STILL_PROBS,
+                 speeds=DEFAULT_SPEEDS):
         self.buildings = {}
         self.streets = {}
         self.buildings_outline = Polygon()
         self.address_book = {}
 
         # maybe at some point, p_still and sigma are inputs rather than hard coded
-        self.p_still = {'park': 0.1,
-                        'home': 0.6,
-                        'work': 0.9,
-                        'retail': 0.2}
+        self.p_still = still_probs
 
         # controls "speed" of Brownian motion when simulating stay trajectory
         # The random variable X(t) of the position at time t has a normal
         # distribution with mean 0 and variance sigma^2 * t.
         # x/1.96 = 95% probability of moving x standard deviations
-        self.sigma = {'park': 2.5/1.96,
-                      'home': 1/1.96,
-                      'work': 1/1.96,
-                      'retail': 2/1.96}
+        self.sigma = speeds
 
         if not (isinstance(dimensions, tuple) and len(dimensions) == 2
                 and all(isinstance(d, int) for d in dimensions)):
@@ -174,8 +175,10 @@ class City:
 
     # Determine adjacent streets and buildings for each street block and construct graph
     def get_street_graph(self):
-        for x, y in self.streets.keys():
-            street = self.streets[(x, y)]
+
+        self.street_graph = {}
+        for coords, _ in self.streets.items():
+            x, y = coords
             neighbors = [
                 (x, y + 1),
                 (x, y - 1),
@@ -183,27 +186,19 @@ class City:
                 (x - 1, y)
             ]
 
-            for neighbor in neighbors:
-                block = self.get_block(neighbor)
-                street.add_neighbor(block)
+            self.street_graph[coords] = [neighbor for neighbor in neighbors if neighbor in self.streets]
 
-        # Construct graph of streets
-        self.street_graph = {block: [] for block in self.streets.keys()}
-        for street in self.street_graph.keys():
-            self.street_graph[street] = [neighbor.coordinates for neighbor in
-                                         self.get_block(street).neighbors_streets]
+        G = nx.from_dict_of_lists(self.street_graph)
+        sp = dict(nxp.all_pairs_shortest_path(G))
+        self.shortest_paths = {node: paths for node, paths in sp.items()}
 
-        # Compute shortest path between every pair of street coordinates
-        self.shortest_paths = {street: {} for street in self.streets.keys()}
-        self.gravity = {street: {} for street in self.streets.keys()}
-        for s_from in self.shortest_paths.keys():
-            self.shortest_paths[s_from] = {street: [] for street in self.streets.keys()}
-            self.gravity[s_from] = {street: -1 for street in self.streets.keys()}
-            for s_to in self.shortest_paths[s_from].keys():
-                path = BFS_shortest_path(graph=self.street_graph, start=s_from, end=s_to)
-                self.shortest_paths[s_from][s_to] = path
-                d = len(path) - 1
-                self.gravity[s_from][s_to] = 1/(d**2) if d > 0 else float('inf')
+        data = [
+            {'origin': origin, 'dest': dest, 'gravity': (1 / (len(path) - 1) ** 2 if len(path) > 1 else 0)}
+            for origin, paths in sp.items()
+            for dest, path in paths.items()
+        ]
+        self.gravity = pd.DataFrame(data, columns=['origin', 'dest', 'gravity'])
+        self.gravity = self.gravity.set_index(['origin', 'dest'])
 
     def save(self, filename):
         """Save the city object to a file."""
@@ -263,8 +258,8 @@ class City:
 class Agent:
     def __init__(self, identifier, home, workplace, city,
                  still_probs=DEFAULT_STILL_PROBS, speeds=DEFAULT_SPEEDS,
-                 destination_diary=None, trajectory=None, diary=None, transitions=None,
-                 start_time=datetime(2024, 1, 1, hour=8, minute=0)):
+                 destination_diary=None, trajectory=None, diary=None,
+                 start_time=datetime(2024, 1, 1, hour=8, minute=0), dt=1):
         """
         Parameters
         ---------
@@ -287,7 +282,6 @@ class Agent:
         self.home = home
         self.workplace = workplace
         self.city = city
-        self.transitions = transitions
 
         if destination_diary is not None:
             start_time = destination_diary['local_timestamp'][0]
@@ -302,9 +296,10 @@ class Agent:
         self.still_probs = still_probs
         self.speeds = speeds
 
-        # If trajectory is not provided, then it is at the front door at start_time
+        # If trajectory is not provided, then the first ping is at the home centroid at start_time
         if trajectory is None:
-            x_coord, y_coord = self.city.buildings[home].door_centroid
+            home_centroid = self.city.buildings[home].geometry.centroid
+            x_coord, y_coord = home_centroid.x, home_centroid.y
             local_timestamp = start_time
             unix_timestamp = int(local_timestamp.timestamp())
             trajectory = pd.DataFrame([{
@@ -315,14 +310,11 @@ class Agent:
                 'identifier': self.identifier
                 }])
 
-            # TODO: HOW TO CORRECT INITIALIZE DIARY?
             diary_entry = {'unix_timestamp': unix_timestamp,
                            'local_timestamp': local_timestamp,
-                           'duration': 1,  # should be dt
+                           'duration': dt,
                            'location': home}
-            diary_entry = pd.DataFrame([diary_entry])
-            self.diary = pd.concat([self.diary, diary_entry],
-                                   ignore_index=True)
+            self.diary = pd.DataFrame([diary_entry])
 
         self.trajectory = trajectory
 
@@ -335,11 +327,6 @@ class Agent:
         sparse_traj = sparse_traj.set_index('unix_timestamp', drop=False)
         self.sparse_traj = sparse_traj
 
-    # def temporal_dbscan(self, time_thresh, dist_thresh, min_pts):
-    #     self.tdbscan_out = sd.temporal_dbscan(self.sparse_traj, time_thresh, dist_thresh, min_pts)
-    #     stop_table = sd.generate_stop_table(self.sparse_traj, self.tdbscan_out)
-    #     stop_table['location'] = stop_table.apply(lambda row: self.city.get_block((row.centroid_x, row.centroid_y)).id, axis=1)
-    #     self.stop_table = stop_table
 
 def ortho_coord(multilines, distance, offset, eps=0.001):  # Calculus approach. Probably super slow.
     point = multilines.interpolate(distance)
@@ -417,7 +404,7 @@ class Population:
         b_types = pd.DataFrame({
             'id': list(self.city.buildings.keys()),
             'type': [b.building_type for b in self.city.buildings.values()]
-        }).set_index('id') # Maybe this should be an attribute of city since we end up using it a lot
+        }).set_index('id')  # Maybe this should be an attribute of city since we end up using it a lot
 
         homes = b_types[b_types['type'] == 'home'].sample(n=N, replace=True)
         workplaces = b_types[b_types['type'] == 'work'].sample(n=N, replace=True)
@@ -465,7 +452,7 @@ class Population:
             p = agent.still_probs[dest_building.building_type]
             sigma = agent.speeds[dest_building.building_type]
 
-            if npr.uniform()<p:
+            if npr.uniform() < p:
                 coord = curr
             else:
 
@@ -488,8 +475,8 @@ class Population:
                 start = tuple(start_block.astype(int))
 
             street_path = city.shortest_paths[start][dest_point]
-            path = [(x+0.5, y+0.5) for x,y in street_path]
-            path = start_segment + path + [dest_building.door_centroid]
+            path = [(x+0.5, y+0.5) for x, y in street_path]
+            path = start_segment + path + [dest_building.geometry.centroid]
             path_ml = MultiLineString([path])
 
             # Bounding polygon
@@ -543,13 +530,17 @@ class Population:
             building_id = destination_info['location']
             for t in range(duration):
                 prev_ping = agent.trajectory.iloc[-1]
-
                 start_point = (prev_ping['x'], prev_ping['y'])
                 dest_building = city.buildings[building_id]
-                coord, location = self.sample_step(agent, start_point, dest_building, dt)
-
                 unix_timestamp = prev_ping['unix_timestamp'] + 60*dt
                 local_timestamp = pd.to_datetime(unix_timestamp, unit='s')
+                
+                # You should be asleep!
+                if local_timestamp.hour <= 5:
+                    coord = start_point  # stay in place
+                    location = building_id
+                else:
+                    coord, location = self.sample_step(agent, start_point, dest_building, dt)
                 ping = {'x': coord[0], 'y': coord[1],
                         'local_timestamp': local_timestamp,
                         'unix_timestamp': unix_timestamp,
@@ -572,89 +563,107 @@ class Population:
         # empty the destination diary
         agent.destination_diary = destination_diary.drop(destination_diary.index)
 
-    def generate_transition_probs(self, agent, location, building_choices):
-        N = len(building_choices)
-        probs = [1] * N
-        idx = building_choices.index[building_choices.id == location][0]
-        probs[idx] = N-1
-        probs = [p / sum(probs) for p in probs]  # normalize probabilities
-        return probs
-
-    def dest_diary_from_trans(self, agent, T, duration=15, dt=1, trans=None):
+    def generate_dest_diary(self, agent, T, duration=15,
+                            stay_probs=DEFAULT_STAY_PROBS,
+                            rho=0.6, gamma=0.2, seed=None):
         """
-        Simulate a destination diary from transition matrices
+        Exploration and preferential return.
 
-        Parameters
-        ----------
-        agent: Agent
-        T: int
-            how many entries to generate
-        duration: int
-            how long each entry is (total duration is duration * T)
-
-        Returns
-        -------
-        updates destination diary of agent
+        rho, gamma = Parameters for exploring
+        stay_probs = dictionary
+            Probability of staying in same building
+            geometric with p = 1-((1/avg_duration_hrs)/timesteps_in_1_hr)
         """
-        city = self.city
-        pr_weight = 4
+        if seed:
+            npr.seed(seed)
+        else:
+            seed = npr.randint(0, 1000, 1)[0]
+            npr.seed(seed)
+            print("Seed:", seed)
 
-        # Ensure building IDs are the index
-        b_types = pd.DataFrame({
-            'id': list(city.buildings.keys()),
-            'type': [b.building_type for b in city.buildings.values()]
+        id2door = pd.DataFrame([[s, b.door] for s, b in self.city.buildings.items()],
+                               columns=['id', 'door']).set_index('door')  # could this be a field of city?
+
+        if isinstance(T, datetime):
+            T = int(T.timestamp())  # Convert to unix
+
+        probs = pd.DataFrame({
+            'id': list(self.city.buildings.keys()),
+            'type': [b.building_type for b in self.city.buildings.values()],
+            'freq': 0,
+            'p': 0
         }).set_index('id')
 
-        N = len(b_types)
-        trans = pd.DataFrame(np.ones((N, N)), index=b_types.index, columns=b_types.index)
+        # Initializes past counts randomly
+        probs.loc[agent.home, 'freq'] = 10
+        probs.loc[agent.workplace, 'freq'] = 10
+        probs.loc[probs.type == 'park', 'freq'] = 3  # Agents love to comeback to park
 
-        trans[agent.home] += pr_weight
-        trans[agent.workplace] += pr_weight
+        initial_locs = []
+        initial_locs = list(npr.choice(probs.loc[probs.type == 'retail'].index, size=npr.poisson(2)))
+        initial_locs = list(npr.choice(probs.loc[probs.type == 'work'].index, size=npr.poisson(1.5)))
+        initial_locs = list(npr.choice(probs.loc[probs.type == 'home'].index, size=npr.poisson(1.5)))
+        probs.loc[initial_locs, 'freq'] += 1
 
-        np.fill_diagonal(trans.values, N + pr_weight)
+        if agent.destination_diary.empty:
+            last_ping = agent.trajectory.iloc[-1]
+            start_time_local = last_ping.local_timestamp
+            start_time = last_ping.unix_timestamp
+            curr = self.city.get_block((last_ping.x, last_ping.y)).id  # Always a building?? Could be street
+        else:
+            last_entry = agent.destination_diary.iloc[-1]
+            start_time_local = last_entry.local_timestamp + timedelta(minutes=int(last_entry.duration))
+            start_time = last_entry.unix_timestamp + last_entry.duration*60
+            curr = last_entry.location
 
-        # Correct allowed_buildings function
-        def allowed_buildings(ts, b_types):
-            hour = ts.hour
-            if 0 <= hour < 8 or 20 <= hour < 24:
-                return b_types[b_types['type'] == 'home'].index
-            elif 8 <= hour < 9:
-                return b_types[b_types['type'] != 'home'].index
-            elif 9 <= hour < 12 or 13.5 <= hour < 17.5:
-                return b_types[b_types['type'] == 'work'].index
-            elif 12 <= hour < 13.5:
-                return b_types[(b_types['type'] == 'retail') | (b_types['type'] == 'park')].index
-            elif 17.5 <= hour < 20:
-                return b_types[b_types['type'] != 'work'].index
-            return b_types[b_types['type'] == 'home'].index
+        while start_time < T:
+            curr_type = probs.loc[curr, 'type']
+            allowed = allowed_buildings(start_time_local)
 
-        last_entry = (agent.destination_diary.iloc[-1] if not agent.destination_diary.empty else agent.diary.iloc[-1])
-        cur_loc = last_entry.location
-        next_ts = last_entry.local_timestamp + timedelta(minutes=int(last_entry.duration))
+            S = (probs['freq'] > 0).sum()  # Fix depending on whether "explore" should depend only on allowed buildings
+            p_ret = rho*(S**(-gamma))
 
-        new_entries = []
+            # You should be asleep!
+            if (start_time_local.hour >= 22) | (start_time_local.hour <= 5):
+                curr = agent.home  # this doesn't permit the possibility of sleepovers
+                probs.loc[curr, 'freq'] += 1
+                pass
 
-        for _ in range(T):
-            unix_ts = int(next_ts.timestamp())
+            # Stay
+            elif (curr_type in allowed) & (npr.uniform() < stay_probs[curr_type]):
+                pass
 
-            allowed_indices = allowed_buildings(next_ts, b_types)
-            trans_probs = trans.loc[cur_loc, allowed_indices]
-            trans_probs = trans_probs / trans_probs.sum()
+            # Preferential return
+            elif npr.uniform() < p_ret:
+                x = probs.loc[(probs['type'].isin(allowed)) & (probs.freq > 0)]
+                curr = npr.choice(x.index, p=x['freq']/x['freq'].sum())
+                probs.loc[curr, 'freq'] += 1
 
-            cur_loc = npr.choice(trans_probs.index, p=trans_probs.values)
+            # Exploration
+            else:
+                probs['p'] = self.city.gravity.xs(
+                    self.city.buildings[curr].door, level=0).join(id2door, how='right').set_index('id')
+                y = probs.loc[(probs['type'].isin(allowed)) & (probs.freq == 0)]
+                curr = npr.choice(y.index, p=y['p']/y['p'].sum())
+                probs.loc[curr, 'freq'] += 1
 
-            entry = {'unix_timestamp': unix_ts,
-                     'local_timestamp': next_ts,
+            # Update diary
+            entry = {'unix_timestamp': start_time,
+                     'local_timestamp': start_time_local,
                      'duration': duration,
-                     'location': cur_loc}
+                     'location': curr}
+            entry = pd.DataFrame([entry])
+            if agent.destination_diary.empty:
+                agent.destination_diary = entry
+            else:
+                agent.destination_diary = pd.concat([agent.destination_diary, entry], ignore_index=True)
 
-            new_entries.append(entry)
-            next_ts += timedelta(minutes=duration)
-
-        new_entries_df = pd.DataFrame(new_entries)
-        agent.destination_diary = pd.concat([agent.destination_diary, new_entries_df], ignore_index=True)
+            start_time_local = start_time_local + timedelta(minutes=int(duration))
+            start_time = start_time + duration*60
 
         agent.destination_diary = condense_destinations(agent.destination_diary)
+
+        return None
 
     def generate_trajectory(self, agent, T=None, duration=15, seed=None, dt=1):
 
@@ -670,9 +679,11 @@ class Population:
                 raise ValueError(
                     "Destination diary is empty. Provide a parameter T to generate destination diary from transition matrix."
                 )
-            self.dest_diary_from_trans(agent, T, duration=duration, dt=dt, trans=agent.transitions)
+            self.generate_dest_diary(agent, T, duration=duration)
 
         self.traj_from_dest_diary(agent, dt)
+
+        return None
 
     def plot_population(self, ax, doors=True, address=True):
         for i, agent_id in enumerate(self.roster):
@@ -703,47 +714,9 @@ def check_adjacent(geom1, geom2):
     return isinstance(intersection, (LineString, MultiLineString))
 
 
-def BFS_shortest_path(graph, start, end):
+def allowed_buildings(local_ts):
     """
-    Computes the shortest path between a start and end street block.
-
-    Parameters
-    ---------
-    graph: dict
-        undirected graph with streets as vectices and edges between adjacent streets
-    start: tuple
-        coordinates of starting street (i.e., door of start building)
-    end: tuple
-        coordinates of ending street (i.e., door of end building)
-
-    Returns
-    -------
-    A list denoting the shortest path of street blocks going from the start to the end.
+    Finds allowed buildings for the timestamp
     """
-
-    # is this the most efficient way to do this? maybe Dijkstra's algorithm
-
-    explored = []
-    queue = [[start]]
-
-    if start == end:
-        return [start]
-
-    while queue:
-        path = queue.pop(0)
-        node = path[-1]
-
-        if node not in explored:
-            neighbors = graph[node]
-
-            for neighbor in neighbors:
-                new_path = list(path)
-                new_path.append(neighbor)
-                queue.append(new_path)
-
-                if neighbor == end:
-                    return new_path
-            explored.append(node)
-
-    print("Path does not exist.")
-    return None
+    hour = local_ts.hour
+    return ALLOWED_BUILDINGS[hour]

@@ -3,7 +3,7 @@ import numpy as np
 import numpy.random as npr
 from numpy.linalg import norm
 from datetime import datetime
-from tick.hawkes import SimuHawkes, HawkesKernelExp
+#from tick.hawkes import SimuHawkes, HawkesKernelExp
 
 
 def brownian(n, dt, sigma, radius, p):
@@ -170,64 +170,61 @@ def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, seed=None):
             continue
 
         burst_data = traj.iloc[ping_times].copy()
-        burst_data['first_ping'] = 0
-        if not burst_data.empty:
-            burst_data.iloc[0, burst_data.columns.get_loc('first_ping')] = 1
 
         sampled_trajectories.append(burst_data)
-    
+
     if sampled_trajectories:
         sampled_traj = pd.concat(sampled_trajectories).sort_values(by='unix_timestamp')
     else:  # empty
-        sampled_traj = pd.DataFrame(columns=list(traj.columns) + ['first_ping'])
+        sampled_traj = pd.DataFrame(columns=list(traj.columns))
 
     sampled_traj = sampled_traj.drop_duplicates('local_timestamp')
 
     return sampled_traj
 
 
-def sample_traj(traj, baseline, alpha, decay, nu=20, seed=None):
-    """
-    Sample from simulated trajectory, drawn using a self-exciting Hawkes process.
+# def sample_traj(traj, baseline, alpha, decay, nu=20, seed=None):
+#     """
+#     Sample from simulated trajectory, drawn using a self-exciting Hawkes process.
 
-    Parameters
-    ----------
-    traj: numpy array
-        simulated trajectory from simulate_traj
-    freq : 0 or 1
-        0 = low frequency (average of 3 pings/hour)
-        1 = high frequency (average of 12 pings/hour)
-    nu: float
-        sampling noise. Pings are sampled as (true x + eps_x, true y + eps_y)
-        where (eps_x, eps_y) ~ N(0, nu/1.96).
-    seed : int0
-        The seed for random number generation.
-    """
+#     Parameters
+#     ----------
+#     traj: numpy array
+#         simulated trajectory from simulate_traj
+#     freq : 0 or 1
+#         0 = low frequency (average of 3 pings/hour)
+#         1 = high frequency (average of 12 pings/hour)
+#     nu: float
+#         sampling noise. Pings are sampled as (true x + eps_x, true y + eps_y)
+#         where (eps_x, eps_y) ~ N(0, nu/1.96).
+#     seed : int0
+#         The seed for random number generation.
+#     """
 
-    if seed:
-        npr.seed(seed)
-    else:
-        seed = npr.randint(0, 1000, 1)[0]
-        npr.seed(seed)
-        print("Seed:", seed)
+#     if seed:
+#         npr.seed(seed)
+#     else:
+#         seed = npr.randint(0, 1000, 1)[0]
+#         npr.seed(seed)
+#         print("Seed:", seed)
 
-    #baseline = [2, 9][freq]    # baseline intensity
-    #alpha = [1/3, 1/4][freq]   # intensity of the kernel
-    #decay = 4.6                # decay of the kernel
+#     #baseline = [2, 9][freq]    # baseline intensity
+#     #alpha = [1/3, 1/4][freq]   # intensity of the kernel
+#     #decay = 4.6                # decay of the kernel
 
-    kernel = HawkesKernelExp(alpha, decay)
-    hawkes = SimuHawkes(n_nodes=1, end_time=len(traj)/60, verbose=False, seed=seed)
-    hawkes.set_kernel(0, 0, kernel)
-    hawkes.set_baseline(0, baseline)
-    hawkes.simulate()
-    timestamps = hawkes.timestamps
+#     kernel = HawkesKernelExp(alpha, decay)
+#     hawkes = SimuHawkes(n_nodes=1, end_time=len(traj)/60, verbose=False, seed=seed)
+#     hawkes.set_kernel(0, 0, kernel)
+#     hawkes.set_baseline(0, baseline)
+#     hawkes.simulate()
+#     timestamps = hawkes.timestamps
 
-    samples = [int(t) for t in timestamps[0] * 60]
-    df = traj.iloc[samples]
-    df = df.drop_duplicates('local_timestamp')
+#     samples = [int(t) for t in timestamps[0] * 60]
+#     df = traj.iloc[samples]
+#     df = df.drop_duplicates('local_timestamp')
 
-    # Add sampling noise
-    noise = np.random.normal(loc=0, scale=nu/1.96, size=(df.shape[0], 2))
-    df[['x','y']] = df[['x','y']] + noise
+#     # Add sampling noise
+#     noise = np.random.normal(loc=0, scale=nu/1.96, size=(df.shape[0], 2))
+#     df[['x','y']] = df[['x','y']] + noise
 
-    return df
+#     return df

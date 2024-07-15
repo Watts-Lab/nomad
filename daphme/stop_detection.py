@@ -171,8 +171,8 @@ def process_clusters(data, time_thresh, dist_thresh, min_pts, output, cluster_df
             duration = int((y.index.max() - y.index.min()) // 60)    # Assumes unix_timestamp is in seconds
             if duration > min_duration:
                 cid = max(output['cluster']) + 1   # Create new cluster id
-                output['cluster'].loc[y.index] = cid
-                output['core'].loc[z.index] = cid
+                output.loc[y.index, 'cluster'] = cid
+                output.loc[z.index, 'core'] = cid
             return True
         elif len(y) == 0:  # The points in df, despite originally being part of a cluster, no longer hold their own
             return False
@@ -326,8 +326,8 @@ def lachesis(traj, dur_min, dt_max, delta_roam):
 
 def lachesis_patches(traj, dur_min, dt_max, delta_roam):
 
-    #i = 0 is coarse, i = 1 is fine
-    #params = [(10, 120, 400), (10, 60, 200)][i] 
+    traj = traj.set_index('unix_timestamp', drop=False)
+    output = pd.DataFrame({'cluster': -1}, index=traj.index)
 
     #Compute clusters
     clusters = lachesis(traj, dur_min, dt_max, delta_roam)
@@ -335,9 +335,11 @@ def lachesis_patches(traj, dur_min, dt_max, delta_roam):
     #Add patches for each cluster
     cluster_pings = []
     for idx, row in clusters.iterrows():
-        cluster_pings += [traj.loc[(traj.local_timestamp>=row.start_time)&(traj.local_timestamp<=row.end_time), ['x','y']]]
+        #cluster_pings += [traj.loc[(traj.local_timestamp>=row.start_time)&(traj.local_timestamp<=row.end_time), ['x','y']]]
+        output.loc[(traj['local_timestamp'] >= row['start_time']) &
+                   (traj['local_timestamp'] <= row['end_time']), 'cluster'] = idx
 
-    return(cluster_pings)
+    return output
 
 
 def generate_stop_table(data, dbscan_df):
@@ -366,12 +368,18 @@ def generate_stop_table(data, dbscan_df):
 
         entry = {'unix_timestamp': unix_timestamp,
                  'local_timestamp': local_timestamp,
+                 'cluster_id': cid,
                  'duration': duration,
                  'centroid_x': x_mean,
                  'centroid_y': y_mean,
-                 'radius': radius}
+                 'radius': radius,}
+
         entry = pd.DataFrame([entry])
-        stop_table = pd.concat([stop_table, entry], ignore_index=True)
+
+        if stop_table.empty:
+            stop_table = entry
+        else:
+            stop_table = pd.concat([stop_table, entry], ignore_index=True)
 
     stop_table = stop_table.sort_values(by=['unix_timestamp'])
     return stop_table.reset_index(drop=True)
