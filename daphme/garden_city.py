@@ -574,7 +574,7 @@ class Population:
         if(agent.diary.empty):
             agent.diary = pd.DataFrame(entry_update)
         else:
-            pd.concat([agent.diary, entry_update], ignore_index=True)
+            pd.concat([agent.diary, pd.DataFrame(entry_update)], ignore_index=True)
         agent.destination_diary = destination_diary.drop(destination_diary.index)
 
     def generate_dest_diary(self, agent, T, duration=15,
