@@ -19,6 +19,7 @@ from constants import FAST_STILL_PROBS, SLOW_STILL_PROBS, ALLOWED_BUILDINGS, DEF
 
 import pdb
 
+
 # =============================================================================
 # STREETS
 # Blocks through which individuals move from building to building.
@@ -524,12 +525,22 @@ class Population:
         city = self.city
 
         destination_diary = agent.destination_diary
+
+        current_loc = agent.trajectory.iloc[-1]
+        trajectory_update = []
+        
+        if agent.diary.empty:
+            current_entry = None
+        else:
+            current_entry = agent.diary.iloc[-1].to_dict()
+            agent.diary = agent.diary.iloc[:-1]
+        entry_update = []
         for i in range(destination_diary.shape[0]):
             destination_info = destination_diary.iloc[i]
             duration = int(destination_info['duration'] * 1/dt)
             building_id = destination_info['location']
             for t in range(duration):
-                prev_ping = agent.trajectory.iloc[-1]
+                prev_ping = current_loc
                 start_point = (prev_ping['x'], prev_ping['y'])
                 dest_building = city.buildings[building_id]
                 unix_timestamp = prev_ping['unix_timestamp'] + 60*dt
@@ -545,22 +556,25 @@ class Population:
                         'local_timestamp': local_timestamp,
                         'unix_timestamp': unix_timestamp,
                         'identifier': agent.identifier}
-                ping = pd.DataFrame([ping])
-                agent.trajectory = pd.concat([agent.trajectory, ping],
-                                             ignore_index=True)
 
-                if agent.diary.empty or agent.diary.iloc[-1]['location'] != location:
-                    entry = {'unix_timestamp': unix_timestamp,
+                current_loc = ping
+                trajectory_update.append(ping)
+                if(current_entry == None or current_entry['location'] != location):
+                    entry_update.append(current_entry)
+                    current_entry = {'unix_timestamp': unix_timestamp,
                              'local_timestamp': local_timestamp,
                              'duration': dt,
                              'location': location}
-                    entry = pd.DataFrame([entry])
-                    agent.diary = pd.concat([agent.diary, entry],
-                                            ignore_index=True)
                 else:
-                    agent.diary.loc[agent.diary.shape[0]-1, 'duration'] += 1*dt
-
-        # empty the destination diary
+                    current_entry['duration'] += 1*dt
+        agent.trajectory = pd.concat([agent.trajectory, pd.DataFrame(trajectory_update)],
+                                ignore_index=True)
+        
+        entry_update.append(current_entry)
+        if(agent.diary.empty):
+            agent.diary = pd.DataFrame(entry_update)
+        else:
+            pd.concat([agent.diary, entry_update], ignore_index=True)
         agent.destination_diary = destination_diary.drop(destination_diary.index)
 
     def generate_dest_diary(self, agent, T, duration=15,
@@ -616,6 +630,7 @@ class Population:
             start_time = last_entry.unix_timestamp + last_entry.duration*60
             curr = last_entry.location
 
+        dest_update = []
         while start_time < T:
             curr_type = probs.loc[curr, 'type']
             allowed = allowed_buildings(start_time_local)
@@ -652,19 +667,23 @@ class Population:
                      'local_timestamp': start_time_local,
                      'duration': duration,
                      'location': curr}
-            entry = pd.DataFrame([entry])
-            if agent.destination_diary.empty:
-                agent.destination_diary = entry
-            else:
-                agent.destination_diary = pd.concat([agent.destination_diary, entry], ignore_index=True)
+            dest_update.append(entry)
+            # entry = pd.DataFrame([entry])
+            # if agent.destination_diary.empty:
+            #     agent.destination_diary = entry
+            # else:
+            #     agent.destination_diary = pd.concat([agent.destination_diary, entry], ignore_index=True)
 
             start_time_local = start_time_local + timedelta(minutes=int(duration))
             start_time = start_time + duration*60
 
+        if(agent.destination_diary.empty):
+            agent.destination_diary =  pd.DataFrame(dest_update)
+        else:
+            pd.concat([agent.destination_diary, pd.DataFrame(dest_update)], ignore_index=True)
         agent.destination_diary = condense_destinations(agent.destination_diary)
 
         return None
-
     def generate_trajectory(self, agent, T=None, duration=15, seed=None, dt=1):
 
         if seed:
@@ -673,15 +692,14 @@ class Population:
             seed = npr.randint(0, 1000, 1)[0]
             npr.seed(seed)
             print("Seed:", seed)
-
         if agent.destination_diary.empty:
             if T is None:
                 raise ValueError(
                     "Destination diary is empty. Provide a parameter T to generate destination diary from transition matrix."
                 )
             self.generate_dest_diary(agent, T, duration=duration)
-
         self.traj_from_dest_diary(agent, dt)
+
 
         return None
 
