@@ -20,6 +20,7 @@ from constants import FAST_STILL_PROBS, SLOW_STILL_PROBS, ALLOWED_BUILDINGS, DEF
 import pdb
 
 
+
 # =============================================================================
 # STREETS
 # Blocks through which individuals move from building to building.
@@ -332,13 +333,10 @@ class Agent:
 def ortho_coord(multilines, distance, offset, eps=0.001):  # Calculus approach. Probably super slow.
     point = multilines.interpolate(distance)
     offset_point = multilines.interpolate(distance - eps)
-    angle = 90 if offset < 0 else -90
-    ortho_direction = rotate(offset_point, angle, origin=point)
-    ortho_segment = LineString([point, ortho_direction])
-    scaled_segment = scale(
-        ortho_segment, xfact=offset / ortho_segment.length,
-        yfact=offset / ortho_segment.length, origin=point)
-    return scaled_segment.coords[1]
+    p = np.array([point.x, point.y])
+    x = p - np.array([offset_point.x, offset_point.y])
+    x = np.flip(x/np.linalg.norm(x))*np.array([-1,1])*offset
+    return tuple(x+p)
 
 
 def condense_destinations(destination_diary):  # This might be a more general clustering algorithm
@@ -386,6 +384,7 @@ class Population:
     def __init__(self, city):
         self.roster = {}
         self.city = city
+        self.global_execution = 0
 
     def add_agent(self, agent, verbose=True):
         if verbose and agent.identifier in self.roster:
@@ -480,12 +479,14 @@ class Population:
             path = start_segment + path + [dest_building.geometry.centroid]
             path_ml = MultiLineString([path])
 
+            
             # Bounding polygon
             street_poly = unary_union([city.get_block(block).geometry for block in street_path])
 
             bound_poly = unary_union([start_geometry.geometry, street_poly])
             # Snap to path
             snap_point_dist = path_ml.project(Point(start_point))
+
 
             #PACO: SHOULD THESE ALSO BE CONSTANT?
             delta = 3.33*dt      # 50m/min; blocks are 15m x 15m
@@ -525,6 +526,7 @@ class Population:
         city = self.city
 
         destination_diary = agent.destination_diary
+        #print(destination_diary)
 
         current_loc = agent.trajectory.iloc[-1]
         trajectory_update = []
@@ -546,12 +548,12 @@ class Population:
                 unix_timestamp = prev_ping['unix_timestamp'] + 60*dt
                 local_timestamp = pd.to_datetime(unix_timestamp, unit='s')
                 
-                # You should be asleep!
-                if local_timestamp.hour <= 5:
-                    coord = start_point  # stay in place
-                    location = building_id
-                else:
-                    coord, location = self.sample_step(agent, start_point, dest_building, dt)
+                # # You should be asleep!
+                # if local_timestamp.hour <= 5:
+                #     coord = start_point  # stay in place
+                #     location = building_id
+                # else:
+                coord, location = self.sample_step(agent, start_point, dest_building, dt)
                 ping = {'x': coord[0], 'y': coord[1],
                         'local_timestamp': local_timestamp,
                         'unix_timestamp': unix_timestamp,
@@ -567,6 +569,7 @@ class Population:
                              'location': location}
                 else:
                     current_entry['duration'] += 1*dt
+        #print(trajectory_update)
         agent.trajectory = pd.concat([agent.trajectory, pd.DataFrame(trajectory_update)],
                                 ignore_index=True)
         
@@ -698,6 +701,7 @@ class Population:
                     "Destination diary is empty. Provide a parameter T to generate destination diary from transition matrix."
                 )
             self.generate_dest_diary(agent, T, duration=duration)
+        #print(agent.destination_diary)
         self.traj_from_dest_diary(agent, dt)
 
 
