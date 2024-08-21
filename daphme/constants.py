@@ -62,4 +62,4 @@ SLOW_STILL_PROBS = {'park': 0.75,
 DEFAULT_STAY_PROBS = {'park': 1-((1/1)/4),
                       'retail': 1-((1/0.5)/4),
                       'work': 1-((1/7)/4),
-                      'home': 1-((1/10)/4)}
+                      'home': 1-((1/14)/4)}

@@ -297,30 +297,30 @@ def lachesis(traj, dur_min, dt_max, delta_roam):
     """
 
     coords = traj[['x', 'y']].to_numpy()
-    stays = np.empty((0,4))
+    stays = np.empty((0, 4))
     i = 0
     while i < len(traj)-1:
 
-        j_star = next((j for j in range(i, len(traj)) if 
+        j_star = next((j for j in range(i, len(traj)) if
                        traj['unix_timestamp'].iloc[j] - traj['unix_timestamp'].iloc[i] >= dur_min * 60), -1)
 
-        if j_star == -1 or diameter(coords[i:j_star+1]) > delta_roam:
+        if (j_star == -1) or (diameter(coords[i:j_star+1]) > delta_roam):
             i += 1
         else:
-            j_star = next((j for j in range(j_star, len(traj)) if 
-                               diameter(coords[i:j+1]) > delta_roam or
-                               traj['unix_timestamp'].iloc[j] - traj['unix_timestamp'].iloc[j-1] > dt_max * 60), 
-                          len(traj)) - 1
+            j_star = next((j for j in range(j_star, len(traj)) if
+                           diameter(coords[i:j+1]) > delta_roam or
+                           traj['unix_timestamp'].iloc[j] - traj['unix_timestamp'].iloc[j-1] > dt_max * 60), 
+                          len(traj)-1)
 
             stay_medoid = medoid(coords[i:j_star+1])
             start = traj['local_timestamp'].iloc[i]
-            end   = traj['local_timestamp'].iloc[j_star]
-            stay  = np.array([[stay_medoid[0], stay_medoid[1], start, end]])
+            end = traj['local_timestamp'].iloc[j_star]
+            stay = np.array([[stay_medoid[0], stay_medoid[1], start, end]])
             stays = np.concatenate((stays, stay), axis=0)
 
             i = j_star + 1
 
-    stays = pd.DataFrame(stays, columns = ['medoid_x', 'medoid_y', 'start_time', 'end_time'])
+    stays = pd.DataFrame(stays, columns=['medoid_x', 'medoid_y', 'start_time', 'end_time'])
     return stays
 
 
@@ -372,7 +372,7 @@ def generate_stop_table(data, dbscan_df):
                  'duration': duration,
                  'centroid_x': x_mean,
                  'centroid_y': y_mean,
-                 'radius': radius,}
+                 'radius': radius}
 
         entry = pd.DataFrame([entry])
 

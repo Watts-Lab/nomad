@@ -207,7 +207,7 @@ class City:
         with open(filename, 'wb') as file:
             pickle.dump(self, file)
 
-    def plot_city(self, ax, doors=True, address=True, zorder=1):
+    def plot_city(self, ax, doors=True, address=True, zorder=1, heatmap_agent=None):
         # Draw city boundary
         x, y = self.city_boundary.exterior.xy
         ax.plot(np.array(x), np.array(y), linewidth=2, color='black')  # Dashed line for the boundary
@@ -220,32 +220,58 @@ class City:
             'park': 'lightgreen'
         }
 
-        # Draw buildings
-        for building in self.buildings.values():
-            x, y = building.geometry.exterior.xy
-            ax.fill(x, y, facecolor=colors[building.building_type],
-                    edgecolor='black', linewidth=0.5,
-                    label=building.building_type.capitalize(), zorder=zorder)
+        if heatmap_agent is not None:
+            weights = heatmap_agent.diary.groupby('location').duration.sum()
+            norm = Normalize(vmin=0, vmax=max(weights)/2)
+            base_color = np.array([1, 0, 0])  # RGB for red
 
-            # Plot doors
-            if doors:
-                door_line = building.geometry.intersection(self.streets[building.door].geometry)
-                scaled_door_line = scale(door_line, xfact=0.25, yfact=0.25, origin=door_line.centroid)
-                dx, dy = scaled_door_line.xy
-                ax.plot(dx, dy, linewidth=2, color='white', zorder=zorder)
+            for building in self.buildings.values():
+                x, y = building.geometry.exterior.xy
+                weight = weights.get(building.id, 0)
+                alpha = norm(weight) if weight > 0 else 0
 
-#             if address:
-#                 door_coord = building.door
+                ax.fill(x, y, facecolor=base_color, alpha=alpha,
+                        edgecolor='black', linewidth=0.5,
+                        label=building.building_type.capitalize(), zorder=zorder)
+                ax.plot(x, y, color='black', alpha=1, linewidth=0.5, zorder=zorder + 1)
 
-#                 bbox = ax.get_window_extent().transformed(plt.gcf().dpi_scale_trans.inverted())
-#                 axes_width_in_inches = bbox.width
-#                 axes_data_range = ax.get_xlim()[1] - ax.get_xlim()[0]
-#                 fontsize = (axes_width_in_inches / axes_data_range) * 13  # Example scaling factor
+                if doors:
+                    door_line = building.geometry.intersection(self.streets[building.door].geometry)
+                    scaled_door_line = scale(door_line, xfact=0.25, yfact=0.25, origin=door_line.centroid)
+                    dx, dy = scaled_door_line.xy
+                    ax.plot(dx, dy, linewidth=2, color='white', zorder=zorder)
 
-#                 ax.text(door_coord[0] + 0.15, door_coord[1] + 0.15,
-#                         f"{door_coord[0]}, {door_coord[1]}",
-#                         ha='left', va='bottom',
-#                         fontsize=fontsize, color='black')
+            sm = ScalarMappable(cmap=cm.Reds, norm=norm)
+            sm.set_array([])
+            cbar = plt.colorbar(sm, ax=ax, shrink=0.5, aspect=10, pad=0.02)
+            cbar.set_label('Minutes Spent')
+
+        else:
+            for building in self.buildings.values():
+                x, y = building.geometry.exterior.xy
+                ax.fill(x, y, facecolor=colors[building.building_type],
+                        edgecolor='black', linewidth=0.5,
+                        label=building.building_type.capitalize(), zorder=zorder)
+
+                # Plot doors
+                if doors:
+                    door_line = building.geometry.intersection(self.streets[building.door].geometry)
+                    scaled_door_line = scale(door_line, xfact=0.25, yfact=0.25, origin=door_line.centroid)
+                    dx, dy = scaled_door_line.xy
+                    ax.plot(dx, dy, linewidth=2, color='white', zorder=zorder)
+
+#         if address:
+#             door_coord = building.door
+
+#             bbox = ax.get_window_extent().transformed(plt.gcf().dpi_scale_trans.inverted())
+#             axes_width_in_inches = bbox.width
+#             axes_data_range = ax.get_xlim()[1] - ax.get_xlim()[0]
+#             fontsize = (axes_width_in_inches / axes_data_range) * 13  # Example scaling factor
+
+#             ax.text(door_coord[0] + 0.15, door_coord[1] + 0.15,
+#                     f"{door_coord[0]}, {door_coord[1]}",
+#                     ha='left', va='bottom',
+#                     fontsize=fontsize, color='black')
 
         ax.set_aspect('equal')
         # Set integer ticks
@@ -320,11 +346,14 @@ class Agent:
 
         self.trajectory = trajectory
 
-    def plot_traj(self, ax, color='black', alpha=1, doors=True, address=True):
-        ax.scatter(self.trajectory.x, self.trajectory.y, s=6, color=color, alpha=alpha, zorder=2)
-        self.city.plot_city(ax, doors=doors, address=address, zorder=1)
+    def plot_traj(self, ax, color='black', alpha=1, doors=True, address=True, heatmap=False):
+        if heatmap:
+            self.city.plot_city(ax, doors=doors, address=address, zorder=1, heatmap_agent=self)
+        else:
+            ax.scatter(self.trajectory.x, self.trajectory.y, s=6, color=color, alpha=alpha, zorder=2)
+            self.city.plot_city(ax, doors=doors, address=address, zorder=1)
 
-    def sample_traj_hier_nhpp(self, beta_start, beta_durations, beta_ping, seed=None):
+    def sample_traj_hier_nhpp(self, beta_start, beta_durations, beta_ping, seed=0):
         sparse_traj = mmod.sample_hier_nhpp(self.trajectory, beta_start, beta_durations, beta_ping, seed=seed)
         sparse_traj = sparse_traj.set_index('unix_timestamp', drop=False)
         self.sparse_traj = sparse_traj
@@ -391,15 +420,11 @@ class Population:
             print("Agent identifier already exists in population. Replacing corresponding agent.")
         self.roster[agent.identifier] = agent
 
-    def generate_agents(self, N, seed=None):
+    def generate_agents(self, N, seed=0):
         """
         Generates N agents, with randomized attributes.
         """
-        if seed:
-            npr.seed(seed)
-        else:
-            seed = npr.randint(0, 1000, 1)[0]
-            npr.seed(seed)
+        npr.seed(seed)
 
         b_types = pd.DataFrame({
             'id': list(self.city.buildings.keys()),
@@ -418,9 +443,68 @@ class Population:
                           city=self.city)  # how do we add other args?
             self.add_agent(agent)
 
+    def save_pop(self, path):
+        """
+        TODO: CHANGE SO SAVES TO S3 AS PARQUET
+        """
+
+        # raw trajectories
+        trajs = pd.concat([agent.trajectory for agent_id, agent in self.roster.items()])
+        trajs.to_csv(path+'trajectories.csv')
+
+        # home table
+        homes = pd.DataFrame([(agent_id, agent.home, agent.workplace) for agent_id, agent in self.roster.items()],
+                             columns=['id', 'home', 'workplace'])
+        homes.to_csv(path+'homes.csv')
+
+        # diary
+        diaries = []
+        for agent_id, agent in self.roster.items():
+            ag_d = agent.diary
+            ag_d['id'] = agent_id
+            diaries += [ag_d]
+        pd.concat(diaries).to_csv(path+'diaries.csv')
+
+#     @staticmethod
+#     def process_agent(row, load_trajectories, load_diaries, city):
+#         agent_id = row['id']
+#         traj = load_trajectories[load_trajectories['identifier'] == agent_id].reset_index(drop=True)
+#         diary = load_diaries[load_diaries['id'] == agent_id].reset_index(drop=True)
+#         agent = Agent(agent_id, 
+#                       row['home'], 
+#                       row['workplace'], 
+#                       city,
+#                       trajectory=traj,
+#                       diary=diary)
+#         return agent
+
+#     def load_pop(self, path, parallelize=False):
+#         """
+#         gotta fix this -- it's too slow! maybe parquet/s3
+#         """
+#         load_trajectories = pd.read_csv(path+'trajectories.csv', 
+#                                         usecols=lambda column: column != 'Unnamed: 0')
+#         load_diaries = pd.read_csv(path+'diaries.csv', 
+#                                    usecols=lambda column: column != 'Unnamed: 0')
+#         load_homes = pd.read_csv(path+'homes.csv', 
+#                                  usecols=lambda column: column != 'Unnamed: 0')
+
+#         if parallelize:
+#             with ProcessPoolExecutor() as executor:
+#                 agents = list(executor.map(self.process_agent, [row for _, row in load_homes.iterrows()],
+#                                            [load_trajectories] * len(load_homes),
+#                                            [load_diaries] * len(load_homes),
+#                                            [self.city] * len(load_homes)))
+#             for agent in agents:
+#                 self.add_agent(agent)
+#         else:
+#             for _, row in load_homes.iterrows():
+#                 agent = self.process_agent(row, load_trajectories, load_diaries, self.city)
+#                 self.add_agent(agent)
+
     def sample_step(self, agent, start_point, dest_building, dt):
         """
-        TO DO
+        From a destination diary, generates (x,y) pings.
 
         Parameters
         ---------
@@ -479,7 +563,6 @@ class Population:
             path = start_segment + path + [dest_building.geometry.centroid]
             path_ml = MultiLineString([path])
 
-            
             # Bounding polygon
             street_poly = unary_union([city.get_block(block).geometry for block in street_path])
 
@@ -498,7 +581,7 @@ class Population:
                 transformed_step = np.random.normal(loc=[delta, 0], scale=sigma*np.sqrt(dt), size=2)
 
                 if snap_point_dist + transformed_step[0] > path_ml.length:
-                    coord = np.array(dest_building.door_centroid)
+                    coord = np.array(dest_building.geometry.centroid.coords[0])
                     break
                 else:
                     coord = ortho_coord(path_ml, snap_point_dist+transformed_step[0], transformed_step[1])
@@ -541,14 +624,14 @@ class Population:
             destination_info = destination_diary.iloc[i]
             duration = int(destination_info['duration'] * 1/dt)
             building_id = destination_info['location']
-            for t in range(duration):
+            for t in range(duration//dt):
                 prev_ping = current_loc
                 start_point = (prev_ping['x'], prev_ping['y'])
                 dest_building = city.buildings[building_id]
                 unix_timestamp = prev_ping['unix_timestamp'] + 60*dt
                 local_timestamp = pd.to_datetime(unix_timestamp, unit='s')
-                
-                # # You should be asleep!
+
+                # You should be asleep between 0:00 and 5:59!
                 # if local_timestamp.hour <= 5:
                 #     coord = start_point  # stay in place
                 #     location = building_id
@@ -572,7 +655,7 @@ class Population:
         #print(trajectory_update)
         agent.trajectory = pd.concat([agent.trajectory, pd.DataFrame(trajectory_update)],
                                 ignore_index=True)
-        
+
         entry_update.append(current_entry)
         if(agent.diary.empty):
             agent.diary = pd.DataFrame(entry_update)
@@ -582,21 +665,17 @@ class Population:
 
     def generate_dest_diary(self, agent, T, duration=15,
                             stay_probs=DEFAULT_STAY_PROBS,
-                            rho=0.6, gamma=0.2, seed=None):
+                            rho=0.6, gamma=0.2, seed=0):
         """
         Exploration and preferential return.
 
+        T = timestamp of when to generate til
         rho, gamma = Parameters for exploring
         stay_probs = dictionary
             Probability of staying in same building
             geometric with p = 1-((1/avg_duration_hrs)/timesteps_in_1_hr)
         """
-        if seed:
-            npr.seed(seed)
-        else:
-            seed = npr.randint(0, 1000, 1)[0]
-            npr.seed(seed)
-            print("Seed:", seed)
+        npr.seed(seed)
 
         id2door = pd.DataFrame([[s, b.door] for s, b in self.city.buildings.items()],
                                columns=['id', 'door']).set_index('door')  # could this be a field of city?
@@ -612,14 +691,15 @@ class Population:
         }).set_index('id')
 
         # Initializes past counts randomly
-        probs.loc[agent.home, 'freq'] = 10
-        probs.loc[agent.workplace, 'freq'] = 10
+        probs.loc[agent.home, 'freq'] = 25
+        probs.loc[agent.workplace, 'freq'] = 25
         probs.loc[probs.type == 'park', 'freq'] = 3  # Agents love to comeback to park
+        # ALTERNATIVELY: start with 1 at home and 1 at work, and do a burnout period of 2 weeks. 
 
         initial_locs = []
-        initial_locs = list(npr.choice(probs.loc[probs.type == 'retail'].index, size=npr.poisson(2)))
-        initial_locs = list(npr.choice(probs.loc[probs.type == 'work'].index, size=npr.poisson(1.5)))
-        initial_locs = list(npr.choice(probs.loc[probs.type == 'home'].index, size=npr.poisson(1.5)))
+        initial_locs += list(npr.choice(probs.loc[probs.type == 'retail'].index, size=npr.poisson(8)))
+        initial_locs += list(npr.choice(probs.loc[probs.type == 'work'].index, size=npr.poisson(4)))
+        initial_locs += list(npr.choice(probs.loc[probs.type == 'home'].index, size=npr.poisson(4)))
         probs.loc[initial_locs, 'freq'] += 1
 
         if agent.destination_diary.empty:
@@ -637,35 +717,43 @@ class Population:
         while start_time < T:
             curr_type = probs.loc[curr, 'type']
             allowed = allowed_buildings(start_time_local)
+            x = probs.loc[(probs['type'].isin(allowed)) & (probs.freq > 0)]
 
-            S = (probs['freq'] > 0).sum()  # Fix depending on whether "explore" should depend only on allowed buildings
-            p_ret = rho*(S**(-gamma))
+            S = len(x) # Fix depending on whether "explore" should depend only on allowed buildings
 
-            # You should be asleep!
-            if (start_time_local.hour >= 22) | (start_time_local.hour <= 5):
-                curr = agent.home  # this doesn't permit the possibility of sleepovers
-                probs.loc[curr, 'freq'] += 1
-                pass
+            #probability of exploring
+            p_exp = rho*(S**(-gamma))
+
+            # You should be asleep! I don't think we're doing this anymore
+            # if (start_time_local.hour >= 22) | (start_time_local.hour <= 5):
+            #     curr = agent.home  # this doesn't permit the possibility of sleepovers
+            #     probs.loc[curr, 'freq'] += 1
+            #     pass
 
             # Stay
-            elif (curr_type in allowed) & (npr.uniform() < stay_probs[curr_type]):
+            if (curr_type in allowed) & (npr.uniform() < stay_probs[curr_type]):
                 pass
 
-            # Preferential return
-            elif npr.uniform() < p_ret:
-                x = probs.loc[(probs['type'].isin(allowed)) & (probs.freq > 0)]
-                curr = npr.choice(x.index, p=x['freq']/x['freq'].sum())
-                probs.loc[curr, 'freq'] += 1
-
             # Exploration
-            else:
+            elif npr.uniform() < p_exp:
                 probs['p'] = self.city.gravity.xs(
                     self.city.buildings[curr].door, level=0).join(id2door, how='right').set_index('id')
                 y = probs.loc[(probs['type'].isin(allowed)) & (probs.freq == 0)]
-                curr = npr.choice(y.index, p=y['p']/y['p'].sum())
+
+                if not y.empty and y['p'].sum() > 0:
+                    curr = npr.choice(y.index, p=y['p']/y['p'].sum())
+                else:
+                    # If there are no more buildings to explore, then preferential return
+                    curr = npr.choice(x.index, p=x['freq']/x['freq'].sum())
+
                 probs.loc[curr, 'freq'] += 1
 
-            # Update diary
+            # Preferential return
+            else:
+                curr = npr.choice(x.index, p=x['freq']/x['freq'].sum())
+                probs.loc[curr, 'freq'] += 1
+
+            # Update destination diary
             entry = {'unix_timestamp': start_time,
                      'local_timestamp': start_time_local,
                      'duration': duration,
@@ -680,30 +768,26 @@ class Population:
             start_time_local = start_time_local + timedelta(minutes=int(duration))
             start_time = start_time + duration*60
 
-        if(agent.destination_diary.empty):
-            agent.destination_diary =  pd.DataFrame(dest_update)
+        if agent.destination_diary.empty:
+            agent.destination_diary = pd.DataFrame(dest_update)
         else:
             pd.concat([agent.destination_diary, pd.DataFrame(dest_update)], ignore_index=True)
         agent.destination_diary = condense_destinations(agent.destination_diary)
 
         return None
-    def generate_trajectory(self, agent, T=None, duration=15, seed=None, dt=1):
 
-        if seed:
-            npr.seed(seed)
-        else:
-            seed = npr.randint(0, 1000, 1)[0]
-            npr.seed(seed)
-            print("Seed:", seed)
+    def generate_trajectory(self, agent, T=None, duration=15, seed=0, dt=1):
+
+        npr.seed(seed)
+
         if agent.destination_diary.empty:
             if T is None:
                 raise ValueError(
                     "Destination diary is empty. Provide a parameter T to generate destination diary from transition matrix."
                 )
-            self.generate_dest_diary(agent, T, duration=duration)
+            self.generate_dest_diary(agent, T, duration=duration, seed=seed)
         #print(agent.destination_diary)
         self.traj_from_dest_diary(agent, dt)
-
 
         return None
 

@@ -8,6 +8,8 @@ from datetime import datetime
 
 def brownian(n, dt, sigma, radius, p):
     """
+    NOT RELEVANT FOR GARDEN CITY
+
     Generate an instance of two-dimensional Brownian motion constrained within
     a circle with some probability of staying still.
 
@@ -57,8 +59,10 @@ def brownian(n, dt, sigma, radius, p):
     return out
 
 
-def simulate_traj(stays, moves, seed=None):
+def simulate_traj(stays, moves, seed=0):
     """
+    NOT RELEVANT FOR GARDEN CITY
+
     Simulate a trajectory using Brownian motion.
 
     Parameters
@@ -80,12 +84,7 @@ def simulate_traj(stays, moves, seed=None):
     A numpy array with columns 'x', 'y', 'local_timestamp', 'unix_timestamp', 'identifier'
     """
 
-    if seed:
-        npr.seed(seed)
-    else:
-        seed = npr.randint(0, 1000, 1)[0]
-        npr.seed(seed)
-        print("Seed:", seed)
+    npr.seed(seed)
 
     traj = np.empty((0, 2))
     n_stays = len(stays)
@@ -112,7 +111,7 @@ def simulate_traj(stays, moves, seed=None):
     return df
 
 
-def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, seed=None):
+def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, seed=0):
     """
     Sample from simulated trajectory, drawn using hierarchical Poisson processes.
 
@@ -130,12 +129,7 @@ def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, seed=None):
         The seed for random number generation.
     """
 
-    if seed:
-        npr.seed(seed)
-    else:
-        seed = npr.randint(0, 1000, 1)[0]
-        npr.seed(seed)
-        print("Seed:", seed)
+    npr.seed(seed)
 
     # Sample starting points of bursts
     inter_arrival_times = npr.exponential(scale=beta_start, size=len(traj))
