@@ -11,6 +11,8 @@ from matplotlib import cm
 import funkybob
 import networkx as nx
 import nx_parallel as nxp
+import s3fs
+import pyarrow
 
 import mobility_model as mmod
 import stop_detection as sd
@@ -420,7 +422,9 @@ class Population:
             print("Agent identifier already exists in population. Replacing corresponding agent.")
         self.roster[agent.identifier] = agent
 
-    def generate_agents(self, N, seed=0):
+    def generate_agents(self, N,
+                        start_time=datetime(2024, 1, 1, hour=8, minute=0),
+                        dt=1, seed=0):
         """
         Generates N agents, with randomized attributes.
         """
@@ -440,22 +444,34 @@ class Population:
             agent = Agent(identifier=identifier,
                           home=homes.index[i],
                           workplace=workplaces.index[i],
-                          city=self.city)  # how do we add other args?
+                          city=self.city,
+                          start_time=start_time,
+                          dt=dt)  # how do we add other args?
             self.add_agent(agent)
 
-    def save_pop(self, path):
+    def save_pop(self, bucket, prefix):
         """
-        TODO: CHANGE SO SAVES TO S3 AS PARQUET
+        Save trajectories, homes, and diaries as Parquet files to S3.
+
+        Parameters:
+        - bucket: str, the name of the S3 bucket.
+        - prefix: str, the path prefix within the bucket (e.g., 'folder/subfolder/').
         """
+
+        fs = s3fs.S3FileSystem()
 
         # raw trajectories
         trajs = pd.concat([agent.trajectory for agent_id, agent in self.roster.items()])
-        trajs.to_csv(path+'trajectories.csv')
+        trajs.to_parquet(f's3://{bucket}/{prefix}trajectories.parquet', engine='pyarrow', filesystem=fs)
+
+        # sparse trajectories
+        sparse_trajs = pd.concat([agent.sparse_traj for agent_id, agent in self.roster.items()])
+        sparse_trajs.to_parquet(f's3://{bucket}/{prefix}sparse_trajectories.parquet', engine='pyarrow', filesystem=fs)
 
         # home table
         homes = pd.DataFrame([(agent_id, agent.home, agent.workplace) for agent_id, agent in self.roster.items()],
                              columns=['id', 'home', 'workplace'])
-        homes.to_csv(path+'homes.csv')
+        homes.to_parquet(f's3://{bucket}/{prefix}homes.parquet', engine='pyarrow', filesystem=fs)
 
         # diary
         diaries = []
@@ -463,7 +479,7 @@ class Population:
             ag_d = agent.diary
             ag_d['id'] = agent_id
             diaries += [ag_d]
-        pd.concat(diaries).to_csv(path+'diaries.csv')
+        pd.concat(diaries).to_parquet(f's3://{bucket}/{prefix}diaries.parquet', engine='pyarrow', filesystem=fs)
 
 #     @staticmethod
 #     def process_agent(row, load_trajectories, load_diaries, city):
