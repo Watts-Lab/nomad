@@ -624,7 +624,7 @@ class Population:
             destination_info = destination_diary.iloc[i]
             duration = int(destination_info['duration'] * 1/dt)
             building_id = destination_info['location']
-            for t in range(duration//dt):
+            for t in range(int(duration//dt)):
                 prev_ping = current_loc
                 start_point = (prev_ping['x'], prev_ping['y'])
                 dest_building = city.buildings[building_id]
