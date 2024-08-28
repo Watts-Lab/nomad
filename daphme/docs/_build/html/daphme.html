@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>daphme package &mdash; DAPHME 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="_static/jquery.js?v=5d32c60e"></script>
+        <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="_static/documentation_options.js?v=d45e8c67"></script>
+        <script src="_static/doctools.js?v=9a2dae69"></script>
+        <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="daphme" href="modules.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            DAPHME
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="modules.html">daphme</a><ul class="current">
+<li class="toctree-l2 current"><a class="current reference internal" href="#">daphme package</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#submodules">Submodules</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#module-daphme.cleaning">daphme.cleaning module</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.cleaning.coarse_filter"><code class="docutils literal notranslate"><span class="pre">coarse_filter()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.cleaning.to_local_time"><code class="docutils literal notranslate"><span class="pre">to_local_time()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.cleaning.to_mercator"><code class="docutils literal notranslate"><span class="pre">to_mercator()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#module-daphme.constants">daphme.constants module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#module-daphme.garden_city">daphme.garden_city module</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.garden_city.Agent"><code class="docutils literal notranslate"><span class="pre">Agent</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.garden_city.Building"><code class="docutils literal notranslate"><span class="pre">Building</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.garden_city.City"><code class="docutils literal notranslate"><span class="pre">City</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.garden_city.Population"><code class="docutils literal notranslate"><span class="pre">Population</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.garden_city.Street"><code class="docutils literal notranslate"><span class="pre">Street</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.garden_city.allowed_buildings"><code class="docutils literal notranslate"><span class="pre">allowed_buildings()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.garden_city.check_adjacent"><code class="docutils literal notranslate"><span class="pre">check_adjacent()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.garden_city.condense_destinations"><code class="docutils literal notranslate"><span class="pre">condense_destinations()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.garden_city.load"><code class="docutils literal notranslate"><span class="pre">load()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.garden_city.ortho_coord"><code class="docutils literal notranslate"><span class="pre">ortho_coord()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.garden_city.save"><code class="docutils literal notranslate"><span class="pre">save()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#module-daphme.io">daphme.io module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#module-daphme.mobility_model">daphme.mobility_model module</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.mobility_model.brownian"><code class="docutils literal notranslate"><span class="pre">brownian()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.mobility_model.sample_hier_nhpp"><code class="docutils literal notranslate"><span class="pre">sample_hier_nhpp()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.mobility_model.simulate_traj"><code class="docutils literal notranslate"><span class="pre">simulate_traj()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#module-daphme.stop_detection">daphme.stop_detection module</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.stop_detection.dbscan"><code class="docutils literal notranslate"><span class="pre">dbscan()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.stop_detection.diameter"><code class="docutils literal notranslate"><span class="pre">diameter()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.stop_detection.extract_middle"><code class="docutils literal notranslate"><span class="pre">extract_middle()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.stop_detection.find_neighbors"><code class="docutils literal notranslate"><span class="pre">find_neighbors()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.stop_detection.generate_stop_table"><code class="docutils literal notranslate"><span class="pre">generate_stop_table()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.stop_detection.lachesis"><code class="docutils literal notranslate"><span class="pre">lachesis()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.stop_detection.lachesis_patches"><code class="docutils literal notranslate"><span class="pre">lachesis_patches()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.stop_detection.medoid"><code class="docutils literal notranslate"><span class="pre">medoid()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.stop_detection.process_clusters"><code class="docutils literal notranslate"><span class="pre">process_clusters()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.stop_detection.stop_statistics"><code class="docutils literal notranslate"><span class="pre">stop_statistics()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#daphme.stop_detection.temporal_dbscan"><code class="docutils literal notranslate"><span class="pre">temporal_dbscan()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#module-daphme">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">DAPHME</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="modules.html">daphme</a></li>
+      <li class="breadcrumb-item active">daphme package</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/daphme.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="daphme-package">
+<h1>daphme package<a class="headerlink" href="#daphme-package" title="Link to this heading"></a></h1>
+<section id="submodules">
+<h2>Submodules<a class="headerlink" href="#submodules" title="Link to this heading"></a></h2>
+</section>
+<section id="module-daphme.cleaning">
+<span id="daphme-cleaning-module"></span><h2>daphme.cleaning module<a class="headerlink" href="#module-daphme.cleaning" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="daphme.cleaning.coarse_filter">
+<span class="sig-prename descclassname"><span class="pre">daphme.cleaning.</span></span><span class="sig-name descname"><span class="pre">coarse_filter</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bounding_wkt</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">spark</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">SparkSession</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">longitude_col</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'longitude'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">latitude_col</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'latitude'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">id_col</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'uid'</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="_modules/daphme/cleaning.html#coarse_filter"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.cleaning.coarse_filter" title="Link to this definition"></a></dt>
+<dd><p>Filters a DataFrame based on whether geographical points (defined by longitude and latitude) fall within a specified geometry.</p>
+<section id="parameters">
+<h3>Parameters<a class="headerlink" href="#parameters" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>df<span class="classifier">DataFrame</span></dt><dd><p>The Spark DataFrame to be filtered. It should contain columns corresponding to longitude and latitude values, as well as an id column.</p>
+</dd>
+<dt>bounding_wkt<span class="classifier">str</span></dt><dd><p>The Well-Known Text (WKT) string representing the bounding geometry within which points are tested for inclusion. The WKT should define a polygon in the EPSG:4326 coordinate reference system.</p>
+</dd>
+<dt>spark<span class="classifier">SparkSession</span></dt><dd><p>The active SparkSession instance used to execute Spark operations.</p>
+</dd>
+<dt>longitude_col<span class="classifier">str, default “longitude”</span></dt><dd><p>The name of the column in ‘df’ containing longitude values. Longitude values should be in the EPSG:4326 coordinate reference system.</p>
+</dd>
+<dt>latitude_col<span class="classifier">str, default “latitude”</span></dt><dd><p>The name of the column in ‘df’ containing latitude values. Latitude values should be in the EPSG:4326 coordinate reference system.</p>
+</dd>
+<dt>id_col<span class="classifier">str, default “id”</span></dt><dd><p>The name of the column in ‘df’ containing user IDs.</p>
+</dd>
+</dl>
+</section>
+<section id="returns">
+<h3>Returns<a class="headerlink" href="#returns" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>DataFrame</dt><dd><p>A new Spark DataFrame filtered to include only rows where the point (longitude, latitude) falls within the specified geometric boundary defined by ‘bounding_wkt’. This DataFrame includes all original columns from ‘df’ and an additional column ‘in_geo’ that is true if the point falls within the specified geometric boundary and false otherwise.</p>
+</dd>
+</dl>
+</section>
+<section id="example">
+<h3>Example<a class="headerlink" href="#example" title="Link to this heading"></a></h3>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Assuming a SparkSession `spark` and a DataFrame `df` are predefined</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">bounding_wkt</span> <span class="o">=</span> <span class="s2">&quot;POLYGON((...))&quot;</span>  <span class="c1"># Replace with actual WKT</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">filtered_df</span> <span class="o">=</span> <span class="n">coarse_filter</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">bounding_wkt</span><span class="p">,</span> <span class="n">spark</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">filtered_df</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="daphme.cleaning.to_local_time">
+<span class="sig-prename descclassname"><span class="pre">daphme.cleaning.</span></span><span class="sig-name descname"><span class="pre">to_local_time</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timezone_to</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timestamp_col</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'timestamp'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">epoch_unit</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'seconds'</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="_modules/daphme/cleaning.html#to_local_time"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.cleaning.to_local_time" title="Link to this definition"></a></dt>
+<dd><p>Transforms a column of epoch times in a Spark DataFrame to a local time zone specified timezone_to. Additional columns for date, hour, and day of the week are also added to the DataFrame.</p>
+<section id="id1">
+<h3>Parameters<a class="headerlink" href="#id1" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>df<span class="classifier">DataFrame</span></dt><dd><p>A Spark DataFrame containing a column with epoch times to be converted.</p>
+</dd>
+<dt>timezone_to<span class="classifier">str</span></dt><dd><p>A valid timezone identifier for the local timezone of the data (e.g., “America/New_York”, “UTC”).</p>
+</dd>
+<dt>timestamp_col<span class="classifier">str (default “timestamp”)</span></dt><dd><p>The name of the column in ‘df’ containing epoch times.</p>
+</dd>
+<dt>epoch_unit<span class="classifier">str (default “seconds”)</span></dt><dd><p>The unit of epoch time in the ‘timestamp_col’. Acceptable values include “seconds”, “milliseconds”, 
+“microseconds”, and “nanoseconds”. Defaults to “seconds” if not specified.</p>
+</dd>
+</dl>
+</section>
+<section id="id2">
+<h3>Returns<a class="headerlink" href="#id2" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>DataFrame</dt><dd><dl class="simple">
+<dt>A new Spark DataFrame with all original columns from ‘df’ and the following additional columns:</dt><dd><ul class="simple">
+<li><p>‘local_timestamp’: The local timestamp derived from the original epoch time.</p></li>
+<li><p>‘date’: The date extracted from ‘local_timestamp’.</p></li>
+<li><p>‘date_hour’: The date and hour extracted from ‘local_timestamp’.</p></li>
+<li><p>‘day_of_week’: The day of the week (1 for Sunday, 2 for Monday, …, 7 for Saturday) derived from ‘local_timestamp’.</p></li>
+</ul>
+</dd>
+</dl>
+</dd>
+</dl>
+</section>
+<section id="id3">
+<h3>Example<a class="headerlink" href="#id3" title="Link to this heading"></a></h3>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Assuming a SparkSession `spark` and a DataFrame `df` with a &#39;timestamp&#39; column are predefined.</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">timezone_str</span> <span class="o">=</span> <span class="s2">&quot;America/New_York&quot;</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">converted_df</span> <span class="o">=</span> <span class="n">to_local_time</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">timezone_str</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">converted_df</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="daphme.cleaning.to_mercator">
+<span class="sig-prename descclassname"><span class="pre">daphme.cleaning.</span></span><span class="sig-name descname"><span class="pre">to_mercator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">spark</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">SparkSession</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">longitude_col</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'longitude'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">latitude_col</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'latitude'</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="_modules/daphme/cleaning.html#to_mercator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.cleaning.to_mercator" title="Link to this definition"></a></dt>
+<dd><p>Converts geographic coordinates from EPSG:4326 (WGS 84) to EPSG:3857 (Web Mercator projection).</p>
+<section id="id4">
+<h3>Parameters<a class="headerlink" href="#id4" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>df<span class="classifier">DataFrame</span></dt><dd><p>A Spark DataFrame containing columns corresponding to longitude and latitude values in EPSG:4326.</p>
+</dd>
+<dt>spark<span class="classifier">SparkSession</span></dt><dd><p>The active SparkSession instance used to execute Spark SQL operations.</p>
+</dd>
+</dl>
+</section>
+<section id="id5">
+<h3>Returns<a class="headerlink" href="#id5" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>DataFrame</dt><dd><p>A new Spark DataFrame with all original columns from ‘df’ and additional columns:
+- ‘x’: The x coordinate (longitude) in EPSG:3857 coordinate system.
+- ‘y’: The y coordinate (latitude) in EPSG:3857 coordinate system.
+- ‘mercator_coord’: The point geometry (longitude, latitude) in EPSG:3857 coordinate system.</p>
+</dd>
+</dl>
+</section>
+<section id="id6">
+<h3>Example<a class="headerlink" href="#id6" title="Link to this heading"></a></h3>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="c1"># Assuming a SparkSession `spark` and a DataFrame `df` are predefined</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">mercator_df</span> <span class="o">=</span> <span class="n">to_mercator</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">spark</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">mercator_df</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+</dd></dl>
+
+</section>
+<section id="module-daphme.constants">
+<span id="daphme-constants-module"></span><h2>daphme.constants module<a class="headerlink" href="#module-daphme.constants" title="Link to this heading"></a></h2>
+</section>
+<section id="module-daphme.garden_city">
+<span id="daphme-garden-city-module"></span><h2>daphme.garden_city module<a class="headerlink" href="#module-daphme.garden_city" title="Link to this heading"></a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="daphme.garden_city.Agent">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">daphme.garden_city.</span></span><span class="sig-name descname"><span class="pre">Agent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">identifier</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">home</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">workplace</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">city</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">still_probs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">{'home':</span> <span class="pre">0.9,</span> <span class="pre">'park':</span> <span class="pre">0.5,</span> <span class="pre">'retail':</span> <span class="pre">0.5,</span> <span class="pre">'work':</span> <span class="pre">0.9}</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">speeds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">{'home':</span> <span class="pre">0.3826530612244898,</span> <span class="pre">'park':</span> <span class="pre">1.0204081632653061,</span> <span class="pre">'retail':</span> <span class="pre">0.8928571428571429,</span> <span class="pre">'work':</span> <span class="pre">0.3826530612244898}</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">destination_diary</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">trajectory</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">diary</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start_time</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">datetime.datetime(2024,</span> <span class="pre">1,</span> <span class="pre">1,</span> <span class="pre">8,</span> <span class="pre">0)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dt</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/garden_city.html#Agent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.garden_city.Agent" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="daphme.garden_city.Agent.plot_traj">
+<span class="sig-name descname"><span class="pre">plot_traj</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ax</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">color</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'black'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alpha</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">doors</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">address</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">heatmap</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/garden_city.html#Agent.plot_traj"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.garden_city.Agent.plot_traj" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="daphme.garden_city.Agent.sample_traj_hier_nhpp">
+<span class="sig-name descname"><span class="pre">sample_traj_hier_nhpp</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">beta_start</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_durations</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_ping</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/garden_city.html#Agent.sample_traj_hier_nhpp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.garden_city.Agent.sample_traj_hier_nhpp" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="daphme.garden_city.Building">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">daphme.garden_city.</span></span><span class="sig-name descname"><span class="pre">Building</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">building_type</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">door</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">city</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">p_still</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sigma</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">blocks</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bbox</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/garden_city.html#Building"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.garden_city.Building" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="daphme.garden_city.City">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">daphme.garden_city.</span></span><span class="sig-name descname"><span class="pre">City</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dimensions</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(0,</span> <span class="pre">0)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">still_probs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">{'home':</span> <span class="pre">0.9,</span> <span class="pre">'park':</span> <span class="pre">0.5,</span> <span class="pre">'retail':</span> <span class="pre">0.5,</span> <span class="pre">'work':</span> <span class="pre">0.9}</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">speeds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">{'home':</span> <span class="pre">0.3826530612244898,</span> <span class="pre">'park':</span> <span class="pre">1.0204081632653061,</span> <span class="pre">'retail':</span> <span class="pre">0.8928571428571429,</span> <span class="pre">'work':</span> <span class="pre">0.3826530612244898}</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/garden_city.html#City"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.garden_city.City" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="daphme.garden_city.City.add_building">
+<span class="sig-name descname"><span class="pre">add_building</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">building_type</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">door</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">blocks</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bbox</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/garden_city.html#City.add_building"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.garden_city.City.add_building" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="daphme.garden_city.City.get_block">
+<span class="sig-name descname"><span class="pre">get_block</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">coordinates</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/garden_city.html#City.get_block"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.garden_city.City.get_block" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="daphme.garden_city.City.get_street_graph">
+<span class="sig-name descname"><span class="pre">get_street_graph</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/garden_city.html#City.get_street_graph"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.garden_city.City.get_street_graph" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="daphme.garden_city.City.plot_city">
+<span class="sig-name descname"><span class="pre">plot_city</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ax</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">doors</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">address</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">zorder</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">heatmap_agent</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/garden_city.html#City.plot_city"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.garden_city.City.plot_city" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="daphme.garden_city.City.save">
+<span class="sig-name descname"><span class="pre">save</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filename</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/garden_city.html#City.save"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.garden_city.City.save" title="Link to this definition"></a></dt>
+<dd><p>Save the city object to a file.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="daphme.garden_city.Population">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">daphme.garden_city.</span></span><span class="sig-name descname"><span class="pre">Population</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">city</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/garden_city.html#Population"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.garden_city.Population" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="daphme.garden_city.Population.add_agent">
+<span class="sig-name descname"><span class="pre">add_agent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agent</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/garden_city.html#Population.add_agent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.garden_city.Population.add_agent" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="daphme.garden_city.Population.generate_agents">
+<span class="sig-name descname"><span class="pre">generate_agents</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">N</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start_time</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">datetime.datetime(2024,</span> <span class="pre">1,</span> <span class="pre">1,</span> <span class="pre">8,</span> <span class="pre">0)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dt</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/garden_city.html#Population.generate_agents"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.garden_city.Population.generate_agents" title="Link to this definition"></a></dt>
+<dd><p>Generates N agents, with randomized attributes.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="daphme.garden_city.Population.generate_dest_diary">
+<span class="sig-name descname"><span class="pre">generate_dest_diary</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agent</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">T</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">duration</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">15</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stay_probs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">{'home':</span> <span class="pre">0.9821428571428571,</span> <span class="pre">'park':</span> <span class="pre">0.75,</span> <span class="pre">'retail':</span> <span class="pre">0.5,</span> <span class="pre">'work':</span> <span class="pre">0.9642857142857143}</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rho</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.6</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gamma</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/garden_city.html#Population.generate_dest_diary"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.garden_city.Population.generate_dest_diary" title="Link to this definition"></a></dt>
+<dd><p>Exploration and preferential return.</p>
+<section id="id7">
+<h3>Parameters<a class="headerlink" href="#id7" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>T<span class="classifier">int</span></dt><dd><p>Timestamp until which to generate.</p>
+</dd>
+<dt>rho<span class="classifier">float</span></dt><dd><p>Parameter for exploring, influencing the probability of exploration.</p>
+</dd>
+<dt>gamma<span class="classifier">float</span></dt><dd><p>Parameter for exploring, influencing the probability of preferential return.</p>
+</dd>
+<dt>stay_probs<span class="classifier">dict</span></dt><dd><p>Dictionary containing the probability of staying in the same building.
+This is modeled as a geometric distribution with <cite>p = 1 - ((1/avg_duration_hrs)/timesteps_in_1_hr)</cite>.</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="daphme.garden_city.Population.generate_trajectory">
+<span class="sig-name descname"><span class="pre">generate_trajectory</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agent</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">T</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">duration</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">15</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dt</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/garden_city.html#Population.generate_trajectory"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.garden_city.Population.generate_trajectory" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="daphme.garden_city.Population.plot_population">
+<span class="sig-name descname"><span class="pre">plot_population</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ax</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">doors</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">address</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/garden_city.html#Population.plot_population"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.garden_city.Population.plot_population" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="daphme.garden_city.Population.sample_step">
+<span class="sig-name descname"><span class="pre">sample_step</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agent</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start_point</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dest_building</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dt</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/garden_city.html#Population.sample_step"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.garden_city.Population.sample_step" title="Link to this definition"></a></dt>
+<dd><p>From a destination diary, generates (x, y) pings.</p>
+<section id="id8">
+<h3>Parameters<a class="headerlink" href="#id8" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>agent<span class="classifier">Agent</span></dt><dd><p>The agent for whom a step will be sampled.</p>
+</dd>
+<dt>start_point<span class="classifier">tuple</span></dt><dd><p>The coordinates of the current position as a tuple (x, y).</p>
+</dd>
+<dt>dest_building<span class="classifier">Building</span></dt><dd><p>The destination building of the agent.</p>
+</dd>
+<dt>dt<span class="classifier">float</span></dt><dd><p>Time step (i.e., number of minutes per ping).</p>
+</dd>
+</dl>
+</section>
+<section id="id9">
+<h3>Returns<a class="headerlink" href="#id9" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>coord<span class="classifier">numpy.ndarray</span></dt><dd><p>A numpy array of floats with shape (1, 2) representing the new coordinates.</p>
+</dd>
+<dt>location<span class="classifier">str or None</span></dt><dd><p>The building ID if the step is a stay, or <cite>None</cite> if the step is a move.</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="daphme.garden_city.Population.save_pop">
+<span class="sig-name descname"><span class="pre">save_pop</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bucket</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prefix</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/garden_city.html#Population.save_pop"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.garden_city.Population.save_pop" title="Link to this definition"></a></dt>
+<dd><p>Save trajectories, homes, and diaries as Parquet files to S3.</p>
+<p>Parameters:
+- bucket: str, the name of the S3 bucket.
+- prefix: str, the path prefix within the bucket (e.g., ‘folder/subfolder/’).</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="daphme.garden_city.Population.traj_from_dest_diary">
+<span class="sig-name descname"><span class="pre">traj_from_dest_diary</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">agent</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dt</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/garden_city.html#Population.traj_from_dest_diary"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.garden_city.Population.traj_from_dest_diary" title="Link to this definition"></a></dt>
+<dd><p>Simulate a trajectory and give agent true travel diary attribute.</p>
+<section id="id10">
+<h3>Parameters<a class="headerlink" href="#id10" title="Link to this heading"></a></h3>
+<p>agent: Agent</p>
+<dl class="simple">
+<dt>destination_diary: Pandas Dataframe</dt><dd><p>with “unix_timestamp”, “local_timestamp”, “duration”, “location”</p>
+</dd>
+</dl>
+</section>
+<section id="id11">
+<h3>Returns<a class="headerlink" href="#id11" title="Link to this heading"></a></h3>
+<p>None (updates agent.trajectory, agent.diary)</p>
+</section>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="daphme.garden_city.Street">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">daphme.garden_city.</span></span><span class="sig-name descname"><span class="pre">Street</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">coordinates</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/garden_city.html#Street"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.garden_city.Street" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="daphme.garden_city.Street.add_neighbor">
+<span class="sig-name descname"><span class="pre">add_neighbor</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">neighbor</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/garden_city.html#Street.add_neighbor"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.garden_city.Street.add_neighbor" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="daphme.garden_city.allowed_buildings">
+<span class="sig-prename descclassname"><span class="pre">daphme.garden_city.</span></span><span class="sig-name descname"><span class="pre">allowed_buildings</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">local_ts</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/garden_city.html#allowed_buildings"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.garden_city.allowed_buildings" title="Link to this definition"></a></dt>
+<dd><p>Finds allowed buildings for the timestamp</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="daphme.garden_city.check_adjacent">
+<span class="sig-prename descclassname"><span class="pre">daphme.garden_city.</span></span><span class="sig-name descname"><span class="pre">check_adjacent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">geom1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">geom2</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/garden_city.html#check_adjacent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.garden_city.check_adjacent" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="daphme.garden_city.condense_destinations">
+<span class="sig-prename descclassname"><span class="pre">daphme.garden_city.</span></span><span class="sig-name descname"><span class="pre">condense_destinations</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">destination_diary</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/garden_city.html#condense_destinations"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.garden_city.condense_destinations" title="Link to this definition"></a></dt>
+<dd><p>Modifies a sequence of timestamped destinations, joining consecutive 
+destinations in the same location into a single entry with the aggregated duration.</p>
+<section id="id12">
+<h3>Parameters<a class="headerlink" href="#id12" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>destination_diary<span class="classifier">pandas.DataFrame</span></dt><dd><p>DataFrame containing timestamped locations the user is heading towards.</p>
+</dd>
+</dl>
+</section>
+<section id="id13">
+<h3>Returns<a class="headerlink" href="#id13" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>pandas.DataFrame</dt><dd><p>A new DataFrame with condensed destination entries.</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="daphme.garden_city.load">
+<span class="sig-prename descclassname"><span class="pre">daphme.garden_city.</span></span><span class="sig-name descname"><span class="pre">load</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filename</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/garden_city.html#load"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.garden_city.load" title="Link to this definition"></a></dt>
+<dd><p>Load a city object from a file.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="daphme.garden_city.ortho_coord">
+<span class="sig-prename descclassname"><span class="pre">daphme.garden_city.</span></span><span class="sig-name descname"><span class="pre">ortho_coord</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">multilines</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">distance</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">offset</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">eps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.001</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/garden_city.html#ortho_coord"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.garden_city.ortho_coord" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="daphme.garden_city.save">
+<span class="sig-prename descclassname"><span class="pre">daphme.garden_city.</span></span><span class="sig-name descname"><span class="pre">save</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">city</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">filename</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/garden_city.html#save"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.garden_city.save" title="Link to this definition"></a></dt>
+<dd><p>Save the city object to a file.</p>
+</dd></dl>
+
+</section>
+<section id="module-daphme.io">
+<span id="daphme-io-module"></span><h2>daphme.io module<a class="headerlink" href="#module-daphme.io" title="Link to this heading"></a></h2>
+</section>
+<section id="module-daphme.mobility_model">
+<span id="daphme-mobility-model-module"></span><h2>daphme.mobility_model module<a class="headerlink" href="#module-daphme.mobility_model" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="daphme.mobility_model.brownian">
+<span class="sig-prename descclassname"><span class="pre">daphme.mobility_model.</span></span><span class="sig-name descname"><span class="pre">brownian</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dt</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sigma</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">radius</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">p</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/mobility_model.html#brownian"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.mobility_model.brownian" title="Link to this definition"></a></dt>
+<dd><p>NOT RELEVANT FOR GARDEN CITY</p>
+<p>Generate an instance of two-dimensional Brownian motion constrained within
+a circle with some probability of staying still.</p>
+<p>The Weiner process is given by X(t) = N(0, sigma^2 * t),
+or iteratively as X(t + dt) = X(t) + N(0, sigma^2 * dt).</p>
+<section id="arguments">
+<h3>Arguments<a class="headerlink" href="#arguments" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>n: int</dt><dd><p>number of points to generate (initial position + n-1 steps)</p>
+</dd>
+<dt>dt: float</dt><dd><p>time step.</p>
+</dd>
+<dt>sigma: float</dt><dd><p>“speed” of the Brownian motion.  The random variable X(t) of the
+position at  time t has a normal distribution with mean 0 and
+variance sigma^2 * t.</p>
+</dd>
+<dt>radius: float </dt><dd><p>radius of the circle that bounds the simulated motion.</p>
+</dd>
+<dt>p: float, 0 &lt;= p &lt;= 1</dt><dd><p>probability of staying still</p>
+</dd>
+</dl>
+</section>
+<section id="id14">
+<h3>Returns<a class="headerlink" href="#id14" title="Link to this heading"></a></h3>
+<p>A numpy array of floats with shape (n,2) with initial position (0,0).</p>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="daphme.mobility_model.sample_hier_nhpp">
+<span class="sig-prename descclassname"><span class="pre">daphme.mobility_model.</span></span><span class="sig-name descname"><span class="pre">sample_hier_nhpp</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">traj</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_start</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_durations</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_ping</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/mobility_model.html#sample_hier_nhpp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.mobility_model.sample_hier_nhpp" title="Link to this definition"></a></dt>
+<dd><p>Sample from simulated trajectory, drawn using hierarchical Poisson processes.</p>
+<section id="id15">
+<h3>Parameters<a class="headerlink" href="#id15" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>traj: numpy array</dt><dd><p>simulated trajectory from simulate_traj</p>
+</dd>
+<dt>beta_start: float</dt><dd><p>mean of Poisson controlling burst start times</p>
+</dd>
+<dt>beta_durations: float</dt><dd><p>mean of Exponential controlling burst durations</p>
+</dd>
+<dt>beta_ping: float</dt><dd><p>mean of Poisson controlling ping sampling within a burst</p>
+</dd>
+<dt>seed<span class="classifier">int0</span></dt><dd><p>The seed for random number generation.</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="daphme.mobility_model.simulate_traj">
+<span class="sig-prename descclassname"><span class="pre">daphme.mobility_model.</span></span><span class="sig-name descname"><span class="pre">simulate_traj</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">stays</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">moves</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/mobility_model.html#simulate_traj"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.mobility_model.simulate_traj" title="Link to this definition"></a></dt>
+<dd><p>NOT RELEVANT FOR GARDEN CITY</p>
+<p>Simulate a trajectory using Brownian motion.</p>
+<section id="id16">
+<h3>Parameters<a class="headerlink" href="#id16" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>stays<span class="classifier">list of tuples</span></dt><dd><p>A list of tuples, each representing a stay. Each tuple consists of three elements:
+- c (numpy array of shape (2,)): The center coordinates of the stay.
+- r (int): The radius of the stay.
+- t (int): The duration of the stay in time units.
+- p (float): The probability of staying still (0 &lt;= p &lt;= 1)</p>
+</dd>
+<dt>moves<span class="classifier">list of int</span></dt><dd><p>A list of integers specifying the duration of each move between stays. The length of this list
+must be one less than the length of <cite>stays</cite>.</p>
+</dd>
+<dt>seed<span class="classifier">int</span></dt><dd><p>The seed for random number generation.</p>
+</dd>
+</dl>
+</section>
+<section id="id17">
+<h3>Returns<a class="headerlink" href="#id17" title="Link to this heading"></a></h3>
+<p>A numpy array with columns ‘x’, ‘y’, ‘local_timestamp’, ‘unix_timestamp’, ‘identifier’</p>
+</section>
+</dd></dl>
+
+</section>
+<section id="module-daphme.stop_detection">
+<span id="daphme-stop-detection-module"></span><h2>daphme.stop_detection module<a class="headerlink" href="#module-daphme.stop_detection" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="daphme.stop_detection.dbscan">
+<span class="sig-prename descclassname"><span class="pre">daphme.stop_detection.</span></span><span class="sig-name descname"><span class="pre">dbscan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_pts</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">neighbor_dict</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/stop_detection.html#dbscan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.stop_detection.dbscan" title="Link to this definition"></a></dt>
+<dd><p>Implements DBSCAN.</p>
+<section id="id18">
+<h3>Parameters<a class="headerlink" href="#id18" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>data<span class="classifier">pandas.DataFrame</span></dt><dd><p>User pings with ‘x’ (EPSG:3857), ‘y’ (EPSG:3857) columns, indexed by ‘unix_timestamp’</p>
+</dd>
+<dt>time_thresh<span class="classifier">int</span></dt><dd><p>Time threshold in minutes.</p>
+</dd>
+<dt>dist_thresh<span class="classifier">float</span></dt><dd><p>Distance threshold in meters.</p>
+</dd>
+<dt>min_pts: int</dt><dd><p>A cluster must have at least (min_pts+1) points to be considered a cluster.</p>
+</dd>
+</dl>
+</section>
+<section id="id19">
+<h3>Returns<a class="headerlink" href="#id19" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>pandas.DataFrame</dt><dd><p>Contains two columns ‘cluster’ (int), ‘core’ (int) labeling each ping with their cluster id and core id or noise, indexed by ‘unix_timestamp’</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="daphme.stop_detection.diameter">
+<span class="sig-prename descclassname"><span class="pre">daphme.stop_detection.</span></span><span class="sig-name descname"><span class="pre">diameter</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">coords</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/stop_detection.html#diameter"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.stop_detection.diameter" title="Link to this definition"></a></dt>
+<dd><p>Computes the diameter of a set of coordinates, where the diameter is defined to be the greatest 
+distance between any two coordinates in a set.</p>
+<section id="id20">
+<h3>Parameters<a class="headerlink" href="#id20" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>coords: numpy array</dt><dd><p>n x 2 array of pings (x, y).</p>
+</dd>
+</dl>
+</section>
+<section id="id21">
+<h3>Returns<a class="headerlink" href="#id21" title="Link to this heading"></a></h3>
+<p>float denoting diameter.</p>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="daphme.stop_detection.extract_middle">
+<span class="sig-prename descclassname"><span class="pre">daphme.stop_detection.</span></span><span class="sig-name descname"><span class="pre">extract_middle</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/stop_detection.html#extract_middle"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.stop_detection.extract_middle" title="Link to this definition"></a></dt>
+<dd><p>TODO</p>
+<section id="id22">
+<h3>Parameters<a class="headerlink" href="#id22" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>df<span class="classifier">pandas.DataFrame</span></dt><dd><p>User pings with ‘x’ (EPSG:3857), ‘y’ (EPSG:3857) columns, indexed by ‘unix_timestamp’</p>
+</dd>
+</dl>
+</section>
+<section id="id23">
+<h3>Returns<a class="headerlink" href="#id23" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>tuple (i,j)</dt><dd><p>First and last indices of the “middle” of the cluster</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="daphme.stop_detection.find_neighbors">
+<span class="sig-prename descclassname"><span class="pre">daphme.stop_detection.</span></span><span class="sig-name descname"><span class="pre">find_neighbors</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_thresh</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/stop_detection.html#find_neighbors"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.stop_detection.find_neighbors" title="Link to this definition"></a></dt>
+<dd><p>Identifies neighboring pings for each user ping within specified time and distance thresholds.</p>
+<section id="id24">
+<h3>Parameters<a class="headerlink" href="#id24" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>df<span class="classifier">pandas.DataFrame</span></dt><dd><p>User pings with ‘x’ (EPSG:3857), ‘y’ (EPSG:3857) columns, indexed by ‘unix_timestamp’</p>
+</dd>
+<dt>time_thresh<span class="classifier">int</span></dt><dd><p>Time threshold in minutes.</p>
+</dd>
+<dt>dist_thresh<span class="classifier">float</span></dt><dd><p>Distance threshold in meters.</p>
+</dd>
+</dl>
+</section>
+<section id="id25">
+<h3>Returns<a class="headerlink" href="#id25" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>dict</dt><dd><p>Neighbors indexed by unix timestamp, with values as sets of neighboring unix timestamps.</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="daphme.stop_detection.generate_stop_table">
+<span class="sig-prename descclassname"><span class="pre">daphme.stop_detection.</span></span><span class="sig-name descname"><span class="pre">generate_stop_table</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dbscan_df</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/stop_detection.html#generate_stop_table"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.stop_detection.generate_stop_table" title="Link to this definition"></a></dt>
+<dd><p>TODO: user id, ts, duration, centroid coord, max time gap, radius, etc.</p>
+<section id="id26">
+<h3>Returns<a class="headerlink" href="#id26" title="Link to this heading"></a></h3>
+<p>TODO</p>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="daphme.stop_detection.lachesis">
+<span class="sig-prename descclassname"><span class="pre">daphme.stop_detection.</span></span><span class="sig-name descname"><span class="pre">lachesis</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">traj</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dur_min</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dt_max</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">delta_roam</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/stop_detection.html#lachesis"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.stop_detection.lachesis" title="Link to this definition"></a></dt>
+<dd><p>Extracts stays from raw location data.</p>
+<section id="id27">
+<h3>Parameters<a class="headerlink" href="#id27" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>traj: numpy array</dt><dd><p>simulated trajectory from simulate_traj.</p>
+</dd>
+<dt>dur_min: float</dt><dd><p>Minimum duration for a stay (stay duration), in minutes.</p>
+</dd>
+<dt>dt_max: float</dt><dd><p>maximum duration permitted between consecutive pings in a stay, in minutes.
+dt_max should be greater than dur_min.</p>
+</dd>
+<dt>delta_roam: float</dt><dd><p>Maximum roaming distance for a stay (roaming distance), in meters.</p>
+</dd>
+</dl>
+</section>
+<section id="id28">
+<h3>Returns<a class="headerlink" href="#id28" title="Link to this heading"></a></h3>
+<p>pandas array with columns ‘medoid_x’, ‘medoid_y’, ‘start_time’, ‘end_time’</p>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="daphme.stop_detection.lachesis_patches">
+<span class="sig-prename descclassname"><span class="pre">daphme.stop_detection.</span></span><span class="sig-name descname"><span class="pre">lachesis_patches</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">traj</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dur_min</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dt_max</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">delta_roam</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/stop_detection.html#lachesis_patches"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.stop_detection.lachesis_patches" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="daphme.stop_detection.medoid">
+<span class="sig-prename descclassname"><span class="pre">daphme.stop_detection.</span></span><span class="sig-name descname"><span class="pre">medoid</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">coords</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/stop_detection.html#medoid"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.stop_detection.medoid" title="Link to this definition"></a></dt>
+<dd><p>Computes the medoid of a set of coordinates. The medoid is defined to be the coordinate 
+in a set that minimizes the maximum distance to every other coordinate in the set.</p>
+<section id="id29">
+<h3>Parameters<a class="headerlink" href="#id29" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>coords: numpy array</dt><dd><p>n x 2 array of pings (x, y).</p>
+</dd>
+</dl>
+</section>
+<section id="id30">
+<h3>Returns<a class="headerlink" href="#id30" title="Link to this heading"></a></h3>
+<p>numpy array of shape (1,2) denoting medroid coordinates.</p>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="daphme.stop_detection.process_clusters">
+<span class="sig-prename descclassname"><span class="pre">daphme.stop_detection.</span></span><span class="sig-name descname"><span class="pre">process_clusters</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_pts</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">output</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cluster_df</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">neighbor_dict</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_duration</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">4</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/stop_detection.html#process_clusters"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.stop_detection.process_clusters" title="Link to this definition"></a></dt>
+<dd><p>TODO</p>
+<section id="id31">
+<h3>Parameters<a class="headerlink" href="#id31" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>data<span class="classifier">pandas.DataFrame</span></dt><dd><p>User pings with ‘unix_timestamp’ (integer), ‘x’ (EPSG:3857), ‘y’ (EPSG:3857) columns, indexed by ‘unix_timestamp’</p>
+</dd>
+<dt>time_thresh<span class="classifier">int</span></dt><dd><p>Time threshold in minutes.</p>
+</dd>
+<dt>dist_thresh<span class="classifier">float</span></dt><dd><p>Distance threshold in meters.</p>
+</dd>
+<dt>min_pts: int</dt><dd><p>A cluster must have at least (min_pts+1) points to be considered a cluster.</p>
+</dd>
+<dt>output: pandas.DataFrame</dt><dd><p>TODO</p>
+</dd>
+<dt>cluster_df<span class="classifier">pandas.DataFrame</span></dt><dd><p>Output of dbscan</p>
+</dd>
+<dt>neighbor_dict: dictionary</dt><dd><p>TODO</p>
+</dd>
+<dt>min_duration: int</dt><dd><p>A cluster must have duration at least ‘min_duration’ to be considered a cluster.</p>
+</dd>
+</dl>
+</section>
+<section id="id32">
+<h3>Returns<a class="headerlink" href="#id32" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>List</dt><dd><p>(start, duration, x_mean, y_mean, n, max_gap, radius) of each (post-processed) cluster</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="daphme.stop_detection.stop_statistics">
+<span class="sig-prename descclassname"><span class="pre">daphme.stop_detection.</span></span><span class="sig-name descname"><span class="pre">stop_statistics</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dbscan_df</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/stop_detection.html#stop_statistics"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.stop_detection.stop_statistics" title="Link to this definition"></a></dt>
+<dd><p>INCOMPLETE</p>
+<p>TODO: user-level metrics: number of clusters, radius of gyration,
+time resolution param?</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="daphme.stop_detection.temporal_dbscan">
+<span class="sig-prename descclassname"><span class="pre">daphme.stop_detection.</span></span><span class="sig-name descname"><span class="pre">temporal_dbscan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_pts</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/daphme/stop_detection.html#temporal_dbscan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#daphme.stop_detection.temporal_dbscan" title="Link to this definition"></a></dt>
+<dd><p>TODO</p>
+<section id="id33">
+<h3>Parameters<a class="headerlink" href="#id33" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>data<span class="classifier">pandas.DataFrame</span></dt><dd><p>User pings with ‘unix_timestamp’ (integer), ‘x’ (EPSG:3857), ‘y’ (EPSG:3857) columns.</p>
+</dd>
+<dt>time_thresh<span class="classifier">int</span></dt><dd><p>Time threshold in minutes.</p>
+</dd>
+<dt>dist_thresh<span class="classifier">float</span></dt><dd><p>Distance threshold in meters.</p>
+</dd>
+<dt>min_pts: int</dt><dd><p>A cluster must have at least (min_pts+1) points to be considered a cluster.</p>
+</dd>
+</dl>
+</section>
+<section id="id34">
+<h3>Returns<a class="headerlink" href="#id34" title="Link to this heading"></a></h3>
+<p>TODO</p>
+</section>
+</dd></dl>
+
+</section>
+<section id="module-daphme">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-daphme" title="Link to this heading"></a></h2>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="modules.html" class="btn btn-neutral float-left" title="daphme" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Duncan J. Watts, Francisco Barreras, Thomas Li, Jacob Lisner, Bethany Hsiao.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

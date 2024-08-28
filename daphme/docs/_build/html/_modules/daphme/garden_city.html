@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>daphme.garden_city &mdash; DAPHME 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../_static/documentation_options.js?v=d45e8c67"></script>
+        <script src="../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            DAPHME
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">daphme</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">DAPHME</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">daphme.garden_city</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for daphme.garden_city</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span> <span class="nn">shapely.geometry</span> <span class="kn">import</span> <span class="n">box</span><span class="p">,</span> <span class="n">Point</span><span class="p">,</span> <span class="n">Polygon</span><span class="p">,</span> <span class="n">LineString</span><span class="p">,</span> <span class="n">MultiLineString</span>
+<span class="kn">from</span> <span class="nn">shapely.affinity</span> <span class="kn">import</span> <span class="n">scale</span><span class="p">,</span> <span class="n">rotate</span>
+<span class="kn">from</span> <span class="nn">shapely.ops</span> <span class="kn">import</span> <span class="n">unary_union</span>
+<span class="kn">import</span> <span class="nn">pickle</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">from</span> <span class="nn">datetime</span> <span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timedelta</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">numpy.random</span> <span class="k">as</span> <span class="nn">npr</span>
+<span class="kn">from</span> <span class="nn">matplotlib.ticker</span> <span class="kn">import</span> <span class="n">MaxNLocator</span>
+<span class="kn">from</span> <span class="nn">matplotlib</span> <span class="kn">import</span> <span class="n">cm</span>
+<span class="kn">import</span> <span class="nn">funkybob</span>
+<span class="kn">import</span> <span class="nn">networkx</span> <span class="k">as</span> <span class="nn">nx</span>
+<span class="kn">import</span> <span class="nn">nx_parallel</span> <span class="k">as</span> <span class="nn">nxp</span>
+<span class="kn">import</span> <span class="nn">s3fs</span>
+<span class="kn">import</span> <span class="nn">pyarrow</span>
+
+<span class="kn">import</span> <span class="nn">daphme.mobility_model</span> <span class="k">as</span> <span class="nn">mmod</span>
+<span class="kn">import</span> <span class="nn">daphme.stop_detection</span> <span class="k">as</span> <span class="nn">sd</span>
+<span class="kn">from</span> <span class="nn">daphme.constants</span> <span class="kn">import</span> <span class="n">DEFAULT_SPEEDS</span><span class="p">,</span> <span class="n">FAST_SPEEDS</span><span class="p">,</span> <span class="n">SLOW_SPEEDS</span><span class="p">,</span> <span class="n">DEFAULT_STILL_PROBS</span>
+<span class="kn">from</span> <span class="nn">daphme.constants</span> <span class="kn">import</span> <span class="n">FAST_STILL_PROBS</span><span class="p">,</span> <span class="n">SLOW_STILL_PROBS</span><span class="p">,</span> <span class="n">ALLOWED_BUILDINGS</span><span class="p">,</span> <span class="n">DEFAULT_STAY_PROBS</span>
+
+<span class="kn">import</span> <span class="nn">pdb</span>
+
+
+
+<span class="c1"># =============================================================================</span>
+<span class="c1"># STREETS</span>
+<span class="c1"># Blocks through which individuals move from building to building.</span>
+<span class="c1"># =============================================================================</span>
+
+<div class="viewcode-block" id="Street">
+<a class="viewcode-back" href="../../daphme.html#daphme.garden_city.Street">[docs]</a>
+<span class="k">class</span> <span class="nc">Street</span><span class="p">:</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">coordinates</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">coordinates</span> <span class="o">=</span> <span class="n">coordinates</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">neighbors_streets</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">neighbors_buildings</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">geometry</span> <span class="o">=</span> <span class="n">box</span><span class="p">(</span><span class="n">coordinates</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">coordinates</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                            <span class="n">coordinates</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span> <span class="n">coordinates</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">id</span> <span class="o">=</span> <span class="sa">f</span><span class="s1">&#39;s-x</span><span class="si">{</span><span class="n">coordinates</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s1">-y</span><span class="si">{</span><span class="n">coordinates</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s1">&#39;</span>
+
+<div class="viewcode-block" id="Street.add_neighbor">
+<a class="viewcode-back" href="../../daphme.html#daphme.garden_city.Street.add_neighbor">[docs]</a>
+    <span class="k">def</span> <span class="nf">add_neighbor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">neighbor</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">neighbor</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">check_adjacent</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">geometry</span><span class="p">,</span> <span class="n">neighbor</span><span class="o">.</span><span class="n">geometry</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">neighbor</span><span class="p">,</span> <span class="n">Street</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">neighbors_streets</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">neighbor</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">neighbor</span><span class="p">,</span> <span class="n">Building</span><span class="p">)</span> <span class="ow">and</span> <span class="n">neighbor</span><span class="o">.</span><span class="n">door</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">coordinates</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">neighbors_buildings</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">neighbor</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">return</span> <span class="kc">False</span></div>
+</div>
+
+
+<span class="c1"># =============================================================================</span>
+<span class="c1"># BUILDING</span>
+<span class="c1"># Units of the city in which individuals dwell at different speeds.</span>
+<span class="c1"># =============================================================================</span>
+
+
+<div class="viewcode-block" id="Building">
+<a class="viewcode-back" href="../../daphme.html#daphme.garden_city.Building">[docs]</a>
+<span class="k">class</span> <span class="nc">Building</span><span class="p">:</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">building_type</span><span class="p">,</span> <span class="n">door</span><span class="p">,</span> <span class="n">city</span><span class="p">,</span> <span class="n">p_still</span><span class="p">,</span> <span class="n">sigma</span><span class="p">,</span> <span class="n">blocks</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">bbox</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">building_type</span> <span class="o">=</span> <span class="n">building_type</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">door</span> <span class="o">=</span> <span class="n">door</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">city</span> <span class="o">=</span> <span class="n">city</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">p_still</span> <span class="o">=</span> <span class="n">p_still</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sigma</span> <span class="o">=</span> <span class="n">sigma</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">id</span> <span class="o">=</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">building_type</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s1">-x</span><span class="si">{</span><span class="n">door</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s1">-y</span><span class="si">{</span><span class="n">door</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s1">&#39;</span>
+
+        <span class="c1"># Calculate the bounding box of the building</span>
+        <span class="k">if</span> <span class="n">blocks</span><span class="p">:</span>
+            <span class="n">min_x</span> <span class="o">=</span> <span class="nb">min</span><span class="p">([</span><span class="n">block</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="n">blocks</span><span class="p">])</span>
+            <span class="n">min_y</span> <span class="o">=</span> <span class="nb">min</span><span class="p">([</span><span class="n">block</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="n">blocks</span><span class="p">])</span>
+            <span class="n">max_x</span> <span class="o">=</span> <span class="nb">max</span><span class="p">([</span><span class="n">block</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">+</span><span class="mi">1</span> <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="n">blocks</span><span class="p">])</span>
+            <span class="n">max_y</span> <span class="o">=</span> <span class="nb">max</span><span class="p">([</span><span class="n">block</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">+</span><span class="mi">1</span> <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="n">blocks</span><span class="p">])</span>
+            <span class="n">bbox</span> <span class="o">=</span> <span class="n">box</span><span class="p">(</span><span class="n">min_x</span><span class="p">,</span> <span class="n">min_y</span><span class="p">,</span> <span class="n">max_x</span><span class="p">,</span> <span class="n">max_y</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">bbox</span><span class="p">:</span>
+            <span class="n">blocks</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">bbox</span><span class="o">.</span><span class="n">bounds</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="nb">int</span><span class="p">(</span><span class="n">bbox</span><span class="o">.</span><span class="n">bounds</span><span class="p">[</span><span class="mi">2</span><span class="p">])):</span>
+                <span class="k">for</span> <span class="n">y</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">bbox</span><span class="o">.</span><span class="n">bounds</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="nb">int</span><span class="p">(</span><span class="n">bbox</span><span class="o">.</span><span class="n">bounds</span><span class="p">[</span><span class="mi">3</span><span class="p">])):</span>
+                    <span class="n">blocks</span> <span class="o">+=</span> <span class="p">[(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;Either blocks spanned or bounding box must be provided.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">blocks</span> <span class="o">=</span> <span class="n">blocks</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">geometry</span> <span class="o">=</span> <span class="n">bbox</span>
+
+        <span class="c1"># Compute door centroid</span>
+        <span class="n">door</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">intersection</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">city</span><span class="o">.</span><span class="n">streets</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">door</span><span class="p">]</span><span class="o">.</span><span class="n">geometry</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">door_centroid</span> <span class="o">=</span> <span class="p">((</span><span class="n">door</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="n">door</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="mi">1</span><span class="p">][</span><span class="mi">0</span><span class="p">])</span> <span class="o">/</span> <span class="mi">2</span><span class="p">,</span>
+                              <span class="p">(</span><span class="n">door</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">door</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="mi">1</span><span class="p">][</span><span class="mi">1</span><span class="p">])</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span></div>
+
+
+<span class="c1"># =============================================================================</span>
+<span class="c1"># CITY</span>
+<span class="c1"># Container for buildings, streets, and generators of cities</span>
+<span class="c1"># =============================================================================</span>
+
+
+<div class="viewcode-block" id="City">
+<a class="viewcode-back" href="../../daphme.html#daphme.garden_city.City">[docs]</a>
+<span class="k">class</span> <span class="nc">City</span><span class="p">:</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>
+                 <span class="n">dimensions</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+                 <span class="n">still_probs</span><span class="o">=</span><span class="n">DEFAULT_STILL_PROBS</span><span class="p">,</span>
+                 <span class="n">speeds</span><span class="o">=</span><span class="n">DEFAULT_SPEEDS</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">buildings</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">streets</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">buildings_outline</span> <span class="o">=</span> <span class="n">Polygon</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">address_book</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="c1"># maybe at some point, p_still and sigma are inputs rather than hard coded</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">p_still</span> <span class="o">=</span> <span class="n">still_probs</span>
+
+        <span class="c1"># controls &quot;speed&quot; of Brownian motion when simulating stay trajectory</span>
+        <span class="c1"># The random variable X(t) of the position at time t has a normal</span>
+        <span class="c1"># distribution with mean 0 and variance sigma^2 * t.</span>
+        <span class="c1"># x/1.96 = 95% probability of moving x standard deviations</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sigma</span> <span class="o">=</span> <span class="n">speeds</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">dimensions</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">dimensions</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span>
+                <span class="ow">and</span> <span class="nb">all</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="nb">int</span><span class="p">)</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">dimensions</span><span class="p">)):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Dimensions must be a tuple of two integers.&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">city_boundary</span> <span class="o">=</span> <span class="n">box</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">dimensions</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">dimensions</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+
+        <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">dimensions</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
+            <span class="k">for</span> <span class="n">y</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">dimensions</span><span class="p">[</span><span class="mi">1</span><span class="p">]):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">streets</span><span class="p">[(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)]</span> <span class="o">=</span> <span class="n">Street</span><span class="p">((</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dimensions</span> <span class="o">=</span> <span class="n">dimensions</span>
+
+<div class="viewcode-block" id="City.add_building">
+<a class="viewcode-back" href="../../daphme.html#daphme.garden_city.City.add_building">[docs]</a>
+    <span class="k">def</span> <span class="nf">add_building</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">building_type</span><span class="p">,</span> <span class="n">door</span><span class="p">,</span> <span class="n">blocks</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">bbox</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="n">building</span> <span class="o">=</span> <span class="n">Building</span><span class="p">(</span><span class="n">building_type</span><span class="p">,</span> <span class="n">door</span><span class="p">,</span> <span class="bp">self</span><span class="p">,</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">p_still</span><span class="p">[</span><span class="n">building_type</span><span class="p">],</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">sigma</span><span class="p">[</span><span class="n">building_type</span><span class="p">],</span>
+                            <span class="n">blocks</span><span class="p">,</span> <span class="n">bbox</span><span class="p">)</span>
+
+        <span class="n">combined_plot</span> <span class="o">=</span> <span class="n">unary_union</span><span class="p">([</span><span class="n">building</span><span class="o">.</span><span class="n">geometry</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">streets</span><span class="p">[</span><span class="n">door</span><span class="p">]</span><span class="o">.</span><span class="n">geometry</span><span class="p">])</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">buildings_outline</span><span class="o">.</span><span class="n">contains</span><span class="p">(</span><span class="n">combined_plot</span><span class="p">)</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">buildings_outline</span><span class="o">.</span><span class="n">overlaps</span><span class="p">(</span><span class="n">combined_plot</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;New building or its door overlap with existing buildings.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">check_adjacent</span><span class="p">(</span><span class="n">building</span><span class="o">.</span><span class="n">geometry</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">streets</span><span class="p">[</span><span class="n">door</span><span class="p">]</span><span class="o">.</span><span class="n">geometry</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Door </span><span class="si">{</span><span class="n">door</span><span class="si">}</span><span class="s2"> must be adjacent to new building.&quot;</span><span class="p">)</span>
+
+        <span class="c1"># add building</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">buildings</span><span class="p">[</span><span class="n">building</span><span class="o">.</span><span class="n">id</span><span class="p">]</span> <span class="o">=</span> <span class="n">building</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">buildings_outline</span> <span class="o">=</span> <span class="n">unary_union</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">buildings_outline</span><span class="p">,</span> <span class="n">building</span><span class="o">.</span><span class="n">geometry</span><span class="p">])</span>
+
+        <span class="c1"># blocks are no longer streets</span>
+        <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="n">building</span><span class="o">.</span><span class="n">blocks</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">address_book</span><span class="p">[</span><span class="n">block</span><span class="p">]</span> <span class="o">=</span> <span class="n">building</span>
+            <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">streets</span><span class="p">[</span><span class="n">block</span><span class="p">]</span>
+
+        <span class="c1"># expand city boundary?</span>
+        <span class="n">buffered_building_geom</span> <span class="o">=</span> <span class="n">building</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">buffer</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">city_boundary</span><span class="o">.</span><span class="n">contains</span><span class="p">(</span><span class="n">buffered_building_geom</span><span class="p">):</span>
+            <span class="n">new_boundary</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">city_boundary</span><span class="o">.</span><span class="n">union</span><span class="p">(</span><span class="n">buffered_building_geom</span><span class="p">)</span><span class="o">.</span><span class="n">envelope</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">city_boundary</span> <span class="o">=</span> <span class="n">new_boundary</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">dimensions</span> <span class="o">=</span> <span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">new_boundary</span><span class="o">.</span><span class="n">bounds</span><span class="p">[</span><span class="mi">2</span><span class="p">]),</span> <span class="nb">int</span><span class="p">(</span><span class="n">new_boundary</span><span class="o">.</span><span class="n">bounds</span><span class="p">[</span><span class="mi">3</span><span class="p">]))</span>
+            <span class="c1"># Update the streets for any new blocks within the expanded boundary</span>
+            <span class="n">minx</span><span class="p">,</span> <span class="n">miny</span><span class="p">,</span> <span class="n">maxx</span><span class="p">,</span> <span class="n">maxy</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">new_boundary</span><span class="o">.</span><span class="n">bounds</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">minx</span><span class="p">,</span> <span class="n">maxx</span><span class="o">+</span><span class="mi">1</span><span class="p">):</span>
+                <span class="k">for</span> <span class="n">y</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">miny</span><span class="p">,</span> <span class="n">maxy</span><span class="o">+</span><span class="mi">1</span><span class="p">):</span>
+                    <span class="k">if</span> <span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">streets</span><span class="p">:</span>
+                        <span class="c1"># Initialize new Street objects for the expanded city area</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">streets</span><span class="p">[(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)]</span> <span class="o">=</span> <span class="n">Street</span><span class="p">((</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="City.get_block">
+<a class="viewcode-back" href="../../daphme.html#daphme.garden_city.City.get_block">[docs]</a>
+    <span class="k">def</span> <span class="nf">get_block</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">coordinates</span><span class="p">):</span>
+        <span class="c1"># Return None if coordinates are outside the city</span>
+        <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="n">coordinates</span>
+        <span class="n">bx</span><span class="p">,</span> <span class="n">by</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dimensions</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">x</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">x</span> <span class="o">&gt;=</span> <span class="n">bx</span> <span class="ow">or</span> <span class="n">y</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">y</span> <span class="o">&gt;=</span> <span class="n">bx</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="n">new_coords</span> <span class="o">=</span> <span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="nb">int</span><span class="p">(</span><span class="n">y</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">new_coords</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">address_book</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">address_book</span><span class="p">[</span><span class="n">new_coords</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">streets</span><span class="p">[</span><span class="n">new_coords</span><span class="p">]</span></div>
+
+
+    <span class="c1"># Determine adjacent streets and buildings for each street block and construct graph</span>
+<div class="viewcode-block" id="City.get_street_graph">
+<a class="viewcode-back" href="../../daphme.html#daphme.garden_city.City.get_street_graph">[docs]</a>
+    <span class="k">def</span> <span class="nf">get_street_graph</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">street_graph</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">coords</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">streets</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="n">coords</span>
+            <span class="n">neighbors</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">+</span> <span class="mi">1</span><span class="p">),</span>
+                <span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">-</span> <span class="mi">1</span><span class="p">),</span>
+                <span class="p">(</span><span class="n">x</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">y</span><span class="p">),</span>
+                <span class="p">(</span><span class="n">x</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+            <span class="p">]</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">street_graph</span><span class="p">[</span><span class="n">coords</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">neighbor</span> <span class="k">for</span> <span class="n">neighbor</span> <span class="ow">in</span> <span class="n">neighbors</span> <span class="k">if</span> <span class="n">neighbor</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">streets</span><span class="p">]</span>
+
+        <span class="n">G</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">from_dict_of_lists</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">street_graph</span><span class="p">)</span>
+        <span class="n">sp</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">nxp</span><span class="o">.</span><span class="n">all_pairs_shortest_path</span><span class="p">(</span><span class="n">G</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">shortest_paths</span> <span class="o">=</span> <span class="p">{</span><span class="n">node</span><span class="p">:</span> <span class="n">paths</span> <span class="k">for</span> <span class="n">node</span><span class="p">,</span> <span class="n">paths</span> <span class="ow">in</span> <span class="n">sp</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+
+        <span class="n">data</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="p">{</span><span class="s1">&#39;origin&#39;</span><span class="p">:</span> <span class="n">origin</span><span class="p">,</span> <span class="s1">&#39;dest&#39;</span><span class="p">:</span> <span class="n">dest</span><span class="p">,</span> <span class="s1">&#39;gravity&#39;</span><span class="p">:</span> <span class="p">(</span><span class="mi">1</span> <span class="o">/</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="k">else</span> <span class="mi">0</span><span class="p">)}</span>
+            <span class="k">for</span> <span class="n">origin</span><span class="p">,</span> <span class="n">paths</span> <span class="ow">in</span> <span class="n">sp</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+            <span class="k">for</span> <span class="n">dest</span><span class="p">,</span> <span class="n">path</span> <span class="ow">in</span> <span class="n">paths</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+        <span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">gravity</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;origin&#39;</span><span class="p">,</span> <span class="s1">&#39;dest&#39;</span><span class="p">,</span> <span class="s1">&#39;gravity&#39;</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">gravity</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gravity</span><span class="o">.</span><span class="n">set_index</span><span class="p">([</span><span class="s1">&#39;origin&#39;</span><span class="p">,</span> <span class="s1">&#39;dest&#39;</span><span class="p">])</span></div>
+
+
+<div class="viewcode-block" id="City.save">
+<a class="viewcode-back" href="../../daphme.html#daphme.garden_city.City.save">[docs]</a>
+    <span class="k">def</span> <span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filename</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Save the city object to a file.&quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="s1">&#39;wb&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+            <span class="n">pickle</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">file</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="City.plot_city">
+<a class="viewcode-back" href="../../daphme.html#daphme.garden_city.City.plot_city">[docs]</a>
+    <span class="k">def</span> <span class="nf">plot_city</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ax</span><span class="p">,</span> <span class="n">doors</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">address</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">zorder</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">heatmap_agent</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="c1"># Draw city boundary</span>
+        <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">city_boundary</span><span class="o">.</span><span class="n">exterior</span><span class="o">.</span><span class="n">xy</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">y</span><span class="p">),</span> <span class="n">linewidth</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;black&#39;</span><span class="p">)</span>  <span class="c1"># Dashed line for the boundary</span>
+
+        <span class="c1"># Define colors for different building types</span>
+        <span class="n">colors</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s1">&#39;home&#39;</span><span class="p">:</span> <span class="s1">&#39;skyblue&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;work&#39;</span><span class="p">:</span> <span class="s1">&#39;#C9A0DC&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;retail&#39;</span><span class="p">:</span> <span class="s1">&#39;lightgrey&#39;</span><span class="p">,</span>
+            <span class="s1">&#39;park&#39;</span><span class="p">:</span> <span class="s1">&#39;lightgreen&#39;</span>
+        <span class="p">}</span>
+
+        <span class="k">if</span> <span class="n">heatmap_agent</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">weights</span> <span class="o">=</span> <span class="n">heatmap_agent</span><span class="o">.</span><span class="n">diary</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s1">&#39;location&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">duration</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+            <span class="n">norm</span> <span class="o">=</span> <span class="n">Normalize</span><span class="p">(</span><span class="n">vmin</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">vmax</span><span class="o">=</span><span class="nb">max</span><span class="p">(</span><span class="n">weights</span><span class="p">)</span><span class="o">/</span><span class="mi">2</span><span class="p">)</span>
+            <span class="n">base_color</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">])</span>  <span class="c1"># RGB for red</span>
+
+            <span class="k">for</span> <span class="n">building</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">buildings</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+                <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="n">building</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">exterior</span><span class="o">.</span><span class="n">xy</span>
+                <span class="n">weight</span> <span class="o">=</span> <span class="n">weights</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">building</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+                <span class="n">alpha</span> <span class="o">=</span> <span class="n">norm</span><span class="p">(</span><span class="n">weight</span><span class="p">)</span> <span class="k">if</span> <span class="n">weight</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="mi">0</span>
+
+                <span class="n">ax</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">facecolor</span><span class="o">=</span><span class="n">base_color</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="n">alpha</span><span class="p">,</span>
+                        <span class="n">edgecolor</span><span class="o">=</span><span class="s1">&#39;black&#39;</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>
+                        <span class="n">label</span><span class="o">=</span><span class="n">building</span><span class="o">.</span><span class="n">building_type</span><span class="o">.</span><span class="n">capitalize</span><span class="p">(),</span> <span class="n">zorder</span><span class="o">=</span><span class="n">zorder</span><span class="p">)</span>
+                <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;black&#39;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">zorder</span><span class="o">=</span><span class="n">zorder</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="n">doors</span><span class="p">:</span>
+                    <span class="n">door_line</span> <span class="o">=</span> <span class="n">building</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">intersection</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">streets</span><span class="p">[</span><span class="n">building</span><span class="o">.</span><span class="n">door</span><span class="p">]</span><span class="o">.</span><span class="n">geometry</span><span class="p">)</span>
+                    <span class="n">scaled_door_line</span> <span class="o">=</span> <span class="n">scale</span><span class="p">(</span><span class="n">door_line</span><span class="p">,</span> <span class="n">xfact</span><span class="o">=</span><span class="mf">0.25</span><span class="p">,</span> <span class="n">yfact</span><span class="o">=</span><span class="mf">0.25</span><span class="p">,</span> <span class="n">origin</span><span class="o">=</span><span class="n">door_line</span><span class="o">.</span><span class="n">centroid</span><span class="p">)</span>
+                    <span class="n">dx</span><span class="p">,</span> <span class="n">dy</span> <span class="o">=</span> <span class="n">scaled_door_line</span><span class="o">.</span><span class="n">xy</span>
+                    <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">dx</span><span class="p">,</span> <span class="n">dy</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;white&#39;</span><span class="p">,</span> <span class="n">zorder</span><span class="o">=</span><span class="n">zorder</span><span class="p">)</span>
+
+            <span class="n">sm</span> <span class="o">=</span> <span class="n">ScalarMappable</span><span class="p">(</span><span class="n">cmap</span><span class="o">=</span><span class="n">cm</span><span class="o">.</span><span class="n">Reds</span><span class="p">,</span> <span class="n">norm</span><span class="o">=</span><span class="n">norm</span><span class="p">)</span>
+            <span class="n">sm</span><span class="o">.</span><span class="n">set_array</span><span class="p">([])</span>
+            <span class="n">cbar</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">colorbar</span><span class="p">(</span><span class="n">sm</span><span class="p">,</span> <span class="n">ax</span><span class="o">=</span><span class="n">ax</span><span class="p">,</span> <span class="n">shrink</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">aspect</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">pad</span><span class="o">=</span><span class="mf">0.02</span><span class="p">)</span>
+            <span class="n">cbar</span><span class="o">.</span><span class="n">set_label</span><span class="p">(</span><span class="s1">&#39;Minutes Spent&#39;</span><span class="p">)</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">building</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">buildings</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+                <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="n">building</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">exterior</span><span class="o">.</span><span class="n">xy</span>
+                <span class="n">ax</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">facecolor</span><span class="o">=</span><span class="n">colors</span><span class="p">[</span><span class="n">building</span><span class="o">.</span><span class="n">building_type</span><span class="p">],</span>
+                        <span class="n">edgecolor</span><span class="o">=</span><span class="s1">&#39;black&#39;</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>
+                        <span class="n">label</span><span class="o">=</span><span class="n">building</span><span class="o">.</span><span class="n">building_type</span><span class="o">.</span><span class="n">capitalize</span><span class="p">(),</span> <span class="n">zorder</span><span class="o">=</span><span class="n">zorder</span><span class="p">)</span>
+
+                <span class="c1"># Plot doors</span>
+                <span class="k">if</span> <span class="n">doors</span><span class="p">:</span>
+                    <span class="n">door_line</span> <span class="o">=</span> <span class="n">building</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">intersection</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">streets</span><span class="p">[</span><span class="n">building</span><span class="o">.</span><span class="n">door</span><span class="p">]</span><span class="o">.</span><span class="n">geometry</span><span class="p">)</span>
+                    <span class="n">scaled_door_line</span> <span class="o">=</span> <span class="n">scale</span><span class="p">(</span><span class="n">door_line</span><span class="p">,</span> <span class="n">xfact</span><span class="o">=</span><span class="mf">0.25</span><span class="p">,</span> <span class="n">yfact</span><span class="o">=</span><span class="mf">0.25</span><span class="p">,</span> <span class="n">origin</span><span class="o">=</span><span class="n">door_line</span><span class="o">.</span><span class="n">centroid</span><span class="p">)</span>
+                    <span class="n">dx</span><span class="p">,</span> <span class="n">dy</span> <span class="o">=</span> <span class="n">scaled_door_line</span><span class="o">.</span><span class="n">xy</span>
+                    <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">dx</span><span class="p">,</span> <span class="n">dy</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;white&#39;</span><span class="p">,</span> <span class="n">zorder</span><span class="o">=</span><span class="n">zorder</span><span class="p">)</span>
+
+<span class="c1">#         if address:</span>
+<span class="c1">#             door_coord = building.door</span>
+
+<span class="c1">#             bbox = ax.get_window_extent().transformed(plt.gcf().dpi_scale_trans.inverted())</span>
+<span class="c1">#             axes_width_in_inches = bbox.width</span>
+<span class="c1">#             axes_data_range = ax.get_xlim()[1] - ax.get_xlim()[0]</span>
+<span class="c1">#             fontsize = (axes_width_in_inches / axes_data_range) * 13  # Example scaling factor</span>
+
+<span class="c1">#             ax.text(door_coord[0] + 0.15, door_coord[1] + 0.15,</span>
+<span class="c1">#                     f&quot;{door_coord[0]}, {door_coord[1]}&quot;,</span>
+<span class="c1">#                     ha=&#39;left&#39;, va=&#39;bottom&#39;,</span>
+<span class="c1">#                     fontsize=fontsize, color=&#39;black&#39;)</span>
+
+        <span class="n">ax</span><span class="o">.</span><span class="n">set_aspect</span><span class="p">(</span><span class="s1">&#39;equal&#39;</span><span class="p">)</span>
+        <span class="c1"># Set integer ticks</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">xaxis</span><span class="o">.</span><span class="n">set_major_locator</span><span class="p">(</span><span class="n">MaxNLocator</span><span class="p">(</span><span class="n">integer</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">yaxis</span><span class="o">.</span><span class="n">set_major_locator</span><span class="p">(</span><span class="n">MaxNLocator</span><span class="p">(</span><span class="n">integer</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span></div>
+</div>
+
+
+<span class="c1"># =============================================================================</span>
+<span class="c1"># AGENT</span>
+<span class="c1"># =============================================================================</span>
+
+
+<div class="viewcode-block" id="Agent">
+<a class="viewcode-back" href="../../daphme.html#daphme.garden_city.Agent">[docs]</a>
+<span class="k">class</span> <span class="nc">Agent</span><span class="p">:</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">identifier</span><span class="p">,</span> <span class="n">home</span><span class="p">,</span> <span class="n">workplace</span><span class="p">,</span> <span class="n">city</span><span class="p">,</span>
+                 <span class="n">still_probs</span><span class="o">=</span><span class="n">DEFAULT_STILL_PROBS</span><span class="p">,</span> <span class="n">speeds</span><span class="o">=</span><span class="n">DEFAULT_SPEEDS</span><span class="p">,</span>
+                 <span class="n">destination_diary</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">trajectory</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">diary</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                 <span class="n">start_time</span><span class="o">=</span><span class="n">datetime</span><span class="p">(</span><span class="mi">2024</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">hour</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">minute</span><span class="o">=</span><span class="mi">0</span><span class="p">),</span> <span class="n">dt</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        identifier : str</span>
+<span class="sd">            Name of the agent.</span>
+<span class="sd">        home : str</span>
+<span class="sd">            Building ID representing the home location.</span>
+<span class="sd">        workplace : str</span>
+<span class="sd">            Building ID representing the workplace location.</span>
+<span class="sd">        city : City</span>
+<span class="sd">            The city object containing relevant information about the city&#39;s layout and properties.</span>
+<span class="sd">        destination_diary : pandas.DataFrame</span>
+<span class="sd">            DataFrame containing the following columns: &#39;unix_timestamp&#39;, &#39;local_timestamp&#39;, &#39;duration&#39;, &#39;location&#39;.</span>
+<span class="sd">        trajectory : pandas.DataFrame</span>
+<span class="sd">            DataFrame containing the following columns: &#39;x&#39;, &#39;y&#39;, &#39;local_timestamp&#39;, &#39;unix_timestamp&#39;, &#39;identifier&#39;.</span>
+<span class="sd">        diary : pandas.DataFrame</span>
+<span class="sd">            DataFrame containing the following columns: &#39;unix_timestamp&#39;, &#39;local_timestamp&#39;, &#39;duration&#39;, &#39;location&#39;.</span>
+<span class="sd">        start_time : datetime</span>
+<span class="sd">            If `trajectory` is None, the first ping will occur at `start_time`.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">identifier</span> <span class="o">=</span> <span class="n">identifier</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">home</span> <span class="o">=</span> <span class="n">home</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">workplace</span> <span class="o">=</span> <span class="n">workplace</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">city</span> <span class="o">=</span> <span class="n">city</span>
+
+        <span class="k">if</span> <span class="n">destination_diary</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">start_time</span> <span class="o">=</span> <span class="n">destination_diary</span><span class="p">[</span><span class="s1">&#39;local_timestamp&#39;</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">destination_diary</span> <span class="o">=</span> <span class="n">destination_diary</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">destination_diary</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+                <span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;unix_timestamp&#39;</span><span class="p">,</span> <span class="s1">&#39;local_timestamp&#39;</span><span class="p">,</span> <span class="s1">&#39;duration&#39;</span><span class="p">,</span> <span class="s1">&#39;location&#39;</span><span class="p">])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">diary</span> <span class="o">=</span> <span class="n">diary</span> <span class="k">if</span> <span class="n">diary</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+            <span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;unix_timestamp&#39;</span><span class="p">,</span> <span class="s1">&#39;local_timestamp&#39;</span><span class="p">,</span> <span class="s1">&#39;duration&#39;</span><span class="p">,</span> <span class="s1">&#39;location&#39;</span><span class="p">])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">still_probs</span> <span class="o">=</span> <span class="n">still_probs</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">speeds</span> <span class="o">=</span> <span class="n">speeds</span>
+
+        <span class="c1"># If trajectory is not provided, then the first ping is at the home centroid at start_time</span>
+        <span class="k">if</span> <span class="n">trajectory</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">home_centroid</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">city</span><span class="o">.</span><span class="n">buildings</span><span class="p">[</span><span class="n">home</span><span class="p">]</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">centroid</span>
+            <span class="n">x_coord</span><span class="p">,</span> <span class="n">y_coord</span> <span class="o">=</span> <span class="n">home_centroid</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">home_centroid</span><span class="o">.</span><span class="n">y</span>
+            <span class="n">local_timestamp</span> <span class="o">=</span> <span class="n">start_time</span>
+            <span class="n">unix_timestamp</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">local_timestamp</span><span class="o">.</span><span class="n">timestamp</span><span class="p">())</span>
+            <span class="n">trajectory</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">([{</span>
+                <span class="s1">&#39;x&#39;</span><span class="p">:</span> <span class="n">x_coord</span><span class="p">,</span>
+                <span class="s1">&#39;y&#39;</span><span class="p">:</span> <span class="n">y_coord</span><span class="p">,</span>
+                <span class="s1">&#39;local_timestamp&#39;</span><span class="p">:</span> <span class="n">local_timestamp</span><span class="p">,</span>
+                <span class="s1">&#39;unix_timestamp&#39;</span><span class="p">:</span> <span class="n">unix_timestamp</span><span class="p">,</span>
+                <span class="s1">&#39;identifier&#39;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">identifier</span>
+                <span class="p">}])</span>
+
+            <span class="n">diary_entry</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;unix_timestamp&#39;</span><span class="p">:</span> <span class="n">unix_timestamp</span><span class="p">,</span>
+                           <span class="s1">&#39;local_timestamp&#39;</span><span class="p">:</span> <span class="n">local_timestamp</span><span class="p">,</span>
+                           <span class="s1">&#39;duration&#39;</span><span class="p">:</span> <span class="n">dt</span><span class="p">,</span>
+                           <span class="s1">&#39;location&#39;</span><span class="p">:</span> <span class="n">home</span><span class="p">}</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">diary</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">([</span><span class="n">diary_entry</span><span class="p">])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">trajectory</span> <span class="o">=</span> <span class="n">trajectory</span>
+
+<div class="viewcode-block" id="Agent.plot_traj">
+<a class="viewcode-back" href="../../daphme.html#daphme.garden_city.Agent.plot_traj">[docs]</a>
+    <span class="k">def</span> <span class="nf">plot_traj</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ax</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;black&#39;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">doors</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">address</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">heatmap</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">heatmap</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">city</span><span class="o">.</span><span class="n">plot_city</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">doors</span><span class="o">=</span><span class="n">doors</span><span class="p">,</span> <span class="n">address</span><span class="o">=</span><span class="n">address</span><span class="p">,</span> <span class="n">zorder</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">heatmap_agent</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">trajectory</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">trajectory</span><span class="o">.</span><span class="n">y</span><span class="p">,</span> <span class="n">s</span><span class="o">=</span><span class="mi">6</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">color</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="n">alpha</span><span class="p">,</span> <span class="n">zorder</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">city</span><span class="o">.</span><span class="n">plot_city</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">doors</span><span class="o">=</span><span class="n">doors</span><span class="p">,</span> <span class="n">address</span><span class="o">=</span><span class="n">address</span><span class="p">,</span> <span class="n">zorder</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Agent.sample_traj_hier_nhpp">
+<a class="viewcode-back" href="../../daphme.html#daphme.garden_city.Agent.sample_traj_hier_nhpp">[docs]</a>
+    <span class="k">def</span> <span class="nf">sample_traj_hier_nhpp</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">beta_start</span><span class="p">,</span> <span class="n">beta_durations</span><span class="p">,</span> <span class="n">beta_ping</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+        <span class="n">sparse_traj</span> <span class="o">=</span> <span class="n">mmod</span><span class="o">.</span><span class="n">sample_hier_nhpp</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">trajectory</span><span class="p">,</span> <span class="n">beta_start</span><span class="p">,</span> <span class="n">beta_durations</span><span class="p">,</span> <span class="n">beta_ping</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">)</span>
+        <span class="n">sparse_traj</span> <span class="o">=</span> <span class="n">sparse_traj</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span><span class="s1">&#39;unix_timestamp&#39;</span><span class="p">,</span> <span class="n">drop</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sparse_traj</span> <span class="o">=</span> <span class="n">sparse_traj</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="ortho_coord">
+<a class="viewcode-back" href="../../daphme.html#daphme.garden_city.ortho_coord">[docs]</a>
+<span class="k">def</span> <span class="nf">ortho_coord</span><span class="p">(</span><span class="n">multilines</span><span class="p">,</span> <span class="n">distance</span><span class="p">,</span> <span class="n">offset</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">0.001</span><span class="p">):</span>  <span class="c1"># Calculus approach. Probably super slow.</span>
+    <span class="n">point</span> <span class="o">=</span> <span class="n">multilines</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">distance</span><span class="p">)</span>
+    <span class="n">offset_point</span> <span class="o">=</span> <span class="n">multilines</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">distance</span> <span class="o">-</span> <span class="n">eps</span><span class="p">)</span>
+    <span class="n">p</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">point</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">point</span><span class="o">.</span><span class="n">y</span><span class="p">])</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">p</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">offset_point</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">offset_point</span><span class="o">.</span><span class="n">y</span><span class="p">])</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flip</span><span class="p">(</span><span class="n">x</span><span class="o">/</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">x</span><span class="p">))</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">])</span><span class="o">*</span><span class="n">offset</span>
+    <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">x</span><span class="o">+</span><span class="n">p</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="condense_destinations">
+<a class="viewcode-back" href="../../daphme.html#daphme.garden_city.condense_destinations">[docs]</a>
+<span class="k">def</span> <span class="nf">condense_destinations</span><span class="p">(</span><span class="n">destination_diary</span><span class="p">):</span>  <span class="c1"># This might be a more general clustering algorithm</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Modifies a sequence of timestamped destinations, joining consecutive </span>
+<span class="sd">    destinations in the same location into a single entry with the aggregated duration.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    destination_diary : pandas.DataFrame</span>
+<span class="sd">        DataFrame containing timestamped locations the user is heading towards.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pandas.DataFrame</span>
+<span class="sd">        A new DataFrame with condensed destination entries.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">destination_diary</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
+
+    <span class="c1"># Detect changes in location</span>
+    <span class="n">destination_diary</span><span class="p">[</span><span class="s1">&#39;new_segment&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">destination_diary</span><span class="p">[</span><span class="s1">&#39;location&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">ne</span><span class="p">(</span><span class="n">destination_diary</span><span class="p">[</span><span class="s1">&#39;location&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">shift</span><span class="p">())</span>
+
+    <span class="c1"># Create segment identifiers for grouping</span>
+    <span class="n">destination_diary</span><span class="p">[</span><span class="s1">&#39;segment_id&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">destination_diary</span><span class="p">[</span><span class="s1">&#39;new_segment&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">cumsum</span><span class="p">()</span>
+
+    <span class="c1"># Aggregate data by segment</span>
+    <span class="n">condensed_df</span> <span class="o">=</span> <span class="n">destination_diary</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s1">&#39;segment_id&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">agg</span><span class="p">({</span>
+        <span class="s1">&#39;unix_timestamp&#39;</span><span class="p">:</span> <span class="s1">&#39;first&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;local_timestamp&#39;</span><span class="p">:</span> <span class="s1">&#39;first&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;duration&#39;</span><span class="p">:</span> <span class="s1">&#39;sum&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;location&#39;</span><span class="p">:</span> <span class="s1">&#39;first&#39;</span>
+    <span class="p">})</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">condensed_df</span></div>
+
+
+<span class="c1"># =============================================================================</span>
+<span class="c1"># POPULATION</span>
+<span class="c1"># Container for all the agents and responsible for their initialization and</span>
+<span class="c1"># randomizing their attributes and trajectories</span>
+<span class="c1"># =============================================================================</span>
+
+
+<div class="viewcode-block" id="Population">
+<a class="viewcode-back" href="../../daphme.html#daphme.garden_city.Population">[docs]</a>
+<span class="k">class</span> <span class="nc">Population</span><span class="p">:</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">city</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">roster</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">city</span> <span class="o">=</span> <span class="n">city</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">global_execution</span> <span class="o">=</span> <span class="mi">0</span>
+
+<div class="viewcode-block" id="Population.add_agent">
+<a class="viewcode-back" href="../../daphme.html#daphme.garden_city.Population.add_agent">[docs]</a>
+    <span class="k">def</span> <span class="nf">add_agent</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">agent</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">verbose</span> <span class="ow">and</span> <span class="n">agent</span><span class="o">.</span><span class="n">identifier</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">roster</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Agent identifier already exists in population. Replacing corresponding agent.&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">roster</span><span class="p">[</span><span class="n">agent</span><span class="o">.</span><span class="n">identifier</span><span class="p">]</span> <span class="o">=</span> <span class="n">agent</span></div>
+
+
+<div class="viewcode-block" id="Population.generate_agents">
+<a class="viewcode-back" href="../../daphme.html#daphme.garden_city.Population.generate_agents">[docs]</a>
+    <span class="k">def</span> <span class="nf">generate_agents</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span>
+                        <span class="n">start_time</span><span class="o">=</span><span class="n">datetime</span><span class="p">(</span><span class="mi">2024</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">hour</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">minute</span><span class="o">=</span><span class="mi">0</span><span class="p">),</span>
+                        <span class="n">dt</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Generates N agents, with randomized attributes.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">npr</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+
+        <span class="n">b_types</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span>
+            <span class="s1">&#39;id&#39;</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">city</span><span class="o">.</span><span class="n">buildings</span><span class="o">.</span><span class="n">keys</span><span class="p">()),</span>
+            <span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="p">[</span><span class="n">b</span><span class="o">.</span><span class="n">building_type</span> <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">city</span><span class="o">.</span><span class="n">buildings</span><span class="o">.</span><span class="n">values</span><span class="p">()]</span>
+        <span class="p">})</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span><span class="s1">&#39;id&#39;</span><span class="p">)</span>  <span class="c1"># Maybe this should be an attribute of city since we end up using it a lot</span>
+
+        <span class="n">homes</span> <span class="o">=</span> <span class="n">b_types</span><span class="p">[</span><span class="n">b_types</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;home&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="n">N</span><span class="p">,</span> <span class="n">replace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">workplaces</span> <span class="o">=</span> <span class="n">b_types</span><span class="p">[</span><span class="n">b_types</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;work&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="n">N</span><span class="p">,</span> <span class="n">replace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="n">generator</span> <span class="o">=</span> <span class="n">funkybob</span><span class="o">.</span><span class="n">UniqueRandomNameGenerator</span><span class="p">(</span><span class="n">members</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">N</span><span class="p">):</span>
+            <span class="n">identifier</span> <span class="o">=</span> <span class="n">generator</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+            <span class="n">agent</span> <span class="o">=</span> <span class="n">Agent</span><span class="p">(</span><span class="n">identifier</span><span class="o">=</span><span class="n">identifier</span><span class="p">,</span>
+                          <span class="n">home</span><span class="o">=</span><span class="n">homes</span><span class="o">.</span><span class="n">index</span><span class="p">[</span><span class="n">i</span><span class="p">],</span>
+                          <span class="n">workplace</span><span class="o">=</span><span class="n">workplaces</span><span class="o">.</span><span class="n">index</span><span class="p">[</span><span class="n">i</span><span class="p">],</span>
+                          <span class="n">city</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">city</span><span class="p">,</span>
+                          <span class="n">start_time</span><span class="o">=</span><span class="n">start_time</span><span class="p">,</span>
+                          <span class="n">dt</span><span class="o">=</span><span class="n">dt</span><span class="p">)</span>  <span class="c1"># how do we add other args?</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">add_agent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Population.save_pop">
+<a class="viewcode-back" href="../../daphme.html#daphme.garden_city.Population.save_pop">[docs]</a>
+    <span class="k">def</span> <span class="nf">save_pop</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bucket</span><span class="p">,</span> <span class="n">prefix</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Save trajectories, homes, and diaries as Parquet files to S3.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        - bucket: str, the name of the S3 bucket.</span>
+<span class="sd">        - prefix: str, the path prefix within the bucket (e.g., &#39;folder/subfolder/&#39;).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">fs</span> <span class="o">=</span> <span class="n">s3fs</span><span class="o">.</span><span class="n">S3FileSystem</span><span class="p">()</span>
+
+        <span class="c1"># raw trajectories</span>
+        <span class="n">trajs</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">agent</span><span class="o">.</span><span class="n">trajectory</span> <span class="k">for</span> <span class="n">agent_id</span><span class="p">,</span> <span class="n">agent</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">roster</span><span class="o">.</span><span class="n">items</span><span class="p">()])</span>
+        <span class="n">trajs</span><span class="o">.</span><span class="n">to_parquet</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;s3://</span><span class="si">{</span><span class="n">bucket</span><span class="si">}</span><span class="s1">/</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s1">trajectories.parquet&#39;</span><span class="p">,</span> <span class="n">engine</span><span class="o">=</span><span class="s1">&#39;pyarrow&#39;</span><span class="p">,</span> <span class="n">filesystem</span><span class="o">=</span><span class="n">fs</span><span class="p">)</span>
+
+        <span class="c1"># sparse trajectories</span>
+        <span class="n">sparse_trajs</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">agent</span><span class="o">.</span><span class="n">sparse_traj</span> <span class="k">for</span> <span class="n">agent_id</span><span class="p">,</span> <span class="n">agent</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">roster</span><span class="o">.</span><span class="n">items</span><span class="p">()])</span>
+        <span class="n">sparse_trajs</span><span class="o">.</span><span class="n">to_parquet</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;s3://</span><span class="si">{</span><span class="n">bucket</span><span class="si">}</span><span class="s1">/</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s1">sparse_trajectories.parquet&#39;</span><span class="p">,</span> <span class="n">engine</span><span class="o">=</span><span class="s1">&#39;pyarrow&#39;</span><span class="p">,</span> <span class="n">filesystem</span><span class="o">=</span><span class="n">fs</span><span class="p">)</span>
+
+        <span class="c1"># home table</span>
+        <span class="n">homes</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">([(</span><span class="n">agent_id</span><span class="p">,</span> <span class="n">agent</span><span class="o">.</span><span class="n">home</span><span class="p">,</span> <span class="n">agent</span><span class="o">.</span><span class="n">workplace</span><span class="p">)</span> <span class="k">for</span> <span class="n">agent_id</span><span class="p">,</span> <span class="n">agent</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">roster</span><span class="o">.</span><span class="n">items</span><span class="p">()],</span>
+                             <span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">,</span> <span class="s1">&#39;home&#39;</span><span class="p">,</span> <span class="s1">&#39;workplace&#39;</span><span class="p">])</span>
+        <span class="n">homes</span><span class="o">.</span><span class="n">to_parquet</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;s3://</span><span class="si">{</span><span class="n">bucket</span><span class="si">}</span><span class="s1">/</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s1">homes.parquet&#39;</span><span class="p">,</span> <span class="n">engine</span><span class="o">=</span><span class="s1">&#39;pyarrow&#39;</span><span class="p">,</span> <span class="n">filesystem</span><span class="o">=</span><span class="n">fs</span><span class="p">)</span>
+
+        <span class="c1"># diary</span>
+        <span class="n">diaries</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">agent_id</span><span class="p">,</span> <span class="n">agent</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">roster</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">ag_d</span> <span class="o">=</span> <span class="n">agent</span><span class="o">.</span><span class="n">diary</span>
+            <span class="n">ag_d</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">agent_id</span>
+            <span class="n">diaries</span> <span class="o">+=</span> <span class="p">[</span><span class="n">ag_d</span><span class="p">]</span>
+        <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="n">diaries</span><span class="p">)</span><span class="o">.</span><span class="n">to_parquet</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;s3://</span><span class="si">{</span><span class="n">bucket</span><span class="si">}</span><span class="s1">/</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s1">diaries.parquet&#39;</span><span class="p">,</span> <span class="n">engine</span><span class="o">=</span><span class="s1">&#39;pyarrow&#39;</span><span class="p">,</span> <span class="n">filesystem</span><span class="o">=</span><span class="n">fs</span><span class="p">)</span></div>
+
+
+<span class="c1">#     @staticmethod</span>
+<span class="c1">#     def process_agent(row, load_trajectories, load_diaries, city):</span>
+<span class="c1">#         agent_id = row[&#39;id&#39;]</span>
+<span class="c1">#         traj = load_trajectories[load_trajectories[&#39;identifier&#39;] == agent_id].reset_index(drop=True)</span>
+<span class="c1">#         diary = load_diaries[load_diaries[&#39;id&#39;] == agent_id].reset_index(drop=True)</span>
+<span class="c1">#         agent = Agent(agent_id, </span>
+<span class="c1">#                       row[&#39;home&#39;], </span>
+<span class="c1">#                       row[&#39;workplace&#39;], </span>
+<span class="c1">#                       city,</span>
+<span class="c1">#                       trajectory=traj,</span>
+<span class="c1">#                       diary=diary)</span>
+<span class="c1">#         return agent</span>
+
+<span class="c1">#     def load_pop(self, path, parallelize=False):</span>
+<span class="c1">#         &quot;&quot;&quot;</span>
+<span class="c1">#         gotta fix this -- it&#39;s too slow! maybe parquet/s3</span>
+<span class="c1">#         &quot;&quot;&quot;</span>
+<span class="c1">#         load_trajectories = pd.read_csv(path+&#39;trajectories.csv&#39;, </span>
+<span class="c1">#                                         usecols=lambda column: column != &#39;Unnamed: 0&#39;)</span>
+<span class="c1">#         load_diaries = pd.read_csv(path+&#39;diaries.csv&#39;, </span>
+<span class="c1">#                                    usecols=lambda column: column != &#39;Unnamed: 0&#39;)</span>
+<span class="c1">#         load_homes = pd.read_csv(path+&#39;homes.csv&#39;, </span>
+<span class="c1">#                                  usecols=lambda column: column != &#39;Unnamed: 0&#39;)</span>
+
+<span class="c1">#         if parallelize:</span>
+<span class="c1">#             with ProcessPoolExecutor() as executor:</span>
+<span class="c1">#                 agents = list(executor.map(self.process_agent, [row for _, row in load_homes.iterrows()],</span>
+<span class="c1">#                                            [load_trajectories] * len(load_homes),</span>
+<span class="c1">#                                            [load_diaries] * len(load_homes),</span>
+<span class="c1">#                                            [self.city] * len(load_homes)))</span>
+<span class="c1">#             for agent in agents:</span>
+<span class="c1">#                 self.add_agent(agent)</span>
+<span class="c1">#         else:</span>
+<span class="c1">#             for _, row in load_homes.iterrows():</span>
+<span class="c1">#                 agent = self.process_agent(row, load_trajectories, load_diaries, self.city)</span>
+<span class="c1">#                 self.add_agent(agent)</span>
+
+<div class="viewcode-block" id="Population.sample_step">
+<a class="viewcode-back" href="../../daphme.html#daphme.garden_city.Population.sample_step">[docs]</a>
+    <span class="k">def</span> <span class="nf">sample_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">agent</span><span class="p">,</span> <span class="n">start_point</span><span class="p">,</span> <span class="n">dest_building</span><span class="p">,</span> <span class="n">dt</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        From a destination diary, generates (x, y) pings.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        agent : Agent</span>
+<span class="sd">            The agent for whom a step will be sampled.</span>
+<span class="sd">        start_point : tuple</span>
+<span class="sd">            The coordinates of the current position as a tuple (x, y).</span>
+<span class="sd">        dest_building : Building</span>
+<span class="sd">            The destination building of the agent.</span>
+<span class="sd">        dt : float</span>
+<span class="sd">            Time step (i.e., number of minutes per ping).</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        coord : numpy.ndarray</span>
+<span class="sd">            A numpy array of floats with shape (1, 2) representing the new coordinates.</span>
+<span class="sd">        location : str or None</span>
+<span class="sd">            The building ID if the step is a stay, or `None` if the step is a move.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">city</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">city</span>
+
+        <span class="c1"># Find current geometry</span>
+        <span class="n">start_block</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">floor</span><span class="p">(</span><span class="n">start_point</span><span class="p">)</span>  <span class="c1"># blocks are indexed by bottom left</span>
+        <span class="n">start_geometry</span> <span class="o">=</span> <span class="n">city</span><span class="o">.</span><span class="n">get_block</span><span class="p">(</span><span class="nb">tuple</span><span class="p">(</span><span class="n">start_block</span><span class="p">))</span>
+
+        <span class="n">curr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">start_point</span><span class="p">)</span>
+
+        <span class="c1"># Agent moves within the building</span>
+        <span class="k">if</span> <span class="n">start_geometry</span> <span class="o">==</span> <span class="n">dest_building</span> <span class="ow">or</span> <span class="n">start_point</span> <span class="o">==</span> <span class="n">dest_building</span><span class="o">.</span><span class="n">door_centroid</span><span class="p">:</span>
+            <span class="n">location</span> <span class="o">=</span> <span class="n">dest_building</span><span class="o">.</span><span class="n">id</span>
+            <span class="n">p</span> <span class="o">=</span> <span class="n">agent</span><span class="o">.</span><span class="n">still_probs</span><span class="p">[</span><span class="n">dest_building</span><span class="o">.</span><span class="n">building_type</span><span class="p">]</span>
+            <span class="n">sigma</span> <span class="o">=</span> <span class="n">agent</span><span class="o">.</span><span class="n">speeds</span><span class="p">[</span><span class="n">dest_building</span><span class="o">.</span><span class="n">building_type</span><span class="p">]</span>
+
+            <span class="k">if</span> <span class="n">npr</span><span class="o">.</span><span class="n">uniform</span><span class="p">()</span> <span class="o">&lt;</span> <span class="n">p</span><span class="p">:</span>
+                <span class="n">coord</span> <span class="o">=</span> <span class="n">curr</span>
+            <span class="k">else</span><span class="p">:</span>
+
+                <span class="c1"># Draw until coord falls inside building</span>
+                <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+                    <span class="n">coord</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="n">loc</span><span class="o">=</span><span class="n">curr</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="n">sigma</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">dt</span><span class="p">),</span> <span class="n">size</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">dest_building</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">contains</span><span class="p">(</span><span class="n">Point</span><span class="p">(</span><span class="n">coord</span><span class="p">)):</span>
+                        <span class="k">break</span>
+
+        <span class="c1"># Agent travels to building along the streets</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">location</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="n">dest_point</span> <span class="o">=</span> <span class="n">dest_building</span><span class="o">.</span><span class="n">door</span>
+
+            <span class="k">if</span> <span class="n">start_geometry</span> <span class="ow">in</span> <span class="n">city</span><span class="o">.</span><span class="n">buildings</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+                <span class="n">start_segment</span> <span class="o">=</span> <span class="p">[</span><span class="n">start_point</span><span class="p">,</span> <span class="n">start_geometry</span><span class="o">.</span><span class="n">door_centroid</span><span class="p">]</span>
+                <span class="n">start</span> <span class="o">=</span> <span class="n">start_geometry</span><span class="o">.</span><span class="n">door</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">start_segment</span> <span class="o">=</span> <span class="p">[]</span>
+                <span class="n">start</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">start_block</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">))</span>
+
+            <span class="n">street_path</span> <span class="o">=</span> <span class="n">city</span><span class="o">.</span><span class="n">shortest_paths</span><span class="p">[</span><span class="n">start</span><span class="p">][</span><span class="n">dest_point</span><span class="p">]</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="p">[(</span><span class="n">x</span><span class="o">+</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">y</span><span class="o">+</span><span class="mf">0.5</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="ow">in</span> <span class="n">street_path</span><span class="p">]</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="n">start_segment</span> <span class="o">+</span> <span class="n">path</span> <span class="o">+</span> <span class="p">[</span><span class="n">dest_building</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">centroid</span><span class="p">]</span>
+            <span class="n">path_ml</span> <span class="o">=</span> <span class="n">MultiLineString</span><span class="p">([</span><span class="n">path</span><span class="p">])</span>
+
+            <span class="c1"># Bounding polygon</span>
+            <span class="n">street_poly</span> <span class="o">=</span> <span class="n">unary_union</span><span class="p">([</span><span class="n">city</span><span class="o">.</span><span class="n">get_block</span><span class="p">(</span><span class="n">block</span><span class="p">)</span><span class="o">.</span><span class="n">geometry</span> <span class="k">for</span> <span class="n">block</span> <span class="ow">in</span> <span class="n">street_path</span><span class="p">])</span>
+
+            <span class="n">bound_poly</span> <span class="o">=</span> <span class="n">unary_union</span><span class="p">([</span><span class="n">start_geometry</span><span class="o">.</span><span class="n">geometry</span><span class="p">,</span> <span class="n">street_poly</span><span class="p">])</span>
+            <span class="c1"># Snap to path</span>
+            <span class="n">snap_point_dist</span> <span class="o">=</span> <span class="n">path_ml</span><span class="o">.</span><span class="n">project</span><span class="p">(</span><span class="n">Point</span><span class="p">(</span><span class="n">start_point</span><span class="p">))</span>
+
+
+            <span class="c1">#PACO: SHOULD THESE ALSO BE CONSTANT?</span>
+            <span class="n">delta</span> <span class="o">=</span> <span class="mf">3.33</span><span class="o">*</span><span class="n">dt</span>      <span class="c1"># 50m/min; blocks are 15m x 15m</span>
+            <span class="n">sigma</span> <span class="o">=</span> <span class="mf">0.5</span><span class="o">*</span><span class="n">dt</span><span class="o">/</span><span class="mf">1.96</span>  <span class="c1"># 95% prob of moving 0.5</span>
+
+            <span class="c1"># Draw until coord falls inside bound_poly</span>
+            <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+                <span class="c1"># consider a &quot;path&quot; coordinate and &quot;orthogonal coordinate&quot;</span>
+                <span class="n">transformed_step</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="n">loc</span><span class="o">=</span><span class="p">[</span><span class="n">delta</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">scale</span><span class="o">=</span><span class="n">sigma</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">dt</span><span class="p">),</span> <span class="n">size</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="n">snap_point_dist</span> <span class="o">+</span> <span class="n">transformed_step</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">path_ml</span><span class="o">.</span><span class="n">length</span><span class="p">:</span>
+                    <span class="n">coord</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">dest_building</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">centroid</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                    <span class="k">break</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">coord</span> <span class="o">=</span> <span class="n">ortho_coord</span><span class="p">(</span><span class="n">path_ml</span><span class="p">,</span> <span class="n">snap_point_dist</span><span class="o">+</span><span class="n">transformed_step</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">transformed_step</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+                    <span class="k">if</span> <span class="n">bound_poly</span><span class="o">.</span><span class="n">contains</span><span class="p">(</span><span class="n">Point</span><span class="p">(</span><span class="n">coord</span><span class="p">)):</span>
+                        <span class="k">break</span>
+
+        <span class="k">return</span> <span class="n">coord</span><span class="p">,</span> <span class="n">location</span></div>
+
+
+<div class="viewcode-block" id="Population.traj_from_dest_diary">
+<a class="viewcode-back" href="../../daphme.html#daphme.garden_city.Population.traj_from_dest_diary">[docs]</a>
+    <span class="k">def</span> <span class="nf">traj_from_dest_diary</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">agent</span><span class="p">,</span> <span class="n">dt</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Simulate a trajectory and give agent true travel diary attribute.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        agent: Agent</span>
+
+<span class="sd">        destination_diary: Pandas Dataframe</span>
+<span class="sd">            with &quot;unix_timestamp&quot;, &quot;local_timestamp&quot;, &quot;duration&quot;, &quot;location&quot;</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        None (updates agent.trajectory, agent.diary)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">city</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">city</span>
+
+        <span class="n">destination_diary</span> <span class="o">=</span> <span class="n">agent</span><span class="o">.</span><span class="n">destination_diary</span>
+        <span class="c1">#print(destination_diary)</span>
+
+        <span class="n">current_loc</span> <span class="o">=</span> <span class="n">agent</span><span class="o">.</span><span class="n">trajectory</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">trajectory_update</span> <span class="o">=</span> <span class="p">[]</span>
+        
+        <span class="k">if</span> <span class="n">agent</span><span class="o">.</span><span class="n">diary</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="n">current_entry</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">current_entry</span> <span class="o">=</span> <span class="n">agent</span><span class="o">.</span><span class="n">diary</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">to_dict</span><span class="p">()</span>
+            <span class="n">agent</span><span class="o">.</span><span class="n">diary</span> <span class="o">=</span> <span class="n">agent</span><span class="o">.</span><span class="n">diary</span><span class="o">.</span><span class="n">iloc</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">entry_update</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">destination_diary</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
+            <span class="n">destination_info</span> <span class="o">=</span> <span class="n">destination_diary</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+            <span class="n">duration</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">destination_info</span><span class="p">[</span><span class="s1">&#39;duration&#39;</span><span class="p">]</span> <span class="o">*</span> <span class="mi">1</span><span class="o">/</span><span class="n">dt</span><span class="p">)</span>
+            <span class="n">building_id</span> <span class="o">=</span> <span class="n">destination_info</span><span class="p">[</span><span class="s1">&#39;location&#39;</span><span class="p">]</span>
+            <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">duration</span><span class="o">//</span><span class="n">dt</span><span class="p">)):</span>
+                <span class="n">prev_ping</span> <span class="o">=</span> <span class="n">current_loc</span>
+                <span class="n">start_point</span> <span class="o">=</span> <span class="p">(</span><span class="n">prev_ping</span><span class="p">[</span><span class="s1">&#39;x&#39;</span><span class="p">],</span> <span class="n">prev_ping</span><span class="p">[</span><span class="s1">&#39;y&#39;</span><span class="p">])</span>
+                <span class="n">dest_building</span> <span class="o">=</span> <span class="n">city</span><span class="o">.</span><span class="n">buildings</span><span class="p">[</span><span class="n">building_id</span><span class="p">]</span>
+                <span class="n">unix_timestamp</span> <span class="o">=</span> <span class="n">prev_ping</span><span class="p">[</span><span class="s1">&#39;unix_timestamp&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="mi">60</span><span class="o">*</span><span class="n">dt</span>
+                <span class="n">local_timestamp</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">unix_timestamp</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;s&#39;</span><span class="p">)</span>
+
+                <span class="c1"># You should be asleep between 0:00 and 5:59!</span>
+                <span class="c1"># if local_timestamp.hour &lt;= 5:</span>
+                <span class="c1">#     coord = start_point  # stay in place</span>
+                <span class="c1">#     location = building_id</span>
+                <span class="c1"># else:</span>
+                <span class="n">coord</span><span class="p">,</span> <span class="n">location</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sample_step</span><span class="p">(</span><span class="n">agent</span><span class="p">,</span> <span class="n">start_point</span><span class="p">,</span> <span class="n">dest_building</span><span class="p">,</span> <span class="n">dt</span><span class="p">)</span>
+                <span class="n">ping</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;x&#39;</span><span class="p">:</span> <span class="n">coord</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="s1">&#39;y&#39;</span><span class="p">:</span> <span class="n">coord</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                        <span class="s1">&#39;local_timestamp&#39;</span><span class="p">:</span> <span class="n">local_timestamp</span><span class="p">,</span>
+                        <span class="s1">&#39;unix_timestamp&#39;</span><span class="p">:</span> <span class="n">unix_timestamp</span><span class="p">,</span>
+                        <span class="s1">&#39;identifier&#39;</span><span class="p">:</span> <span class="n">agent</span><span class="o">.</span><span class="n">identifier</span><span class="p">}</span>
+
+                <span class="n">current_loc</span> <span class="o">=</span> <span class="n">ping</span>
+                <span class="n">trajectory_update</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ping</span><span class="p">)</span>
+                <span class="k">if</span><span class="p">(</span><span class="n">current_entry</span> <span class="o">==</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">current_entry</span><span class="p">[</span><span class="s1">&#39;location&#39;</span><span class="p">]</span> <span class="o">!=</span> <span class="n">location</span><span class="p">):</span>
+                    <span class="n">entry_update</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">current_entry</span><span class="p">)</span>
+                    <span class="n">current_entry</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;unix_timestamp&#39;</span><span class="p">:</span> <span class="n">unix_timestamp</span><span class="p">,</span>
+                             <span class="s1">&#39;local_timestamp&#39;</span><span class="p">:</span> <span class="n">local_timestamp</span><span class="p">,</span>
+                             <span class="s1">&#39;duration&#39;</span><span class="p">:</span> <span class="n">dt</span><span class="p">,</span>
+                             <span class="s1">&#39;location&#39;</span><span class="p">:</span> <span class="n">location</span><span class="p">}</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">current_entry</span><span class="p">[</span><span class="s1">&#39;duration&#39;</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span><span class="o">*</span><span class="n">dt</span>
+        <span class="c1">#print(trajectory_update)</span>
+        <span class="n">agent</span><span class="o">.</span><span class="n">trajectory</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">agent</span><span class="o">.</span><span class="n">trajectory</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">trajectory_update</span><span class="p">)],</span>
+                                <span class="n">ignore_index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="n">entry_update</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">current_entry</span><span class="p">)</span>
+        <span class="k">if</span><span class="p">(</span><span class="n">agent</span><span class="o">.</span><span class="n">diary</span><span class="o">.</span><span class="n">empty</span><span class="p">):</span>
+            <span class="n">agent</span><span class="o">.</span><span class="n">diary</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">entry_update</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">agent</span><span class="o">.</span><span class="n">diary</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">entry_update</span><span class="p">)],</span> <span class="n">ignore_index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">agent</span><span class="o">.</span><span class="n">destination_diary</span> <span class="o">=</span> <span class="n">destination_diary</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">destination_diary</span><span class="o">.</span><span class="n">index</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Population.generate_dest_diary">
+<a class="viewcode-back" href="../../daphme.html#daphme.garden_city.Population.generate_dest_diary">[docs]</a>
+    <span class="k">def</span> <span class="nf">generate_dest_diary</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">agent</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">duration</span><span class="o">=</span><span class="mi">15</span><span class="p">,</span>
+                            <span class="n">stay_probs</span><span class="o">=</span><span class="n">DEFAULT_STAY_PROBS</span><span class="p">,</span>
+                            <span class="n">rho</span><span class="o">=</span><span class="mf">0.6</span><span class="p">,</span> <span class="n">gamma</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Exploration and preferential return.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        T : int</span>
+<span class="sd">            Timestamp until which to generate.</span>
+<span class="sd">        rho : float</span>
+<span class="sd">            Parameter for exploring, influencing the probability of exploration.</span>
+<span class="sd">        gamma : float</span>
+<span class="sd">            Parameter for exploring, influencing the probability of preferential return.</span>
+<span class="sd">        stay_probs : dict</span>
+<span class="sd">            Dictionary containing the probability of staying in the same building.</span>
+<span class="sd">            This is modeled as a geometric distribution with `p = 1 - ((1/avg_duration_hrs)/timesteps_in_1_hr)`.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">npr</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+
+        <span class="n">id2door</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">([[</span><span class="n">s</span><span class="p">,</span> <span class="n">b</span><span class="o">.</span><span class="n">door</span><span class="p">]</span> <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">city</span><span class="o">.</span><span class="n">buildings</span><span class="o">.</span><span class="n">items</span><span class="p">()],</span>
+                               <span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">,</span> <span class="s1">&#39;door&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span><span class="s1">&#39;door&#39;</span><span class="p">)</span>  <span class="c1"># could this be a field of city?</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">T</span><span class="p">,</span> <span class="n">datetime</span><span class="p">):</span>
+            <span class="n">T</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">T</span><span class="o">.</span><span class="n">timestamp</span><span class="p">())</span>  <span class="c1"># Convert to unix</span>
+
+        <span class="n">probs</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span>
+            <span class="s1">&#39;id&#39;</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">city</span><span class="o">.</span><span class="n">buildings</span><span class="o">.</span><span class="n">keys</span><span class="p">()),</span>
+            <span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="p">[</span><span class="n">b</span><span class="o">.</span><span class="n">building_type</span> <span class="k">for</span> <span class="n">b</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">city</span><span class="o">.</span><span class="n">buildings</span><span class="o">.</span><span class="n">values</span><span class="p">()],</span>
+            <span class="s1">&#39;freq&#39;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="s1">&#39;p&#39;</span><span class="p">:</span> <span class="mi">0</span>
+        <span class="p">})</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span><span class="s1">&#39;id&#39;</span><span class="p">)</span>
+
+        <span class="c1"># Initializes past counts randomly</span>
+        <span class="n">probs</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">agent</span><span class="o">.</span><span class="n">home</span><span class="p">,</span> <span class="s1">&#39;freq&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">25</span>
+        <span class="n">probs</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">agent</span><span class="o">.</span><span class="n">workplace</span><span class="p">,</span> <span class="s1">&#39;freq&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">25</span>
+        <span class="n">probs</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">probs</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s1">&#39;park&#39;</span><span class="p">,</span> <span class="s1">&#39;freq&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">3</span>  <span class="c1"># Agents love to comeback to park</span>
+        <span class="c1"># ALTERNATIVELY: start with 1 at home and 1 at work, and do a burnout period of 2 weeks. </span>
+
+        <span class="n">initial_locs</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">initial_locs</span> <span class="o">+=</span> <span class="nb">list</span><span class="p">(</span><span class="n">npr</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">probs</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">probs</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s1">&#39;retail&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">npr</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="mi">8</span><span class="p">)))</span>
+        <span class="n">initial_locs</span> <span class="o">+=</span> <span class="nb">list</span><span class="p">(</span><span class="n">npr</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">probs</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">probs</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s1">&#39;work&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">npr</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="mi">4</span><span class="p">)))</span>
+        <span class="n">initial_locs</span> <span class="o">+=</span> <span class="nb">list</span><span class="p">(</span><span class="n">npr</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">probs</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">probs</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s1">&#39;home&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">npr</span><span class="o">.</span><span class="n">poisson</span><span class="p">(</span><span class="mi">4</span><span class="p">)))</span>
+        <span class="n">probs</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">initial_locs</span><span class="p">,</span> <span class="s1">&#39;freq&#39;</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="k">if</span> <span class="n">agent</span><span class="o">.</span><span class="n">destination_diary</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="n">last_ping</span> <span class="o">=</span> <span class="n">agent</span><span class="o">.</span><span class="n">trajectory</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="n">start_time_local</span> <span class="o">=</span> <span class="n">last_ping</span><span class="o">.</span><span class="n">local_timestamp</span>
+            <span class="n">start_time</span> <span class="o">=</span> <span class="n">last_ping</span><span class="o">.</span><span class="n">unix_timestamp</span>
+            <span class="n">curr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">city</span><span class="o">.</span><span class="n">get_block</span><span class="p">((</span><span class="n">last_ping</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">last_ping</span><span class="o">.</span><span class="n">y</span><span class="p">))</span><span class="o">.</span><span class="n">id</span>  <span class="c1"># Always a building?? Could be street</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">last_entry</span> <span class="o">=</span> <span class="n">agent</span><span class="o">.</span><span class="n">destination_diary</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="n">start_time_local</span> <span class="o">=</span> <span class="n">last_entry</span><span class="o">.</span><span class="n">local_timestamp</span> <span class="o">+</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">minutes</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">last_entry</span><span class="o">.</span><span class="n">duration</span><span class="p">))</span>
+            <span class="n">start_time</span> <span class="o">=</span> <span class="n">last_entry</span><span class="o">.</span><span class="n">unix_timestamp</span> <span class="o">+</span> <span class="n">last_entry</span><span class="o">.</span><span class="n">duration</span><span class="o">*</span><span class="mi">60</span>
+            <span class="n">curr</span> <span class="o">=</span> <span class="n">last_entry</span><span class="o">.</span><span class="n">location</span>
+
+        <span class="n">dest_update</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">while</span> <span class="n">start_time</span> <span class="o">&lt;</span> <span class="n">T</span><span class="p">:</span>
+            <span class="n">curr_type</span> <span class="o">=</span> <span class="n">probs</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">curr</span><span class="p">,</span> <span class="s1">&#39;type&#39;</span><span class="p">]</span>
+            <span class="n">allowed</span> <span class="o">=</span> <span class="n">allowed_buildings</span><span class="p">(</span><span class="n">start_time_local</span><span class="p">)</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">probs</span><span class="o">.</span><span class="n">loc</span><span class="p">[(</span><span class="n">probs</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">allowed</span><span class="p">))</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">probs</span><span class="o">.</span><span class="n">freq</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)]</span>
+
+            <span class="n">S</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="c1"># Fix depending on whether &quot;explore&quot; should depend only on allowed buildings</span>
+
+            <span class="c1">#probability of exploring</span>
+            <span class="n">p_exp</span> <span class="o">=</span> <span class="n">rho</span><span class="o">*</span><span class="p">(</span><span class="n">S</span><span class="o">**</span><span class="p">(</span><span class="o">-</span><span class="n">gamma</span><span class="p">))</span>
+
+            <span class="c1"># You should be asleep! I don&#39;t think we&#39;re doing this anymore</span>
+            <span class="c1"># if (start_time_local.hour &gt;= 22) | (start_time_local.hour &lt;= 5):</span>
+            <span class="c1">#     curr = agent.home  # this doesn&#39;t permit the possibility of sleepovers</span>
+            <span class="c1">#     probs.loc[curr, &#39;freq&#39;] += 1</span>
+            <span class="c1">#     pass</span>
+
+            <span class="c1"># Stay</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">curr_type</span> <span class="ow">in</span> <span class="n">allowed</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">npr</span><span class="o">.</span><span class="n">uniform</span><span class="p">()</span> <span class="o">&lt;</span> <span class="n">stay_probs</span><span class="p">[</span><span class="n">curr_type</span><span class="p">]):</span>
+                <span class="k">pass</span>
+
+            <span class="c1"># Exploration</span>
+            <span class="k">elif</span> <span class="n">npr</span><span class="o">.</span><span class="n">uniform</span><span class="p">()</span> <span class="o">&lt;</span> <span class="n">p_exp</span><span class="p">:</span>
+                <span class="n">probs</span><span class="p">[</span><span class="s1">&#39;p&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">city</span><span class="o">.</span><span class="n">gravity</span><span class="o">.</span><span class="n">xs</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">city</span><span class="o">.</span><span class="n">buildings</span><span class="p">[</span><span class="n">curr</span><span class="p">]</span><span class="o">.</span><span class="n">door</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">id2door</span><span class="p">,</span> <span class="n">how</span><span class="o">=</span><span class="s1">&#39;right&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span><span class="s1">&#39;id&#39;</span><span class="p">)</span>
+                <span class="n">y</span> <span class="o">=</span> <span class="n">probs</span><span class="o">.</span><span class="n">loc</span><span class="p">[(</span><span class="n">probs</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">allowed</span><span class="p">))</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">probs</span><span class="o">.</span><span class="n">freq</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)]</span>
+
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">y</span><span class="o">.</span><span class="n">empty</span> <span class="ow">and</span> <span class="n">y</span><span class="p">[</span><span class="s1">&#39;p&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                    <span class="n">curr</span> <span class="o">=</span> <span class="n">npr</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">y</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="n">y</span><span class="p">[</span><span class="s1">&#39;p&#39;</span><span class="p">]</span><span class="o">/</span><span class="n">y</span><span class="p">[</span><span class="s1">&#39;p&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="c1"># If there are no more buildings to explore, then preferential return</span>
+                    <span class="n">curr</span> <span class="o">=</span> <span class="n">npr</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="n">x</span><span class="p">[</span><span class="s1">&#39;freq&#39;</span><span class="p">]</span><span class="o">/</span><span class="n">x</span><span class="p">[</span><span class="s1">&#39;freq&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
+
+                <span class="n">probs</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">curr</span><span class="p">,</span> <span class="s1">&#39;freq&#39;</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+
+            <span class="c1"># Preferential return</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">curr</span> <span class="o">=</span> <span class="n">npr</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="n">x</span><span class="p">[</span><span class="s1">&#39;freq&#39;</span><span class="p">]</span><span class="o">/</span><span class="n">x</span><span class="p">[</span><span class="s1">&#39;freq&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
+                <span class="n">probs</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">curr</span><span class="p">,</span> <span class="s1">&#39;freq&#39;</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+
+            <span class="c1"># Update destination diary</span>
+            <span class="n">entry</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;unix_timestamp&#39;</span><span class="p">:</span> <span class="n">start_time</span><span class="p">,</span>
+                     <span class="s1">&#39;local_timestamp&#39;</span><span class="p">:</span> <span class="n">start_time_local</span><span class="p">,</span>
+                     <span class="s1">&#39;duration&#39;</span><span class="p">:</span> <span class="n">duration</span><span class="p">,</span>
+                     <span class="s1">&#39;location&#39;</span><span class="p">:</span> <span class="n">curr</span><span class="p">}</span>
+            <span class="n">dest_update</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">entry</span><span class="p">)</span>
+            <span class="c1"># entry = pd.DataFrame([entry])</span>
+            <span class="c1"># if agent.destination_diary.empty:</span>
+            <span class="c1">#     agent.destination_diary = entry</span>
+            <span class="c1"># else:</span>
+            <span class="c1">#     agent.destination_diary = pd.concat([agent.destination_diary, entry], ignore_index=True)</span>
+
+            <span class="n">start_time_local</span> <span class="o">=</span> <span class="n">start_time_local</span> <span class="o">+</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">minutes</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">duration</span><span class="p">))</span>
+            <span class="n">start_time</span> <span class="o">=</span> <span class="n">start_time</span> <span class="o">+</span> <span class="n">duration</span><span class="o">*</span><span class="mi">60</span>
+
+        <span class="k">if</span> <span class="n">agent</span><span class="o">.</span><span class="n">destination_diary</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="n">agent</span><span class="o">.</span><span class="n">destination_diary</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">dest_update</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">agent</span><span class="o">.</span><span class="n">destination_diary</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">dest_update</span><span class="p">)],</span> <span class="n">ignore_index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">agent</span><span class="o">.</span><span class="n">destination_diary</span> <span class="o">=</span> <span class="n">condense_destinations</span><span class="p">(</span><span class="n">agent</span><span class="o">.</span><span class="n">destination_diary</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="Population.generate_trajectory">
+<a class="viewcode-back" href="../../daphme.html#daphme.garden_city.Population.generate_trajectory">[docs]</a>
+    <span class="k">def</span> <span class="nf">generate_trajectory</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">agent</span><span class="p">,</span> <span class="n">T</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">duration</span><span class="o">=</span><span class="mi">15</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">dt</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+
+        <span class="n">npr</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">agent</span><span class="o">.</span><span class="n">destination_diary</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">T</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">&quot;Destination diary is empty. Provide a parameter T to generate destination diary from transition matrix.&quot;</span>
+                <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">generate_dest_diary</span><span class="p">(</span><span class="n">agent</span><span class="p">,</span> <span class="n">T</span><span class="p">,</span> <span class="n">duration</span><span class="o">=</span><span class="n">duration</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">)</span>
+        <span class="c1">#print(agent.destination_diary)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">traj_from_dest_diary</span><span class="p">(</span><span class="n">agent</span><span class="p">,</span> <span class="n">dt</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="Population.plot_population">
+<a class="viewcode-back" href="../../daphme.html#daphme.garden_city.Population.plot_population">[docs]</a>
+    <span class="k">def</span> <span class="nf">plot_population</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ax</span><span class="p">,</span> <span class="n">doors</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">address</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">agent_id</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">roster</span><span class="p">):</span>
+            <span class="n">agent</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">roster</span><span class="p">[</span><span class="n">agent_id</span><span class="p">]</span>
+            <span class="n">col</span> <span class="o">=</span> <span class="n">cm</span><span class="o">.</span><span class="n">tab20c</span><span class="p">(</span><span class="n">i</span><span class="o">/</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">roster</span><span class="p">))</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">agent</span><span class="o">.</span><span class="n">trajectory</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">agent</span><span class="o">.</span><span class="n">trajectory</span><span class="o">.</span><span class="n">y</span><span class="p">,</span> <span class="n">s</span><span class="o">=</span><span class="mi">6</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">col</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">zorder</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">city</span><span class="o">.</span><span class="n">plot_city</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">doors</span><span class="o">=</span><span class="n">doors</span><span class="p">,</span> <span class="n">address</span><span class="o">=</span><span class="n">address</span><span class="p">,</span> <span class="n">zorder</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span></div>
+</div>
+
+
+<span class="c1"># =============================================================================</span>
+<span class="c1"># AUXILIARY METHODS</span>
+<span class="c1"># =============================================================================</span>
+
+
+<div class="viewcode-block" id="load">
+<a class="viewcode-back" href="../../daphme.html#daphme.garden_city.load">[docs]</a>
+<span class="k">def</span> <span class="nf">load</span><span class="p">(</span><span class="n">filename</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Load a city object from a file.&quot;&quot;&quot;</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="s1">&#39;rb&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">pickle</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">file</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="save">
+<a class="viewcode-back" href="../../daphme.html#daphme.garden_city.save">[docs]</a>
+<span class="k">def</span> <span class="nf">save</span><span class="p">(</span><span class="n">city</span><span class="p">,</span> <span class="n">filename</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Save the city object to a file.&quot;&quot;&quot;</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="s1">&#39;wb&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+        <span class="n">pickle</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">city</span><span class="p">,</span> <span class="n">file</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="check_adjacent">
+<a class="viewcode-back" href="../../daphme.html#daphme.garden_city.check_adjacent">[docs]</a>
+<span class="k">def</span> <span class="nf">check_adjacent</span><span class="p">(</span><span class="n">geom1</span><span class="p">,</span> <span class="n">geom2</span><span class="p">):</span>
+    <span class="n">intersection</span> <span class="o">=</span> <span class="n">geom1</span><span class="o">.</span><span class="n">intersection</span><span class="p">(</span><span class="n">geom2</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">intersection</span><span class="p">,</span> <span class="p">(</span><span class="n">LineString</span><span class="p">,</span> <span class="n">MultiLineString</span><span class="p">))</span></div>
+
+
+
+<div class="viewcode-block" id="allowed_buildings">
+<a class="viewcode-back" href="../../daphme.html#daphme.garden_city.allowed_buildings">[docs]</a>
+<span class="k">def</span> <span class="nf">allowed_buildings</span><span class="p">(</span><span class="n">local_ts</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Finds allowed buildings for the timestamp</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">hour</span> <span class="o">=</span> <span class="n">local_ts</span><span class="o">.</span><span class="n">hour</span>
+    <span class="k">return</span> <span class="n">ALLOWED_BUILDINGS</span><span class="p">[</span><span class="n">hour</span><span class="p">]</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Duncan J. Watts, Francisco Barreras, Thomas Li, Jacob Lisner, Bethany Hsiao.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

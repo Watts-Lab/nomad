@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>daphme.stop_detection &mdash; DAPHME 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../_static/documentation_options.js?v=d45e8c67"></script>
+        <script src="../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            DAPHME
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">daphme</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">DAPHME</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">daphme.stop_detection</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for daphme.stop_detection</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span> <span class="nn">collections</span> <span class="kn">import</span> <span class="n">defaultdict</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">datetime</span> <span class="kn">import</span> <span class="n">datetime</span>
+
+<span class="kn">import</span> <span class="nn">pdb</span>
+
+<div class="viewcode-block" id="extract_middle">
+<a class="viewcode-back" href="../../daphme.html#daphme.stop_detection.extract_middle">[docs]</a>
+<span class="k">def</span> <span class="nf">extract_middle</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    TODO</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    df : pandas.DataFrame</span>
+<span class="sd">        User pings with &#39;x&#39; (EPSG:3857), &#39;y&#39; (EPSG:3857) columns, indexed by &#39;unix_timestamp&#39;</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    tuple (i,j)</span>
+<span class="sd">        First and last indices of the &quot;middle&quot; of the cluster</span>
+<span class="sd">    &quot;&quot;&quot;</span>    
+    <span class="n">current</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s1">&#39;cluster&#39;</span><span class="p">]</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">cluster</span> <span class="o">!=</span> <span class="n">current</span><span class="p">)</span><span class="o">.</span><span class="n">values</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">x</span><span class="p">)[</span><span class="mi">0</span><span class="p">])</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>        <span class="c1"># There is no inbetween</span>
+        <span class="k">return</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">i</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">x</span><span class="p">)[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>           <span class="c1"># First index where the cluster is not the value of the first entry&#39;s cluster</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="o">~</span><span class="n">x</span><span class="p">[</span><span class="n">i</span><span class="p">:])[</span><span class="mi">0</span><span class="p">])</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>   <span class="c1"># There is no current again (i.e., the first cluster does not reappear, so the middle is actually the tail)</span>
+        <span class="k">return</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
+    <span class="k">else</span><span class="p">:</span>                               <span class="c1"># Current reappears</span>
+        <span class="n">j</span> <span class="o">=</span> <span class="n">i</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="o">~</span><span class="n">x</span><span class="p">[</span><span class="n">i</span><span class="p">:])[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">return</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="find_neighbors">
+<a class="viewcode-back" href="../../daphme.html#daphme.stop_detection.find_neighbors">[docs]</a>
+<span class="k">def</span> <span class="nf">find_neighbors</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">time_thresh</span><span class="p">,</span> <span class="n">dist_thresh</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Identifies neighboring pings for each user ping within specified time and distance thresholds.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    df : pandas.DataFrame</span>
+<span class="sd">        User pings with &#39;x&#39; (EPSG:3857), &#39;y&#39; (EPSG:3857) columns, indexed by &#39;unix_timestamp&#39;</span>
+<span class="sd">    time_thresh : int</span>
+<span class="sd">        Time threshold in minutes.</span>
+<span class="sd">    dist_thresh : float</span>
+<span class="sd">        Distance threshold in meters.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    dict</span>
+<span class="sd">        Neighbors indexed by unix timestamp, with values as sets of neighboring unix timestamps.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">unix_timestamps</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">data</span><span class="p">[</span><span class="s1">&#39;x&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">data</span><span class="p">[</span><span class="s1">&#39;y&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span>
+
+    <span class="c1"># Time threshold calculation using broadcasting</span>
+    <span class="n">within_threshold</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">triu</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">unix_timestamps</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span> <span class="o">-</span> <span class="n">unix_timestamps</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="p">(</span><span class="n">time_thresh</span> <span class="o">*</span> <span class="mi">60</span><span class="p">),</span> <span class="n">k</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">t_pairs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">within_threshold</span><span class="p">)</span>
+
+    <span class="c1"># Distance calculation</span>
+    <span class="n">distances_sq</span> <span class="o">=</span> <span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="n">t_pairs</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span> <span class="o">-</span> <span class="n">x</span><span class="p">[</span><span class="n">t_pairs</span><span class="p">[</span><span class="mi">1</span><span class="p">]])</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="p">(</span><span class="n">y</span><span class="p">[</span><span class="n">t_pairs</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span> <span class="o">-</span> <span class="n">y</span><span class="p">[</span><span class="n">t_pairs</span><span class="p">[</span><span class="mi">1</span><span class="p">]])</span><span class="o">**</span><span class="mi">2</span>
+    <span class="n">neighbor_pairs</span> <span class="o">=</span> <span class="n">distances_sq</span> <span class="o">&lt;</span> <span class="n">dist_thresh</span><span class="o">**</span><span class="mi">2</span>
+
+    <span class="c1"># Building the neighbor dictionary</span>
+    <span class="n">neighbor_dict</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="nb">set</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">t_pairs</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="n">neighbor_pairs</span><span class="p">],</span> <span class="n">t_pairs</span><span class="p">[</span><span class="mi">1</span><span class="p">][</span><span class="n">neighbor_pairs</span><span class="p">]):</span>
+        <span class="n">neighbor_dict</span><span class="p">[</span><span class="n">unix_timestamps</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()]</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">unix_timestamps</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
+        <span class="n">neighbor_dict</span><span class="p">[</span><span class="n">unix_timestamps</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()]</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">unix_timestamps</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">())</span>
+
+    <span class="k">return</span> <span class="n">neighbor_dict</span></div>
+
+
+
+<div class="viewcode-block" id="dbscan">
+<a class="viewcode-back" href="../../daphme.html#daphme.stop_detection.dbscan">[docs]</a>
+<span class="k">def</span> <span class="nf">dbscan</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">time_thresh</span><span class="p">,</span> <span class="n">dist_thresh</span><span class="p">,</span> <span class="n">min_pts</span><span class="p">,</span> <span class="n">neighbor_dict</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Implements DBSCAN.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    data : pandas.DataFrame</span>
+<span class="sd">        User pings with &#39;x&#39; (EPSG:3857), &#39;y&#39; (EPSG:3857) columns, indexed by &#39;unix_timestamp&#39;</span>
+<span class="sd">    time_thresh : int</span>
+<span class="sd">        Time threshold in minutes.</span>
+<span class="sd">    dist_thresh : float</span>
+<span class="sd">        Distance threshold in meters.</span>
+<span class="sd">    min_pts: int</span>
+<span class="sd">        A cluster must have at least (min_pts+1) points to be considered a cluster.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pandas.DataFrame</span>
+<span class="sd">        Contains two columns &#39;cluster&#39; (int), &#39;core&#39; (int) labeling each ping with their cluster id and core id or noise, indexed by &#39;unix_timestamp&#39;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">neighbor_dict</span><span class="p">:</span>
+        <span class="n">neighbor_dict</span> <span class="o">=</span> <span class="n">find_neighbors</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">time_thresh</span><span class="p">,</span> <span class="n">dist_thresh</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">valid_times</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="n">neighbor_dict</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="nb">set</span><span class="p">,</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span><span class="o">.</span><span class="n">intersection</span><span class="p">(</span><span class="n">valid_times</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">neighbor_dict</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">valid_times</span><span class="p">})</span>
+
+    <span class="n">cluster_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s1">&#39;cluster&#39;</span><span class="p">)</span>
+    <span class="n">core_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s1">&#39;core&#39;</span><span class="p">)</span>
+
+    <span class="n">cid</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>                                              <span class="c1"># Initialize cluster label</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">cluster</span> <span class="ow">in</span> <span class="n">cluster_df</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">cluster</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>                                   <span class="c1"># Check if point is not yet in a cluster</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">neighbor_dict</span><span class="p">[</span><span class="n">i</span><span class="p">])</span> <span class="o">&lt;</span> <span class="n">min_pts</span><span class="p">:</span>
+                <span class="n">cluster_df</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>                        <span class="c1"># Mark as noise if below min_pts</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">cid</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="n">cluster_df</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">cid</span>                       <span class="c1"># Assign new cluster label</span>
+                <span class="n">core_df</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">cid</span>                          <span class="c1"># Assign new core label</span>
+                <span class="n">S</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">neighbor_dict</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>                <span class="c1"># Initialize stack with neighbors</span>
+
+                <span class="k">while</span> <span class="n">S</span><span class="p">:</span>
+                    <span class="n">j</span> <span class="o">=</span> <span class="n">S</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+                    <span class="k">if</span> <span class="n">cluster_df</span><span class="p">[</span><span class="n">j</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>                 <span class="c1"># Process if not yet in a cluster</span>
+                        <span class="n">cluster_df</span><span class="p">[</span><span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">cid</span>
+                        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">neighbor_dict</span><span class="p">[</span><span class="n">j</span><span class="p">])</span> <span class="o">&gt;=</span> <span class="n">min_pts</span><span class="p">:</span>
+                            <span class="n">core_df</span><span class="p">[</span><span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">cid</span>              <span class="c1"># Assign core label</span>
+                            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">neighbor_dict</span><span class="p">[</span><span class="n">j</span><span class="p">]:</span>
+                                <span class="k">if</span> <span class="n">cluster_df</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+                                    <span class="n">S</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>           <span class="c1"># Add new neighbors</span>
+
+    <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s1">&#39;cluster&#39;</span><span class="p">:</span> <span class="n">cluster_df</span><span class="p">,</span> <span class="s1">&#39;core&#39;</span><span class="p">:</span> <span class="n">core_df</span><span class="p">})</span></div>
+
+
+
+<div class="viewcode-block" id="process_clusters">
+<a class="viewcode-back" href="../../daphme.html#daphme.stop_detection.process_clusters">[docs]</a>
+<span class="k">def</span> <span class="nf">process_clusters</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">time_thresh</span><span class="p">,</span> <span class="n">dist_thresh</span><span class="p">,</span> <span class="n">min_pts</span><span class="p">,</span> <span class="n">output</span><span class="p">,</span> <span class="n">cluster_df</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">neighbor_dict</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">min_duration</span><span class="o">=</span><span class="mi">4</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    TODO</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    data : pandas.DataFrame</span>
+<span class="sd">        User pings with &#39;unix_timestamp&#39; (integer), &#39;x&#39; (EPSG:3857), &#39;y&#39; (EPSG:3857) columns, indexed by &#39;unix_timestamp&#39;</span>
+<span class="sd">    time_thresh : int</span>
+<span class="sd">        Time threshold in minutes.</span>
+<span class="sd">    dist_thresh : float</span>
+<span class="sd">        Distance threshold in meters.</span>
+<span class="sd">    min_pts: int</span>
+<span class="sd">        A cluster must have at least (min_pts+1) points to be considered a cluster.</span>
+<span class="sd">    output: pandas.DataFrame</span>
+<span class="sd">        TODO</span>
+<span class="sd">    cluster_df : pandas.DataFrame</span>
+<span class="sd">        Output of dbscan</span>
+<span class="sd">    neighbor_dict: dictionary</span>
+<span class="sd">        TODO </span>
+<span class="sd">    min_duration: int</span>
+<span class="sd">        A cluster must have duration at least &#39;min_duration&#39; to be considered a cluster.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    List</span>
+<span class="sd">        (start, duration, x_mean, y_mean, n, max_gap, radius) of each (post-processed) cluster</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">neighbor_dict</span><span class="p">:</span>
+        <span class="n">neighbor_dict</span> <span class="o">=</span> <span class="n">find_neighbors</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">time_thresh</span><span class="p">,</span> <span class="n">dist_thresh</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">cluster_df</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>    <span class="c1"># First call of process_clusters</span>
+        <span class="n">cluster_df</span> <span class="o">=</span> <span class="n">dbscan</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">,</span> <span class="n">time_thresh</span><span class="o">=</span><span class="n">time_thresh</span><span class="p">,</span> <span class="n">dist_thresh</span><span class="o">=</span><span class="n">dist_thresh</span><span class="p">,</span> <span class="n">min_pts</span><span class="o">=</span><span class="n">min_pts</span><span class="p">,</span> <span class="n">neighbor_dict</span><span class="o">=</span><span class="n">neighbor_dict</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">cluster_df</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">min_pts</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span>
+
+    <span class="n">cluster_df</span> <span class="o">=</span> <span class="n">cluster_df</span><span class="p">[</span><span class="n">cluster_df</span><span class="p">[</span><span class="s1">&#39;cluster&#39;</span><span class="p">]</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">]</span>    <span class="c1"># Remove noise pings</span>
+
+    <span class="c1"># All pings are in the same cluster</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">cluster_df</span><span class="p">[</span><span class="s1">&#39;cluster&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">unique</span><span class="p">())</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">dbscan</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">cluster_df</span><span class="o">.</span><span class="n">index</span><span class="p">],</span> <span class="n">time_thresh</span><span class="o">=</span><span class="n">time_thresh</span><span class="p">,</span> <span class="n">dist_thresh</span><span class="o">=</span><span class="n">dist_thresh</span><span class="p">,</span> <span class="n">min_pts</span><span class="o">=</span><span class="n">min_pts</span><span class="p">,</span> <span class="n">neighbor_dict</span><span class="o">=</span><span class="n">neighbor_dict</span><span class="p">)</span>  <span class="c1"># We rerun dbscan because possibly these points no longer hold their own</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">x</span><span class="p">[</span><span class="s1">&#39;cluster&#39;</span><span class="p">]</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">z</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">x</span><span class="p">[</span><span class="s1">&#39;core&#39;</span><span class="p">]</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="c1"># There is exactly 1 cluster of all the same values</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">y</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">duration</span> <span class="o">=</span> <span class="nb">int</span><span class="p">((</span><span class="n">y</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">-</span> <span class="n">y</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">min</span><span class="p">())</span> <span class="o">//</span> <span class="mi">60</span><span class="p">)</span>    <span class="c1"># Assumes unix_timestamp is in seconds</span>
+            <span class="k">if</span> <span class="n">duration</span> <span class="o">&gt;</span> <span class="n">min_duration</span><span class="p">:</span>
+                <span class="n">cid</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">output</span><span class="p">[</span><span class="s1">&#39;cluster&#39;</span><span class="p">])</span> <span class="o">+</span> <span class="mi">1</span>   <span class="c1"># Create new cluster id</span>
+                <span class="n">output</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">y</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="s1">&#39;cluster&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">cid</span>
+                <span class="n">output</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">z</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="s1">&#39;core&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">cid</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">y</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>  <span class="c1"># The points in df, despite originally being part of a cluster, no longer hold their own</span>
+            <span class="k">return</span> <span class="kc">False</span>
+
+    <span class="c1"># There are no clusters</span>
+    <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">cluster_df</span><span class="p">[</span><span class="s1">&#39;cluster&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">unique</span><span class="p">())</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span>
+
+    <span class="c1"># There is more than one cluster</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="o">=</span> <span class="n">extract_middle</span><span class="p">(</span><span class="n">cluster_df</span><span class="p">)</span>    <span class="c1"># Indices of the &quot;middle&quot; of the cluster (i.e., the head is the first contiguous cluster, and the middle follows that)</span>
+        <span class="c1"># Recursively processes clusters</span>
+        <span class="k">if</span> <span class="n">process_clusters</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">time_thresh</span><span class="p">,</span> <span class="n">dist_thresh</span><span class="p">,</span> <span class="n">min_pts</span><span class="p">,</span> <span class="n">output</span><span class="p">,</span> <span class="n">cluster_df</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">j</span><span class="p">]):</span> <span class="c1"># Valid cluster in the middle</span>
+            <span class="n">process_clusters</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">time_thresh</span><span class="p">,</span> <span class="n">dist_thresh</span><span class="p">,</span> <span class="n">min_pts</span><span class="p">,</span> <span class="n">output</span><span class="p">,</span> <span class="n">cluster_df</span><span class="o">.</span><span class="n">iloc</span><span class="p">[:</span><span class="n">i</span><span class="p">])</span>  <span class="c1"># Process the initial stub</span>
+            <span class="n">process_clusters</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">time_thresh</span><span class="p">,</span> <span class="n">dist_thresh</span><span class="p">,</span> <span class="n">min_pts</span><span class="p">,</span> <span class="n">output</span><span class="p">,</span> <span class="n">cluster_df</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">j</span><span class="p">:])</span>  <span class="c1"># Process the &quot;tail&quot;</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">else</span><span class="p">:</span> <span class="c1"># No valid cluster in the middle</span>
+            <span class="k">return</span> <span class="n">process_clusters</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">time_thresh</span><span class="p">,</span> <span class="n">dist_thresh</span><span class="p">,</span> <span class="n">min_pts</span><span class="p">,</span> <span class="n">output</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span> <span class="p">[</span><span class="n">cluster_df</span><span class="o">.</span><span class="n">iloc</span><span class="p">[:</span><span class="n">i</span><span class="p">],</span><span class="n">cluster_df</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">j</span><span class="p">:]]</span> <span class="p">))</span> <span class="c1">#what if this is out of bounds?</span></div>
+
+
+
+<div class="viewcode-block" id="temporal_dbscan">
+<a class="viewcode-back" href="../../daphme.html#daphme.stop_detection.temporal_dbscan">[docs]</a>
+<span class="k">def</span> <span class="nf">temporal_dbscan</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">time_thresh</span><span class="p">,</span> <span class="n">dist_thresh</span><span class="p">,</span> <span class="n">min_pts</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    TODO</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    data : pandas.DataFrame</span>
+<span class="sd">        User pings with &#39;unix_timestamp&#39; (integer), &#39;x&#39; (EPSG:3857), &#39;y&#39; (EPSG:3857) columns.</span>
+<span class="sd">    time_thresh : int</span>
+<span class="sd">        Time threshold in minutes.</span>
+<span class="sd">    dist_thresh : float</span>
+<span class="sd">        Distance threshold in meters.</span>
+<span class="sd">    min_pts: int</span>
+<span class="sd">        A cluster must have at least (min_pts+1) points to be considered a cluster.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    TODO</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span><span class="s1">&#39;unix_timestamp&#39;</span><span class="p">,</span> <span class="n">drop</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">output</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s1">&#39;cluster&#39;</span><span class="p">:</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="s1">&#39;core&#39;</span><span class="p">:</span> <span class="o">-</span><span class="mi">1</span><span class="p">},</span> <span class="n">index</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+    <span class="n">process_clusters</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">,</span> <span class="n">time_thresh</span><span class="o">=</span><span class="n">time_thresh</span><span class="p">,</span> <span class="n">dist_thresh</span><span class="o">=</span><span class="n">dist_thresh</span><span class="p">,</span> <span class="n">min_pts</span><span class="o">=</span><span class="n">min_pts</span><span class="p">,</span> <span class="n">output</span><span class="o">=</span><span class="n">output</span><span class="p">,</span> <span class="n">min_duration</span><span class="o">=</span><span class="mi">4</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">output</span></div>
+
+
+
+<div class="viewcode-block" id="medoid">
+<a class="viewcode-back" href="../../daphme.html#daphme.stop_detection.medoid">[docs]</a>
+<span class="k">def</span> <span class="nf">medoid</span><span class="p">(</span><span class="n">coords</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Computes the medoid of a set of coordinates. The medoid is defined to be the coordinate </span>
+<span class="sd">    in a set that minimizes the maximum distance to every other coordinate in the set.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    coords: numpy array</span>
+<span class="sd">        n x 2 array of pings (x, y).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    numpy array of shape (1,2) denoting medroid coordinates.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1"># Create matrix of all pairwise distances</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">coords</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="n">coords</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span>
+    <span class="n">x_diff</span> <span class="o">=</span> <span class="n">x</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span> <span class="o">-</span> <span class="n">x</span>
+    <span class="n">y_diff</span> <span class="o">=</span> <span class="n">y</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span> <span class="o">-</span> <span class="n">y</span>
+    <span class="n">distances</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">x_diff</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="n">y_diff</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+
+    <span class="n">max_distances</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">amax</span><span class="p">(</span><span class="n">distances</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">medoid_index</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">max_distances</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">coords</span><span class="p">[</span><span class="n">medoid_index</span><span class="p">,:]</span></div>
+
+
+
+<div class="viewcode-block" id="diameter">
+<a class="viewcode-back" href="../../daphme.html#daphme.stop_detection.diameter">[docs]</a>
+<span class="k">def</span> <span class="nf">diameter</span><span class="p">(</span><span class="n">coords</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Computes the diameter of a set of coordinates, where the diameter is defined to be the greatest </span>
+<span class="sd">    distance between any two coordinates in a set.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    coords: numpy array</span>
+<span class="sd">        n x 2 array of pings (x, y).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    float denoting diameter.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1"># Create matrix of all pairwise distances</span>
+    <span class="n">x</span> <span class="o">=</span> <span class="n">coords</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span>
+    <span class="n">y</span> <span class="o">=</span> <span class="n">coords</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span>
+    <span class="n">x_diff</span> <span class="o">=</span> <span class="n">x</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span> <span class="o">-</span> <span class="n">x</span>
+    <span class="n">y_diff</span> <span class="o">=</span> <span class="n">y</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span> <span class="o">-</span> <span class="n">y</span>
+    <span class="n">distances</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">x_diff</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="n">y_diff</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">distances</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="lachesis">
+<a class="viewcode-back" href="../../daphme.html#daphme.stop_detection.lachesis">[docs]</a>
+<span class="k">def</span> <span class="nf">lachesis</span><span class="p">(</span><span class="n">traj</span><span class="p">,</span> <span class="n">dur_min</span><span class="p">,</span> <span class="n">dt_max</span><span class="p">,</span> <span class="n">delta_roam</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Extracts stays from raw location data.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    traj: numpy array</span>
+<span class="sd">        simulated trajectory from simulate_traj.</span>
+
+<span class="sd">    dur_min: float</span>
+<span class="sd">        Minimum duration for a stay (stay duration), in minutes.</span>
+
+<span class="sd">    dt_max: float</span>
+<span class="sd">        maximum duration permitted between consecutive pings in a stay, in minutes.</span>
+<span class="sd">        dt_max should be greater than dur_min.</span>
+
+<span class="sd">    delta_roam: float</span>
+<span class="sd">        Maximum roaming distance for a stay (roaming distance), in meters.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pandas array with columns &#39;medoid_x&#39;, &#39;medoid_y&#39;, &#39;start_time&#39;, &#39;end_time&#39;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">coords</span> <span class="o">=</span> <span class="n">traj</span><span class="p">[[</span><span class="s1">&#39;x&#39;</span><span class="p">,</span> <span class="s1">&#39;y&#39;</span><span class="p">]]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+    <span class="n">stays</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">4</span><span class="p">))</span>
+    <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">while</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">traj</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+
+        <span class="n">j_star</span> <span class="o">=</span> <span class="nb">next</span><span class="p">((</span><span class="n">j</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">traj</span><span class="p">))</span> <span class="k">if</span>
+                       <span class="n">traj</span><span class="p">[</span><span class="s1">&#39;unix_timestamp&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">j</span><span class="p">]</span> <span class="o">-</span> <span class="n">traj</span><span class="p">[</span><span class="s1">&#39;unix_timestamp&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">dur_min</span> <span class="o">*</span> <span class="mi">60</span><span class="p">),</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="n">j_star</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">diameter</span><span class="p">(</span><span class="n">coords</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">j_star</span><span class="o">+</span><span class="mi">1</span><span class="p">])</span> <span class="o">&gt;</span> <span class="n">delta_roam</span><span class="p">):</span>
+            <span class="n">i</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">j_star</span> <span class="o">=</span> <span class="nb">next</span><span class="p">((</span><span class="n">j</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">j_star</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">traj</span><span class="p">))</span> <span class="k">if</span>
+                           <span class="n">diameter</span><span class="p">(</span><span class="n">coords</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">j</span><span class="o">+</span><span class="mi">1</span><span class="p">])</span> <span class="o">&gt;</span> <span class="n">delta_roam</span> <span class="ow">or</span>
+                           <span class="n">traj</span><span class="p">[</span><span class="s1">&#39;unix_timestamp&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">j</span><span class="p">]</span> <span class="o">-</span> <span class="n">traj</span><span class="p">[</span><span class="s1">&#39;unix_timestamp&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">j</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">dt_max</span> <span class="o">*</span> <span class="mi">60</span><span class="p">),</span> 
+                          <span class="nb">len</span><span class="p">(</span><span class="n">traj</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+            <span class="n">stay_medoid</span> <span class="o">=</span> <span class="n">medoid</span><span class="p">(</span><span class="n">coords</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">j_star</span><span class="o">+</span><span class="mi">1</span><span class="p">])</span>
+            <span class="n">start</span> <span class="o">=</span> <span class="n">traj</span><span class="p">[</span><span class="s1">&#39;local_timestamp&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+            <span class="n">end</span> <span class="o">=</span> <span class="n">traj</span><span class="p">[</span><span class="s1">&#39;local_timestamp&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">j_star</span><span class="p">]</span>
+            <span class="n">stay</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="n">stay_medoid</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">stay_medoid</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">]])</span>
+            <span class="n">stays</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="n">stays</span><span class="p">,</span> <span class="n">stay</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+            <span class="n">i</span> <span class="o">=</span> <span class="n">j_star</span> <span class="o">+</span> <span class="mi">1</span>
+
+    <span class="n">stays</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">stays</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;medoid_x&#39;</span><span class="p">,</span> <span class="s1">&#39;medoid_y&#39;</span><span class="p">,</span> <span class="s1">&#39;start_time&#39;</span><span class="p">,</span> <span class="s1">&#39;end_time&#39;</span><span class="p">])</span>
+    <span class="k">return</span> <span class="n">stays</span></div>
+
+
+
+<div class="viewcode-block" id="lachesis_patches">
+<a class="viewcode-back" href="../../daphme.html#daphme.stop_detection.lachesis_patches">[docs]</a>
+<span class="k">def</span> <span class="nf">lachesis_patches</span><span class="p">(</span><span class="n">traj</span><span class="p">,</span> <span class="n">dur_min</span><span class="p">,</span> <span class="n">dt_max</span><span class="p">,</span> <span class="n">delta_roam</span><span class="p">):</span>
+
+    <span class="n">traj</span> <span class="o">=</span> <span class="n">traj</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span><span class="s1">&#39;unix_timestamp&#39;</span><span class="p">,</span> <span class="n">drop</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">output</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s1">&#39;cluster&#39;</span><span class="p">:</span> <span class="o">-</span><span class="mi">1</span><span class="p">},</span> <span class="n">index</span><span class="o">=</span><span class="n">traj</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+
+    <span class="c1">#Compute clusters</span>
+    <span class="n">clusters</span> <span class="o">=</span> <span class="n">lachesis</span><span class="p">(</span><span class="n">traj</span><span class="p">,</span> <span class="n">dur_min</span><span class="p">,</span> <span class="n">dt_max</span><span class="p">,</span> <span class="n">delta_roam</span><span class="p">)</span>
+
+    <span class="c1">#Add patches for each cluster</span>
+    <span class="n">cluster_pings</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">clusters</span><span class="o">.</span><span class="n">iterrows</span><span class="p">():</span>
+        <span class="c1">#cluster_pings += [traj.loc[(traj.local_timestamp&gt;=row.start_time)&amp;(traj.local_timestamp&lt;=row.end_time), [&#39;x&#39;,&#39;y&#39;]]]</span>
+        <span class="n">output</span><span class="o">.</span><span class="n">loc</span><span class="p">[(</span><span class="n">traj</span><span class="p">[</span><span class="s1">&#39;local_timestamp&#39;</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">row</span><span class="p">[</span><span class="s1">&#39;start_time&#39;</span><span class="p">])</span> <span class="o">&amp;</span>
+                   <span class="p">(</span><span class="n">traj</span><span class="p">[</span><span class="s1">&#39;local_timestamp&#39;</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="n">row</span><span class="p">[</span><span class="s1">&#39;end_time&#39;</span><span class="p">]),</span> <span class="s1">&#39;cluster&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">idx</span>
+
+    <span class="k">return</span> <span class="n">output</span></div>
+
+
+
+<div class="viewcode-block" id="generate_stop_table">
+<a class="viewcode-back" href="../../daphme.html#daphme.stop_detection.generate_stop_table">[docs]</a>
+<span class="k">def</span> <span class="nf">generate_stop_table</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">dbscan_df</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    TODO: user id, ts, duration, centroid coord, max time gap, radius, etc.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    TODO</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">num_clusters</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">dbscan_df</span><span class="o">.</span><span class="n">cluster</span><span class="o">.</span><span class="n">unique</span><span class="p">()</span> <span class="o">&gt;</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="n">stop_table</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+        <span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;unix_timestamp&#39;</span><span class="p">,</span> <span class="s1">&#39;local_timestamp&#39;</span><span class="p">,</span> <span class="s1">&#39;duration&#39;</span><span class="p">,</span> <span class="s1">&#39;centroid_x&#39;</span><span class="p">,</span> <span class="s1">&#39;centroid_y&#39;</span><span class="p">,</span> <span class="s1">&#39;radius&#39;</span><span class="p">])</span>
+
+    <span class="k">for</span> <span class="n">cid</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_clusters</span><span class="p">):</span>
+        <span class="n">cpings</span> <span class="o">=</span> <span class="n">dbscan_df</span><span class="p">[</span><span class="n">dbscan_df</span><span class="o">.</span><span class="n">cluster</span> <span class="o">==</span> <span class="n">cid</span><span class="p">]</span>
+        <span class="n">cdata</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">cpings</span><span class="o">.</span><span class="n">index</span><span class="p">]</span>
+        <span class="n">unix_timestamp</span> <span class="o">=</span> <span class="n">cdata</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">min</span><span class="p">()</span>
+        <span class="n">local_timestamp</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">fromtimestamp</span><span class="p">(</span><span class="n">unix_timestamp</span><span class="p">)</span>
+        <span class="n">duration</span> <span class="o">=</span> <span class="nb">int</span><span class="p">((</span><span class="n">cdata</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">-</span> <span class="n">cdata</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">min</span><span class="p">())</span> <span class="o">//</span> <span class="mi">60</span><span class="p">)</span>
+        <span class="n">x_mean</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">cdata</span><span class="p">[</span><span class="s1">&#39;x&#39;</span><span class="p">])</span>
+        <span class="n">y_mean</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">cdata</span><span class="p">[</span><span class="s1">&#39;y&#39;</span><span class="p">])</span>
+        <span class="n">radius</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">((</span><span class="n">cdata</span><span class="p">[[</span><span class="s1">&#39;x&#39;</span><span class="p">,</span><span class="s1">&#39;y&#39;</span><span class="p">]]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span> 
+                                         <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">cdata</span><span class="p">[[</span><span class="s1">&#39;x&#39;</span><span class="p">,</span><span class="s1">&#39;y&#39;</span><span class="p">]]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">))</span><span class="o">**</span><span class="mi">2</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)))</span>
+
+        <span class="n">entry</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;unix_timestamp&#39;</span><span class="p">:</span> <span class="n">unix_timestamp</span><span class="p">,</span>
+                 <span class="s1">&#39;local_timestamp&#39;</span><span class="p">:</span> <span class="n">local_timestamp</span><span class="p">,</span>
+                 <span class="s1">&#39;cluster_id&#39;</span><span class="p">:</span> <span class="n">cid</span><span class="p">,</span>
+                 <span class="s1">&#39;duration&#39;</span><span class="p">:</span> <span class="n">duration</span><span class="p">,</span>
+                 <span class="s1">&#39;centroid_x&#39;</span><span class="p">:</span> <span class="n">x_mean</span><span class="p">,</span>
+                 <span class="s1">&#39;centroid_y&#39;</span><span class="p">:</span> <span class="n">y_mean</span><span class="p">,</span>
+                 <span class="s1">&#39;radius&#39;</span><span class="p">:</span> <span class="n">radius</span><span class="p">}</span>
+
+        <span class="n">entry</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">([</span><span class="n">entry</span><span class="p">])</span>
+
+        <span class="k">if</span> <span class="n">stop_table</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="n">stop_table</span> <span class="o">=</span> <span class="n">entry</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">stop_table</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">stop_table</span><span class="p">,</span> <span class="n">entry</span><span class="p">],</span> <span class="n">ignore_index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="n">stop_table</span> <span class="o">=</span> <span class="n">stop_table</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="n">by</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;unix_timestamp&#39;</span><span class="p">])</span>
+    <span class="k">return</span> <span class="n">stop_table</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="stop_statistics">
+<a class="viewcode-back" href="../../daphme.html#daphme.stop_detection.stop_statistics">[docs]</a>
+<span class="k">def</span> <span class="nf">stop_statistics</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">dbscan_df</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    INCOMPLETE</span>
+
+<span class="sd">    TODO: user-level metrics: number of clusters, radius of gyration,</span>
+<span class="sd">    time resolution param? </span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">num_clusters</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">dbscan_df</span><span class="o">.</span><span class="n">cluster</span><span class="o">.</span><span class="n">unique</span><span class="p">()</span> <span class="o">&gt;</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">total_stop_time</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="k">for</span> <span class="n">cid</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_clusters</span><span class="p">):</span>
+        <span class="n">cpings</span> <span class="o">=</span> <span class="n">dbscan_df</span><span class="p">[</span><span class="n">dbscan_df</span><span class="o">.</span><span class="n">cluster</span> <span class="o">==</span> <span class="n">cid</span><span class="p">]</span>
+        <span class="n">cdata</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">cpings</span><span class="o">.</span><span class="n">index</span><span class="p">]</span>
+        <span class="n">duration</span> <span class="o">=</span> <span class="nb">int</span><span class="p">((</span><span class="n">cdata</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">-</span> <span class="n">cdata</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">min</span><span class="p">())</span> <span class="o">//</span> <span class="mi">60</span><span class="p">)</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">cdata</span><span class="p">)</span>
+        <span class="n">x_mean</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">cdata</span><span class="p">[</span><span class="s1">&#39;x&#39;</span><span class="p">])</span>
+        <span class="n">y_mean</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">cdata</span><span class="p">[</span><span class="s1">&#39;y&#39;</span><span class="p">])</span>
+        <span class="n">radius</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">((</span><span class="n">cdata</span><span class="p">[[</span><span class="s1">&#39;x&#39;</span><span class="p">,</span><span class="s1">&#39;y&#39;</span><span class="p">]]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span> 
+                                         <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">cdata</span><span class="p">[[</span><span class="s1">&#39;x&#39;</span><span class="p">,</span><span class="s1">&#39;y&#39;</span><span class="p">]]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">))</span><span class="o">**</span><span class="mi">2</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)))</span>
+
+        <span class="n">total_stop_time</span> <span class="o">+=</span> <span class="n">duration</span>
+
+    <span class="k">return</span> <span class="p">[</span><span class="n">num_clusters</span><span class="p">,</span> <span class="n">total_stop_time</span><span class="p">]</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Duncan J. Watts, Francisco Barreras, Thomas Li, Jacob Lisner, Bethany Hsiao.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

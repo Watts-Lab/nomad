@@ -14,10 +14,10 @@ import nx_parallel as nxp
 import s3fs
 import pyarrow
 
-import mobility_model as mmod
-import stop_detection as sd
-from constants import DEFAULT_SPEEDS, FAST_SPEEDS, SLOW_SPEEDS, DEFAULT_STILL_PROBS
-from constants import FAST_STILL_PROBS, SLOW_STILL_PROBS, ALLOWED_BUILDINGS, DEFAULT_STAY_PROBS
+import daphme.mobility_model as mmod
+import daphme.stop_detection as sd
+from daphme.constants import DEFAULT_SPEEDS, FAST_SPEEDS, SLOW_SPEEDS, DEFAULT_STILL_PROBS
+from daphme.constants import FAST_STILL_PROBS, SLOW_STILL_PROBS, ALLOWED_BUILDINGS, DEFAULT_STAY_PROBS
 
 import pdb
 
@@ -292,20 +292,23 @@ class Agent:
                  start_time=datetime(2024, 1, 1, hour=8, minute=0), dt=1):
         """
         Parameters
-        ---------
-        identifier: string
-            name of agent
-        home: string building_id
-        workplace: string building_id
-        city: City
-        destination_diary: pandas.DataFrame
-            dataframe with columns 'unix_timestamp', 'local_timestamp', 'duration', 'location'
-        trajectory: pandas.DataFrame
-            dataframe with columns 'x', 'y', 'local_timestamp', 'unix_timestamp', 'identifier'
-        diary: pandas.DataFrame
-            dataframe with columns 'unix_timestamp', 'local_timestamp', 'duration', 'location'
-        start_time: datetime
-            if trajectory is None, the first ping will be at start_time.
+        ----------
+        identifier : str
+            Name of the agent.
+        home : str
+            Building ID representing the home location.
+        workplace : str
+            Building ID representing the workplace location.
+        city : City
+            The city object containing relevant information about the city's layout and properties.
+        destination_diary : pandas.DataFrame
+            DataFrame containing the following columns: 'unix_timestamp', 'local_timestamp', 'duration', 'location'.
+        trajectory : pandas.DataFrame
+            DataFrame containing the following columns: 'x', 'y', 'local_timestamp', 'unix_timestamp', 'identifier'.
+        diary : pandas.DataFrame
+            DataFrame containing the following columns: 'unix_timestamp', 'local_timestamp', 'duration', 'location'.
+        start_time : datetime
+            If `trajectory` is None, the first ping will occur at `start_time`.
         """
 
         self.identifier = identifier
@@ -377,12 +380,12 @@ def condense_destinations(destination_diary):  # This might be a more general cl
 
     Parameters
     ----------
-    destination_diary : DataFrame
+    destination_diary : pandas.DataFrame
         DataFrame containing timestamped locations the user is heading towards.
 
     Returns
     -------
-    DataFrame
+    pandas.DataFrame
         A new DataFrame with condensed destination entries.
     """
     if destination_diary.empty:
@@ -520,23 +523,25 @@ class Population:
 
     def sample_step(self, agent, start_point, dest_building, dt):
         """
-        From a destination diary, generates (x,y) pings.
+        From a destination diary, generates (x, y) pings.
 
         Parameters
-        ---------
-        agent: Agent
-            the agent for whom a step will be sampled
-        start_point: tuple
-            the coordinates of the current position
-        dest_building: Building
-            the destination building of the agent
-        dt: float
-            time step (i.e., number of minutes per ping)
+        ----------
+        agent : Agent
+            The agent for whom a step will be sampled.
+        start_point : tuple
+            The coordinates of the current position as a tuple (x, y).
+        dest_building : Building
+            The destination building of the agent.
+        dt : float
+            Time step (i.e., number of minutes per ping).
 
         Returns
         -------
-        coord: numpy array of floats with shape (1,2).
-        location: building id if step is a stay or None is step is a move
+        coord : numpy.ndarray
+            A numpy array of floats with shape (1, 2) representing the new coordinates.
+        location : str or None
+            The building ID if the step is a stay, or `None` if the step is a move.
         """
         city = self.city
 
@@ -685,11 +690,17 @@ class Population:
         """
         Exploration and preferential return.
 
-        T = timestamp of when to generate til
-        rho, gamma = Parameters for exploring
-        stay_probs = dictionary
-            Probability of staying in same building
-            geometric with p = 1-((1/avg_duration_hrs)/timesteps_in_1_hr)
+        Parameters
+        ----------
+        T : int
+            Timestamp until which to generate.
+        rho : float
+            Parameter for exploring, influencing the probability of exploration.
+        gamma : float
+            Parameter for exploring, influencing the probability of preferential return.
+        stay_probs : dict
+            Dictionary containing the probability of staying in the same building.
+            This is modeled as a geometric distribution with `p = 1 - ((1/avg_duration_hrs)/timesteps_in_1_hr)`.
         """
         npr.seed(seed)
 

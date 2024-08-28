@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>daphme.cleaning &mdash; DAPHME 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=19f00094" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../_static/jquery.js?v=5d32c60e"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+        <script src="../../_static/documentation_options.js?v=d45e8c67"></script>
+        <script src="../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            DAPHME
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">daphme</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">DAPHME</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">daphme.cleaning</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for daphme.cleaning</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span> <span class="nn">pyspark.sql</span> <span class="kn">import</span> <span class="n">DataFrame</span><span class="p">,</span> <span class="n">SparkSession</span>
+<span class="kn">from</span> <span class="nn">pyspark.sql</span> <span class="kn">import</span> <span class="n">functions</span> <span class="k">as</span> <span class="n">F</span>
+<span class="kn">from</span> <span class="nn">sedona.spark</span> <span class="kn">import</span> <span class="o">*</span>
+<span class="kn">from</span> <span class="nn">daphme.constants</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">UID</span><span class="p">,</span>
+    <span class="n">TIMESTAMP</span><span class="p">,</span>
+    <span class="n">LATITUDE</span><span class="p">,</span>
+    <span class="n">LONGITUDE</span><span class="p">,</span>
+    <span class="n">MERCATOR_COORD</span><span class="p">,</span>
+    <span class="n">MERCATOR_X</span><span class="p">,</span>
+    <span class="n">MERCATOR_Y</span>
+<span class="p">)</span>
+
+<div class="viewcode-block" id="to_local_time">
+<a class="viewcode-back" href="../../daphme.html#daphme.cleaning.to_local_time">[docs]</a>
+<span class="k">def</span> <span class="nf">to_local_time</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">DataFrame</span><span class="p">,</span> 
+                  <span class="n">timezone_to</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+                  <span class="n">timestamp_col</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">TIMESTAMP</span><span class="p">,</span>
+                  <span class="n">epoch_unit</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;seconds&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Transforms a column of epoch times in a Spark DataFrame to a local time zone specified timezone_to. Additional columns for date, hour, and day of the week are also added to the DataFrame.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    df : DataFrame</span>
+<span class="sd">        A Spark DataFrame containing a column with epoch times to be converted.</span>
+
+<span class="sd">    timezone_to : str</span>
+<span class="sd">        A valid timezone identifier for the local timezone of the data (e.g., &quot;America/New_York&quot;, &quot;UTC&quot;).</span>
+
+<span class="sd">    timestamp_col : str (default &quot;timestamp&quot;)</span>
+<span class="sd">        The name of the column in &#39;df&#39; containing epoch times.</span>
+
+<span class="sd">    epoch_unit : str (default &quot;seconds&quot;)</span>
+<span class="sd">        The unit of epoch time in the &#39;timestamp_col&#39;. Acceptable values include &quot;seconds&quot;, &quot;milliseconds&quot;, </span>
+<span class="sd">        &quot;microseconds&quot;, and &quot;nanoseconds&quot;. Defaults to &quot;seconds&quot; if not specified.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    ----------</span>
+<span class="sd">    DataFrame</span>
+<span class="sd">        A new Spark DataFrame with all original columns from &#39;df&#39; and the following additional columns:</span>
+<span class="sd">            - &#39;local_timestamp&#39;: The local timestamp derived from the original epoch time.</span>
+<span class="sd">            - &#39;date&#39;: The date extracted from &#39;local_timestamp&#39;.</span>
+<span class="sd">            - &#39;date_hour&#39;: The date and hour extracted from &#39;local_timestamp&#39;.</span>
+<span class="sd">            - &#39;day_of_week&#39;: The day of the week (1 for Sunday, 2 for Monday, ..., 7 for Saturday) derived from &#39;local_timestamp&#39;.</span>
+
+<span class="sd">    Example</span>
+<span class="sd">    ----------</span>
+<span class="sd">    &gt;&gt;&gt; # Assuming a SparkSession `spark` and a DataFrame `df` with a &#39;timestamp&#39; column are predefined.</span>
+<span class="sd">    &gt;&gt;&gt; timezone_str = &quot;America/New_York&quot;</span>
+<span class="sd">    &gt;&gt;&gt; converted_df = to_local_time(df, timezone_str)</span>
+<span class="sd">    &gt;&gt;&gt; converted_df.show()</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">divisor</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;seconds&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="s2">&quot;milliseconds&quot;</span><span class="p">:</span> <span class="mi">1000</span><span class="p">,</span>
+        <span class="s2">&quot;microseconds&quot;</span><span class="p">:</span> <span class="mi">1000000</span><span class="p">,</span>
+        <span class="s2">&quot;nanoseconds&quot;</span><span class="p">:</span> <span class="mi">1000000000</span>
+    <span class="p">}</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">epoch_unit</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+    <span class="n">df</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">withColumn</span><span class="p">(</span>
+        <span class="s2">&quot;local_timestamp&quot;</span><span class="p">,</span>
+        <span class="n">F</span><span class="o">.</span><span class="n">from_utc_timestamp</span><span class="p">(</span>
+            <span class="n">F</span><span class="o">.</span><span class="n">to_timestamp</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="n">timestamp_col</span><span class="p">)</span> <span class="o">/</span> <span class="n">divisor</span><span class="p">),</span>
+            <span class="n">timezone_to</span>
+        <span class="p">))</span>
+
+    <span class="n">df</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">withColumn</span><span class="p">(</span>
+        <span class="s2">&quot;date&quot;</span><span class="p">,</span>
+        <span class="n">F</span><span class="o">.</span><span class="n">to_date</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">&quot;local_timestamp&quot;</span><span class="p">))</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">withColumn</span><span class="p">(</span>
+        <span class="s2">&quot;date_hour&quot;</span><span class="p">,</span>
+        <span class="n">F</span><span class="o">.</span><span class="n">date_format</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">&quot;local_timestamp&quot;</span><span class="p">),</span> <span class="s2">&quot;yyyy-MM-dd HH&quot;</span><span class="p">)</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">withColumn</span><span class="p">(</span>
+        <span class="s2">&quot;day_of_week&quot;</span><span class="p">,</span>
+        <span class="n">F</span><span class="o">.</span><span class="n">dayofweek</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">&quot;local_timestamp&quot;</span><span class="p">))</span>
+    <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">df</span></div>
+
+
+<div class="viewcode-block" id="to_mercator">
+<a class="viewcode-back" href="../../daphme.html#daphme.cleaning.to_mercator">[docs]</a>
+<span class="k">def</span> <span class="nf">to_mercator</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">DataFrame</span><span class="p">,</span> 
+                <span class="n">spark</span><span class="p">:</span> <span class="n">SparkSession</span><span class="p">,</span>
+                <span class="n">longitude_col</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">LONGITUDE</span><span class="p">,</span> 
+                <span class="n">latitude_col</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">LATITUDE</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Converts geographic coordinates from EPSG:4326 (WGS 84) to EPSG:3857 (Web Mercator projection).</span>
+<span class="sd">    </span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    df : DataFrame</span>
+<span class="sd">        A Spark DataFrame containing columns corresponding to longitude and latitude values in EPSG:4326.</span>
+
+<span class="sd">    spark : SparkSession</span>
+<span class="sd">        The active SparkSession instance used to execute Spark SQL operations.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    ----------</span>
+<span class="sd">    DataFrame</span>
+<span class="sd">        A new Spark DataFrame with all original columns from &#39;df&#39; and additional columns:</span>
+<span class="sd">        - &#39;x&#39;: The x coordinate (longitude) in EPSG:3857 coordinate system.</span>
+<span class="sd">        - &#39;y&#39;: The y coordinate (latitude) in EPSG:3857 coordinate system.</span>
+<span class="sd">        - &#39;mercator_coord&#39;: The point geometry (longitude, latitude) in EPSG:3857 coordinate system.</span>
+
+<span class="sd">    Example</span>
+<span class="sd">    ----------</span>
+<span class="sd">    &gt;&gt;&gt; # Assuming a SparkSession `spark` and a DataFrame `df` are predefined</span>
+<span class="sd">    &gt;&gt;&gt; mercator_df = to_mercator(df, spark)</span>
+<span class="sd">    &gt;&gt;&gt; mercator_df.show()</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    
+    <span class="n">df</span><span class="o">.</span><span class="n">createOrReplaceTempView</span><span class="p">(</span><span class="s2">&quot;df&quot;</span><span class="p">)</span>
+    
+    <span class="n">query</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">    WITH mercator_df AS (</span>
+<span class="s2">        SELECT *,</span>
+<span class="s2">               ST_Transform(</span>
+<span class="s2">                   ST_MakePoint(</span><span class="si">{</span><span class="n">longitude_col</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">latitude_col</span><span class="si">}</span><span class="s2">), </span>
+<span class="s2">                   &#39;EPSG:4326&#39;, &#39;EPSG:3857&#39;</span>
+<span class="s2">               ) AS </span><span class="si">{</span><span class="n">MERCATOR_COORD</span><span class="si">}</span>
+<span class="s2">        FROM df</span>
+<span class="s2">    )</span>
+<span class="s2">    SELECT *,</span>
+<span class="s2">           ST_X(mercator_coord) AS </span><span class="si">{</span><span class="n">MERCATOR_X</span><span class="si">}</span><span class="s2">,</span>
+<span class="s2">           ST_Y(mercator_coord) AS </span><span class="si">{</span><span class="n">MERCATOR_Y</span><span class="si">}</span>
+<span class="s2">    FROM mercator_df</span>
+<span class="s2">    &quot;&quot;&quot;</span>
+    
+    <span class="k">return</span> <span class="n">spark</span><span class="o">.</span><span class="n">sql</span><span class="p">(</span><span class="n">query</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="coarse_filter">
+<a class="viewcode-back" href="../../daphme.html#daphme.cleaning.coarse_filter">[docs]</a>
+<span class="k">def</span> <span class="nf">coarse_filter</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">DataFrame</span><span class="p">,</span> 
+                  <span class="n">bounding_wkt</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> 
+                  <span class="n">spark</span><span class="p">:</span> <span class="n">SparkSession</span><span class="p">,</span>
+                  <span class="n">longitude_col</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">LONGITUDE</span><span class="p">,</span> 
+                  <span class="n">latitude_col</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">LATITUDE</span><span class="p">,</span> 
+                  <span class="n">id_col</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">UID</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Filters a DataFrame based on whether geographical points (defined by longitude and latitude) fall within a specified geometry.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    df : DataFrame</span>
+<span class="sd">        The Spark DataFrame to be filtered. It should contain columns corresponding to longitude and latitude values, as well as an id column.</span>
+<span class="sd">    </span>
+<span class="sd">    bounding_wkt : str</span>
+<span class="sd">        The Well-Known Text (WKT) string representing the bounding geometry within which points are tested for inclusion. The WKT should define a polygon in the EPSG:4326 coordinate reference system.</span>
+<span class="sd">    </span>
+<span class="sd">    spark : SparkSession</span>
+<span class="sd">        The active SparkSession instance used to execute Spark operations.</span>
+<span class="sd">    </span>
+<span class="sd">    longitude_col : str, default &quot;longitude&quot;</span>
+<span class="sd">        The name of the column in &#39;df&#39; containing longitude values. Longitude values should be in the EPSG:4326 coordinate reference system.</span>
+<span class="sd">    </span>
+<span class="sd">    latitude_col : str, default &quot;latitude&quot;</span>
+<span class="sd">        The name of the column in &#39;df&#39; containing latitude values. Latitude values should be in the EPSG:4326 coordinate reference system.</span>
+<span class="sd">    </span>
+<span class="sd">    id_col : str, default &quot;id&quot;</span>
+<span class="sd">        The name of the column in &#39;df&#39; containing user IDs.</span>
+<span class="sd">    </span>
+<span class="sd">    Returns</span>
+<span class="sd">    ----------</span>
+<span class="sd">    DataFrame</span>
+<span class="sd">        A new Spark DataFrame filtered to include only rows where the point (longitude, latitude) falls within the specified geometric boundary defined by &#39;bounding_wkt&#39;. This DataFrame includes all original columns from &#39;df&#39; and an additional column &#39;in_geo&#39; that is true if the point falls within the specified geometric boundary and false otherwise.</span>
+
+<span class="sd">    Example</span>
+<span class="sd">    ----------</span>
+<span class="sd">    &gt;&gt;&gt; # Assuming a SparkSession `spark` and a DataFrame `df` are predefined</span>
+<span class="sd">    &gt;&gt;&gt; bounding_wkt = &quot;POLYGON((...))&quot;  # Replace with actual WKT</span>
+<span class="sd">    &gt;&gt;&gt; filtered_df = coarse_filter(df, bounding_wkt, spark)</span>
+<span class="sd">    &gt;&gt;&gt; filtered_df.show()</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    
+    <span class="n">df</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">withColumn</span><span class="p">(</span><span class="s2">&quot;coordinate&quot;</span><span class="p">,</span> <span class="n">F</span><span class="o">.</span><span class="n">expr</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ST_MakePoint(</span><span class="si">{</span><span class="n">longitude_col</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">latitude_col</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">))</span>
+    <span class="n">df</span><span class="o">.</span><span class="n">createOrReplaceTempView</span><span class="p">(</span><span class="s2">&quot;temp_df&quot;</span><span class="p">)</span>
+    
+    <span class="n">query</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">        WITH temp_df AS (</span>
+<span class="s2">            SELECT *,</span>
+<span class="s2">                   ST_Contains(ST_GeomFromWKT(&#39;</span><span class="si">{</span><span class="n">bounding_wkt</span><span class="si">}</span><span class="s2">&#39;), coordinate) AS in_geo</span>
+<span class="s2">            FROM temp_df</span>
+<span class="s2">        ),</span>
+
+<span class="s2">        UniqueIDs AS (</span>
+<span class="s2">            SELECT DISTINCT </span><span class="si">{</span><span class="n">id_col</span><span class="si">}</span><span class="s2"> </span>
+<span class="s2">            FROM temp_df</span>
+<span class="s2">            WHERE in_geo</span>
+<span class="s2">        )</span>
+
+<span class="s2">        SELECT t.*</span>
+<span class="s2">        FROM temp_df t</span>
+<span class="s2">        WHERE t.</span><span class="si">{</span><span class="n">id_col</span><span class="si">}</span><span class="s2"> IN (SELECT </span><span class="si">{</span><span class="n">id_col</span><span class="si">}</span><span class="s2"> FROM UniqueIDs)</span>
+<span class="s2">        &quot;&quot;&quot;</span>
+    
+    <span class="k">return</span> <span class="n">spark</span><span class="o">.</span><span class="n">sql</span><span class="p">(</span><span class="n">query</span><span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Duncan J. Watts, Francisco Barreras, Thomas Li, Jacob Lisner, Bethany Hsiao.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
