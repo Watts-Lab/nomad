@@ -25,7 +25,7 @@ class DataLoader():
     
     def load_gravy_sample(self, paths, user_count, cpu_count = multiprocessing.cpu_count()):
 
-        self.update_schema(constants.GRAVY_SCEHMA)
+        self.update_schema(constants.GRAVY_SCHEHMA)
 
         users = []
         with Pool(cpu_count) as p:
@@ -37,9 +37,9 @@ class DataLoader():
 
         data = []
         with Pool(multiprocessing.cpu_count()) as p:
-                data.extend(p.map(partial(get_pq_user_data, users=all_users), paths))
+                data.extend(p.map(partial(get_pq_user_data, users=all_users, id_string=self.schema['id']), paths))
         self.df= pd.concat(data).drop_duplicates()
-        
+
     
 
 
