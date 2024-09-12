@@ -4,6 +4,9 @@ import pandas as pd
 from functools import partial
 import multiprocessing
 from multiprocessing import Pool
+import re
+
+from pyspark.sql import SparkSession
 
 def get_pq_users(path, id_string):
     return pq.read_table(path, columns=[id_string]).column(id_string).unique().to_pandas()
@@ -12,30 +15,46 @@ def get_pq_user_data(path, users, id_string):
     return pq.read_table(path, filters=[(id_string, 'in', users)]).to_pandas()
 
 class DataLoader():
-    def __init__(self, labels = {}):
+    def __init__(self, labels = {}, spark_enabled=True, spark_session=None):
         self.schema = constants.DEFAULT_SCHEMA
         self.update_schema(labels)
         self.df = None
+        if(spark_enabled):
+            if(spark_session):
+                self.session=spark_session
+            else:
+                self.session = SparkSession.builder\
+                .config("spark.jars.packages", "org.apache.spark:spark-hadoop-cloud_2.12:3.3.0")\
+                .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")\
+                .getOrCreate()
     
     def update_schema(self, labels):
         for label in labels:
             if label in self.schema:
                 self.schema[label] = labels[label]
     
-    def load_gravy_sample(self, paths, user_count, cpu_count = multiprocessing.cpu_count()):
-        self.update_schema(constants.GRAVY_SCHEMA)
-        users = []
-        with Pool(cpu_count) as p:
-            users.extend(p.map(partial(get_pq_users, id_string=self.schema['id']), paths))
-        all_users = pd.concat(users).drop_duplicates()
-        all_users = all_users.rename(self.schema['id'])
-        all_users = all_users.apply(str)
-        all_users = all_users.sample(user_count)
+    def load_spark(self, path):
+        if(path.startswith('s3:')):
+            load_path = 's3a:'+path[3:]
+        else:
+            load_path = path
+        self.df = self.session.read.parquet(load_path)
+        
+    
+    # def load_gravy_sample(self, paths, user_count, cpu_count = multiprocessing.cpu_count()):
+    #     self.update_schema(constants.GRAVY_SCHEMA)
+    #     users = []
+    #     with Pool(cpu_count) as p:
+    #         users.extend(p.map(partial(get_pq_users, id_string=self.schema['id']), paths))
+    #     all_users = pd.concat(users).drop_duplicates()
+    #     all_users = all_users.rename(self.schema['id'])
+    #     all_users = all_users.apply(str)
+    #     all_users = all_users.sample(user_count)
 
-        data = []
-        with Pool(multiprocessing.cpu_count()) as p:
-            data.extend(p.map(partial(get_pq_user_data, users=all_users, id_string=self.schema['id']), paths))
-        self.df = pd.concat(data).drop_duplicates()
+    #     data = []
+    #     with Pool(multiprocessing.cpu_count()) as p:
+    #         data.extend(p.map(partial(get_pq_user_data, users=all_users, id_string=self.schema['id']), paths))
+    #     self.df = pd.concat(data).drop_duplicates()
 
     
 
