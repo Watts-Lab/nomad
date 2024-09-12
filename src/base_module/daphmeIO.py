@@ -26,7 +26,7 @@ class DataLoader():
         self.update_schema(constants.GRAVY_SCHEMA)
         users = []
         with Pool(cpu_count) as p:
-            users.extend(p.map(get_pq_users, paths))
+            users.extend(p.map(partial(get_pq_users, id_string=self.schema['id']), paths))
         all_users = pd.concat(users).drop_duplicates()
         all_users = all_users.rename(self.schema['id'])
         all_users = all_users.apply(str)
