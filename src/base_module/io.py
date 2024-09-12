@@ -13,7 +13,6 @@ def get_pq_user_data(path, users, id_string):
 
 class DataLoader():
     def __init__(self, labels = {}):
-        self.data = None                            #remove
         self.schema = constants.DEFAULT_SCHEMA
         self.update_schema(labels)
         self.df = None
