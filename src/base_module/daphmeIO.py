@@ -23,7 +23,7 @@ class DataLoader():
                 self.schema[label] = labels[label]
     
     def load_gravy_sample(self, paths, user_count, cpu_count = multiprocessing.cpu_count()):
-        self.update_schema(constants.GRAVY_SCHEHMA)
+        self.update_schema(constants.GRAVY_SCHEMA)
         users = []
         with Pool(cpu_count) as p:
             users.extend(p.map(get_pq_users, paths))
