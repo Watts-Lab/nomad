@@ -34,8 +34,8 @@ class DataLoader():
 
         data = []
         with Pool(multiprocessing.cpu_count()) as p:
-                data.extend(p.map(partial(get_pq_user_data, users=all_users, id_string=self.schema['id']), paths))
-        self.df= pd.concat(data).drop_duplicates()
+            data.extend(p.map(partial(get_pq_user_data, users=all_users, id_string=self.schema['id']), paths))
+        self.df = pd.concat(data).drop_duplicates()
 
     
 
