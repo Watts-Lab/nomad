@@ -13,7 +13,7 @@ def get_pq_user_data(path, users, id_string):
 
 class DataLoader():
     def __init__(self, labels = {}):
-        self.data = None
+        self.data = None                            #remove
         self.schema = constants.DEFAULT_SCHEMA
         self.update_schema(labels)
         self.df = None
@@ -24,12 +24,10 @@ class DataLoader():
                 self.schema[label] = labels[label]
     
     def load_gravy_sample(self, paths, user_count, cpu_count = multiprocessing.cpu_count()):
-
         self.update_schema(constants.GRAVY_SCHEHMA)
-
         users = []
         with Pool(cpu_count) as p:
-                users.extend(p.map(get_pq_users, paths))
+            users.extend(p.map(get_pq_users, paths))
         all_users = pd.concat(users).drop_duplicates()
         all_users = all_users.rename(self.schema['id'])
         all_users = all_users.apply(str)
