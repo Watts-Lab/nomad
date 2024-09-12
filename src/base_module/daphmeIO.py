@@ -5,35 +5,37 @@ from functools import partial
 import multiprocessing
 from multiprocessing import Pool
 import re
-
 from pyspark.sql import SparkSession
 
-def get_pq_users(path, id_string):
+def get_pq_users(path: str, id_string: str):
     return pq.read_table(path, columns=[id_string]).column(id_string).unique().to_pandas()
 
-def get_pq_user_data(path, users, id_string):
+def get_pq_user_data(path: str, users: list[str], id_string: str):
     return pq.read_table(path, filters=[(id_string, 'in', users)]).to_pandas()
 
 class DataLoader():
-    def __init__(self, labels = {}, spark_enabled=True, spark_session=None):
+    def __init__(self, labels = {}, spark_enabled=True):
         self.schema = constants.DEFAULT_SCHEMA
         self.update_schema(labels)
         self.df = None
+        self.session = None
         if(spark_enabled):
-            if(spark_session):
-                self.session=spark_session
-            else:
-                self.session = SparkSession.builder\
-                .config("spark.jars.packages", "org.apache.spark:spark-hadoop-cloud_2.12:3.3.0")\
-                .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")\
-                .getOrCreate()
-    
-    def update_schema(self, labels):
+            self.add_session()
+        
+    def update_schema(self, labels: list[str]) -> None:
         for label in labels:
             if label in self.schema:
                 self.schema[label] = labels[label]
     
-    def load_spark(self, path):
+    def add_session(self) -> None:
+        self.session = SparkSession.builder\
+        .config("spark.jars.packages", "org.apache.spark:spark-hadoop-cloud_2.12:3.3.0")\
+        .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")\
+        .getOrCreate()
+    
+    def load_spark(self, path: list[str]) -> None:
+        if(self.session == None):
+            raise Exception("No Session Initiated")
         if(path.startswith('s3:')):
             load_path = 's3a:'+path[3:]
         else:
