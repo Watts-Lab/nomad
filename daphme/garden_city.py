@@ -634,7 +634,7 @@ class Population:
 
         current_loc = agent.trajectory.iloc[-1]
         trajectory_update = []
-        
+
         if agent.diary.empty:
             current_entry = None
         else:

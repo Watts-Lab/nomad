@@ -111,7 +111,7 @@ def simulate_traj(stays, moves, seed=0):
     return df
 
 
-def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, seed=0):
+def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, nu=1/4, seed=0):
     """
     Sample from simulated trajectory, drawn using hierarchical Poisson processes.
 
@@ -125,6 +125,9 @@ def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, seed=0):
         mean of Exponential controlling burst durations
     beta_ping: float
         mean of Poisson controlling ping sampling within a burst
+    nu: float
+        sampling noise. Pings are sampled as (true x + eps_x, true y + eps_y)
+        where (eps_x, eps_y) ~ N(0, nu/1.96).
     seed : int0
         The seed for random number generation.
     """
@@ -173,6 +176,11 @@ def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, seed=0):
         sampled_traj = pd.DataFrame(columns=list(traj.columns))
 
     sampled_traj = sampled_traj.drop_duplicates('local_timestamp')
+
+    # Add sampling noise
+    noise = npr.normal(loc=0, scale=nu/1.96, size=(sampled_traj.shape[0], 2))
+    sampled_traj[['x', 'y']] = sampled_traj[['x', 'y']] + noise
+    sampled_traj['hor_accuracy'] = np.linalg.norm(noise, axis=1)
 
     return sampled_traj
 

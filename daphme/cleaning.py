@@ -1,6 +1,6 @@
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
-from sedona.spark import *
+#from sedona.spark import *
 from daphme.constants import (
     UID,
     TIMESTAMP,
