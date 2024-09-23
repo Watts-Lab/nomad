@@ -14,26 +14,26 @@ def get_pq_user_data(path: str, users: list[str], id_string: str):
     return pq.read_table(path, filters=[(id_string, 'in', users)]).to_pandas()
 
 class DataLoader():
-    def __init__(self, labels = {}, spark_enabled=True):
+    def __init__(self, labels = {}, session=None):
         self.schema = constants.DEFAULT_SCHEMA
         self.update_schema(labels)
         self.df = None
-        self.session = None
-        if(spark_enabled):
-            self.add_session()
+        self.session = session
         
     def update_schema(self, labels: list[str]) -> None:
         for label in labels:
             if label in self.schema:
                 self.schema[label] = labels[label]
-    
-    def add_session(self) -> None:
-        self.session = SparkSession.builder\
+
+    def link_session(self, session) -> None:
+        self.session = session
+
+    def config_s3(self) -> None:
+        self.session\
         .config("spark.jars.packages", "org.apache.spark:spark-hadoop-cloud_2.12:3.3.0")\
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")\
-        .getOrCreate()
     
-    def load_spark(self, path: list[str]) -> None:
+    def load_s3(self, path: list[str]) -> None:
         if(self.session == None):
             raise Exception("No Session Initiated")
         if(path.startswith('s3:')):
