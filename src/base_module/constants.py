@@ -1,8 +1,8 @@
 SCHEMA_NAMES = [
-    "id",
+    "uid",
     "latitude",
     "longitude",
-    "time",
+    "timestamp",
 ]
 GRAVY_NAMES = [
     "identifier",
@@ -10,5 +10,5 @@ GRAVY_NAMES = [
     "y",
     "local_timestamp",
 ]
-DEFAULT_SCHEMA = dict(zip(SCHEMA_NAMES, SCHEMA_NAMES))
-GRAVY_SCHEMA = dict(zip(SCHEMA_NAMES, GRAVY_NAMES))
+DEFAULT_LABELS = dict(zip(SCHEMA_NAMES, SCHEMA_NAMES))
+GRAVY_LABELS = dict(zip(SCHEMA_NAMES, GRAVY_NAMES))
