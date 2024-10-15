@@ -1,14 +1,10 @@
 SCHEMA_NAMES = [
-    "uid",
+    "user_id",
     "latitude",
     "longitude",
+    "datetime",
     "timestamp",
-]
-GRAVY_NAMES = [
-    "identifier",
     "x",
     "y",
-    "local_timestamp",
+    "geohash"
 ]
-DEFAULT_LABELS = dict(zip(SCHEMA_NAMES, SCHEMA_NAMES))
-GRAVY_LABELS = dict(zip(SCHEMA_NAMES, GRAVY_NAMES))
