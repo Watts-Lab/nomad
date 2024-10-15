@@ -13,3 +13,16 @@ def simple_df():
                       columns = ['uid', 'latitude', 'longitude', 'time'])
     return df
 
+
+
+# from_object works on simple_df, i.e. _is_traj_df
+
+# from_object works with different names
+
+# from_object has correct values in some entries
+
+# from object fails if no spatial or temporal columns are provided (and no defaults)
+
+# from_file works on data samples, i.e. _is_traj_df for pandas/pyarrow reads
+
+# from_file works with pyspark/pyarrow (without instantiating) until _is_traj_df on data sample 3
