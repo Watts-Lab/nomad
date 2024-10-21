@@ -2,13 +2,17 @@ import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Polygon
 
+from pyspark.sql import SparkSession
+from pyspark.sql import SQLContext
+from pyspark.sql import functions as F
+from pyspark.sql.types import StructType, StructField, StringType, IntegerType, LongType, DoubleType
 
-def to_projection(df,
-                  latitude,
-                  longitude,
-                  from_crs="EPSG:4326",
-                  to_crs="EPSG:3857",
-                  spark_session=None):
+def to_projection(df: pd.DataFrame,
+                  latitude: str,
+                  longitude: str,
+                  from_crs: str = "EPSG:4326",
+                  to_crs: str = "EPSG:3857",
+                  spark_session: SparkSession = None):
     """
     Projects latitude and longitude columns from one CRS to another.
 
@@ -30,24 +34,28 @@ def to_projection(df,
     pd.DataFrame
         DataFrame with new 'x' and 'y' columns representing projected coordinates.
     """
-    if latitude not in df.columns or longitude not in df.columns:
-        raise ValueError(f"Latitude or longitude columns '{latitude}', '{longitude}' not found in DataFrame.")
+    if spark_session:
+        pass
+    
+    else:
+        if latitude not in df.columns or longitude not in df.columns:
+            raise ValueError(f"Latitude or longitude columns '{latitude}', '{longitude}' not found in DataFrame.")
 
-    proj_cols = _to_projection(df[latitude],
-                               df[longitude],
-                               from_crs,
-                               to_crs)
+        proj_cols = _to_projection(df[latitude],
+                                   df[longitude],
+                                   from_crs,
+                                   to_crs)
 
-    df['x'] = proj_cols.x
-    df['y'] = proj_cols.y
+        df['x'] = proj_cols['x']
+        df['y'] = proj_cols['y']
 
     return df
 
 
 def _to_projection(lat_col,
                    long_col,
-                   from_crs,
-                   to_crs):
+                   from_crs: str,
+                   to_crs: str):
     """
     Helper function to project latitude/longitude columns to a new CRS.
     """
@@ -59,7 +67,10 @@ def _to_projection(lat_col,
     return output
 
 
-def filter_to_box(df, polygon, latitude, longitude):
+def filter_to_box(df: pd.DataFrame,
+                  latitude: str,
+                  longitude: str,
+                  polygon: Polygon):
     '''
     Filters DataFrame to keep points within a specified polygon's bounds.
 
@@ -92,13 +103,14 @@ def filter_to_box(df, polygon, latitude, longitude):
     return df[(df[longitude].between(min_y, max_y)) & (df[latitude].between(min_x, max_x))]
 
 
-def coarse_filter(df: DataFrame, 
-                  bounding_wkt: str, 
-                  spark: SparkSession,
-                  longitude_col: str = LONGITUDE, 
-                  latitude_col: str = LATITUDE, 
-                  id_col: str = UID) -> DataFrame:
-    """Filters a DataFrame based on whether geographical points (defined by longitude and latitude) fall within a specified geometry.
+def _filter_to_box_spark(df: pd.DataFrame, 
+                         bounding_wkt: str, 
+                         spark: SparkSession,
+                         longitude_col: str, 
+                         latitude_col: str, 
+                         id_col: str):
+    """Filters a DataFrame based on whether geographical points 
+    (defined by longitude and latitude) fall within a specified geometry.
 
     Parameters
     ----------
@@ -124,13 +136,6 @@ def coarse_filter(df: DataFrame,
     ----------
     DataFrame
         A new Spark DataFrame filtered to include only rows where the point (longitude, latitude) falls within the specified geometric boundary defined by 'bounding_wkt'. This DataFrame includes all original columns from 'df' and an additional column 'in_geo' that is true if the point falls within the specified geometric boundary and false otherwise.
-
-    Example
-    ----------
-    >>> # Assuming a SparkSession `spark` and a DataFrame `df` are predefined
-    >>> bounding_wkt = "POLYGON((...))"  # Replace with actual WKT
-    >>> filtered_df = coarse_filter(df, bounding_wkt, spark)
-    >>> filtered_df.show()
     """
     
     df = df.withColumn("coordinate", F.expr(f"ST_MakePoint({longitude_col}, {latitude_col})"))
@@ -155,3 +160,223 @@ def coarse_filter(df: DataFrame,
         """
     
     return spark.sql(query)
+
+
+def coarse_filter(df: pd.DataFrame):
+    pass
+
+
+def _filtered_users(df: pd.DataFrame,
+                    k: int,
+                    T0: str,
+                    T1: str,
+                    polygon: Polygon,
+                    user_col: str,
+                    timestamp_col: str,
+                    latitude: str,
+                    longitude: str) -> pd.DataFrame:
+    """
+    Subsets to users who have at least k distinct days with pings in the polygon 
+    within the timeframe T0 to T1.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The input DataFrame containing user data with latitude, longitude, and timestamp.
+    k : int
+        Minimum number of distinct days with pings inside the polygon for the user to be retained.
+    T0 : str
+        Start of the timeframe (as a string, or datetime).
+    T1 : str
+        End of the timeframe (as a string, or datetime).
+    polygon : Polygon
+        The polygon to check whether pings are inside.
+    user_col : str
+        Name of the column containing user identifiers.
+    timestamp_col : str
+        Name of the column containing timestamps (as strings or datetime).
+    latitude : str
+        Name of the column containing latitude values.
+    longitude : str
+        Name of the column containing longitude values.
+
+    Returns
+    -------
+    pd.Series
+        A Series containing the user IDs for users who have at 
+        least k distinct days with pings inside the polygon.
+    """
+    df[timestamp_col] = pd.to_datetime(df[timestamp_col])
+    df_filtered = df[(df[timestamp_col] >= T0) & (df[timestamp_col] <= T1)]
+    df_filtered = _in_geo(df_filtered, latitude, longitude, polygon)
+    df_filtered['date'] = df_filtered[timestamp_col].dt.date
+
+    filtered_users = (
+        df_filtered[df_filtered['in_geo'] == 1]
+        .groupby(user_col)['date']
+        .nunique()
+        .reset_index()
+    )
+    
+    filtered_users = filtered_users[filtered_users['date'] >= k][user_col]
+
+    return filtered_users
+
+
+def _in_geo(df: pd.DataFrame,
+            latitude: str,
+            longitude: str,
+            polygon: Polygon) -> pd.DataFrame:
+    """
+    Adds a new column to the DataFrame indicating whether points are 
+    inside the polygon (1) or not (0).
+    """
+
+    def _point_in_polygon(lat, lon):
+        point = Point(lon, lat)
+        return 1 if polygon.contains(point) else 0
+
+    df['in_geo'] = df.apply(lambda row: _point_in_polygon(row[latitude], row[longitude]), axis=1)
+
+    return df
+
+
+def q_filter(df: pd.DataFrame, 
+             qbar: float,
+             user_col: str, 
+             timestamp_col: str):
+    """
+    Computes the q statistic for each user as the proportion of unique hours with pings 
+    over the total observed hours (last hour - first hour) and filters users where q > qbar.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        A DataFrame containing user IDs and timestamps.
+    user_col : str
+        The name of the column containing user IDs.
+    timestamp_col : str
+        The name of the column containing timestamps.
+    qbar : float
+        The threshold q value; users with q > qbar will be retained.
+    
+    Returns
+    -------
+    pd.Series
+        A Series containing the user IDs for users whose q_stat > qbar.
+    """
+    df[timestamp_col] = pd.to_datetime(df[timestamp_col])
+
+    def compute_q_stat(user):
+        user['hour_period'] = user[timestamp_col].dt.to_period('H')
+        unique_hours = user['hour_period'].nunique()
+        
+        # Calculate total observed hours (difference between last and first hour)
+        first_hour = user[timestamp_col].min()
+        last_hour = user[timestamp_col].max()
+        total_hours = (last_hour - first_hour).total_seconds() / 3600
+        
+        # Compute q as the proportion of unique hours to total hours
+        q_stat = unique_hours / total_hours if total_hours > 0 else 0
+        return q_stat
+    
+    user_q_stats = df.groupby(user_col).apply(compute_q_stat).reset_index(name='q_stat')
+    
+    # Filter users where q > qbar
+    filtered_users = user_q_stats[user_q_stats['q_stat'] > qbar][user_col]
+    
+    return filtered_users
+
+
+def compute_persistence(df: pd.DataFrame, 
+                        max_gap: int,
+                        user_col: str, 
+                        timestamp_col: str,) -> pd.DataFrame:
+    """
+    TODO: FIX CODE 
+    
+    Computes the persistence for each user, defined as:
+    P[X[t, t+max_gap] is not empty | X[t] is not empty], where X[t] = 1 indicates a ping
+    occurred at time t, and X[t, t+max_gap] indicates any ping in the interval [t, t+max_gap].
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input DataFrame containing 'uid' (user ID) and 'local_timestamp' (datetime of pings).
+    max_gap : int
+        The maximum number of hours to check for the presence of pings after time t.
+    
+    Returns
+    -------
+    pd.DataFrame
+        A DataFrame containing the persistence for each user ('uid', 'persistence').
+    """
+    df['hour'] = pd.to_datetime(df[timestamp_col]).dt.floor('h')
+    df_hourly = df.groupby([user_col, 'hour']).size().clip(upper=1).reset_index(name='ping')
+
+    # Generate a complete range of hours for each user within the target time window
+    uids = df[user_col].unique()
+    all_hours = pd.MultiIndex.from_product(
+        [uids, pd.date_range(start=pd.Timestamp('2024-01-01 08:00:00'), 
+                             end=pd.Timestamp('2024-01-15 07:00:00'), freq='h')],
+        names=[user_col, 'hour']
+    )
+
+    # Create a DataFrame with all hours for all users
+    all_hours_df = pd.DataFrame(index=all_hours).reset_index()
+
+    # Merge with the hourly pings data
+    df_complete = pd.merge(all_hours_df, df_hourly, on=[user_col, 'hour'], how='left').fillna(0)
+    df_complete['ping'] = df_complete['ping'].astype(int)
+
+    # Initialize a column to store whether there is a ping within the next max_gap hours
+    df_complete['has_future_ping'] = 0
+
+    # Compute the condition: Check for pings within [t, t+max_gap] for each user
+    for uid, group in df_complete.groupby(user_col):
+        for idx, row in group.iterrows():
+            current_hour = row['hour']
+            future_pings = group[(group['hour'] > current_hour) & 
+                                 (group['hour'] <= current_hour + pd.Timedelta(hours=max_gap))]
+            if future_pings['ping'].sum() > 0:
+                df_complete.at[idx, 'has_future_ping'] = 1
+
+    # Compute persistence for each user
+    user_persistence_list = []
+    for uid, group in df_complete.groupby(user_col):
+        numerator = ((group['ping'] == 1) & (group['has_future_ping'] == 1)).sum()
+        denominator = (group['ping'] == 1).sum()
+        persistence = numerator / denominator if denominator > 0 else 0
+        user_persistence_list.append({user_col: uid, 'persistence': persistence})
+    
+    # Convert to DataFrame
+    persistence_df = pd.DataFrame(user_persistence_list)
+
+    return persistence_df
+
+
+def filter_users_by_persistence_new(df: pd.DataFrame, max_gap: int, epsilon: float) -> pd.Series:
+    """
+    Filters users based on their persistence value, keeping only users with persistence above epsilon.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input DataFrame containing 'uid' (user ID) and 'local_timestamp' (datetime of pings).
+    max_gap : int
+        The maximum number of hours to check for the presence of pings after time t.
+    epsilon : float
+        The persistence threshold; only users with persistence > epsilon will be retained.
+    
+    Returns
+    -------
+    pd.Series
+        A Series containing the user IDs of users whose persistence > epsilon.
+    """
+    # Compute persistence for each user
+    persistence_df = user_persistence_new(df, max_gap)
+
+    # Filter users with persistence > epsilon
+    filtered_users = persistence_df[persistence_df['persistence'] > epsilon]['uid']
+
+    return filtered_users
