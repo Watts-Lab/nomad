@@ -43,13 +43,13 @@ def _has_traj_cols(df, traj_cols):
     
     if not spatial_exists:
         raise ValueError(
-            "Missing required spatial columns. The dataframe must contain at least one of the following sets: "
-            "('latitude', 'longitude'), ('x', 'y'), or 'geohash'."
+            "Could not find required spatial columns in {}. The dataframe columns must contain or map to at least one of the following sets: "
+            "('latitude', 'longitude'), ('x', 'y'), or 'geohash'.".format(df.columns.tolist())
         )
         
     if not temporal_exists:
         raise ValueError(
-            "Missing required temporal column. The dataframe must contain either 'datetime' or 'timestamp'."
+            "Could not find required temporal columns in {}. The dataframe columns must contain or map to either 'datetime' or 'timestamp'.".format(df.columns.tolist())
         )
     
     return spatial_exists and temporal_exists
@@ -136,54 +136,8 @@ def from_object(df, traj_cols = None, spark_enabled=False, **kwargs):
     if _has_traj_cols(df, traj_cols):
         return _cast_traj_cols(df, traj_cols)
 
-
-class DataLoader():
-    
-    def __init__(self, labels = {}, spark_enabled=True):
-        self.schema = constants.DEFAULT_SCHEMA
-        self.update_schema(labels)
-        self.df = None
-        self.session = None
-        if(spark_enabled):
-            self.add_session()
-        
-    def update_schema(self, labels: list[str]) -> None:
-        for label in labels:
-            if label in self.schema:
-                self.schema[label] = labels[label]
-    
-    def add_session(self) -> None:
-        self.session = SparkSession.builder\
-        .config("spark.jars.packages", "org.apache.spark:spark-hadoop-cloud_2.12:3.3.0")\
-        .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")\
-        .getOrCreate()
-    
-    def load_spark(self, path: list[str]) -> None:
-        if(self.session == None):
-            raise Exception("No Session Initiated")
-        if(path.startswith('s3:')):
-            load_path = 's3a:'+path[3:]
-        else:
-            load_path = path
-        self.df = self.session.read.parquet(load_path)
-        
-        # TO DO: allow **kwargs
-        
-    
-    # def load_gravy_sample(self, paths, user_count, cpu_count = multiprocessing.cpu_count()):
-    #     self.update_schema(constants.GRAVY_SCHEMA)
-    #     users = []
-    #     with Pool(cpu_count) as p:
-    #         users.extend(p.map(partial(get_pq_users, id_string=self.schema['id']), paths))
-    #     all_users = pd.concat(users).drop_duplicates()
-    #     all_users = all_users.rename(self.schema['id'])
-    #     all_users = all_users.apply(str)
-    #     all_users = all_users.sample(user_count)
-
-    #     data = []
-    #     with Pool(multiprocessing.cpu_count()) as p:
-    #         data.extend(p.map(partial(get_pq_user_data, users=all_users, id_string=self.schema['id']), paths))
-    #     self.df = pd.concat(data).drop_duplicates()
+def from_file():
+    return None
 
     
 
