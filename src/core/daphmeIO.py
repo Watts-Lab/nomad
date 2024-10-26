@@ -1,26 +1,22 @@
-import pyarrow.parquet as pq
 import pandas as pd
 from functools import partial
+import pyarrow.parquet as pq
+import pyarrow.dataset as ds
+import pyarrow.compute as pc
 import multiprocessing
 from multiprocessing import Pool
 import re
+import sys
+import os
 from pyspark.sql import SparkSession
-# from . import constants
-import constants
+from . import constants
+#import constants
 
-def get_pq_users(path: str, id_string: str):
-    return pq.read_table(path, columns=[id_string]).column(id_string).unique().to_pandas()
-
-def get_pq_user_data(path: str, users: list[str], id_string: str):
-    return pq.read_table(path, filters=[(id_string, 'in', users)]).to_pandas()
-
-def _read_partitioned_pq(path):
-    return None
 
 def _update_schema(original, new_labels):
     updated_schema = dict(original)
     for label in new_labels:
-        if label in constants.SCHEMA_NAMES:
+        if label in constants.DEFAULT_SCHEMA:
             updated_schema[label] = new_labels[label]
     return updated_schema
 
@@ -136,9 +132,125 @@ def from_object(df, traj_cols = None, spark_enabled=False, **kwargs):
     if _has_traj_cols(df, traj_cols):
         return _cast_traj_cols(df, traj_cols)
 
-def from_file():
+def from_file(filepath, format="csv", traj_cols=None, **kwargs):
+    assert format in ["csv", "parquet"]
+
+    if format == 'parquet':
+        if isinstance(filepath, list) and any(os.path.isdir(path) for path in filepath):
+            # Define individual datasets for each directory, ensuring the same schema
+            datasets = [ds.dataset(path, format="parquet", partitioning="hive") for path in filepath]
+            dataset = ds.UnionDataset(schema=datasets[0].schema, children=datasets)
+        else:
+            dataset = ds.dataset(filepath, format="parquet", partitioning="hive")
+        df = dataset.to_table().to_pandas()
+        return from_object(df, traj_cols=traj_cols, **kwargs)
+
+    elif format == 'csv':
+        if isinstance(filepath, list) and any(os.path.isdir(path) for path in filepath):
+            datasets = [ds.dataset(path, format="csv", partitioning="hive") for path in filepath]
+            dataset = ds.UnionDataset(schema=datasets[0].schema, children=datasets)
+        elif os.path.isdir(filepath) or isinstance(filepath, list):
+            dataset = ds.dataset(filepath, format="csv", partitioning="hive")
+        else:
+            df = pd.read_csv(filepath)
+            return from_object(df, traj_cols=traj_cols)
+
+        df = dataset.to_table().to_pandas()
+        return from_object(df, traj_cols=traj_cols)
+    
     return None
 
+def sample_users(filepath, format='csv', frac_users=1.0, traj_cols=None, **kwargs):
+    
+    assert format in ['csv', 'parquet']
+
+    if not traj_cols:
+        traj_cols = {}
+        traj_cols = _update_schema(traj_cols, kwargs)
+        
+    uid_col = traj_cols['user_id']
+
+    if format == 'parquet':
+        dataset = ds.dataset(filepath, format="parquet", partitioning="hive")
+        if uid_col not in dataset.schema.names:
+            raise ValueError(
+                "Could not find required user ID column in {}. The columns must contain or map to '{}'.".format(
+                    dataset.schema.names, uid_col)
+            )
+        user_ids = pc.unique(dataset.to_table(columns=[uid_col])[uid_col]).to_pandas()
+
+    else:
+        if os.path.isdir(filepath):
+            dataset = ds.dataset(filepath, format="csv", partitioning="hive")
+            if uid_col not in dataset.schema.names:
+                raise ValueError(
+                    "Could not find required user ID column in {}. The columns must contain or map to '{}'.".format(
+                        dataset.schema.names, uid_col)
+                )
+            user_ids = pc.unique(dataset.to_table(columns=[uid_col])[uid_col]).to_pandas()
+        else:
+            df = pd.read_csv(filepath, usecols=[uid_col])
+            if uid_col not in df.columns:
+                raise ValueError(
+                    "Could not find required user ID column in {}. The columns must contain or map to '{}'.".format(
+                        df.columns.tolist(), uid_col)
+                )
+            user_ids = df[uid_col].unique()
+
+    return user_ids.sample(frac=frac_users) if frac_users < 1.0 else user_ids
+
+
+def sample_from_file(filepath, users, format="csv", traj_cols=None, **kwargs):
+    assert format in ["csv", "parquet"]
+
+    if not traj_cols:
+        traj_cols = {}
+        traj_cols = _update_schema(traj_cols, kwargs)
+        
+    uid_col = traj_cols['user_id']
+
+    if format == 'parquet':
+        if isinstance(filepath, list) and any(os.path.isdir(path) for path in filepath):
+            # Create individual datasets and use UnionDataset
+            datasets = [ds.dataset(path, format="parquet", partitioning="hive") for path in filepath]
+            dataset = ds.UnionDataset(schema=datasets[0].schema, children=datasets)
+        else:
+            dataset = ds.dataset(filepath, format="parquet", partitioning="hive")
+
+        if uid_col not in dataset.schema.names:
+            raise ValueError(
+                "Could not find required user ID column in {}. The columns must contain or map to '{}'.".format(
+                    dataset.schema.names, uid_col)
+            )
+        df = dataset.to_table(
+            filter=ds.field(uid_col).isin(list(users))
+        ).to_pandas()
+    
+    elif format == 'csv':
+        if isinstance(filepath, list) and any(os.path.isdir(path) for path in filepath):
+            datasets = [ds.dataset(path, format="csv", partitioning="hive") for path in filepath]
+            dataset = ds.UnionDataset(schema=datasets[0].schema, children=datasets)
+        elif os.path.isdir(filepath) or isinstance(filepath, list):
+            dataset = ds.dataset(filepath, format="csv", partitioning="hive")
+        else:
+            df = pd.read_csv(filepath)
+            if uid_col not in df.columns:
+                raise ValueError(
+                    "Could not find required user ID column in {}. The columns must contain or map to '{}'.".format(
+                        df.columns.tolist(), uid_col)
+                )
+            return from_object(df[df[uid_col].isin(users)], traj_cols=traj_cols, **kwargs)
+
+        if uid_col not in dataset.schema.names:
+            raise ValueError(
+                "Could not find required user ID column in {}. The columns must contain or map to '{}'.".format(
+                    dataset.schema.names, uid_col)
+            )
+        df = dataset.to_table(
+            filter=ds.field(uid_col).isin(list(users))
+        ).to_pandas()
+    
+    return from_object(df, traj_cols=traj_cols, **kwargs)
     
 
 
