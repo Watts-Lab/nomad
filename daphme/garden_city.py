@@ -512,6 +512,9 @@ class Agent:
                  start_time: datetime=datetime(2024, 1, 1, hour=8, minute=0), 
                  dt: float = 1):
         """
+        Initializes an agent in the city simulation with a trajectory and diary.
+        If `trajectory` is not provided, the agent initialize with a ping at their home.
+
         Parameters
         ----------
         identifier : str
@@ -522,19 +525,19 @@ class Agent:
             Building ID representing the workplace location.
         city : City
             The city object containing relevant information about the city's layout and properties.
-        still_probs : dict
+        still_probs : dict, optional (default=DEFAULT_STILL_PROBS)
             Dictionary containing probabilities of the agent staying still.
-        speeds : dict
+        speeds : dict, optional (default=DEFAULT_SPEEDS)
             Dictionary containing possible speeds of the agent.
-        destination_diary : pandas.DataFrame
+        destination_diary : pandas.DataFrame, optional (default=None)
             DataFrame containing the following columns: 'unix_timestamp', 'local_timestamp', 'duration', 'location'.
-        trajectory : pandas.DataFrame
+        trajectory : pandas.DataFrame, optional (default=None)
             DataFrame containing the following columns: 'x', 'y', 'local_timestamp', 'unix_timestamp', 'identifier'.
-        diary : pandas.DataFrame
+        diary : pandas.DataFrame,  optional (default=None)
             DataFrame containing the following columns: 'unix_timestamp', 'local_timestamp', 'duration', 'location'.
-        start_time : datetime
+        start_time : datetime, optional (default=datetime(2024, 1, 1, hour=8, minute=0))
             If `trajectory` is None, the first ping will occur at `start_time`.
-        dt : float
+        dt : float, optional (default=1)
             Time step duration.
         """
 
@@ -586,15 +589,15 @@ class Agent:
         ----------
         ax : matplotlib.axes.Axes
             The axis on which to plot the trajectory.
-        color : str
+        color : str, optional
             The color of the trajectory.
-        alpha : float
+        alpha : float, optional
             The transparency of the trajectory.
-        doors : bool
+        doors : bool, optional
             Whether to plot doors of buildings.
-        address : bool
+        address : bool, optional
             Whether to plot the address of buildings.
-        heatmap : bool
+        heatmap : bool, optional
             Whether to plot a heatmap of time spent in each building.
         """
 
@@ -629,6 +632,28 @@ class Agent:
 
 
 def _ortho_coord(multilines, distance, offset, eps=0.001):  # Calculus approach. Probably super slow.
+    """
+    Given a MultiLineString, a distance along it, an offset distance, and a small epsilon,
+    returns the coordinates of a point that is distance along the MultiLineString and offset
+    from it.
+
+    Parameters
+    ----------
+    multilines : shapely.geometry.multilinestring.MultiLineString
+        MultiLineString object representing the path.
+    distance : float
+        Distance along the MultiLineString.
+    offset : float
+        Offset distance from the MultiLineString.
+    eps : float, optional
+        Small epsilon for numerical stability.
+
+    Returns
+    -------
+    tuple
+        A tuple with the (x, y) coordinates of the point.
+    """
+
     point = multilines.interpolate(distance)
     offset_point = multilines.interpolate(distance - eps)
     p = np.array([point.x, point.y])
@@ -637,7 +662,7 @@ def _ortho_coord(multilines, distance, offset, eps=0.001):  # Calculus approach.
     return tuple(x+p)
 
 
-def condense_destinations(destination_diary):  # This might be a more general clustering algorithm
+def condense_destinations(destination_diary):
     """
     Modifies a sequence of timestamped destinations, joining consecutive 
     destinations in the same location into a single entry with the aggregated duration.
@@ -652,6 +677,7 @@ def condense_destinations(destination_diary):  # This might be a more general cl
     pandas.DataFrame
         A new DataFrame with condensed destination entries.
     """
+
     if destination_diary.empty:
         return pd.DataFrame()
 
@@ -679,22 +705,72 @@ def condense_destinations(destination_diary):  # This might be a more general cl
 
 
 class Population:
-    def __init__(self, city):
+    """
+    A class to represent a population of agents within a city.
+
+    Attributes
+    ----------
+    roster : dict
+        A dictionary to store agents with their identifiers as keys.
+    city : City
+        The city in which the population resides.
+    global_execution : int
+        A counter for global execution.
+
+    Methods
+    -------
+    add_agent:
+        Adds an agent to the population.
+    generate_agents:
+        Generates N agents with randomized attributes.
+    save_pop:
+        Saves trajectories, homes, and diaries as Parquet files to S3.
+    sample_step:
+        Generates (x, y) pings from a destination diary.
+    traj_from_dest_diary:
+        Simulates a trajectory and updates the agent's travel diary.
+    generate_dest_diary:
+        Generates a destination diary using exploration and preferential return.
+    generate_trajectory:
+        Generates a trajectory for an agent.
+    plot_population:
+        Plots the population on a given axis.
+    """
+
+    def __init__(self, 
+                 city: City):
         self.roster = {}
         self.city = city
         self.global_execution = 0
 
-    def add_agent(self, agent, verbose=True):
+    def add_agent(self, 
+                  agent: Agent, 
+                  verbose: bool=True):
+        """
+        Adds an agent to the population. 
+        If the agent identifier already exists in the population, it will be replaced.
+
+        Parameters
+        ----------
+        agent : Agent
+            The agent to be added to the population.
+        verbose : bool, optional
+            Whether to print a message if the agent identifier already exists in the population.
+        """
+
         if verbose and agent.identifier in self.roster:
             print("Agent identifier already exists in population. Replacing corresponding agent.")
         self.roster[agent.identifier] = agent
 
-    def generate_agents(self, N,
-                        start_time=datetime(2024, 1, 1, hour=8, minute=0),
-                        dt=1, seed=0):
+    def generate_agents(self, 
+                        N: int,
+                        start_time: datetime = datetime(2024, 1, 1, hour=8, minute=0),
+                        dt: float = 1, 
+                        seed: int = 0):
         """
         Generates N agents, with randomized attributes.
         """
+
         npr.seed(seed)
 
         b_types = pd.DataFrame({
@@ -720,9 +796,12 @@ class Population:
         """
         Save trajectories, homes, and diaries as Parquet files to S3.
 
-        Parameters:
-        - bucket: str, the name of the S3 bucket.
-        - prefix: str, the path prefix within the bucket (e.g., 'folder/subfolder/').
+        Parameters
+        ----------
+        bucket : str
+            The name of the S3 bucket.
+        prefix : str
+            The path prefix within the bucket (e.g., 'folder/subfolder/').
         """
 
         fs = s3fs.S3FileSystem()
@@ -748,6 +827,7 @@ class Population:
             diaries += [ag_d]
         pd.concat(diaries).to_parquet(f's3://{bucket}/{prefix}diaries.parquet', engine='pyarrow', filesystem=fs)
 
+#     TODO: allow for parallelization
 #     @staticmethod
 #     def process_agent(row, load_trajectories, load_diaries, city):
 #         agent_id = row['id']
@@ -1068,6 +1148,26 @@ class Population:
         return None
 
     def generate_trajectory(self, agent, T=None, duration=15, seed=0, dt=1):
+        """
+        Generate a trajectory for an agent.
+
+        Parameters
+        ----------
+        agent : Agent
+            The agent for whom to generate a trajectory.
+        T : int, optional
+            Timestamp until which to generate.
+        duration : int, optional
+            Duration of each stay in minutes.
+        seed : int, optional
+            Random seed for reproducibility.
+        dt : float, optional
+            Time step duration.
+        
+        Returns
+        -------
+        None (updates agent.trajectory)
+        """
 
         npr.seed(seed)
 
