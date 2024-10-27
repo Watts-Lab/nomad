@@ -7,7 +7,7 @@ import pdb
 
 def extract_middle(data):
     """
-    TODO
+    Extracts the "middle" of a cluster, defined as the first contiguous cluster of pings.
 
     Parameters
     ----------
