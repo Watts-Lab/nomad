@@ -6,6 +6,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import numpy as np
 import numpy.random as npr
+import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from matplotlib import cm
 import funkybob
@@ -14,10 +15,10 @@ import nx_parallel as nxp
 import s3fs
 import pyarrow
 
-import daphme.mobility_model as mmod
-import daphme.stop_detection as sd
-from daphme.constants import DEFAULT_SPEEDS, FAST_SPEEDS, SLOW_SPEEDS, DEFAULT_STILL_PROBS
-from daphme.constants import FAST_STILL_PROBS, SLOW_STILL_PROBS, ALLOWED_BUILDINGS, DEFAULT_STAY_PROBS
+import mobility_model as mmod
+import stop_detection as sd
+from constants import DEFAULT_SPEEDS, FAST_SPEEDS, SLOW_SPEEDS, DEFAULT_STILL_PROBS
+from constants import FAST_STILL_PROBS, SLOW_STILL_PROBS, ALLOWED_BUILDINGS, DEFAULT_STAY_PROBS
 
 import pdb
 

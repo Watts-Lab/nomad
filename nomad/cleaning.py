@@ -1,7 +1,7 @@
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 #from sedona.spark import *
-from daphme.constants import (
+from nomad.constants import (
     UID,
     TIMESTAMP,
     LATITUDE,
