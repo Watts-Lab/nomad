@@ -22,14 +22,37 @@ from daphme.constants import FAST_STILL_PROBS, SLOW_STILL_PROBS, ALLOWED_BUILDIN
 import pdb
 
 
+# =============================================================================
+# STREET CLASS
+# =============================================================================
 
-# =============================================================================
-# STREETS
-# Blocks through which individuals move from building to building.
-# =============================================================================
 
 class Street:
-    def __init__(self, coordinates):
+    """
+    Class for street block in the city through which individuals move from building to building.
+
+    Attributes
+    ----------
+    coordinates : tuple
+        A tuple representing the (x, y) coordinates of the street block.
+    neighbors_streets : list
+        A list of neighboring Street objects.
+    neighbors_buildings : list
+        A list of neighboring Building objects.
+    geometry : shapely.geometry.polygon.Polygon
+        A polygon representing the geometry of the street block.
+    id : str
+        A unique identifier for the street block, formatted as 's-x{coordinates[0]}-y{coordinates[1]}'.
+
+    Methods
+    -------
+    add_neighbor
+        Adds a neighboring street or building to the street block.
+    """
+
+    def __init__(self, 
+                 coordinates: tuple):
+
         self.coordinates = coordinates
         self.neighbors_streets = []
         self.neighbors_buildings = []
@@ -39,6 +62,18 @@ class Street:
         self.id = f's-x{coordinates[0]}-y{coordinates[1]}'
 
     def add_neighbor(self, neighbor):
+        """
+        Parameters
+        ----------
+        neighbor : object
+            The neighbor object to be added. It can be of type Street or Building.
+
+        Returns
+        -------
+        bool
+            True if the neighbor was successfully added, False otherwise.
+        """
+        
         if neighbor is None or not check_adjacent(self.geometry, neighbor.geometry):
             return False
         if isinstance(neighbor, Street):
@@ -49,19 +84,56 @@ class Street:
             return True
         return False
 
+
 # =============================================================================
-# BUILDING
-# Units of the city in which individuals dwell at different speeds.
+# BUILDING CLASS
 # =============================================================================
 
 
 class Building:
-    def __init__(self, building_type, door, city, p_still, sigma, blocks=None, bbox=None):
+    """
+    Class for buildings in the city where individuals dwell with different parameters.
+
+    Attributes
+    ----------
+    building_type : str
+        The type of building, e.g., 'home', 'work', 'retail', 'park'.
+    door : tuple
+        The coordinates of the door of the building.
+    city : City
+        The city object containing the building.
+    still_prob : float
+        The probability of an individual staying still in the building.
+    sigma : float
+        The standard deviation of the Brownian motion for an individual in the building.
+    id : str
+        A unique identifier for the building, formatted as '{building_type[0]}-x{door[0]}-y{door[1]}'.
+    blocks : list
+        A list of blocks that the building spans.
+    geometry : shapely.geometry.polygon.Polygon
+        A polygon representing the geometry of the building.
+    door_centroid : tuple
+        The coordinates of the door centroid of the building.
+
+    Methods
+    -------
+    None
+    """
+
+    def __init__(self,
+                 building_type: str, 
+                 door: tuple, 
+                 city,
+                 still_prob: float, 
+                 sigma: float, 
+                 blocks: list = None, 
+                 bbox: Polygon = None):
+
         self.building_type = building_type
         self.door = door
         self.city = city
 
-        self.p_still = p_still
+        self.still_prob = still_prob
         self.sigma = sigma
 
         self.id = f'{building_type[0]}-x{door[0]}-y{door[1]}'
@@ -91,24 +163,66 @@ class Building:
         self.door_centroid = ((door.coords[0][0] + door.coords[1][0]) / 2,
                               (door.coords[0][1] + door.coords[1][1]) / 2)
 
+
 # =============================================================================
-# CITY
-# Container for buildings, streets, and generators of cities
+# CITY CLASS
 # =============================================================================
 
 
 class City:
+    """
+    Class for representing a city containing buildings, streets, and methods for city management.
+
+    Attributes
+    ----------
+    buildings : dict
+        A dictionary of Building objects with their IDs as keys.
+    streets : dict
+        A dictionary of Street objects with their coordinates as keys.
+    buildings_outline : shapely.geometry.polygon.Polygon
+        A polygon representing the combined geometry of all buildings in the city.
+    address_book : dict
+        A dictionary mapping coordinates to Building objects.
+    still_probs : dict
+        A dictionary containing the probability of an individual staying still in each type of building.
+    sigma : dict
+        A dictionary containing the standard deviation of the Brownian motion for each type of building.
+    city_boundary : shapely.geometry.polygon.Polygon
+        A polygon representing the boundary of the city.
+    dimensions : tuple
+        A tuple representing the dimensions of the city (width, height).
+    street_graph : dict
+        A dictionary representing the graph of streets with their neighbors.
+    shortest_paths : dict
+        A dictionary containing the shortest paths between all pairs of streets.
+    gravity : pandas.DataFrame
+        A DataFrame containing the gravity values between all pairs of streets.
+
+    Methods
+    -------
+    add_building
+        Adds a building to the city.
+    get_block
+        Returns the block (Street or Building) at the given coordinates.
+    get_street_graph
+        Constructs the graph of streets and calculates the shortest paths between all pairs of streets.
+    save
+        Saves the city object to a file.
+    plot_city
+        Plots the city on a given matplotlib axis.
+    """
+
     def __init__(self,
-                 dimensions=(0, 0),
-                 still_probs=DEFAULT_STILL_PROBS,
+                 dimensions: tuple = (0,0),
+                 still_probs: dict = DEFAULT_STILL_PROBS,
                  speeds=DEFAULT_SPEEDS):
+
         self.buildings = {}
         self.streets = {}
         self.buildings_outline = Polygon()
         self.address_book = {}
 
-        # maybe at some point, p_still and sigma are inputs rather than hard coded
-        self.p_still = still_probs
+        self.still_probs = still_probs
 
         # controls "speed" of Brownian motion when simulating stay trajectory
         # The random variable X(t) of the position at time t has a normal
@@ -127,10 +241,28 @@ class City:
         self.dimensions = dimensions
 
     def add_building(self, building_type, door, blocks=None, bbox=None):
-        building = Building(building_type, door, self,
-                            self.p_still[building_type],
-                            self.sigma[building_type],
-                            blocks, bbox)
+        """
+        Adds a building to the city.
+
+        Parameters
+        ----------
+        building_type : str
+            The type of building, e.g., 'home', 'work', 'retail', 'park'.
+        door : tuple
+            The coordinates of the door of the building.
+        blocks : list
+            A list of blocks that the building spans.
+        bbox : shapely.geometry.polygon.Polygon
+            A polygon representing the bounding box of the building.
+        """
+
+        building = Building(building_type=building_type,
+                            door=door,
+                            city=self,
+                            still_prob=self.still_probs[building_type],
+                            sigma=self.sigma[building_type],
+                            blocks=blocks, 
+                            bbox=bbox)
 
         combined_plot = unary_union([building.geometry, self.streets[door].geometry])
         if self.buildings_outline.contains(combined_plot) or self.buildings_outline.overlaps(combined_plot):
@@ -150,7 +282,7 @@ class City:
             self.address_book[block] = building
             del self.streets[block]
 
-        # expand city boundary?
+        # expand city boundary if necessary
         buffered_building_geom = building.geometry.buffer(1)
         if not self.city_boundary.contains(buffered_building_geom):
             new_boundary = self.city_boundary.union(buffered_building_geom).envelope
@@ -165,9 +297,24 @@ class City:
                         self.streets[(x, y)] = Street((x, y))
 
     def get_block(self, coordinates):
-        # Return None if coordinates are outside the city
+        """
+        Returns the block (Street or Building) at the given coordinates.
+
+        Parameters
+        ----------
+        coordinates : tuple
+            A tuple representing the (x, y) coordinates of the block.
+
+        Returns
+        -------
+        object
+            The block object at the given coordinates 
+            or None if the coordinates are outside the city.
+        """
+
         x, y = coordinates
         bx, by = self.dimensions
+
         if (x < 0 or x >= bx or y < 0 or y >= bx):
             return None
 
@@ -177,8 +324,16 @@ class City:
         else:
             return self.streets[new_coords]
 
-    # Determine adjacent streets and buildings for each street block and construct graph
     def get_street_graph(self):
+        """
+        Generates a street graph from the streets data, calculates the shortest paths between all pairs of nodes,
+        and computes a gravity DataFrame based on the inverse square of the shortest path lengths.
+
+        Add the following attributes to the City object:
+            self.street_graph (dict): A dictionary representing the street graph with coordinates as keys and lists of neighboring coordinates as values.
+            self.shortest_paths (dict): A dictionary containing the shortest paths between all pairs of nodes.
+            self.gravity (pd.DataFrame): A DataFrame indexed by origin and destination coordinates, containing gravity values based on the shortest path lengths.
+        """
 
         self.street_graph = {}
         for coords, _ in self.streets.items():
@@ -205,11 +360,36 @@ class City:
         self.gravity = self.gravity.set_index(['origin', 'dest'])
 
     def save(self, filename):
-        """Save the city object to a file."""
+        """
+        Saves the city object to a file.
+
+        Parameters
+        ----------
+        filename : str
+            The name of the file to save the city object to.
+        """
+
         with open(filename, 'wb') as file:
             pickle.dump(self, file)
 
     def plot_city(self, ax, doors=True, address=True, zorder=1, heatmap_agent=None):
+        """
+        Plots the city on a given matplotlib axis.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            The axis on which to plot the city.
+        doors : bool
+            Whether to plot doors of buildings.
+        address : bool
+            Whether to plot the address of buildings.
+        zorder : int
+            The z-order of the plot.
+        heatmap_agent : Agent
+            The agent for which to plot a heatmap of time spent in each building.
+        """
+
         # Draw city boundary
         x, y = self.city_boundary.exterior.xy
         ax.plot(np.array(x), np.array(y), linewidth=2, color='black')  # Dashed line for the boundary
@@ -243,6 +423,18 @@ class City:
                     dx, dy = scaled_door_line.xy
                     ax.plot(dx, dy, linewidth=2, color='white', zorder=zorder)
 
+                if address:
+                    door_coord = building.door
+                    bbox = ax.get_window_extent().transformed(plt.gcf().dpi_scale_trans.inverted())
+                    axes_width_in_inches = bbox.width
+                    axes_data_range = ax.get_xlim()[1] - ax.get_xlim()[0]
+                    fontsize = (axes_width_in_inches / axes_data_range) * 13  # Example scaling factor
+
+                    ax.text(door_coord[0] + 0.15, door_coord[1] + 0.15,
+                            f"{door_coord[0]}, {door_coord[1]}",
+                            ha='left', va='bottom',
+                            fontsize=fontsize, color='black')
+
             sm = ScalarMappable(cmap=cm.Reds, norm=norm)
             sm.set_array([])
             cbar = plt.colorbar(sm, ax=ax, shrink=0.5, aspect=10, pad=0.02)
@@ -262,34 +454,63 @@ class City:
                     dx, dy = scaled_door_line.xy
                     ax.plot(dx, dy, linewidth=2, color='white', zorder=zorder)
 
-#         if address:
-#             door_coord = building.door
+                if address:
+                    door_coord = building.door
+                    bbox = ax.get_window_extent().transformed(plt.gcf().dpi_scale_trans.inverted())
+                    axes_width_in_inches = bbox.width
+                    axes_data_range = ax.get_xlim()[1] - ax.get_xlim()[0]
+                    fontsize = (axes_width_in_inches / axes_data_range) * 13  # Example scaling factor
 
-#             bbox = ax.get_window_extent().transformed(plt.gcf().dpi_scale_trans.inverted())
-#             axes_width_in_inches = bbox.width
-#             axes_data_range = ax.get_xlim()[1] - ax.get_xlim()[0]
-#             fontsize = (axes_width_in_inches / axes_data_range) * 13  # Example scaling factor
-
-#             ax.text(door_coord[0] + 0.15, door_coord[1] + 0.15,
-#                     f"{door_coord[0]}, {door_coord[1]}",
-#                     ha='left', va='bottom',
-#                     fontsize=fontsize, color='black')
+                    ax.text(door_coord[0] + 0.15, door_coord[1] + 0.15,
+                            f"{door_coord[0]}, {door_coord[1]}",
+                            ha='left', va='bottom',
+                            fontsize=fontsize, color='black')
 
         ax.set_aspect('equal')
+
         # Set integer ticks
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
 
+
 # =============================================================================
-# AGENT
+# AGENT CLASS
 # =============================================================================
 
 
 class Agent:
-    def __init__(self, identifier, home, workplace, city,
-                 still_probs=DEFAULT_STILL_PROBS, speeds=DEFAULT_SPEEDS,
-                 destination_diary=None, trajectory=None, diary=None,
-                 start_time=datetime(2024, 1, 1, hour=8, minute=0), dt=1):
+    """
+    Represents an agent in the city simulation.
+
+    Attributes
+    ----------
+    still_probs : dict
+        Dictionary containing probabilities of the agent staying still.
+    speeds : dict
+        Dictionary containing possible speeds of the agent.
+    dt : float
+        Time step duration.
+
+    Methods
+    -------
+    plot_traj
+        Plots the trajectory of the agent on the given axis.
+    sample_traj_hier_nhpp
+        Samples a sparse trajectory using a hierarchical non-homogeneous Poisson process.
+    """
+
+    def __init__(self, 
+                 identifier: str, 
+                 home: str, 
+                 workplace: str, 
+                 city: City,
+                 still_probs: dict = DEFAULT_STILL_PROBS, 
+                 speeds: dict = DEFAULT_SPEEDS,
+                 destination_diary: pd.DataFrame = None,
+                 trajectory: pd.DataFrame = None,
+                 diary: pd.DataFrame = None,
+                 start_time: datetime=datetime(2024, 1, 1, hour=8, minute=0), 
+                 dt: float = 1):
         """
         Parameters
         ----------
@@ -301,6 +522,10 @@ class Agent:
             Building ID representing the workplace location.
         city : City
             The city object containing relevant information about the city's layout and properties.
+        still_probs : dict
+            Dictionary containing probabilities of the agent staying still.
+        speeds : dict
+            Dictionary containing possible speeds of the agent.
         destination_diary : pandas.DataFrame
             DataFrame containing the following columns: 'unix_timestamp', 'local_timestamp', 'duration', 'location'.
         trajectory : pandas.DataFrame
@@ -309,6 +534,8 @@ class Agent:
             DataFrame containing the following columns: 'unix_timestamp', 'local_timestamp', 'duration', 'location'.
         start_time : datetime
             If `trajectory` is None, the first ping will occur at `start_time`.
+        dt : float
+            Time step duration.
         """
 
         self.identifier = identifier
@@ -352,6 +579,25 @@ class Agent:
         self.trajectory = trajectory
 
     def plot_traj(self, ax, color='black', alpha=1, doors=True, address=True, heatmap=False):
+        """
+        Plots the trajectory of the agent on the given axis.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            The axis on which to plot the trajectory.
+        color : str
+            The color of the trajectory.
+        alpha : float
+            The transparency of the trajectory.
+        doors : bool
+            Whether to plot doors of buildings.
+        address : bool
+            Whether to plot the address of buildings.
+        heatmap : bool
+            Whether to plot a heatmap of time spent in each building.
+        """
+
         if heatmap:
             self.city.plot_city(ax, doors=doors, address=address, zorder=1, heatmap_agent=self)
         else:
@@ -359,12 +605,30 @@ class Agent:
             self.city.plot_city(ax, doors=doors, address=address, zorder=1)
 
     def sample_traj_hier_nhpp(self, beta_start, beta_durations, beta_ping, seed=0):
+        """
+        Samples a sparse trajectory using a hierarchical non-homogeneous Poisson process.
+
+        Parameters
+        ----------
+        beta_start : float
+            The rate parameter governing the Poisson Process controlling 
+            the start of the trajectory.
+        beta_durations : float
+            The rate parameter governing the Exponential controlling 
+            for the durations of the trajectory.
+        beta_ping : float
+            The rate parameter governing the Poisson Process controlling
+            which pings are sampled.
+        seed : int
+            Random seed for reproducibility.
+        """
+
         sparse_traj = mmod.sample_hier_nhpp(self.trajectory, beta_start, beta_durations, beta_ping, seed=seed)
         sparse_traj = sparse_traj.set_index('unix_timestamp', drop=False)
         self.sparse_traj = sparse_traj
 
 
-def ortho_coord(multilines, distance, offset, eps=0.001):  # Calculus approach. Probably super slow.
+def _ortho_coord(multilines, distance, offset, eps=0.001):  # Calculus approach. Probably super slow.
     point = multilines.interpolate(distance)
     offset_point = multilines.interpolate(distance - eps)
     p = np.array([point.x, point.y])
@@ -605,7 +869,7 @@ class Population:
                     coord = np.array(dest_building.geometry.centroid.coords[0])
                     break
                 else:
-                    coord = ortho_coord(path_ml, snap_point_dist+transformed_step[0], transformed_step[1])
+                    coord = _ortho_coord(path_ml, snap_point_dist+transformed_step[0], transformed_step[1])
                     if bound_poly.contains(Point(coord)):
                         break
 
