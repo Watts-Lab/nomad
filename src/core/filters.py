@@ -8,6 +8,7 @@ from pyspark.sql import functions as F
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, LongType, DoubleType
 
 
+# user can pass latitude and longitude as kwargs, user can pass x and y, OR traj_cols (prioritizing latitude, longitude). 
 def to_projection(df: pd.DataFrame,
                   latitude: str,
                   longitude: str,
@@ -291,7 +292,12 @@ def q_filter(df: pd.DataFrame,
 
     return filtered_users
 
+
+# the user can pass **kwargs with timestamp or datetime, then if you absolutely need datetime then 
+# create a variable, not a column in the dataframe
+
 def q_stats(df: pd.DataFrame, user_id: str, timestamp: str):
+    
     """
     Computes the q statistic for each user as the proportion of unique hours with pings 
     over the total observed hours (last hour - first hour).
@@ -310,7 +316,8 @@ def q_stats(df: pd.DataFrame, user_id: str, timestamp: str):
     pd.DataFrame
         A DataFrame containing each user and their respective q_stat.
     """
-    df[timestamp] = pd.to_datetime(df[timestamp])
+    # only create a DATETIME column if it doesn't already exist (but what if the user knows datetime is wrong?)
+    df[timestamp] = pd.to_datetime(df[timestamp], unit='s')
 
     q_stats = df.groupby(user_id).apply(
         lambda group: _compute_q_stat(group, timestamp)
