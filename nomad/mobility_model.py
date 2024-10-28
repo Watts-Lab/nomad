@@ -74,7 +74,7 @@ class Street:
         bool
             True if the neighbor was successfully added, False otherwise.
         """
-        
+
         if neighbor is None or not check_adjacent(self.geometry, neighbor.geometry):
             return False
         if isinstance(neighbor, Street):
@@ -700,14 +700,13 @@ def condense_destinations(destination_diary):
 
 # =============================================================================
 # POPULATION
-# Container for all the agents and responsible for their initialization and
-# randomizing their attributes and trajectories
 # =============================================================================
 
 
 class Population:
     """
     A class to represent a population of agents within a city.
+    Contains methods to initialize agents and randomize their attributes and trajectories.
 
     Attributes
     ----------
