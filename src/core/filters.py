@@ -291,9 +291,36 @@ def q_filter(df: pd.DataFrame,
 
     return filtered_users
 
+def q_stats(df: pd.DataFrame, user_id: str, timestamp: str):
+    """
+    Computes the q statistic for each user as the proportion of unique hours with pings 
+    over the total observed hours (last hour - first hour).
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        A DataFrame containing user IDs and timestamps.
+    user_id : str
+        The name of the column containing user IDs.
+    timestamp_col : str
+        The name of the column containing timestamps.
+
+    Returns
+    -------
+    pd.DataFrame
+        A DataFrame containing each user and their respective q_stat.
+    """
+    df[timestamp] = pd.to_datetime(df[timestamp])
+
+    q_stats = df.groupby(user_id).apply(
+        lambda group: _compute_q_stat(group, timestamp)
+    ).reset_index(name='q_stat')
+
+    return q_stats
+
 
 def _compute_q_stat(user, timestamp_col):
-    user['hour_period'] = user[timestamp_col].dt.to_period('H')
+    user['hour_period'] = user[timestamp_col].dt.to_period('h')
     unique_hours = user['hour_period'].nunique()
 
     # Calculate total observed hours (difference between last and first hour)

@@ -8,15 +8,6 @@ from pyspark.sql import SparkSession
 # from . import constants
 import constants
 
-def get_pq_users(path: str, id_string: str):
-    return pq.read_table(path, columns=[id_string]).column(id_string).unique().to_pandas()
-
-def get_pq_user_data(path: str, users: list[str], id_string: str):
-    return pq.read_table(path, filters=[(id_string, 'in', users)]).to_pandas()
-
-def _read_partitioned_pq(path):
-    return None
-
 def _update_schema(original, new_labels):
     updated_schema = dict(original)
     for label in new_labels:
@@ -136,10 +127,17 @@ def from_object(df, traj_cols = None, spark_enabled=False, **kwargs):
     if _has_traj_cols(df, traj_cols):
         return _cast_traj_cols(df, traj_cols)
 
-def from_file(filepath, format='csv', traj_cols = None, **kwargs):
-    assert format in ['parquet', 'csv']
 
-    if format=='parquet':
+def from_file(filepath, format="csv", traj_cols=None, **kwargs):
+    assert format in ["csv", "parquet"]
+
+    if isinstance(filepath, list):
+        # Create individual datasets and combine using UnionDataset
+        datasets = [ds.dataset(path, format=format, partitioning="hive") for path in filepath]
+        dataset = ds.UnionDataset(schema=datasets[0].schema, children=datasets)
+    else:
+        # Single path (file or directory)
+            if format=='parquet':
         dataset = ds.dataset(filepath, format="parquet", partitioning="hive", **kwargs)
         df = dataset.to_table().to_pandas()
         return from_pandas(df, traj_cols = None, **kwargs)
@@ -160,22 +158,69 @@ def from_file(filepath, format='csv', traj_cols = None, **kwargs):
     
     return None
 
+def sample_users(filepath, format='csv', frac_users=1.0, traj_cols=None, **kwargs):
+    
+    assert format in ['csv', 'parquet']
 
-def sample_users(filepath, format='csv', frac_users= 1.0, traj_cols = None, **kwargs):
     if not traj_cols:
         traj_cols = {}
-        traj_cols = _update_schema(traj_cols, kwargs) #kwargs ignored if traj_cols
+        traj_cols = _update_schema(traj_cols, kwargs)
         
-    traj_cols = _update_schema(constants.DEFAULT_SCHEMA, traj_cols)
-    uid_col = traj_cols["user_id"]
+    uid_col = traj_cols['user_id']
 
-    if format=='parquet':
-        dataset = ds.dataset(filepath, format="parquet", partitioning="hive", **kwargs)
-        df = dataset.to_table(columns=[uid_col])[uid_col].to_pandas()
-        return from_pandas(df, traj_cols = None, **kwargs)    
-    )
+    if format == 'parquet':
+        dataset = ds.dataset(filepath, format="parquet", partitioning="hive")
+        if uid_col not in dataset.schema.names:
+            raise ValueError(
+                "Could not find required user ID column in {}. The columns must contain or map to '{}'.".format(
+                    dataset.schema.names, uid_col)
+            )
+        user_ids = pc.unique(dataset.to_table(columns=[uid_col])[uid_col]).to_pandas()
+    else:
+        if os.path.isdir(filepath):
+            dataset = ds.dataset(filepath, format="csv", partitioning="hive")
+            if uid_col not in dataset.schema.names:
+                raise ValueError(
+                    "Could not find required user ID column in {}. The columns must contain or map to '{}'.".format(
+                        dataset.schema.names, uid_col)
+                )
+            user_ids = pc.unique(dataset.to_table(columns=[uid_col])[uid_col]).to_pandas()
+        else:
+            df = pd.read_csv(filepath, usecols=[uid_col])
+            if uid_col not in df.columns:
+                raise ValueError(
+                    "Could not find required user ID column in {}. The columns must contain or map to '{}'.".format(
+                        df.columns.tolist(), uid_col)
+                )
+            user_ids = df[uid_col].unique()
+
+    return user_ids.sample(frac=frac_users) if frac_users < 1.0 else user_ids
+
+def sample_from_file(filepath, users, format="csv", traj_cols=None, **kwargs):
+    assert format in ["csv", "parquet"]
+
+    if not traj_cols:
+        traj_cols = {}
+        traj_cols = _update_schema(traj_cols, kwargs)
+        
+    uid_col = traj_cols['user_id']
+
+    if isinstance(filepath, list):
+        # Create individual datasets and combine using UnionDataset
+        datasets = [ds.dataset(path, format=format, partitioning="hive") for path in filepath]
+        dataset = ds.UnionDataset(schema=datasets[0].schema, children=datasets)
+    else:
+        # Single path (file or directory)
+        dataset = ds.dataset(filepath, format=format, partitioning="hive")
+
+    if uid_col not in dataset.schema.names:
+        raise ValueError(
+            "Could not find required user ID column in {}. The columns must contain or map to '{}'.".format(
+                dataset.schema.names, uid_col)
+        )
+
+    df = dataset.to_table(
+        filter=ds.field(uid_col).isin(list(users))
+    ).to_pandas()
     
-
-    
-
-
+    return from_object(df, traj_cols=traj_cols, **kwargs)
