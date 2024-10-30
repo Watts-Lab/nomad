@@ -136,8 +136,45 @@ def from_object(df, traj_cols = None, spark_enabled=False, **kwargs):
     if _has_traj_cols(df, traj_cols):
         return _cast_traj_cols(df, traj_cols)
 
-def from_file():
+def from_file(filepath, format='csv', traj_cols = None, **kwargs):
+    assert format in ['parquet', 'csv']
+
+    if format=='parquet':
+        dataset = ds.dataset(filepath, format="parquet", partitioning="hive", **kwargs)
+        df = dataset.to_table().to_pandas()
+        return from_pandas(df, traj_cols = None, **kwargs)
+        
+    elif format=='csv':
+        if os.path.isdir(filepath):
+            dataset = ds.dataset(filepath, format="csv", partitioning="hive", **kwargs)
+            df = dataset.to_table().to_pandas()
+            return from_pandas(df, traj_cols = None, **kwargs)
+    
+        else:
+            # Pass only valid kwargs for pandas.read_csv
+            read_csv_args = inspect.signature(pd.read_csv).parameters
+            read_csv_kwargs = {k: v for k, v in kwargs.items() if k in read_csv_args}
+            
+            df = pd.read_csv(filepath, **read_csv_kwargs)
+            return from_pandas(df, traj_cols = traj_cols, **kwargs)
+    
     return None
+
+
+def sample_users(filepath, format='csv', frac_users= 1.0, traj_cols = None, **kwargs):
+    if not traj_cols:
+        traj_cols = {}
+        traj_cols = _update_schema(traj_cols, kwargs) #kwargs ignored if traj_cols
+        
+    traj_cols = _update_schema(constants.DEFAULT_SCHEMA, traj_cols)
+    uid_col = traj_cols["user_id"]
+
+    if format=='parquet':
+        dataset = ds.dataset(filepath, format="parquet", partitioning="hive", **kwargs)
+        df = dataset.to_table(columns=[uid_col])[uid_col].to_pandas()
+        return from_pandas(df, traj_cols = None, **kwargs)    
+    )
+    
 
     
 
