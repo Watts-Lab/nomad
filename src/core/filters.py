@@ -2,36 +2,45 @@ import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Polygon, Point
 
+import pyspark
 from pyspark.sql import SparkSession
 from pyspark.sql import SQLContext
 from pyspark.sql import functions as F
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, LongType, DoubleType
 
 from constants import DEFAULT_SCHEMA
+from sedona.register import SedonaRegistrator
 
 
-# user can pass latitude and longitude as kwargs, user can pass x and y, OR traj_cols (prioritizing latitude, longitude). 
-def to_projection(df: pd.DataFrame,
-                  traj_cols: dict = None,
-                  latitude: str = DEFAULT_SCHEMA["latitude"],
-                  longitude: str = DEFAULT_SCHEMA["longitude"],
-                  from_crs: str = "EPSG:4326",
-                  to_crs: str = "EPSG:3857",
-                  spark_session: SparkSession = None):
+def to_projection(
+    df: pd.DataFrame,
+    traj_cols: dict = None,
+    latitude: str = None,
+    longitude: str = None,
+    x: str = None,
+    y: str = None,
+    from_crs: str = "EPSG:4326",
+    to_crs: str = "EPSG:3857",
+    spark_session: SparkSession = None
+):
     """
-    Projects latitude and longitude columns from one CRS to another.
+    Projects coordinate columns from one CRS to another.
 
     Parameters
     ----------
     df : pd.DataFrame
-        Input DataFrame containing latitude and longitude columns.
+        Input DataFrame containing coordinate columns.
     traj_cols : dict, optional
-        Dictionary containing column mappings, 
-        e.g., {"latitude": "latitude", "longitude": "longitude"}.
+        Dictionary containing column mappings,
+        e.g., {"latitude": "lat_col", "longitude": "lon_col"}.
     latitude : str, optional
-        Name of the latitude column (default is "latitude").
+        Name of the latitude column.
     longitude : str, optional
-        Name of the longitude column (default is "longitude").
+        Name of the longitude column.
+    x : str, optional
+        Name of the x coordinate column.
+    y : str, optional
+        Name of the y coordinate column.
     from_crs : str, optional
         EPSG code for the original CRS (default is "EPSG:4326").
     to_crs : str, optional
@@ -45,14 +54,26 @@ def to_projection(df: pd.DataFrame,
         DataFrame with new 'x' and 'y' columns representing projected coordinates.
     """
 
-    lat_col = traj_cols.get("latitude", latitude) if traj_cols else latitude
-    lon_col = traj_cols.get("longitude", longitude) if traj_cols else longitude
+    # User can pass latitude and longitude as kwargs,
+    # or x and y, OR traj_cols (prioritizing latitude and longitude).
+    if latitude is not None and longitude is not None:
+        lat_col = latitude
+        lon_col = longitude
+    elif x is not None and y is not None:
+        lat_col = x
+        lon_col = y
+    elif traj_cols is not None:
+        lat_col = traj_cols.get("latitude", DEFAULT_SCHEMA["latitude"])
+        lon_col = traj_cols.get("longitude", DEFAULT_SCHEMA["longitude"])
+    else:
+        lat_col = DEFAULT_SCHEMA["latitude"]
+        lon_col = DEFAULT_SCHEMA["longitude"]
 
     if lat_col not in df.columns or lon_col not in df.columns:
-        raise ValueError(f"Latitude or longitude columns '{lat_col}', '{lon_col}' not found in DataFrame.")
+        raise ValueError(f"Coordinate columns '{lat_col}' and '{lon_col}' not found in DataFrame.")
 
     if spark_session:
-        pass  #TODO
+        df = _to_projection_spark(df, lat_col, lon_col, from_crs, to_crs, spark_session)
     else:
         proj_cols = _to_projection(df[lat_col], df[lon_col], from_crs, to_crs)
         df['x'] = proj_cols['x']
@@ -61,10 +82,12 @@ def to_projection(df: pd.DataFrame,
     return df
 
 
-def _to_projection(lat_col,
-                   long_col,
-                   from_crs: str,
-                   to_crs: str):
+def _to_projection(
+    lat_col,
+    long_col,
+    from_crs: str,
+    to_crs: str
+):
     """
     Helper function to project latitude/longitude columns to a new CRS.
     """
@@ -76,12 +99,38 @@ def _to_projection(lat_col,
     return output
 
 
-def filter_to_box(df: pd.DataFrame,
-                  polygon: Polygon,
-                  traj_cols: dict = None,
-                  latitude: str = DEFAULT_SCHEMA["latitude"],
-                  longitude: str = DEFAULT_SCHEMA["longitude"],
-                  spark_session: SparkSession = None):
+def _to_projection_spark(
+    df, 
+    latitude_col, 
+    longitude_col, 
+    source_crs, 
+    target_crs, 
+    spark_session
+):
+    """
+    Helper function to project latitude/longitude columns to a new CRS using Spark.
+    """
+    SedonaRegistrator.registerAll(spark_session)
+    spark_df = spark_session.createDataFrame(df)
+    spark_df.createOrReplaceTempView("temp_view")
+    query = f"""
+        SELECT *, 
+            ST_X(ST_Transform(ST_Point({longitude_col}, {latitude_col}), '{source_crs}', '{target_crs}')) AS x,
+            ST_Y(ST_Transform(ST_Point({longitude_col}, {latitude_col}), '{source_crs}', '{target_crs}')) AS y
+        FROM temp_view
+    """
+    result_df = spark_session.sql(query)
+    return result_df.toPandas()
+
+
+def filter_to_box(
+    df: pd.DataFrame,
+    polygon: Polygon,
+    traj_cols: dict = None,
+    latitude: str = DEFAULT_SCHEMA["latitude"],
+    longitude: str = DEFAULT_SCHEMA["longitude"],
+    spark_session: SparkSession = None
+):
     '''
     Filters DataFrame to keep points within a specified polygon's bounds.
 
@@ -106,88 +155,62 @@ def filter_to_box(df: pd.DataFrame,
     pd.DataFrame
         Filtered DataFrame with points inside the polygon's bounds.
     '''
-    lat_col = traj_cols.get("latitude", latitude) if traj_cols else latitude
-    lon_col = traj_cols.get("longitude", longitude) if traj_cols else longitude
+    lat_col, lon_col = {**{"latitude": latitude, "longitude": longitude}, **(traj_cols or {})}.values()
 
     if lat_col not in df.columns or lon_col not in df.columns:
         raise ValueError(f"Latitude or longitude columns '{lat_col}', '{lon_col}' not found in DataFrame.")
 
+    if not isinstance(polygon, Polygon):
+        raise TypeError("Polygon parameter must be a Shapely Polygon object.")
+
     if spark_session:
-        pass  # TODO
+        return _filter_to_box_spark(df, polygon.wkt, spark_session, lon_col, lat_col)
 
     else:
-        if not isinstance(polygon, Polygon):
-            raise TypeError("Polygon parameter must be a Shapely Polygon object.")
-
         min_x, min_y, max_x, max_y = polygon.bounds
 
         return df[(df[longitude].between(min_y, max_y)) & (df[latitude].between(min_x, max_x))]
 
 
-def _filter_to_box_spark(df: pd.DataFrame,
-                         bounding_wkt: str,
-                         spark: SparkSession,
-                         longitude_col: str,
-                         latitude_col: str,
-                         id_col: str):
-    """Filters a DataFrame based on whether geographical points
-    (defined by longitude and latitude) fall within a specified geometry.
+def _filter_to_box_spark(
+    df: pyspark.sql.DataFrame,
+    bounding_wkt: str,
+    spark: SparkSession,
+    longitude_col: str,
+    latitude_col: str,
+):
+    """
+    Filters a Spark DataFrame to include rows where geographical points fall within a specified geometry.
 
     Parameters
     ----------
-    df : DataFrame
-        The Spark DataFrame to be filtered. It should contain columns
-        corresponding to longitude and latitude values, as well as an id column.
-
+    df : pyspark.sql.DataFrame
+        Input Spark DataFrame containing coordinate columns.
     bounding_wkt : str
-        The Well-Known Text (WKT) string representing the bounding geometry
-        within which points are tested for inclusion. The WKT should define
-        a polygon in the EPSG:4326 coordinate reference system.
-
+        Well-Known Text (WKT) string representing the bounding geometry (e.g., a polygon) in EPSG:4326 CRS.
     spark : SparkSession
-        The active SparkSession instance used to execute Spark operations.
-
-    longitude_col : str, default "longitude"
-        The name of the column in 'df' containing longitude values. Longitude
-        values should be in the EPSG:4326 coordinate reference system.
-
-    latitude_col : str, default "latitude"
-        The name of the column in 'df' containing latitude values. Latitude
-        values should be in the EPSG:4326 coordinate reference system.
-
-    id_col : str, default "id"
-        The name of the column in 'df' containing user IDs.
+        The active SparkSession instance for executing Spark operations.
+    longitude_col : str
+        Name of the longitude column.
+    latitude_col : str
+        Name of the latitude column.
+    id_col : str
+        Name of the column containing user IDs.
 
     Returns
-    ----------
-    DataFrame
-        A new Spark DataFrame filtered to include only rows where the point
-        (longitude, latitude) falls within the specified geometric boundary
-        defined by 'bounding_wkt'. This DataFrame includes all original columns
-        from 'df' and an additional column 'in_geo' that is true if the point
-        falls within the specified geometric boundary and false otherwise.
+    -------
+    pyspark.sql.DataFrame
+        Filtered DataFrame including only rows where the point (longitude, latitude) falls within the specified geometry.
     """
 
     df = df.withColumn("coordinate", F.expr(f"ST_MakePoint({longitude_col}, {latitude_col})"))
     df.createOrReplaceTempView("temp_df")
 
     query = f"""
-        WITH temp_df AS (
-            SELECT *,
-                   ST_Contains(ST_GeomFromWKT('{bounding_wkt}'), coordinate) AS in_geo
-            FROM temp_df
-        ),
-
-        UniqueIDs AS (
-            SELECT DISTINCT {id_col} 
-            FROM temp_df
-            WHERE in_geo
-        )
-
-        SELECT t.*
-        FROM temp_df t
-        WHERE t.{id_col} IN (SELECT {id_col} FROM UniqueIDs)
-        """
+        SELECT *
+        FROM temp_df
+        WHERE ST_Contains(ST_GeomFromWKT('{bounding_wkt}'), coordinate)
+    """
 
     return spark.sql(query)
 
