@@ -52,8 +52,6 @@ def test_filter_to_box_lat_lon(simple_df_one_user):
                        (39.98, 116.32), (39.98, 116.31)])
 
     result = F.filter_to_box(df=simple_df_one_user,
-                             latitude='latitude',
-                             longitude='longitude',
                              polygon=polygon)
 
     assert len(result) == len(simple_df_one_user)
@@ -69,8 +67,6 @@ def test_filter_to_box_lat_lon2(simple_df_one_user):
     polygon = Polygon([(39.98422, 116.3192), (39.98422, 116.31935),
                        (39.98400, 116.31935), (39.98400, 116.3192)])
     result = F.filter_to_box(df=simple_df_one_user,
-                             latitude='latitude',
-                             longitude='longitude',
                              polygon=polygon)
 
     ans = pd.DataFrame(
@@ -85,9 +81,7 @@ def test_filter_to_box_lat_lon2(simple_df_one_user):
 
 def test_to_projection(simple_df_one_user):
     """Test that to_projection correctly converts latitude/longitude to projected x/y."""
-    result = F.to_projection(df=simple_df_one_user,
-                             latitude='latitude',
-                             longitude='longitude')
+    result = F.to_projection(df=simple_df_one_user)
     ans = pd.DataFrame(
         [[1, 39.984094, 116.319236, '2008-10-23 13:53:05', 1.294860e+07, 4.863631e+06],
          [1, 39.984198, 116.319322, '2008-10-23 13:53:06', 1.294861e+07, 4.863646e+06],
@@ -105,12 +99,10 @@ def test_to_projection(simple_df_one_user):
 
 def test_to_projection_and_filter_by_xy(simple_df_one_user):
     """Test to_projection followed by filter_to_box in x/y space."""
-    projected_df = F.to_projection(df=simple_df_one_user,
-                             latitude='latitude',
-                             longitude='longitude')
+    projected_df = F.to_projection(df=simple_df_one_user)
     polygon = Polygon([(1.294861e+07, 4.863647e+06), (1.294861e+07, 4.863649e+06),
                        (1.294863e+07, 4.863649e+06), (1.294863e+07, 4.863647e+06)])
-    result = F.filter_to_box(df=projected_df, 
+    result = F.filter_to_box(df=projected_df,
                              latitude='x',
                              longitude='y',
                              polygon=polygon)
@@ -127,7 +119,7 @@ def test_to_projection_and_filter_by_xy(simple_df_one_user):
 
 
 def test_custom_column_names():
-    """Test that projection works with custom column names."""
+    """Test that projection works with custom column names, inputted individually"""
     df = pd.DataFrame({
         'custom_lat': [39.984094, 39.984198],
         'custom_lon': [116.319236, 116.319322]
@@ -136,6 +128,26 @@ def test_custom_column_names():
     result = F.to_projection(df=df,
                              latitude='custom_lat',
                              longitude='custom_lon')
+
+    assert 'x' in result.columns
+    assert 'y' in result.columns
+
+    assert isinstance(result.iloc[0]['x'], float)
+    assert isinstance(result.iloc[0]['y'], float)
+
+
+def test_custom_column_names_dict():
+    """Test that projection works with custom column names, inputted as dict."""
+    df = pd.DataFrame({
+        'custom_lat': [39.984094, 39.984198],
+        'custom_lon': [116.319236, 116.319322]
+    })
+
+    traj_cols =  {"latitude": "custom_lat",
+                  "longitude": "custom_lon"}
+
+    result = F.to_projection(df=df,
+                             traj_cols=traj_cols)
 
     assert 'x' in result.columns
     assert 'y' in result.columns

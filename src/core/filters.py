@@ -7,11 +7,14 @@ from pyspark.sql import SQLContext
 from pyspark.sql import functions as F
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, LongType, DoubleType
 
+from constants import DEFAULT_SCHEMA
+
 
 # user can pass latitude and longitude as kwargs, user can pass x and y, OR traj_cols (prioritizing latitude, longitude). 
 def to_projection(df: pd.DataFrame,
-                  latitude: str,
-                  longitude: str,
+                  traj_cols: dict = None,
+                  latitude: str = DEFAULT_SCHEMA["latitude"],
+                  longitude: str = DEFAULT_SCHEMA["longitude"],
                   from_crs: str = "EPSG:4326",
                   to_crs: str = "EPSG:3857",
                   spark_session: SparkSession = None):
@@ -22,32 +25,36 @@ def to_projection(df: pd.DataFrame,
     ----------
     df : pd.DataFrame
         Input DataFrame containing latitude and longitude columns.
-    latitude : str
-        Name of the latitude column.
-    longitude : str
-        Name of the longitude column.
+    traj_cols : dict, optional
+        Dictionary containing column mappings, 
+        e.g., {"latitude": "latitude", "longitude": "longitude"}.
+    latitude : str, optional
+        Name of the latitude column (default is "latitude").
+    longitude : str, optional
+        Name of the longitude column (default is "longitude").
     from_crs : str, optional
         EPSG code for the original CRS (default is "EPSG:4326").
     to_crs : str, optional
         EPSG code for the target CRS (default is "EPSG:3857").
+    spark_session : SparkSession, optional
+        Spark session for distributed computation, if needed.
 
     Returns
     -------
     pd.DataFrame
         DataFrame with new 'x' and 'y' columns representing projected coordinates.
     """
+
+    lat_col = traj_cols.get("latitude", latitude) if traj_cols else latitude
+    lon_col = traj_cols.get("longitude", longitude) if traj_cols else longitude
+
+    if lat_col not in df.columns or lon_col not in df.columns:
+        raise ValueError(f"Latitude or longitude columns '{lat_col}', '{lon_col}' not found in DataFrame.")
+
     if spark_session:
-        pass
-
+        pass  #TODO
     else:
-        if latitude not in df.columns or longitude not in df.columns:
-            raise ValueError(f"Latitude or longitude columns '{latitude}', '{longitude}' not found in DataFrame.")
-
-        proj_cols = _to_projection(df[latitude],
-                                   df[longitude],
-                                   from_crs,
-                                   to_crs)
-
+        proj_cols = _to_projection(df[lat_col], df[lon_col], from_crs, to_crs)
         df['x'] = proj_cols['x']
         df['y'] = proj_cols['y']
 
@@ -70,9 +77,10 @@ def _to_projection(lat_col,
 
 
 def filter_to_box(df: pd.DataFrame,
-                  latitude: str,
-                  longitude: str,
                   polygon: Polygon,
+                  traj_cols: dict = None,
+                  latitude: str = DEFAULT_SCHEMA["latitude"],
+                  longitude: str = DEFAULT_SCHEMA["longitude"],
                   spark_session: SparkSession = None):
     '''
     Filters DataFrame to keep points within a specified polygon's bounds.
@@ -83,29 +91,35 @@ def filter_to_box(df: pd.DataFrame,
         Input DataFrame with latitude and longitude columns.
     polygon : shapely.geometry.Polygon
         Polygon defining the area to retain points within.
-    latitude : str
-        Name of the latitude column.
-    longitude : str
-        Name of the longitude column.
+    traj_cols : dict, optional
+        Dictionary containing column mappings, 
+        e.g., {"latitude": "latitude", "longitude": "longitude"}.
+    latitude : str, optional
+        Name of the latitude column (default is "latitude").
+    longitude : str, optional
+        Name of the longitude column (default is "longitude").
+    spark_session : SparkSession, optional
+        Spark session for distributed computation, if needed.
 
     Returns
     -------
     pd.DataFrame
         Filtered DataFrame with points inside the polygon's bounds.
     '''
+    lat_col = traj_cols.get("latitude", latitude) if traj_cols else latitude
+    lon_col = traj_cols.get("longitude", longitude) if traj_cols else longitude
+
+    if lat_col not in df.columns or lon_col not in df.columns:
+        raise ValueError(f"Latitude or longitude columns '{lat_col}', '{lon_col}' not found in DataFrame.")
+
     if spark_session:
-        pass
+        pass  # TODO
 
     else:
         if not isinstance(polygon, Polygon):
             raise TypeError("Polygon parameter must be a Shapely Polygon object.")
 
-        if latitude not in df.columns or longitude not in df.columns:
-            raise ValueError(f"Latitude or longitude columns '{latitude}', '{longitude}' not found in DataFrame.")
-
         min_x, min_y, max_x, max_y = polygon.bounds
-
-        # TO DO: handle different column names and/or defaults as in daphmeIO. i.e. traj_cols as parameter
 
         return df[(df[longitude].between(min_y, max_y)) & (df[latitude].between(min_x, max_x))]
 
@@ -259,8 +273,9 @@ def _in_geo(df: pd.DataFrame,
 
 def q_filter(df: pd.DataFrame,
              qbar: float,
-             user_col: str,
-             timestamp_col: str):
+             traj_cols: dict = None,
+             user_id: str = DEFAULT_SCHEMA["user_id"],
+             timestamp: str = DEFAULT_SCHEMA["timestamp"]):
     """
     Computes the q statistic for each user as the proportion of unique hours with pings 
     over the total observed hours (last hour - first hour) and filters users where q > qbar.
@@ -268,20 +283,24 @@ def q_filter(df: pd.DataFrame,
     Parameters
     ----------
     df : pd.DataFrame
-        A DataFrame containing user IDs and timestamps.
-    user_col : str
-        The name of the column containing user IDs.
-    timestamp_col : str
-        The name of the column containing timestamps.
+        Input DataFrame with user_id and timestamp columns.
     qbar : float
         The threshold q value; users with q > qbar will be retained.
+    traj_cols : dict, optional
+        Dictionary containing column mappings, 
+        e.g., {"user_id": "user_id", "timestamp": "timestamp"}.
+    user_id : str, optional
+        Name of the user_id column (default is "user_id").
+    timestamp : str, optional
+        Name of the timestamp column (default is "timestamp").
 
     Returns
     -------
     pd.Series
         A Series containing the user IDs for users whose q_stat > qbar.
     """
-    df[timestamp_col] = pd.to_datetime(df[timestamp_col])
+    user_col = traj_cols.get("user_id", user_id) if traj_cols else user_id
+    timestamp_col = traj_cols.get("timestamp", timestamp) if traj_cols else timestamp
 
     user_q_stats = df.groupby(user_col).apply(
         lambda group: _compute_q_stat(group, timestamp_col)
@@ -293,9 +312,12 @@ def q_filter(df: pd.DataFrame,
     return filtered_users
 
 
+<<<<<<< HEAD
 # the user can pass **kwargs with timestamp or datetime, then if you absolutely need datetime then 
 # create a variable, not a column in the dataframe
 
+=======
+>>>>>>> 88bd103 (Added traj_col input functionality)
 def q_stats(df: pd.DataFrame, user_id: str, timestamp: str):
     
     """
