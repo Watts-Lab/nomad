@@ -312,12 +312,8 @@ def q_filter(df: pd.DataFrame,
     return filtered_users
 
 
-<<<<<<< HEAD
 # the user can pass **kwargs with timestamp or datetime, then if you absolutely need datetime then 
 # create a variable, not a column in the dataframe
-
-=======
->>>>>>> 88bd103 (Added traj_col input functionality)
 def q_stats(df: pd.DataFrame, user_id: str, timestamp: str):
     
     """
