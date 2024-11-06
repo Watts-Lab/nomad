@@ -10,3 +10,5 @@
 # Exclude Jupyter Notebook checkpoints
 .ipynb_checkpoints/
 
+**/*.cpython-39..pyc
+**/*.cpython-39-pytest-7..1..1..pyc
