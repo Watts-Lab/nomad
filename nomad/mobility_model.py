@@ -1,5 +1,5 @@
 from shapely.geometry import box, Point, Polygon, LineString, MultiLineString
-from shapely.affinity import scale, rotate
+from shapely.affinity import scale
 from shapely.ops import unary_union
 import pickle
 import pandas as pd
@@ -13,7 +13,6 @@ import funkybob
 import networkx as nx
 import nx_parallel as nxp
 import s3fs
-import pyarrow
 
 import sampler
 import stop_detection as sd
@@ -559,6 +558,7 @@ class Agent:
 
         self.still_probs = still_probs
         self.speeds = speeds
+        self.dt = dt
 
         # If trajectory is not provided, then the first ping is at the home centroid at start_time
         if trajectory is None:
@@ -576,7 +576,7 @@ class Agent:
 
             diary_entry = {'unix_timestamp': unix_timestamp,
                            'local_timestamp': local_timestamp,
-                           'duration': dt,
+                           'duration': self.dt,
                            'location': home}
             self.diary = pd.DataFrame([diary_entry])
 
@@ -627,7 +627,7 @@ class Agent:
             Random seed for reproducibility.
         """
 
-        sparse_traj = sampler.sample_hier_nhpp(self.trajectory, beta_start, beta_durations, beta_ping, seed=seed)
+        sparse_traj = sampler.sample_hier_nhpp(self.trajectory, beta_start, beta_durations, beta_ping, dt=self.dt, seed=seed)
         sparse_traj = sparse_traj.set_index('unix_timestamp', drop=False)
         self.sparse_traj = sparse_traj
 
@@ -714,8 +714,6 @@ class Population:
         A dictionary to store agents with their identifiers as keys.
     city : City
         The city in which the population resides.
-    global_execution : int
-        A counter for global execution.
 
     Methods
     -------
@@ -741,7 +739,6 @@ class Population:
                  city: City):
         self.roster = {}
         self.city = city
-        self.global_execution = 0
 
     def add_agent(self, 
                   agent: Agent, 
@@ -828,42 +825,6 @@ class Population:
         pd.concat(diaries).to_parquet(f's3://{bucket}/{prefix}diaries.parquet', engine='pyarrow', filesystem=fs)
 
 #     TODO: allow for parallelization
-#     @staticmethod
-#     def process_agent(row, load_trajectories, load_diaries, city):
-#         agent_id = row['id']
-#         traj = load_trajectories[load_trajectories['identifier'] == agent_id].reset_index(drop=True)
-#         diary = load_diaries[load_diaries['id'] == agent_id].reset_index(drop=True)
-#         agent = Agent(agent_id, 
-#                       row['home'], 
-#                       row['workplace'], 
-#                       city,
-#                       trajectory=traj,
-#                       diary=diary)
-#         return agent
-
-#     def load_pop(self, path, parallelize=False):
-#         """
-#         gotta fix this -- it's too slow! maybe parquet/s3
-#         """
-#         load_trajectories = pd.read_csv(path+'trajectories.csv', 
-#                                         usecols=lambda column: column != 'Unnamed: 0')
-#         load_diaries = pd.read_csv(path+'diaries.csv', 
-#                                    usecols=lambda column: column != 'Unnamed: 0')
-#         load_homes = pd.read_csv(path+'homes.csv', 
-#                                  usecols=lambda column: column != 'Unnamed: 0')
-
-#         if parallelize:
-#             with ProcessPoolExecutor() as executor:
-#                 agents = list(executor.map(self.process_agent, [row for _, row in load_homes.iterrows()],
-#                                            [load_trajectories] * len(load_homes),
-#                                            [load_diaries] * len(load_homes),
-#                                            [self.city] * len(load_homes)))
-#             for agent in agents:
-#                 self.add_agent(agent)
-#         else:
-#             for _, row in load_homes.iterrows():
-#                 agent = self.process_agent(row, load_trajectories, load_diaries, self.city)
-#                 self.add_agent(agent)
 
     def sample_step(self, agent, start_point, dest_building, dt):
         """
@@ -935,8 +896,7 @@ class Population:
             # Snap to path
             snap_point_dist = path_ml.project(Point(start_point))
 
-
-            #PACO: SHOULD THESE ALSO BE CONSTANT?
+            #TODO: SHOULD THESE ALSO BE CONSTANT?
             delta = 3.33*dt      # 50m/min; blocks are 15m x 15m
             sigma = 0.5*dt/1.96  # 95% prob of moving 0.5
 
@@ -955,16 +915,14 @@ class Population:
 
         return coord, location
 
-    def traj_from_dest_diary(self, agent, dt):
+    def traj_from_dest_diary(self, agent):
         """
         Simulate a trajectory and give agent true travel diary attribute.
 
         Parameters
         ----------
         agent: Agent
-
-        destination_diary: Pandas Dataframe
-            with "unix_timestamp", "local_timestamp", "duration", "location"
+            The agent for whom to simulate the trajectory.
 
         Returns
         -------
@@ -972,9 +930,9 @@ class Population:
         """
 
         city = self.city
+        dt = agent.dt
 
         destination_diary = agent.destination_diary
-        #print(destination_diary)
 
         current_loc = agent.trajectory.iloc[-1]
         trajectory_update = []
@@ -1017,7 +975,7 @@ class Population:
                              'location': location}
                 else:
                     current_entry['duration'] += 1*dt
-        #print(trajectory_update)
+
         agent.trajectory = pd.concat([agent.trajectory, pd.DataFrame(trajectory_update)],
                                 ignore_index=True)
 
@@ -1028,24 +986,35 @@ class Population:
             pd.concat([agent.diary, pd.DataFrame(entry_update)], ignore_index=True)
         agent.destination_diary = destination_diary.drop(destination_diary.index)
 
-    def generate_dest_diary(self, agent, T, duration=15,
-                            stay_probs=DEFAULT_STAY_PROBS,
-                            rho=0.6, gamma=0.2, seed=0):
+    def generate_dest_diary(self, 
+                            agent: Agent, 
+                            T: datetime, 
+                            duration: int = 15,
+                            stay_probs: dict = DEFAULT_STAY_PROBS,
+                            rho: float = 0.6, 
+                            gamma: float = 0.2, 
+                            seed: int = 0):
         """
         Exploration and preferential return.
 
         Parameters
         ----------
-        T : int
-            Timestamp until which to generate.
+        agent : Agent
+            The agent for whom to generate the destination diary.
+        T : datetime
+            The end time to generate the destination diary until.
+        duration : int
+            The duration of each destination entry in minutes.
+        stay_probs : dict
+            Dictionary containing the probability of staying in the same building.
+            This is modeled as a geometric distribution with `p = 1 - ((1/avg_duration_hrs)/timesteps_in_1_hr)`.
         rho : float
             Parameter for exploring, influencing the probability of exploration.
         gamma : float
             Parameter for exploring, influencing the probability of preferential return.
-        stay_probs : dict
-            Dictionary containing the probability of staying in the same building.
-            This is modeled as a geometric distribution with `p = 1 - ((1/avg_duration_hrs)/timesteps_in_1_hr)`.
-        """
+        seed : int
+            Random seed for reproducibility.
+     """
         npr.seed(seed)
 
         id2door = pd.DataFrame([[s, b.door] for s, b in self.city.buildings.items()],
@@ -1095,12 +1064,6 @@ class Population:
             #probability of exploring
             p_exp = rho*(S**(-gamma))
 
-            # You should be asleep! I don't think we're doing this anymore
-            # if (start_time_local.hour >= 22) | (start_time_local.hour <= 5):
-            #     curr = agent.home  # this doesn't permit the possibility of sleepovers
-            #     probs.loc[curr, 'freq'] += 1
-            #     pass
-
             # Stay
             if (curr_type in allowed) & (npr.uniform() < stay_probs[curr_type]):
                 pass
@@ -1147,7 +1110,11 @@ class Population:
 
         return None
 
-    def generate_trajectory(self, agent, T=None, duration=15, seed=0, dt=1):
+    def generate_trajectory(self, 
+                            agent: Agent, 
+                            T: datetime = None, 
+                            duration: int = 15, 
+                            seed: int = 0):
         """
         Generate a trajectory for an agent.
 
@@ -1155,14 +1122,12 @@ class Population:
         ----------
         agent : Agent
             The agent for whom to generate a trajectory.
-        T : int, optional
-            Timestamp until which to generate.
+        T : datetime, optional
+            The end time to generate the trajectory until.
         duration : int, optional
-            Duration of each stay in minutes.
+            The duration of each destination entry in minutes.
         seed : int, optional
             Random seed for reproducibility.
-        dt : float, optional
-            Time step duration.
         
         Returns
         -------
@@ -1170,6 +1135,7 @@ class Population:
         """
 
         npr.seed(seed)
+        dt = agent.dt
 
         if agent.destination_diary.empty:
             if T is None:
@@ -1178,7 +1144,7 @@ class Population:
                 )
             self.generate_dest_diary(agent, T, duration=duration, seed=seed)
         #print(agent.destination_diary)
-        self.traj_from_dest_diary(agent, dt)
+        self.traj_from_dest_diary(agent)
 
         return None
 

@@ -5,7 +5,7 @@ from numpy.linalg import norm
 from datetime import datetime
 
 
-def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, nu=1/4, seed=0):
+def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, dt=1, nu=1/4, seed=0):
     """
     Sample from simulated trajectory, drawn using hierarchical Poisson processes.
 
@@ -19,6 +19,8 @@ def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, nu=1/4, seed=0
         mean of Exponential controlling burst durations
     beta_ping: float
         mean of Poisson controlling ping sampling within a burst
+    dt: float
+        time step between pings
     nu: float
         sampling noise. Pings are sampled as (true x + eps_x, true y + eps_y)
         where (eps_x, eps_y) ~ N(0, nu/1.96).
@@ -27,6 +29,11 @@ def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, nu=1/4, seed=0
     """
 
     npr.seed(seed)
+
+    # Adjust beta's to account for time step
+    beta_start = beta_start / dt
+    beta_durations = beta_durations / dt
+    beta_ping = beta_ping / dt
 
     # Sample starting points of bursts
     inter_arrival_times = npr.exponential(scale=beta_start, size=len(traj))
