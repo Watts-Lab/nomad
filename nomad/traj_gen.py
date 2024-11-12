@@ -393,6 +393,21 @@ class Population:
                         seed: int = 0):
         """
         Generates N agents, with randomized attributes.
+
+        Parameters
+        ----------
+        N : int
+            The number of agents to generate.
+        start_time : datetime, optional
+            The time at which the agents start their trajectories.
+        dt : float, optional
+            Time step duration.
+        seed : int, optional
+            Random seed for reproducibility.
+
+        Returns
+        -------
+        None (updates the population)
         """
 
         npr.seed(seed)
@@ -581,11 +596,6 @@ class Population:
                 unix_timestamp = prev_ping['unix_timestamp'] + 60*dt
                 local_timestamp = pd.to_datetime(unix_timestamp, unit='s')
 
-                # You should be asleep between 0:00 and 5:59!
-                # if local_timestamp.hour <= 5:
-                #     coord = start_point  # stay in place
-                #     location = building_id
-                # else:
                 coord, location = self.sample_step(agent, start_point, dest_building, dt)
                 ping = {'x': coord[0], 'y': coord[1],
                         'local_timestamp': local_timestamp,
