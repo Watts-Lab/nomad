@@ -210,7 +210,7 @@ class City:
     def __init__(self,
                  dimensions: tuple = (0,0),
                  still_probs: dict = DEFAULT_STILL_PROBS,
-                 speeds=DEFAULT_SPEEDS):
+                 speeds: dict = DEFAULT_SPEEDS):
 
         self.buildings = {}
         self.streets = {}
@@ -235,7 +235,13 @@ class City:
                 self.streets[(x, y)] = Street((x, y))
         self.dimensions = dimensions
 
-    def add_building(self, building_type, door, blocks=None, bbox=None):
+    def add_building(self,
+                     building_type,
+                     door,
+                     blocks=None,
+                     bbox=None,
+                     still_prob=None,
+                     sigma=None):
         """
         Adds a building to the city.
 
@@ -249,13 +255,27 @@ class City:
             A list of blocks that the building spans.
         bbox : shapely.geometry.polygon.Polygon
             A polygon representing the bounding box of the building.
+        still_prob : float, optional
+            The probability of an individual staying still in the building. 
+        sigma : float, optional
+            The standard deviation of the Brownian motion for an individual in the building.
         """
+
+        if blocks is None and bbox is None:
+            raise ValueError(
+                "Either blocks spanned or bounding box must be provided."
+            )
+
+        if still_prob is None:
+            still_prob = self.still_probs[building_type]
+        if sigma is None:
+            sigma = self.sigma[building_type]
 
         building = Building(building_type=building_type,
                             door=door,
                             city=self,
-                            still_prob=self.still_probs[building_type],
-                            sigma=self.sigma[building_type],
+                            still_prob=still_prob,
+                            sigma=sigma,
                             blocks=blocks, 
                             bbox=bbox)
 
