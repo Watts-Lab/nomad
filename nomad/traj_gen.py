@@ -253,7 +253,7 @@ class Agent:
             ax.scatter(self.trajectory.x, self.trajectory.y, s=6, color=color, alpha=alpha, zorder=2)
             self.city.plot_city(ax, doors=doors, address=address, zorder=1)
 
-    def sample_traj_hier_nhpp(self, beta_start, beta_durations, beta_ping, seed=0):
+    def sample_traj_hier_nhpp(self, beta_start, beta_durations, beta_ping, seed=0, output_bursts=False):
         """
         Samples a sparse trajectory using a hierarchical non-homogeneous Poisson process.
 
@@ -272,9 +272,14 @@ class Agent:
             Random seed for reproducibility.
         """
 
-        sparse_traj = sample_hier_nhpp(self.trajectory, beta_start, beta_durations, beta_ping, dt=self.dt, seed=seed)
+        if output_bursts:
+            sparse_traj, burst_info = sample_hier_nhpp(self.trajectory, beta_start, beta_durations, beta_ping, dt=self.dt, seed=seed, output_bursts=output_bursts)
+        else:
+            sparse_traj = sample_hier_nhpp(self.trajectory, beta_start, beta_durations, beta_ping, dt=self.dt, seed=seed, output_bursts=output_bursts)
         sparse_traj = sparse_traj.set_index('unix_timestamp', drop=False)
         self.sparse_traj = sparse_traj
+        if output_bursts:
+            return burst_info
 
 
 def _ortho_coord(multilines, distance, offset, eps=0.001):  # Calculus approach. Probably super slow.
