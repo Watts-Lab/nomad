@@ -19,7 +19,7 @@ import pdb
 # NHPP SAMPLER
 # =============================================================================
 
-def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, dt=1, nu=1/4, seed=0):
+def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, dt=1, ha=3/4, seed=None, output_bursts=False):
     """
     Sample from simulated trajectory, drawn using hierarchical Poisson processes.
 
@@ -28,29 +28,36 @@ def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, dt=1, nu=1/4, 
     traj: numpy array
         simulated trajectory from simulate_traj
     beta_start: float
-        mean of Poisson controlling burst start times
+        scale parameter (mean) of Exponential distribution modeling burst inter-arrival times
+        where 1/beta_start is the rate of events (bursts) per minute.
     beta_durations: float
-        mean of Exponential controlling burst durations
+        scale parameter (mean) of Exponential distribution modeling burst durations
     beta_ping: float
-        mean of Poisson controlling ping sampling within a burst
+        scale parameter (mean) of Exponential distribution modeling ping inter-arrival times
+        within a burst, where 1/beta_ping is the rate of events (pings) per minute.
     dt: float
-        time step between pings
-    nu: float
-        sampling noise. Pings are sampled as (true x + eps_x, true y + eps_y)
-        where (eps_x, eps_y) ~ N(0, nu/1.96).
+        the time resolution of the output sequence. Must match that of the input trajectory.  
+    ha: float
+        horizontal accuracy controlling the measurement error. Noisy locations are sampled as
+        (true x + eps_x, true y + eps_y) where (eps_x, eps_y) ~ N(0, nu/1.96).
     seed : int0
         The seed for random number generation.
+    output_bursts : bool
+        Whether to output the latent variables on when bursts start and end.
     """
+    if seed:
+        npr.seed(seed)
 
-    npr.seed(seed)
-
-    # Adjust beta's to account for time step
+    # Adjust betas to dt time resolution
+    # should match the resolution of traj?
     beta_start = beta_start / dt
     beta_durations = beta_durations / dt
     beta_ping = beta_ping / dt
 
-    # Sample starting points of bursts
-    inter_arrival_times = npr.exponential(scale=beta_start, size=len(traj))
+    # Sample starting points of bursts using at most max_burst_samples times
+    max_burst_samples = np.min(3*len(traj)/beta_start, len(traj))
+    
+    inter_arrival_times = npr.exponential(scale=beta_start, size=max_burst_samples)
     burst_start_points = np.cumsum(inter_arrival_times).astype(int)
     burst_start_points = burst_start_points[burst_start_points < len(traj)]
 
@@ -68,13 +75,20 @@ def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, dt=1, nu=1/4, 
 
     # Sample pings within each burst
     sampled_trajectories = []
+    burst_info = []
+        
     for start, end in zip(burst_start_points, burst_end_points):
+        if output_bursts:
+            burst_info += [traj.loc[[start, end], 'local_timestamp'].tolist()]       
+            
         burst_indices = np.arange(start, end)
 
         if len(burst_indices) == 0:
             continue
 
-        ping_intervals = np.random.exponential(scale=beta_ping, size=len(burst_indices))
+        max_ping_samples = np.min(3*len(traj)/beta_start, len(burst_indices))
+        
+        ping_intervals = np.random.exponential(scale=beta_ping, size=max_ping_samples)
         ping_times = np.unique(np.cumsum(ping_intervals).astype(int))
         ping_times = ping_times[ping_times < (end - start)] + start
 
@@ -86,18 +100,22 @@ def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, dt=1, nu=1/4, 
         sampled_trajectories.append(burst_data)
 
     if sampled_trajectories:
-        sampled_traj = pd.concat(sampled_trajectories).sort_values(by='unix_timestamp')
+        sampled_traj = pd.concat(sampled_trajectories).sort_values(by='unix_timestamp') #why wouldn't they be sorted already?
     else:  # empty
         sampled_traj = pd.DataFrame(columns=list(traj.columns))
 
     sampled_traj = sampled_traj.drop_duplicates('local_timestamp')
 
     # Add sampling noise
-    noise = npr.normal(loc=0, scale=nu/1.96, size=(sampled_traj.shape[0], 2))
+    noise = npr.normal(loc=0, scale=ha/1.96, size=(sampled_traj.shape[0], 2))
     sampled_traj[['x', 'y']] = sampled_traj[['x', 'y']] + noise
-    sampled_traj['hor_accuracy'] = np.linalg.norm(noise, axis=1)
+    sampled_traj['ha'] = ha
 
-    return sampled_traj
+    if output_bursts:
+        burst_info = pd.DataFrame(burst_info, columns = ['start_time', 'end_time'])
+        return sampled_traj, burst_info
+    else:
+        return sampled_traj
 
 
 # =============================================================================
