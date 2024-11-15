@@ -19,7 +19,7 @@ import pdb
 # NHPP SAMPLER
 # =============================================================================
 
-def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, dt=1, nu=1/4, seed=0):
+def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, dt=1, nu=0.75, seed=0):
     """
     Sample from simulated trajectory, drawn using hierarchical Poisson processes.
 
@@ -28,15 +28,15 @@ def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, dt=1, nu=1/4, 
     traj: numpy array
         simulated trajectory from simulate_traj
     beta_start: float
-        mean of Poisson controlling burst start times
+        mean of Poisson controlling burst start times, expressed in "events/minutes"
     beta_durations: float
-        mean of Exponential controlling burst durations
+        mean of Exponential controlling burst durations, expressed in "1/minutes"
     beta_ping: float
-        mean of Poisson controlling ping sampling within a burst
+        mean of Poisson controlling ping sampling within a burst, expressed in "events/minutes"
     dt: float
-        time step between pings
+        scaling factor to change time units to (dt*minutes)
     nu: float
-        sampling noise. Pings are sampled as (true x + eps_x, true y + eps_y)
+        horizontal accuracy. Pings are sampled as (true x + eps_x, true y + eps_y)
         where (eps_x, eps_y) ~ N(0, nu/1.96).
     seed : int0
         The seed for random number generation.
@@ -44,13 +44,13 @@ def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, dt=1, nu=1/4, 
 
     npr.seed(seed)
 
-    # Adjust beta's to account for time step
-    beta_start = beta_start / dt
-    beta_durations = beta_durations / dt
-    beta_ping = beta_ping / dt
+    # Adjust rates if different time unit is used
+    beta_start = beta_start * dt
+    beta_durations = beta_durations * dt
+    beta_ping = beta_ping * dt
 
     # Sample starting points of bursts
-    inter_arrival_times = npr.exponential(scale=beta_start, size=len(traj))
+    inter_arrival_times = npr.exponential(scale=beta_start, size=len(traj)) # <<<<< why so many?
     burst_start_points = np.cumsum(inter_arrival_times).astype(int)
     burst_start_points = burst_start_points[burst_start_points < len(traj)]
 
@@ -61,7 +61,7 @@ def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, dt=1, nu=1/4, 
     burst_end_points = burst_start_points + burst_durations
     burst_end_points = np.minimum(burst_end_points, len(traj) - 1)
 
-    # Adjust end_points to handle overlaps
+    # Simplify overlaps
     for i in range(len(burst_start_points) - 1):
         if burst_end_points[i] > burst_start_points[i + 1]:
             burst_end_points[i] = burst_start_points[i + 1]
@@ -559,7 +559,9 @@ class Population:
         city = self.city
         dt = agent.dt
 
-        destination_diary = agent.destination_diary
+        ## Uncomment for debugging. Only realized diary is important.
+        # destination_diary = agent.destination_diary
+        # backup_dd = destination_diary.copy(deep=True)
 
         current_loc = agent.trajectory.iloc[-1]
         trajectory_update = []
@@ -581,7 +583,7 @@ class Population:
                 unix_timestamp = prev_ping['unix_timestamp'] + 60*dt
                 local_timestamp = pd.to_datetime(unix_timestamp, unit='s')
 
-                # You should be asleep between 0:00 and 5:59!
+                # Should be asleep between 0:00 and 5:59
                 # if local_timestamp.hour <= 5:
                 #     coord = start_point  # stay in place
                 #     location = building_id
@@ -673,7 +675,7 @@ class Population:
             last_ping = agent.trajectory.iloc[-1]
             start_time_local = last_ping.local_timestamp
             start_time = last_ping.unix_timestamp
-            curr = self.city.get_block((last_ping.x, last_ping.y)).id  # Always a building?? Could be street
+            curr = self.city.get_block((last_ping.x, last_ping.y)).id  
         else:
             last_entry = agent.destination_diary.iloc[-1]
             start_time_local = last_entry.local_timestamp + timedelta(minutes=int(last_entry.duration))
@@ -770,7 +772,6 @@ class Population:
                     "Destination diary is empty. Provide a parameter T to generate destination diary from transition matrix."
                 )
             self.generate_dest_diary(agent, T, duration=duration, seed=seed)
-        #print(agent.destination_diary)
         self.traj_from_dest_diary(agent)
 
         return None

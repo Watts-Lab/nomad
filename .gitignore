@@ -10,3 +10,4 @@
 # Exclude Jupyter Notebook checkpoints
 .ipynb_checkpoints/
 
+**/*.cpython-310..pyc
