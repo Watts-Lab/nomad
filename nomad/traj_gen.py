@@ -55,7 +55,7 @@ def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, dt=1, ha=3/4, 
     beta_ping = beta_ping / dt
 
     # Sample starting points of bursts using at most max_burst_samples times
-    max_burst_samples = np.min(3*len(traj)/beta_start, len(traj))
+    max_burst_samples = min(int(3*len(traj)/beta_start), len(traj))
     
     inter_arrival_times = npr.exponential(scale=beta_start, size=max_burst_samples)
     burst_start_points = np.cumsum(inter_arrival_times).astype(int)
@@ -86,7 +86,7 @@ def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, dt=1, ha=3/4, 
         if len(burst_indices) == 0:
             continue
 
-        max_ping_samples = np.min(3*len(traj)/beta_start, len(burst_indices))
+        max_ping_samples = min(int(3*len(traj)/beta_start), len(burst_indices))
         
         ping_intervals = np.random.exponential(scale=beta_ping, size=max_ping_samples)
         ping_times = np.unique(np.cumsum(ping_intervals).astype(int))
@@ -788,7 +788,7 @@ class Population:
                     "Destination diary is empty. Provide a parameter T to generate destination diary from transition matrix."
                 )
             self.generate_dest_diary(agent, T, duration=duration, seed=seed)
-        #print(agent.destination_diary)
+
         self.traj_from_dest_diary(agent)
 
         return None
