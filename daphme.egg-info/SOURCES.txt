@@ -1,9 +1,0 @@
-README.md
-pyproject.toml
-setup.py
-daphme/__init__.py
-daphme/test.py
-daphme.egg-info/PKG-INFO
-daphme.egg-info/SOURCES.txt
-daphme.egg-info/dependency_links.txt
-daphme.egg-info/top_level.txt

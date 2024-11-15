@@ -1,6 +1,7 @@
 # Exclude Cython files
 *.c
 *.pyx
+*.pyc
 *.pxd
 *.pxi
 *.so
@@ -9,4 +10,5 @@
 
 # Exclude Jupyter Notebook checkpoints
 .ipynb_checkpoints/
-
+# Exclude pycache
+__pycache__/
