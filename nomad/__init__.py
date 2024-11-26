@@ -1,6 +1,6 @@
-import daphme.cleaning
-import daphme.constants
-import daphme.garden_city
-import daphme.io
-import daphme.mobility_model
-import daphme.stop_detection
+import nomad.cleaning
+import nomad.constants
+import nomad.city_gen
+import nomad.traj_gen
+import nomad.io
+import nomad.stop_detection
