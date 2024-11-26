@@ -12,7 +12,12 @@ setup(
     install_requires=[
         'pandas',
         'numpy',
-        'datetime'
+        'datetime',
+        'pyspark',
+        'shapely',
+        'matplotlib',
+        'networkx',
+        'nx_parallel'
     ],
     classifiers=[
         'Programming Language :: Python :: 3',
