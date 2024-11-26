@@ -55,7 +55,8 @@ def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, dt=1, ha=3/4, 
     beta_ping = beta_ping / dt
 
     # Sample starting points of bursts using at most max_burst_samples times
-    max_burst_samples = min(int(3*len(traj)/beta_start), len(traj))
+    # max_burst_samples = min(int(5*len(traj)/beta_start), len(traj))
+    max_burst_samples = len(traj)
     
     inter_arrival_times = npr.exponential(scale=beta_start, size=max_burst_samples)
     burst_start_points = np.cumsum(inter_arrival_times).astype(int)
@@ -86,7 +87,8 @@ def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, dt=1, ha=3/4, 
         if len(burst_indices) == 0:
             continue
 
-        max_ping_samples = min(int(3*len(traj)/beta_start), len(burst_indices))
+        # max_ping_samples = min(int(5*len(traj)/beta_start), len(burst_indices))
+        max_ping_samples = len(burst_indices)
         
         ping_intervals = np.random.exponential(scale=beta_ping, size=max_ping_samples)
         ping_times = np.unique(np.cumsum(ping_intervals).astype(int))
@@ -219,13 +221,15 @@ class Agent:
                 'identifier': self.identifier
                 }])
 
-            diary_entry = {'unix_timestamp': unix_timestamp,
-                           'local_timestamp': local_timestamp,
-                           'duration': self.dt,
-                           'location': home}
-            self.diary = pd.DataFrame([diary_entry])
+            diary = pd.DataFrame([{
+                'unix_timestamp': unix_timestamp,
+                'local_timestamp': local_timestamp,
+                'duration': self.dt,
+                'location': home
+                }])
 
         self.trajectory = trajectory
+        self.diary = diary
 
     def plot_traj(self, ax, color='black', alpha=1, doors=True, address=True, heatmap=False):
         """
@@ -253,7 +257,7 @@ class Agent:
             ax.scatter(self.trajectory.x, self.trajectory.y, s=6, color=color, alpha=alpha, zorder=2)
             self.city.plot_city(ax, doors=doors, address=address, zorder=1)
 
-    def sample_traj_hier_nhpp(self, beta_start, beta_durations, beta_ping, seed=0, output_bursts=False):
+    def sample_traj_hier_nhpp(self, beta_start, beta_durations, beta_ping, seed=0, ha=3/4, output_bursts=False):
         """
         Samples a sparse trajectory using a hierarchical non-homogeneous Poisson process.
 
@@ -273,9 +277,23 @@ class Agent:
         """
 
         if output_bursts:
-            sparse_traj, burst_info = sample_hier_nhpp(self.trajectory, beta_start, beta_durations, beta_ping, dt=self.dt, seed=seed, output_bursts=output_bursts)
+            sparse_traj, burst_info = sample_hier_nhpp(self.trajectory, 
+                                                       beta_start, 
+                                                       beta_durations, 
+                                                       beta_ping, 
+                                                       dt=self.dt, 
+                                                       ha=ha,
+                                                       seed=seed, 
+                                                       output_bursts=output_bursts)
         else:
-            sparse_traj = sample_hier_nhpp(self.trajectory, beta_start, beta_durations, beta_ping, dt=self.dt, seed=seed, output_bursts=output_bursts)
+            sparse_traj = sample_hier_nhpp(self.trajectory, 
+                                           beta_start, 
+                                           beta_durations, 
+                                           beta_ping, 
+                                           dt=self.dt, 
+                                           ha=ha,
+                                           seed=seed, 
+                                           output_bursts=output_bursts)
         sparse_traj = sparse_traj.set_index('unix_timestamp', drop=False)
         self.sparse_traj = sparse_traj
         if output_bursts:

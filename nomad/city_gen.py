@@ -11,8 +11,6 @@ import networkx as nx
 import nx_parallel as nxp
 
 import stop_detection as sd
-from constants import DEFAULT_SPEEDS, FAST_SPEEDS, SLOW_SPEEDS, DEFAULT_STILL_PROBS
-from constants import FAST_STILL_PROBS, SLOW_STILL_PROBS, ALLOWED_BUILDINGS, DEFAULT_STAY_PROBS
 
 import pdb
 
@@ -97,10 +95,6 @@ class Building:
         The coordinates of the door of the building.
     city : City
         The city object containing the building.
-    still_prob : float
-        The probability of an individual staying still in the building.
-    sigma : float
-        The standard deviation of the Brownian motion for an individual in the building.
     id : str
         A unique identifier for the building, formatted as '{building_type[0]}-x{door[0]}-y{door[1]}'.
     blocks : list
@@ -119,17 +113,12 @@ class Building:
                  building_type: str, 
                  door: tuple, 
                  city,
-                 still_prob: float, 
-                 sigma: float, 
                  blocks: list = None, 
                  bbox: Polygon = None):
 
         self.building_type = building_type
         self.door = door
         self.city = city
-
-        self.still_prob = still_prob
-        self.sigma = sigma
 
         self.id = f'{building_type[0]}-x{door[0]}-y{door[1]}'
 
@@ -178,10 +167,6 @@ class City:
         A polygon representing the combined geometry of all buildings in the city.
     address_book : dict
         A dictionary mapping coordinates to Building objects.
-    still_probs : dict
-        A dictionary containing the probability of an individual staying still in each type of building.
-    sigma : dict
-        A dictionary containing the standard deviation of the Brownian motion for each type of building.
     city_boundary : shapely.geometry.polygon.Polygon
         A polygon representing the boundary of the city.
     dimensions : tuple
@@ -208,22 +193,12 @@ class City:
     """
 
     def __init__(self,
-                 dimensions: tuple = (0,0),
-                 still_probs: dict = DEFAULT_STILL_PROBS,
-                 speeds: dict = DEFAULT_SPEEDS):
+                 dimensions: tuple = (0,0)):
 
         self.buildings = {}
         self.streets = {}
         self.buildings_outline = Polygon()
         self.address_book = {}
-
-        self.still_probs = still_probs
-
-        # controls "speed" of Brownian motion when simulating stay trajectory
-        # The random variable X(t) of the position at time t has a normal
-        # distribution with mean 0 and variance sigma^2 * t.
-        # x/1.96 = 95% probability of moving x standard deviations
-        self.sigma = speeds
 
         if not (isinstance(dimensions, tuple) and len(dimensions) == 2
                 and all(isinstance(d, int) for d in dimensions)):
@@ -239,9 +214,7 @@ class City:
                      building_type,
                      door,
                      blocks=None,
-                     bbox=None,
-                     still_prob=None,
-                     sigma=None):
+                     bbox=None):
         """
         Adds a building to the city.
 
@@ -255,10 +228,6 @@ class City:
             A list of blocks that the building spans.
         bbox : shapely.geometry.polygon.Polygon
             A polygon representing the bounding box of the building.
-        still_prob : float, optional
-            The probability of an individual staying still in the building. 
-        sigma : float, optional
-            The standard deviation of the Brownian motion for an individual in the building.
         """
 
         if blocks is None and bbox is None:
@@ -266,16 +235,9 @@ class City:
                 "Either blocks spanned or bounding box must be provided."
             )
 
-        if still_prob is None:
-            still_prob = self.still_probs[building_type]
-        if sigma is None:
-            sigma = self.sigma[building_type]
-
         building = Building(building_type=building_type,
                             door=door,
                             city=self,
-                            still_prob=still_prob,
-                            sigma=sigma,
                             blocks=blocks, 
                             bbox=bbox)
 

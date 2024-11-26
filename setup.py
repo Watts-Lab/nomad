@@ -3,17 +3,16 @@
 from setuptools import setup
 
 setup(
-    name='daphme',
+    name='nomad',
     version='0.0.1',
     author='Placeholder',
     author_email='your.email@example.com',
     description='Placeholder',
-    url='https://github.com/Watts-Lab/daphme',
+    url='https://github.com/Watts-Lab/nomad',
     install_requires=[
         'pandas',
         'numpy',
-        'datetime',
-        'tick',
+        'datetime'
     ],
     classifiers=[
         'Programming Language :: Python :: 3',
