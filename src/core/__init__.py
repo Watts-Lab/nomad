@@ -1,6 +1,6 @@
-import nomad.cleaning
-import nomad.constants
-import nomad.city_gen
-import nomad.traj_gen
-import nomad.io
-import nomad.stop_detection
+import core.cleaning
+import core.constants
+import core.city_gen
+import core.traj_gen
+import core.io
+import core.stop_detection
