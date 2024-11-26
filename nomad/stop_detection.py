@@ -339,7 +339,7 @@ def lachesis_patches(traj, dur_min, dt_max, delta_roam):
         output.loc[(traj['local_timestamp'] >= row['start_time']) &
                    (traj['local_timestamp'] <= row['end_time']), 'cluster'] = idx
 
-    return output
+    return output, clusters
 
 
 def generate_stop_table(data, dbscan_df):
