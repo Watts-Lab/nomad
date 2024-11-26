@@ -10,8 +10,6 @@ from matplotlib import cm
 import networkx as nx
 import nx_parallel as nxp
 
-import stop_detection as sd
-
 import pdb
 
 
