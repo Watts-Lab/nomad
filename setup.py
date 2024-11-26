@@ -4,11 +4,12 @@ from setuptools import setup
 
 setup(
     name='nomad',
-    version='0.0.1',
-    author='Placeholder',
-    author_email='your.email@example.com',
-    description='Placeholder',
     url='https://github.com/Watts-Lab/nomad',
+    version='0.0.1',
+    author='Thomas Li, Francisco Barreras',
+    author_email='thomli@sas.upenn.edu, fbarrer@sas.upenn.edu',
+    description='Placeholder',
+    packages=['nomad'],
     install_requires=[
         'pandas',
         'numpy',
