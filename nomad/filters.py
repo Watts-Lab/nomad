@@ -9,7 +9,7 @@ from pyspark.sql import SQLContext
 from pyspark.sql import functions as F
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, LongType, DoubleType
 
-from core.constants import DEFAULT_SCHEMA
+from nomad.constants import DEFAULT_SCHEMA
 import pdb
 
 def to_projection(

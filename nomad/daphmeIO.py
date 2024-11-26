@@ -10,7 +10,7 @@ import os
 import pyarrow.compute as pc
 import pyarrow.dataset as ds
 # from . import constants
-import core.constants
+import nomad.constants
 
 def _update_schema(original, new_labels):
     
