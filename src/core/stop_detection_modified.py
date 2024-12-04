@@ -393,14 +393,15 @@ def find_neighbors(data, time_thresh, dist_thresh, long_lat,
         coords = data[[traj_cols['x'], traj_cols['y']]].values
 
     if datetime:
-        times = data[traj_cols['datetime']].values.astype('datetime64[s]')
+        times = data[traj_cols['datetime']].astype('datetime64[s]').astype(int).values
     else:
         times = data[traj_cols['timestamp']].values
 
     # Pairwise time differences
     time_diffs = np.abs(times[:, np.newaxis] - times)
     time_diffs = time_diffs.astype(int)
-    
+
+    # Time threshold calculation using broadcasting
     within_time_thresh = np.triu(time_diffs <= (time_thresh * 60), k=1)
     time_pairs = np.where(within_time_thresh)
     
@@ -520,13 +521,10 @@ def process_clusters(data,
         (start, duration, x_mean, y_mean, n, max_gap, radius) of each (post-processed) cluster
     """
     if not neighbor_dict:
-        neighbor_dict = find_neighbors(data, time_thresh, dist_thresh,
-                                       long_lat, datetime, traj_cols)
-
+        neighbor_dict = find_neighbors(data, time_thresh, dist_thresh, long_lat, datetime, traj_cols)
     if cluster_df is None:
         cluster_df = dbscan(data, time_thresh, dist_thresh, min_pts, long_lat,
                             datetime, traj_cols, neighbor_dict=neighbor_dict)
-
     if len(cluster_df) < min_pts:
         return False
 
@@ -535,89 +533,57 @@ def process_clusters(data,
     # All pings are in the same cluster
     if len(cluster_df['cluster'].unique()) == 1:
         # We rerun dbscan because possibly these points no longer hold their own
-        x = dbscan(data.loc[cluster_df.index], time_thresh, dist_thresh,
-                   min_pts, long_lat, datetime, traj_cols, neighbor_dict)
+        x = dbscan(data = data.loc[cluster_df.index], time_thresh = time_thresh, dist_thresh = dist_thresh,
+                   min_pts = min_pts, long_lat = long_lat, datetime = datetime, traj_cols = traj_cols, neighbor_dict = neighbor_dict)
         
         y = x.loc[x['cluster'] != -1]
         z = x.loc[x['core'] != -1]
 
-        if len(y['cluster'].unique()) > 0:
-            for cluster_id in y['cluster'].unique():
-                cluster_points = y[y['cluster'] == cluster_id]
-                duration = int((
-                                           cluster_points.index.max() - cluster_points.index.min()) // 60)
+        # if len(y['cluster'].unique()) > 0: CHANGED
+        if len(y) > 0:
+            duration = int((y.index.max() - y.index.min()) // 60) # Assumes unix_timestamp is in seconds
 
-                if duration > min_duration:
-                    cid = max(output['cluster']) + 1
-                    output.loc[cluster_points.index, 'cluster'] = cid
-                    output.loc[cluster_points.index, 'core'] = cid
+            if duration > min_duration:
+                cid = max(output['cluster']) + 1 # Create new cluster id
+                output.loc[y.index, 'cluster'] = cid
+                output.loc[z.index, 'core'] = cid
+                
+            # for cluster_id in y['cluster'].unique():
+            #     cluster_points = y[y['cluster'] == cluster_id]
+            #     duration = int((cluster_points.index.max() - cluster_points.index.min()) // 60)
 
+            #     if duration > min_duration:
+            #         cid = max(output['cluster']) + 1
+            #         output.loc[cluster_points.index, 'cluster'] = cid
+            #         output.loc[cluster_points.index, 'core'] = cid
+            
             return True
-
-        elif len(
-                y) == 0:  # The points in df, despite originally being part of a cluster, no longer hold their own
+        elif len(y) == 0: # The points in df, despite originally being part of a cluster, no longer hold their own
             return False
 
-    # All points are noise (no clusters)
-    # elif len(cluster_df['cluster'].unique()) == 0:
-    #     return False
-    elif cluster_df is None or cluster_df.empty:
+    # There are no clusters
+    elif len(cluster_df['cluster'].unique()) == 0:
         return False
+    # elif cluster_df is None or cluster_df.empty: CHANGED
+    #     return False
 
     # There is more than one cluster
     elif len(cluster_df['cluster'].unique()) > 1:
-        i, j = extract_middle(
-            cluster_df)  # Indices of the "middle" of the cluster
+        i, j = extract_middle(cluster_df)  # Indices of the "middle" of the cluster
+        
         # Recursively processes clusters
         if process_clusters(data, time_thresh, dist_thresh, min_pts, output,
-                            long_lat, datetime, traj_cols,
-                            cluster_df[i:j]):  # Valid cluster in the middle
+                            long_lat, datetime, traj_cols, cluster_df = cluster_df[i:j]):  # Valid cluster in the middle
             process_clusters(data, time_thresh, dist_thresh, min_pts, output,
-                             long_lat, datetime, traj_cols,
-                             cluster_df[:i])  # Process the initial stub
+                             long_lat, datetime, traj_cols, cluster_df = cluster_df[:i])  # Process the initial stub
             process_clusters(data, time_thresh, dist_thresh, min_pts, output,
-                             long_lat, datetime, traj_cols,
-                             cluster_df[j:])  # Process the "tail"
+                             long_lat, datetime, traj_cols, cluster_df = cluster_df[j:])  # Process the "tail"
             return True
         else:  # No valid cluster in the middle
             return process_clusters(data, time_thresh, dist_thresh, min_pts,
                                     output, long_lat, datetime, traj_cols, pd.concat(
                     [cluster_df[:i],
                      cluster_df[j:]]))  # what if this is out of bounds?
-
-
-def _temporal_dbscan_labels(data,
-                            time_thresh,
-                            dist_thresh,
-                            min_pts,
-                            long_lat,
-                            datetime,
-                            traj_cols):
-    """
-    TODO
-
-    Parameters
-    ----------
-    data : pandas.DataFrame
-        User pings with 'unix_timestamp' (integer), 'x' (EPSG:3857), 'y' (EPSG:3857) columns.
-    time_thresh : int
-        Time threshold in minutes.
-    dist_thresh : float
-        Distance threshold in meters.
-    min_pts: int
-        A cluster must have at least (min_pts+1) points to be considered a cluster.
-
-    Returns
-    -------
-    TODO
-    """
-
-    output = pd.DataFrame({'cluster': -1, 'core': -1}, index=data.index)
-    
-    process_clusters(data, time_thresh, dist_thresh, min_pts, output, long_lat, datetime, traj_cols, min_duration=4)
-
-    return output
-
 
 def temporal_dbscan(data,
                     time_thresh,
@@ -626,6 +592,7 @@ def temporal_dbscan(data,
                     complete_output=False,
                     traj_cols=None,
                     **kwargs):
+    
     # Check if user wants long and lat
     long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs[
         'latitude'] in data.columns and kwargs['longitude'] in data.columns
@@ -664,18 +631,18 @@ def temporal_dbscan(data,
 
     process_clusters(data, time_thresh, dist_thresh, min_pts, output, long_lat, datetime, traj_cols, min_duration=4)
 
-    output = _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, long_lat, datetime, traj_cols)
+    # output = _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, long_lat, datetime, traj_cols)
     
-    complete_data = data.join(output, how='inner')
+    # complete_data = data.join(output, how='inner')
     
-    stop_table = complete_data.groupby('cluster').apply(lambda group: _stop_metrics(group, long_lat, datetime, complete_output, traj_cols))
+    # stop_table = complete_data.groupby('cluster').apply(lambda group: _stop_metrics(group, long_lat, datetime, complete_output, traj_cols))
     
-    stop_table = stop_table.reset_index()
-    stop_table = stop_table.drop(columns=['level_1'])
-    stop_table = stop_table[stop_table['cluster'] != -1]
-    stop_table.set_index(['cluster'], inplace=True)
+    # stop_table = stop_table.reset_index()
+    # stop_table = stop_table.drop(columns=['level_1'])
+    # stop_table = stop_table[stop_table['cluster'] != -1]
+    # stop_table.set_index(['cluster'], inplace=True)
 
-    return stop_table
+    return output
 
 def _stop_metrics(grouped_data,
                      long_lat,
