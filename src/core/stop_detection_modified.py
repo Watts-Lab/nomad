@@ -547,15 +547,6 @@ def process_clusters(data,
                 cid = max(output['cluster']) + 1 # Create new cluster id
                 output.loc[y.index, 'cluster'] = cid
                 output.loc[z.index, 'core'] = cid
-                
-            # for cluster_id in y['cluster'].unique():
-            #     cluster_points = y[y['cluster'] == cluster_id]
-            #     duration = int((cluster_points.index.max() - cluster_points.index.min()) // 60)
-
-            #     if duration > min_duration:
-            #         cid = max(output['cluster']) + 1
-            #         output.loc[cluster_points.index, 'cluster'] = cid
-            #         output.loc[cluster_points.index, 'core'] = cid
             
             return True
         elif len(y) == 0: # The points in df, despite originally being part of a cluster, no longer hold their own
@@ -564,9 +555,7 @@ def process_clusters(data,
     # There are no clusters
     elif len(cluster_df['cluster'].unique()) == 0:
         return False
-    # elif cluster_df is None or cluster_df.empty: CHANGED
-    #     return False
-
+   
     # There is more than one cluster
     elif len(cluster_df['cluster'].unique()) > 1:
         i, j = extract_middle(cluster_df)  # Indices of the "middle" of the cluster
