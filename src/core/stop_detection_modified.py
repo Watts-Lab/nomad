@@ -23,6 +23,23 @@ import constants as constants
 ##########################################
 
 def diameter(coords, metric='euclidean'):
+    """
+    Calculate the diameter of a set of coordinates, defined as the maximum pairwise distance.
+    
+    Parameters
+    ----------
+    coords : numpy.ndarray
+        Array of coordinates, where each row represents a point in space.
+    metric : str, optional
+        Distance metric to use. Supported metrics include 'euclidean' (default) 
+        and 'haversine'. If 'haversine' is used, coordinates should be in degrees.
+    
+    Returns
+    -------
+    float
+        The diameter of the coordinate set, i.e., the maximum pairwise distance.
+        Returns 0 if there are fewer than two coordinates.
+    """
     if len(coords) < 2:
         return 0
         
@@ -35,6 +52,24 @@ def diameter(coords, metric='euclidean'):
 
 
 def medoid(coords, metric='euclidean'):
+    """
+    Calculate the medoid of a set of coordinates, defined as the point with the minimal 
+    sum of distances to all other points.
+    
+    Parameters
+    ----------
+    coords : numpy.ndarray
+        Array of coordinates, where each row represents a point in space.
+    metric : str, optional
+        Distance metric to use. Supported metrics include 'euclidean' (default) 
+        and 'haversine'. If 'haversine' is used, coordinates should be in degrees.
+    
+    Returns
+    -------
+    numpy.ndarray
+        The medoid of the coordinate set, represented as a single point. If there
+        is only one point, returns that point.
+    """
     if len(coords) < 2:
         return coords[0]
     
@@ -70,6 +105,21 @@ def haversine_distance(coord1, coord2):
 
 
 def pairwise_haversine(coords):
+    """
+    Compute the pairwise Haversine distances between a set of coordinates.
+    
+    Parameters
+    ----------
+    coords : numpy.ndarray
+        Array of coordinates, where each row represents a point in [latitude, longitude] 
+        in radians.
+    
+    Returns
+    -------
+    numpy.ndarray
+        A symmetric 2D array where the element at [i, j] represents the Haversine 
+        distance between the i-th and j-th points.
+    """
     n = len(coords)
     distances = np.zeros((n, n))
     for i in range(n):
@@ -81,16 +131,24 @@ def pairwise_haversine(coords):
     
 def update_diameter(c_j, coords_prev, D_prev, metric='euclidean'):
     """
-    Update the diameter of a cluster, supporting both euclidean and haversine.
-
-    Parameters:
-    - c_j: New point's coordinate [x, y] or [latitude, longitude].
-    - coords_prev: Array of previous coordinates [[x1, y1], [x2, y2], ...] or [[lat1, lon1], [lat2, lon2], ...].
-    - D_prev: Previously computed diameter.
-    - metric: Coordinate system, 'euclidean' (default) or 'haversine'.
-
-    Returns:
-    - Updated diameter.
+    Update the diameter of a set of coordinates when a new point is added.
+    
+    Parameters
+    ----------
+    c_j : numpy.ndarray
+        The new point being added to the coordinate set.
+    coords_prev : numpy.ndarray
+        Array of existing coordinates, where each row represents a point.
+    D_prev : float
+        The previous diameter of the coordinate set, before adding the new point.
+    metric : str, optional
+        Distance metric to use. Supported metrics are 'euclidean' (default) and 'haversine'.
+        If 'haversine' is used, coordinates should be in degrees.
+    
+    Returns
+    -------
+    float
+        The updated diameter of the coordinate set, considering the new point.
     """
     if metric == 'euclidean':
         X_prev = coords_prev[:, 0]
@@ -116,30 +174,35 @@ def update_diameter(c_j, coords_prev, D_prev, metric='euclidean'):
     return D_i_jp1
 
 
-def lachesis(traj,
-             dur_min,
-             dt_max,
-             delta_roam,
-             traj_cols=None,
-             complete_output=False,
-             **kwargs):
+def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=False, **kwargs):
     """
-    Extract stays from raw location data.
+    Detects stops in trajectory data by analyzing spatial and temporal patterns.
+
     Parameters
     ----------
-    traj: numpy array - simulated trajectory from simulate_traj.
-        - (lat,lon) : 'y', 'x' in crs:3586
-        - time is 'unix_timestamp' in 'timestamp' format
-        - Longitude (long) corresponds to the x-coordinate (horizontal axis).
-        - Latitude (lat) corresponds to the y-coordinate (vertical axis).
-    dur_min [minutes]   : float - minimum duration for a stay (stay duration).
-    dt_max  [minutes]   : float - maximum duration permitted between consecutive pings in a stay. dt_max should be greater than dur_min
-    delta_roam [meters] : float - maximum roaming distance for a stay (roaming distance).
-
-    example:
-    lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, x = 'x_coord', y = 'y_coord')
+    traj : pd.DataFrame
+        Input trajectory data containing columns for spatial coordinates and timestamps.
+    dur_min : float
+        Minimum duration (in minutes) for a valid stop.
+    dt_max : float
+        Maximum allowed time difference (in minutes) between consecutive pings within a stop. dt_max should be greater than dur_min
+    delta_roam : float
+        Maximum roaming distance for a stop.
+    traj_cols : dict, optional
+        A dictionary defining column mappings for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'.
+        Defaults to None.
+    complete_output : bool, optional
+        If True, returns a detailed output with additional stop metrics; otherwise, provides a concise output.
+        Defaults to False.
+    **kwargs :
+        Additional parameters like 'latitude', 'longitude', or 'datetime' column names.
 
     Returns
+    -------
+    pd.DataFrame
+        A DataFrame containing detected stops with columns:
+        - 'start_time', 'duration', 'x', 'y' (concise output).
+        - Additional columns if `complete_output` is True: 'end_time', 'diameter', 'n_pings'.
     """
     # Check if user wants long and lat
     long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs[
@@ -177,7 +240,7 @@ def lachesis(traj,
         datetime_col = traj_cols['datetime']
         traj = traj.set_index(datetime_col, drop=False)
 
-    Stays = np.empty((0, 6))
+    stops = np.empty((0, 6))
 
     # [STEP0] starting the search
     i = 0
@@ -257,30 +320,30 @@ def lachesis(traj,
             start, end = (traj[datetime_col].iat[i],
                           traj[datetime_col].iat[j_star]) if datetime else (
             traj[timestamp_col].iat[i], traj[timestamp_col].iat[j_star])
-            stay_medoid = medoid(coords[i:j_star + 1])
+            stop_medoid = medoid(coords[i:j_star + 1])
             n_pings = j_star - i + 1
-            stay = np.array([[start, end, stay_medoid[0], stay_medoid[1],
+            stop = np.array([[start, end, stop_medoid[0], stop_medoid[1],
                               D_start, n_pings]])
 
-            # UPDATE THE STAY DATAFRAME
-            Stays = np.concatenate((Stays, stay), axis=0)
+            # UPDATE THE STOP DATAFRAME
+            stops = np.concatenate((stops, stop), axis=0)
 
             # updating start index of the stop
             # proceed the search
             i = j_star + 1
 
     Cols_ = ['start_time', 'end_time', 'x', 'y', 'diameter', 'n_pings']
-    stays = pd.DataFrame(Stays, columns=Cols_)
+    stops = pd.DataFrame(stops, columns=Cols_)
 
     # compute stop duration
-    stays['duration'] = stays['end_time'] - stays['start_time']
+    stops['duration'] = stops['end_time'] - stops['start_time']
 
     if complete_output:
-        return stays
+        return stops
     else:
-        stays.drop(columns=['end_time', 'diameter', 'n_pings'], inplace=True)
-        stays = stays[['start_time', 'duration', 'x', 'y']]
-        return stays
+        stops.drop(columns=['end_time', 'diameter', 'n_pings'], inplace=True)
+        stops = stops[['start_time', 'duration', 'x', 'y']]
+        return stops
 
 
 ##########################################
@@ -569,6 +632,32 @@ def process_clusters(data, time_thresh, dist_thresh, min_pts, output, long_lat, 
 
 
 def temporal_dbscan(data, time_thresh, dist_thresh, min_pts, complete_output=False, traj_cols=None, **kwargs):
+     """
+    Perform spatiotemporal clustering using DBSCAN and calculate stop metrics for clusters.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        Trajectory data containing spatial and temporal information.
+    time_thresh : int
+        Time threshold in minutes for identifying neighbors.
+    dist_thresh : float
+        Distance threshold for identifying neighbors.
+    min_pts : int
+        Minimum number of points required to form a dense region (core point).
+    complete_output : bool, optional
+        If True, includes additional metrics or outputs. Defaults to False.
+    traj_cols : dict
+        Dictionary mapping column names for trajectory attributes. Defaults to None.
+    **kwargs :
+        Additional parameters to identify latitude, longitude, and datetime columns.
+        
+    Returns
+    -------
+    pd.DataFrame
+        Stop metrics for each identified cluster, summarizing spatial and temporal characteristics.
+    """
+    
     # Check if user wants long and lat
     long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs[
         'latitude'] in data.columns and kwargs['longitude'] in data.columns
@@ -637,6 +726,32 @@ def temporal_dbscan(data, time_thresh, dist_thresh, min_pts, complete_output=Fal
 
 
 def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, complete_output=False, traj_cols=None, **kwargs):
+     """
+    Labels trajectory points using temporal DBSCAN based on time and distance thresholds.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        Trajectory data containing spatial and temporal information.
+    time_thresh : int
+        Time threshold in minutes for identifying neighbors.
+    dist_thresh : float
+        Distance threshold for identifying neighbors.
+    min_pts : int
+        Minimum number of points required to form a dense region (core point).
+
+    traj_cols : dict
+        Dictionary mapping column names for trajectory attributes. Defaults to None.
+    **kwargs :
+        Additional parameters to identify latitude, longitude, and datetime columns.
+
+    Returns
+    -------
+    pd.DataFrame
+        A DataFrame with clustering results. Includes:
+        - 'cluster': Cluster label for each point (-1 for noise).
+        - 'core': Core point indicator (1 for core points, 0 for others).
+    """
     # Check if user wants long and lat
     long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs[
         'latitude'] in data.columns and kwargs['longitude'] in data.columns
