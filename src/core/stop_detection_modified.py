@@ -204,6 +204,8 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
         - 'start_time', 'duration', 'x', 'y' (concise output).
         - Additional columns if `complete_output` is True: 'end_time', 'diameter', 'n_pings'.
     """
+    traj = traj.copy()
+    
     # Check if user wants long and lat
     long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs[
         'latitude'] in traj.columns and kwargs['longitude'] in traj.columns
@@ -234,12 +236,27 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
     if traj_cols['timestamp'] in traj.columns:
         datetime = False
         timestamp_col = traj_cols['timestamp']
-        traj = traj.set_index(timestamp_col, drop=False)
+
+        first_timestamp = traj[timestamp_col].iloc[0]
+        timestamp_length = len(str(first_timestamp))
+
+        if timestamp_length > 10:
+            if timestamp_length == 13:
+                warnings.warn(
+                    f"The '{traj[timestamp_col]}' column appears to be in milliseconds. "
+                    "This may lead to inconsistencies."
+                )
+                traj[timestamp_col] = traj[timestamp_col].values.view('int64') // 10 ** 3
+            elif timestamp_length == 19:
+                warnings.warn(
+                    f"The '{timestamp_col_name}' column appears to be in nanoseconds. "
+                    "This may lead to inconsistencies."
+                )
+                traj[timestamp_col] = traj[timestamp_col].values.view('int64') // 10 ** 9
     else:
         datetime = True
         datetime_col = traj_cols['datetime']
-        traj = traj.set_index(datetime_col, drop=False)
-
+    
     stops = np.empty((0, 6))
 
     # [STEP0] starting the search
@@ -249,8 +266,7 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
 
         # [STEP1] - find the least amount of pings over a timerange > dur_min
         # j_star is the candidate 'stop end'
-        time_i = traj[timestamp_col].iat[i] if not datetime else \
-        traj[datetime_col].iat[i]
+        time_i = traj[timestamp_col].iat[i] if not datetime else traj[datetime_col].iat[i]
 
         if not datetime:
             j_star = next((j for j in range(i, len(traj)) if (
@@ -332,19 +348,84 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
             # proceed the search
             i = j_star + 1
 
-    Cols_ = ['start_time', 'end_time', 'x', 'y', 'diameter', 'n_pings']
-    stops = pd.DataFrame(stops, columns=Cols_)
+    if long_lat:
+        col_names = ['start_time', 'end_time', traj_cols['longitude'], traj_cols['latitude'], 'diameter', 'n_pings']
+    else:
+        col_names = ['start_time', 'end_time', traj_cols['x'], traj_cols['y'], 'diameter', 'n_pings']
+    
+    stops = pd.DataFrame(stops, columns=col_names)
 
     # compute stop duration
-    stops['duration'] = stops['end_time'] - stops['start_time']
+    if datetime:
+        stops['duration'] = (stops['end_time'] - stops['start_time']).dt.total_seconds() / 60.0
+    else:
+        stops['duration'] = (stops['end_time'] - stops['start_time']) / 60.0
 
+    
     if complete_output:
         return stops
     else:
         stops.drop(columns=['end_time', 'diameter', 'n_pings'], inplace=True)
-        stops = stops[['start_time', 'duration', 'x', 'y']]
-        return stops
+        if long_lat:
+            return stops[['start_time', 'duration', traj_cols['longitude'], traj_cols['latitude']]]
+        else:
+            return stops[['start_time', 'duration', traj_cols['x'], traj_cols['y']]]
 
+def _lachesis_labels(traj, dur_min, dt_max, delta_roam, traj_cols=None, **kwargs):
+    """
+    Assigns a label to every point in the trajectory based on the stop it belongs to.
+
+    Parameters
+    ----------
+    traj : pd.DataFrame
+        Original trajectory data containing spatial and temporal columns.
+    stops : pd.DataFrame
+        Detected stops from the `lachesis` function. Should include 'start_time' and 'end_time'.
+    traj_cols : dict, optional
+        A dictionary defining column mappings for 'timestamp' or 'datetime'.
+        Defaults to None.
+    **kwargs :
+        Additional parameters like 'datetime' column names.
+
+    Returns
+    -------
+    pd.DataFrame
+        A copy of `traj` with an additional 'stop_label' column, where:
+        - Labels are integers corresponding to stop indices.
+        - Points not in any stop are assigned a label of -1.
+    """
+    stops = lachesis(traj, dur_min, dt_max, delta_roam, traj_cols = traj_cols, complete_output = True, **kwargs)
+    
+    # Determine the timestamp column to use
+    if traj_cols.get('timestamp') in traj.columns:
+        datetime = False
+        timestamp_col = traj_cols['timestamp']
+    elif traj_cols.get('datetime') in traj.columns:
+        datetime = True
+        datetime_col = traj_cols['datetime']
+
+    # Initialize the stop_label column with default value -1
+    output = traj.copy()
+    output['cluster'] = -1
+
+    # Iterate through detected stops and assign labels
+    for stop_idx, stop in stops.iterrows():
+        stop_start = stop['start_time']
+        stop_end = stop['end_time']
+        if datetime:
+            output.loc[(output[datetime_col] >= stop_start) & (output[datetime_col] <= stop_end), 'stop_label'] = stop_idx
+        else:
+            output.loc[(output[timestamp_col] >= stop_start) & (output[timestamp_col] <= stop_end), 'stop_label'] = stop_idx
+
+    # Keep only the time and stop_label columns
+    if datetime:
+        output = output[['cluster']]
+        output.index = list(traj[datetime_col])
+    else:
+        output = output[['cluster']]
+        output.index = list(traj[timestamp_col])
+    
+    return output
 
 ##########################################
 ########         DBSCAN           ########
@@ -631,36 +712,9 @@ def process_clusters(data, time_thresh, dist_thresh, min_pts, output, long_lat, 
             return process_clusters(data, time_thresh, dist_thresh, min_pts, output, long_lat, datetime, traj_cols, pd.concat([cluster_df[:i], cluster_df[j:]]))
 
 
-def temporal_dbscan(data, time_thresh, dist_thresh, min_pts, complete_output=False, traj_cols=None, **kwargs):
-     """
-    Perform spatiotemporal clustering using DBSCAN and calculate stop metrics for clusters.
-
-    Parameters
-    ----------
-    data : pandas.DataFrame
-        Trajectory data containing spatial and temporal information.
-    time_thresh : int
-        Time threshold in minutes for identifying neighbors.
-    dist_thresh : float
-        Distance threshold for identifying neighbors.
-    min_pts : int
-        Minimum number of points required to form a dense region (core point).
-    complete_output : bool, optional
-        If True, includes additional metrics or outputs. Defaults to False.
-    traj_cols : dict
-        Dictionary mapping column names for trajectory attributes. Defaults to None.
-    **kwargs :
-        Additional parameters to identify latitude, longitude, and datetime columns.
-        
-    Returns
-    -------
-    pd.DataFrame
-        Stop metrics for each identified cluster, summarizing spatial and temporal characteristics.
-    """
-    
+def temporal_dbscan(data, time_thresh, dist_thresh, min_pts, traj_cols=None, complete_output=False, **kwargs):
     # Check if user wants long and lat
-    long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs[
-        'latitude'] in data.columns and kwargs['longitude'] in data.columns
+    long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs['latitude'] in data.columns and kwargs['longitude'] in data.columns
 
     # Check if user wants datetime
     datetime = 'datetime' in kwargs and kwargs['datetime'] in data.column
@@ -689,7 +743,6 @@ def temporal_dbscan(data, time_thresh, dist_thresh, min_pts, complete_output=Fal
         datetime = True
 
     if datetime:
-        valid_times = data[traj_cols['datetime']].astype('datetime64[s]').astype(int).values
         time_col_name = traj_cols['datetime']
     else:
         first_timestamp = data[traj_cols['timestamp']].iloc[0]
@@ -701,60 +754,30 @@ def temporal_dbscan(data, time_thresh, dist_thresh, min_pts, complete_output=Fal
                     f"The '{data[traj_cols['timestamp']]}' column appears to be in milliseconds. "
                     "This may lead to inconsistencies."
                 )
-                valid_times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 3
                 time_col_name = traj_cols['timestamp']
             elif timestamp_length == 19:
                 warnings.warn(
                     f"The '{timestamp_col_name}' column appears to be in nanoseconds. "
                     "This may lead to inconsistencies."
                 )
-                valid_times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 9
                 time_col_name = traj_cols['timestamp']
         else:
-            valid_times = data[traj_cols['timestamp']].values
             time_col_name = traj_cols['timestamp']
 
-    output = _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, complete_output, traj_cols, **kwargs)
+    output = _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, traj_cols, **kwargs)
     
     output = output[output['cluster'] != -1]
     
     complete_data = pd.merge(output, data, left_index=True, right_on=time_col_name, how='inner')
     
-    stop_table = complete_data.groupby('cluster').apply(lambda group: _stop_metrics(group, long_lat, datetime, complete_output, traj_cols), include_groups=False)
+    stop_table = complete_data.groupby('cluster').apply(lambda group: _stop_metrics(group, long_lat, datetime, traj_cols, complete_output), include_groups=False)
     
     return stop_table
 
 
-def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, complete_output=False, traj_cols=None, **kwargs):
-     """
-    Labels trajectory points using temporal DBSCAN based on time and distance thresholds.
-
-    Parameters
-    ----------
-    data : pandas.DataFrame
-        Trajectory data containing spatial and temporal information.
-    time_thresh : int
-        Time threshold in minutes for identifying neighbors.
-    dist_thresh : float
-        Distance threshold for identifying neighbors.
-    min_pts : int
-        Minimum number of points required to form a dense region (core point).
-
-    traj_cols : dict
-        Dictionary mapping column names for trajectory attributes. Defaults to None.
-    **kwargs :
-        Additional parameters to identify latitude, longitude, and datetime columns.
-
-    Returns
-    -------
-    pd.DataFrame
-        A DataFrame with clustering results. Includes:
-        - 'cluster': Cluster label for each point (-1 for noise).
-        - 'core': Core point indicator (1 for core points, 0 for others).
-    """
+def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, traj_cols=None, **kwargs):
     # Check if user wants long and lat
-    long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs[
-        'latitude'] in data.columns and kwargs['longitude'] in data.columns
+    long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs['latitude'] in data.columns and kwargs['longitude'] in data.columns
 
     # Check if user wants datetime
     datetime = 'datetime' in kwargs and kwargs['datetime'] in data.column
@@ -819,7 +842,7 @@ def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, complete_ou
 
     return output
 
-def _stop_metrics(grouped_data, long_lat, datetime, complete_output, traj_cols):
+def _stop_metrics(grouped_data, long_lat, datetime, traj_cols, complete_output):
     # Coordinates array and distance metrics
     if long_lat:
         coords = grouped_data[[traj_cols['longitude'], traj_cols['latitude']]].to_numpy()
@@ -830,37 +853,64 @@ def _stop_metrics(grouped_data, long_lat, datetime, complete_output, traj_cols):
         stop_medoid = medoid(coords, metric='euclidean')
         diameter_m = diameter(coords, metric='euclidean')
 
-    # Compute start and end time of stop
+    # Compute duration and start and end time of stop
     if datetime:
         start_time = grouped_data[traj_cols['datetime']].min()
         end_time = grouped_data[traj_cols['datetime']].max()
+        duration = (end_time - start_time).total_seconds() / 60.0
     else:
         start_time = grouped_data[traj_cols['timestamp']].min()
         end_time = grouped_data[traj_cols['timestamp']].max()
+        
+        timestamp_length = len(str(start_time))
 
+        if timestamp_length > 10:
+            if timestamp_length == 13:
+                duration = ((end_time // 10 ** 3) - (start_time // 10 ** 3)) / 60.0
+            elif timestamp_length == 19:
+                duration = ((end_time // 10 ** 9) - (start_time // 10 ** 9)) / 60.0
+        else:
+            duration = (end_time - start_time) / 60.0
+                            
     # Number of pings in stop
     n_pings = len(grouped_data)
 
-    # Compute duration
-    duration = end_time - start_time
-
     # Prepare data for the Series
-    if complete_output:
-        stop_attr = {
-            'start_time': start_time,
-            'end_time': end_time,
-            'x': stop_medoid[0],
-            'y': stop_medoid[1],
-            'diameter': diameter_m,
-            'n_pings': n_pings,
-            'duration': duration
-        }
+    if long_lat:
+        if complete_output:
+            stop_attr = {
+                'start_time': start_time,
+                'end_time': end_time,
+                traj_cols['longitude']: stop_medoid[0],
+                traj_cols['latitude']: stop_medoid[1],
+                'diameter': diameter_m,
+                'n_pings': n_pings,
+                'duration': duration
+            }
+        else:
+            stop_attr = {
+                'start_time': start_time,
+                'duration': duration,
+                traj_cols['longitude']: stop_medoid[0],
+                traj_cols['latitude']: stop_medoid[1]
+            }
     else:
-        stop_attr = {
-            'start_time': start_time,
-            'duration': duration,
-            'x': stop_medoid[0],
-            'y': stop_medoid[1]
-        }
+        if complete_output:
+            stop_attr = {
+                'start_time': start_time,
+                'end_time': end_time,
+                traj_cols['x']: stop_medoid[0],
+                traj_cols['y']: stop_medoid[1],
+                'diameter': diameter_m,
+                'n_pings': n_pings,
+                'duration': duration
+            }
+        else:
+            stop_attr = {
+                'start_time': start_time,
+                'duration': duration,
+                traj_cols['x']: stop_medoid[0],
+                traj_cols['y']: stop_medoid[1]
+            }
 
     return pd.Series(stop_attr)
