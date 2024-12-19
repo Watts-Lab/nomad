@@ -427,8 +427,10 @@ class Population:
             print("Agent identifier already exists in population. Replacing corresponding agent.")
         self.roster[agent.identifier] = agent
 
-    def generate_agents(self, 
+    def generate_agents(self,
                         N: int,
+                        home = None,
+                        workplace = None,
                         start_time: datetime = datetime(2024, 1, 1, hour=8, minute=0),
                         dt: float = 1, 
                         seed: int = 0):
@@ -443,8 +445,14 @@ class Population:
             'type': [b.building_type for b in self.city.buildings.values()]
         }).set_index('id')  # Maybe this should be an attribute of city since we end up using it a lot
 
-        homes = b_types[b_types['type'] == 'home'].sample(n=N, replace=True)
-        workplaces = b_types[b_types['type'] == 'work'].sample(n=N, replace=True)
+        if home is not None:
+            homes = b_types[b_types['type'] == 'home'].sample(n=N, replace=True)
+        else:
+            homes = pd.Series([home] * N)
+        if workplace is not None:
+            workplaces = b_types[b_types['type'] == 'work'].sample(n=N, replace=True)
+        else:
+            workplaces = pd.Series([workplace] * N)
 
         generator = funkybob.UniqueRandomNameGenerator(members=2, seed=seed)
         for i in range(N):
@@ -454,7 +462,7 @@ class Population:
                           workplace=workplaces.index[i],
                           city=self.city,
                           start_time=start_time,
-                          dt=dt)  # how do we add other args?
+                          dt=dt) 
             self.add_agent(agent)
 
     def save_pop(self, bucket, prefix):
