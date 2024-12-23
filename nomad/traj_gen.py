@@ -429,8 +429,9 @@ class Population:
 
     def generate_agents(self,
                         N: int,
-                        home = None,
-                        workplace = None,
+                        home: str = None,
+                        workplace: str = None,
+                        destination_diary: pd.DataFrame = None,
                         start_time: datetime = datetime(2024, 1, 1, hour=8, minute=0),
                         dt: float = 1, 
                         seed: int = 0):
@@ -445,12 +446,12 @@ class Population:
             'type': [b.building_type for b in self.city.buildings.values()]
         }).set_index('id')  # Maybe this should be an attribute of city since we end up using it a lot
 
-        if home is not None:
-            homes = b_types[b_types['type'] == 'home'].sample(n=N, replace=True)
+        if home is None:
+            homes = b_types[b_types['type'] == 'home'].sample(n=N, replace=True).index.tolist()
         else:
             homes = pd.Series([home] * N)
-        if workplace is not None:
-            workplaces = b_types[b_types['type'] == 'work'].sample(n=N, replace=True)
+        if workplace is None:
+            workplaces = b_types[b_types['type'] == 'work'].sample(n=N, replace=True).index.tolist()
         else:
             workplaces = pd.Series([workplace] * N)
 
@@ -458,9 +459,10 @@ class Population:
         for i in range(N):
             identifier = generator[i]
             agent = Agent(identifier=identifier,
-                          home=homes.index[i],
-                          workplace=workplaces.index[i],
+                          home=homes[i],
+                          workplace=workplaces[i],
                           city=self.city,
+                          destination_diary=destination_diary,
                           start_time=start_time,
                           dt=dt) 
             self.add_agent(agent)
