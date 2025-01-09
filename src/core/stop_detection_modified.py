@@ -288,11 +288,11 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
         Cond_diam_OT = D_start > delta_roam
         # condition that there is at least a consecutive ping pair that has a time-separation greater than dt_max
         if not datetime:
-            Cond_cc_diff_OT = (traj[timestamp_col][
-                               i:j_star + 1].diff().dropna() >= dt_max * 60).any()
+            Cond_cc_diff_OT = (traj[timestamp_col].loc[i:j_star + 1]
+                               .diff().dropna() >= dt_max * 60).any()
         else:
-            Cond_cc_diff_OT = (traj[datetime_col][
-                               i:j_star + 1].diff().dropna().dt.total_seconds() >= dt_max * 60).any()
+            Cond_cc_diff_OT = (traj[datetime_col].loc[i:j_star + 1]
+                               .diff().dropna().dt.total_seconds() >= dt_max * 60).any()
 
         # [STEP2] - decide whether index i is a 'stop' or 'trip' ping
         if Cond_exhausted_traj or Cond_diam_OT or Cond_cc_diff_OT:
@@ -413,11 +413,11 @@ def _lachesis_labels(traj, dur_min, dt_max, delta_roam, traj_cols=None, **kwargs
         stop_start = stop['start_time']
         stop_end = stop['end_time']
         if datetime:
-            output.loc[(output[datetime_col] >= stop_start) & (output[datetime_col] <= stop_end), 'stop_label'] = stop_idx
+            output.loc[(output[datetime_col] >= stop_start) & (output[datetime_col] <= stop_end), 'cluster'] = stop_idx
         else:
-            output.loc[(output[timestamp_col] >= stop_start) & (output[timestamp_col] <= stop_end), 'stop_label'] = stop_idx
+            output.loc[(output[timestamp_col] >= stop_start) & (output[timestamp_col] <= stop_end), 'cluster'] = stop_idx
 
-    # Keep only the time and stop_label columns
+    # Keep only the time and cluster columns
     if datetime:
         output = output[['cluster']]
         output.index = list(traj[datetime_col])
