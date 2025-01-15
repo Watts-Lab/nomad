@@ -206,6 +206,7 @@ class Agent:
         self.still_probs = still_probs
         self.speeds = speeds
         self.dt = dt
+        self.visit_freqs = None
 
         # If trajectory is not provided, then the first ping is at the home centroid at start_time
         if trajectory is None:
@@ -407,6 +408,7 @@ class Population:
                  city: City):
         self.roster = {}
         self.city = city
+        self.all_trajs = pd.DataFrame(columns=['x', 'y', 'local_timestamp', 'unix_timestamp', 'identifier'])
 
     def add_agent(self, 
                   agent: Agent, 
@@ -691,24 +693,27 @@ class Population:
         if isinstance(T, datetime):
             T = int(T.timestamp())  # Convert to unix
 
-        probs = pd.DataFrame({
-            'id': list(self.city.buildings.keys()),
-            'type': [b.building_type for b in self.city.buildings.values()],
-            'freq': 0,
-            'p': 0
-        }).set_index('id')
+        # Create visit frequency table is user does not already have one
+        visit_freqs = Agent.visit_freqs
+        if not visit_freqs
+            visit_freqs = pd.DataFrame({
+                'id': list(self.city.buildings.keys()),
+                'type': [b.building_type for b in self.city.buildings.values()],
+                'freq': 0,
+                'p': 0
+            }).set_index('id')
 
-        # Initializes past counts randomly
-        probs.loc[agent.home, 'freq'] = 25
-        probs.loc[agent.workplace, 'freq'] = 25
-        probs.loc[probs.type == 'park', 'freq'] = 3  # Agents love to comeback to park
-        # ALTERNATIVELY: start with 1 at home and 1 at work, and do a burnout period of 2 weeks. 
+            # Initializes past counts randomly
+            visit_freqs.loc[agent.home, 'freq'] = 25
+            visit_freqs.loc[agent.workplace, 'freq'] = 25
+            visit_freqs.loc[visit_freqs.type == 'park', 'freq'] = 3  # Agents love to comeback to park
+            # ALTERNATIVELY: start with 1 at home and 1 at work, and do a burnout period of 2 weeks. 
 
-        initial_locs = []
-        initial_locs += list(npr.choice(probs.loc[probs.type == 'retail'].index, size=npr.poisson(8)))
-        initial_locs += list(npr.choice(probs.loc[probs.type == 'work'].index, size=npr.poisson(4)))
-        initial_locs += list(npr.choice(probs.loc[probs.type == 'home'].index, size=npr.poisson(4)))
-        probs.loc[initial_locs, 'freq'] += 1
+            initial_locs = []
+            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'retail'].index, size=npr.poisson(8)))
+            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'work'].index, size=npr.poisson(4)))
+            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'home'].index, size=npr.poisson(4)))
+            visit_freqs.loc[initial_locs, 'freq'] += 1
 
         if agent.destination_diary.empty:
             last_ping = agent.trajectory.iloc[-1]
@@ -723,9 +728,9 @@ class Population:
 
         dest_update = []
         while start_time < T:
-            curr_type = probs.loc[curr, 'type']
+            curr_type = visit_freqs.loc[curr, 'type']
             allowed = allowed_buildings(start_time_local)
-            x = probs.loc[(probs['type'].isin(allowed)) & (probs.freq > 0)]
+            x = visit_freqs.loc[(visit_freqs['type'].isin(allowed)) & (visit_freqs.freq > 0)]
 
             S = len(x) # Fix depending on whether "explore" should depend only on allowed buildings
 
@@ -738,9 +743,9 @@ class Population:
 
             # Exploration
             elif npr.uniform() < p_exp:
-                probs['p'] = self.city.gravity.xs(
+                visit_freqs['p'] = self.city.gravity.xs(
                     self.city.buildings[curr].door, level=0).join(id2door, how='right').set_index('id')
-                y = probs.loc[(probs['type'].isin(allowed)) & (probs.freq == 0)]
+                y = visit_freqs.loc[(visit_freqs['type'].isin(allowed)) & (visit_freqs.freq == 0)]
 
                 if not y.empty and y['p'].sum() > 0:
                     curr = npr.choice(y.index, p=y['p']/y['p'].sum())
@@ -748,12 +753,12 @@ class Population:
                     # If there are no more buildings to explore, then preferential return
                     curr = npr.choice(x.index, p=x['freq']/x['freq'].sum())
 
-                probs.loc[curr, 'freq'] += 1
+                visit_freqs.loc[curr, 'freq'] += 1
 
             # Preferential return
             else:
                 curr = npr.choice(x.index, p=x['freq']/x['freq'].sum())
-                probs.loc[curr, 'freq'] += 1
+                visit_freqs.loc[curr, 'freq'] += 1
 
             # Update destination diary
             entry = {'unix_timestamp': start_time,
@@ -775,6 +780,8 @@ class Population:
         else:
             pd.concat([agent.destination_diary, pd.DataFrame(dest_update)], ignore_index=True)
         agent.destination_diary = condense_destinations(agent.destination_diary)
+
+        agent.visit_freqs = visit_freqs
 
         return None
 
