@@ -50,7 +50,7 @@ def simple_df_multi_user():
     return df
 
 def test_projection_output(simple_df_one_user):
-    result = to_projection(df=simple_df_one_user)
+    result = to_projection(traj=simple_df_one_user)
     ans = pd.DataFrame(
         [[1, 39.984094, 116.319236, '2008-10-23 13:53:05', 1.294860e+07, 4.863631e+06],
          [1, 39.984198, 116.319322, '2008-10-23 13:53:06', 1.294861e+07, 4.863646e+06],
@@ -71,7 +71,7 @@ def test_projection_output(simple_df_one_user):
 
 def test_projection_with_custom_columns(simple_df_one_user):
     df_custom = simple_df_one_user.rename(columns={'longitude': 'lon', 'latitude': 'lat'})
-    result = to_projection(df_custom, longitude='lon', latitude='lat')
+    result = to_projection(traj=df_custom, longitude='lon', latitude='lat')
     assert 'x' in result.columns
     assert 'y' in result.columns
     assert len(result) == 4
@@ -79,42 +79,52 @@ def test_projection_with_custom_columns(simple_df_one_user):
 def test_projection_with_traj_cols(simple_df_one_user):
     df_custom = simple_df_one_user.rename(columns={'longitude': 'lon', 'latitude': 'lat'})
     traj_cols = {'longitude': 'lon', 'latitude': 'lat'}
-    result = to_projection(df_custom, traj_cols=traj_cols)
-    assert 'x' in result.columns
-    assert 'y' in result.columns
+    result = to_projection(traj=df_custom, traj_cols=traj_cols, to_x='x_proj', to_y='y_proj')
+    assert 'x_proj' in result.columns
+    assert 'y_proj' in result.columns
     assert len(result) == 4
 
 def test_projection_invalid_columns(simple_df_one_user):
     df_invalid = simple_df_one_user.rename(columns={'longitude': 'lon', 'latitude': 'lat'})
     with pytest.raises(ValueError):
-        to_projection(df_invalid)
+        to_projection(traj=df_invalid)
 
 def test_in_geo(simple_df_multi_user):
     polygon = Polygon([(116.3192, 39.9840), (116.31965, 39.9840),
                        (116.31965, 39.9845), (116.3192, 39.9845)])
-    df = _in_geo(df=simple_df_multi_user, latitude_col='latitude', longitude_col='longitude',polygon=polygon)
+    df = _in_geo(traj=simple_df_multi_user, 
+                 from_x='longitude', from_y='latitude', 
+                 polygon=polygon, crs='EPSG:4326')
     assert 'in_geo' in df.columns
     expected_values = [1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0]
     assert df['in_geo'].tolist() == expected_values
 
 def test_filter_to_polygon_within_bounds(simple_df_one_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_to_polygon(simple_df_one_user, polygon, k=1, T0='2008-10-23 00:00:00', T1='2008-10-24 00:00:00')
+    result = filter_to_polygon(simple_df_one_user, polygon, 
+                               T0='2008-10-23 00:00:00', T1='2008-10-24 00:00:00', k=1,
+                               crs='EPSG:4326', longitude='longitude', latitude='latitude')
     assert len(result) == 4
 
 def test_filter_to_polygon_outside_bounds(simple_df_one_user):
     polygon = Polygon([(116.3180, 39.9830), (116.3185, 39.9830), (116.3185, 39.9835), (116.3180, 39.9835)])
-    result = filter_to_polygon(simple_df_one_user, polygon, k=1, T0='2008-10-23 00:00:00', T1='2008-10-24 00:00:00')
+    result = filter_to_polygon(simple_df_one_user, polygon, 
+                               T0='2008-10-23 00:00:00', T1='2008-10-24 00:00:00', k=1,
+                               crs='EPSG:4326', longitude='longitude', latitude='latitude')
     assert len(result) == 0
 
 def test_filter_to_polygon_within_bounds_multi_user(simple_df_multi_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_to_polygon(simple_df_multi_user, polygon, k=1, T0='2023-01-01 00:00:00', T1='2023-01-08 00:00:00')
+    result = filter_to_polygon(simple_df_multi_user, polygon,
+                               T0='2023-01-01 00:00:00', T1='2023-01-08 00:00:00',  k=1,
+                               crs='EPSG:4326')
     assert len(result) == 10
 
 def test_filter_to_polygon_outside_bounds_multi_user(simple_df_multi_user):
     polygon = Polygon([(116.3180, 39.9830), (116.3185, 39.9830), (116.3185, 39.9835), (116.3180, 39.9835)])
-    result = filter_to_polygon(simple_df_multi_user, polygon, k=1, T0='2023-01-01 00:00:00', T1='2023-01-08 00:00:00')
+    result = filter_to_polygon(simple_df_multi_user, polygon, 
+                               T0='2023-01-01 00:00:00', T1='2023-01-08 00:00:00', k=1,
+                               crs='EPSG:4326')
     assert len(result) == 0
 
 # def test_filter_to_polygon_with_spark(simple_df_one_user, spark):
@@ -125,53 +135,79 @@ def test_filter_to_polygon_outside_bounds_multi_user(simple_df_multi_user):
 def test_filter_to_polygon_with_custom_columns(simple_df_one_user):
     df_custom = simple_df_one_user.rename(columns={'longitude': 'lon', 'latitude': 'lat'})
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_to_polygon(df_custom, polygon, k=1, T0='2008-10-23 00:00:00', T1='2008-10-24 00:00:00', longitude_col='lon', latitude_col='lat')
+    result = filter_to_polygon(df_custom, polygon,
+                               T0='2008-10-23 00:00:00', T1='2008-10-24 00:00:00',  k=1, 
+                               crs='EPSG:4326', longitude='lon', latitude='lat')
     assert len(result) == 4
 
 def test_filter_to_polygon_invalid_polygon(simple_df_one_user):
     with pytest.raises(TypeError):
-        filter_to_polygon(simple_df_one_user, "invalid_polygon", k=1, T0='2008-10-23 00:00:00', T1='2008-10-24 00:00:00')
+        filter_to_polygon(simple_df_one_user, "invalid_polygon",
+                          T0='2008-10-23 00:00:00', T1='2008-10-24 00:00:00', k=1,
+                          crs='EPSG:4326')
 
 def test_filter_to_polygon_k2(simple_df_multi_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_to_polygon(simple_df_multi_user, polygon, k=2, T0='2023-01-01 00:00:00', T1='2023-01-08 00:00:00')
+    result = filter_to_polygon(simple_df_multi_user, polygon,
+                               T0='2023-01-01 00:00:00', T1='2023-01-08 00:00:00', k=2,
+                               crs='EPSG:4326')
     assert len(result) == 7  # Users 1, 2, and 4 have points within the polygon on at least 2 distinct days
 
 def test_filter_to_polygon_k4(simple_df_multi_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_to_polygon(simple_df_multi_user, polygon, k=4, T0='2023-01-01 00:00:00', T1='2023-01-08 00:00:00')
+    result = filter_to_polygon(simple_df_multi_user, polygon, 
+                               T0='2023-01-01 00:00:00', T1='2023-01-08 00:00:00', k=4,
+                               crs='EPSG:4326')
     assert len(result) == 0  # No users have points within the polygon on at least 3 distinct days
 
 def test_projection_and_filter_to_polygon(simple_df_one_user):
-    projected_df = to_projection(simple_df_one_user)
+    projected_df = to_projection(traj=simple_df_one_user)
     polygon = Polygon([(1.294861e+07, 4.863647e+06), (1.294861e+07, 4.863649e+06),
-                        (1.294863e+07, 4.863649e+06), (1.294863e+07, 4.863647e+06)])
-    result = filter_to_polygon(projected_df, polygon, k=1, T0='2008-10-23 00:00:00', T1='2008-10-24 00:00:00', longitude_col='x', latitude_col='y')
+                       (1.294863e+07, 4.863649e+06), (1.294863e+07, 4.863647e+06)])
+    result = filter_to_polygon(projected_df, polygon,
+                               T0='2008-10-23 00:00:00', T1='2008-10-24 00:00:00', k=1)
     assert len(result) == 4
+
+def test_projection_and_filter_to_polygon_wrong_cols(simple_df_one_user):
+    projected_df = to_projection(traj=simple_df_one_user)
+    polygon = Polygon([(1.294861e+07, 4.863647e+06), (1.294861e+07, 4.863649e+06),
+                       (1.294863e+07, 4.863649e+06), (1.294863e+07, 4.863647e+06)])
+    result = filter_to_polygon(projected_df, polygon,
+                               T0='2008-10-23 00:00:00', T1='2008-10-24 00:00:00', k=1,
+                               longitude='longitude', latitude='latitude')
+    assert len(result) == 0
 
 def test_filter_to_polygon_within_time_frame(simple_df_one_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_to_polygon(simple_df_one_user, polygon, k=1, T0='2008-10-23 13:53:00', T1='2008-10-23 13:53:10')
+    result = filter_to_polygon(simple_df_one_user, polygon, 
+                               T0='2008-10-23 13:53:00', T1='2008-10-23 13:53:10', k=1,
+                               crs='EPSG:4326')
     assert len(result) == 4
 
 def test_filter_to_polygon_outside_time_frame(simple_df_one_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_to_polygon(simple_df_one_user, polygon, k=1, T0='2008-10-23 13:53:20', T1='2008-10-23 13:53:30')
+    result = filter_to_polygon(simple_df_one_user, polygon, 
+                               T0='2008-10-23 13:53:20', T1='2008-10-23 13:53:30', k=1,
+                               crs='EPSG:4326')
     assert len(result) == 0 
 
 def test_filter_to_polygon_within_time_frame_multi_user(simple_df_multi_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_to_polygon(simple_df_multi_user, polygon, k=1, T0='2023-01-01 00:00:00', T1='2023-01-03 00:00:00')
+    result = filter_to_polygon(simple_df_multi_user, polygon, 
+                               T0='2023-01-01 00:00:00', T1='2023-01-03 00:00:00', k=1,
+                               crs='EPSG:4326')
     assert len(result) == 7
 
 def test_filter_to_polygon_outside_time_frame_multi_user(simple_df_multi_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_to_polygon(simple_df_multi_user, polygon, k=1, T0='2023-01-05 00:00:00', T1='2023-01-08 00:00:00')
+    result = filter_to_polygon(simple_df_multi_user, polygon, 
+                               T0='2023-01-05 00:00:00', T1='2023-01-08 00:00:00', k=1, 
+                               crs='EPSG:4326')
     assert len(result) == 4
 
 def test_projection_with_empty_df():
     empty_df = pd.DataFrame(columns=['user_id', 'latitude', 'longitude', 'timestamp'])
-    result = to_projection(empty_df)
+    result = to_projection(traj=empty_df)
     assert 'x' in result.columns
     assert 'y' in result.columns
     assert len(result) == 0
@@ -179,5 +215,7 @@ def test_projection_with_empty_df():
 def test_filter_to_polygon_with_empty_df():
     empty_df = pd.DataFrame(columns=['user_id', 'latitude', 'longitude', 'timestamp'])
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_to_polygon(empty_df, polygon, k=1, T0='2008-10-23 00:00:00', T1='2008-10-24 00:00:00')
+    result = filter_to_polygon(empty_df, polygon, 
+                               T0='2008-10-23 00:00:00', T1='2008-10-24 00:00:00', k=1,
+                               crs='EPSG:4326')
     assert len(result) == 0

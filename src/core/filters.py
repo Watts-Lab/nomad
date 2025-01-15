@@ -8,115 +8,133 @@ from pyspark.sql import SparkSession
 from pyspark.sql import SQLContext
 from pyspark.sql import functions as F
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, LongType, DoubleType
+import sys
+import os
 
+sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "..")))
+import daphmeIO as loader
+import constants as constants
 from constants import DEFAULT_SCHEMA
 import pdb
 
 def to_projection(
-    df: pd.DataFrame,
-    traj_cols: dict = None,
-    longitude: str = None,
-    latitude: str = None,
-    x: str = None,
-    y: str = None,
+    traj: pd.DataFrame,
     from_crs: str = "EPSG:4326",
     to_crs: str = "EPSG:3857",
-    spark_session: SparkSession = None
-):
+    traj_cols: dict = None,
+    to_x: str = "x",
+    to_y: str = "y",
+    spark_session: SparkSession = None,
+    **kwargs
+) -> pd.DataFrame:
     """
-    Projects coordinate columns from one CRS to another.
+    Projects coordinate columns from one Coordinate Reference System (CRS) to another.
+
+    This function takes a DataFrame containing coordinate columns and projects them from one CRS to another specified CRS. 
+    It supports both local and distributed computation using Spark. (TODO: SPARK)
+
+    If `traj_cols` is not provided, the function will attempt to use default column names or those provided in `kwargs`.
 
     Parameters
     ----------
-    df : pd.DataFrame
-        Input DataFrame containing coordinate columns.
-    traj_cols : dict, optional
-        Dictionary containing column mappings,
-        e.g., {"latitude": "lat_col", "longitude": "lon_col"}.
-    longitude : str, optional
-        Name of the longitude column.
-    latitude : str, optional
-        Name of the latitude column.
-    x : str, optional
-        Name of the x coordinate column.
-    y : str, optional
-        Name of the y coordinate column.
+    traj : pd.DataFrame
+        Trajectory DataFrame containing coordinate columns.
     from_crs : str, optional
-        EPSG code for the original CRS (default is "EPSG:4326").
+        EPSG code for the original CRS.
+        Defaults to "EPSG:4326".
     to_crs : str, optional
-        EPSG code for the target CRS (default is "EPSG:3857").
-    spark_session : SparkSession, optional
+        EPSG code for the target CRS.
+        Defaults to "EPSG:3857".
+    traj_cols : dict, optional
+        A dictionary defining column mappings for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'.
+        If not provided, the function will attempt to use default column names or those provided in `kwargs`.
+    to_x : str, optional
+        Name of the projected x column.
+        Defaults to 'x'.
+    to_y : str, optional
+        Name of the projected y column.
+        Defaults to 'y'.
+    spark_session : SparkSession, optional.
         Spark session for distributed computation, if needed.
+    **kwargs :
+        Additional parameters like 'latitude' or 'longitude' column names.
 
     Returns
     -------
     pd.DataFrame
         DataFrame with new 'x' and 'y' columns representing projected coordinates.
     """
+    traj = traj.copy()
 
-    # User can pass latitude and longitude as kwargs,
-    # or x and y, OR traj_cols (prioritizing latitude and longitude).
-    if longitude is not None and latitude is not None:
-        lon_col = longitude
-        lat_col = latitude
-    elif x is not None and y is not None:
-        lon_col = x
-        lat_col = y
-    elif traj_cols is not None:
-        lon_col = traj_cols.get("longitude", DEFAULT_SCHEMA["longitude"])
-        lat_col = traj_cols.get("latitude", DEFAULT_SCHEMA["latitude"])
+    # Check if user wants to project from x and y
+    x_y = (
+        'x' in kwargs and 'y' in kwargs 
+        and kwargs['x'] in traj.columns 
+        and kwargs['y'] in traj.columns
+    )
+
+    # Set initial schema
+    if not traj_cols:
+        traj_cols = {}
+
+    traj_cols = loader._update_schema(traj_cols, kwargs)
+    traj_cols = loader._update_schema(constants.DEFAULT_SCHEMA, traj_cols)
+
+    # Test to check for spatial columns
+    loader._has_spatial_cols(traj.columns, traj_cols)
+
+    # Setting long and lat as defaults if not specified by user in either traj_cols or kwargs
+    if not x_y and traj_cols['longitude'] in traj.columns and traj_cols['latitude'] in traj.columns:
+        from_x, from_y = traj_cols['longitude'], traj_cols['latitude']
     else:
-        lon_col = DEFAULT_SCHEMA["longitude"]
-        lat_col = DEFAULT_SCHEMA["latitude"]
-
-    if lon_col not in df.columns or lat_col not in df.columns:
-        raise ValueError(f"Longitude or latitude columns '{lon_col}' and '{lat_col}' not found in DataFrame.")
+        from_x, from_y = traj_cols['x'], traj_cols['y']
 
     if spark_session:
-        return _to_projection_spark(df, lon_col, lat_col, from_crs, to_crs, spark_session)
+        return _to_projection_spark(traj, from_crs, to_crs, from_x, from_y, to_x, to_y, spark_session)
     else:
-        proj_cols = _to_projection(df[lon_col], df[lat_col], from_crs, to_crs)
-        result_df = df.copy()
-        result_df['x'] = proj_cols['x']
-        result_df['y'] = proj_cols['y']
-        return result_df
+        return _to_projection(traj, from_crs, to_crs, from_x, from_y, to_x, to_y)
 
 
 def _to_projection(
-    long_col,
-    lat_col,
-    from_crs: str,
-    to_crs: str
+    traj,
+    from_crs,
+    to_crs,
+    from_x,
+    from_y,
+    to_x,
+    to_y
 ):
     """
     Helper function to project latitude/longitude columns to a new CRS.
     """
-    gdf = gpd.GeoSeries(gpd.points_from_xy(long_col, lat_col),
-                        crs=from_crs)
+    gdf = gpd.GeoSeries(gpd.points_from_xy(traj[from_x], traj[from_y]), crs=from_crs)
     projected = gdf.to_crs(to_crs)
-    output = pd.DataFrame({'x': projected.x, 'y': projected.y})
+    traj[to_x] = projected.x
+    traj[to_y] = projected.y
 
-    return output
+    return traj
 
 
 def _to_projection_spark(
-    df, 
-    longitude_col, 
-    latitude_col, 
-    source_crs, 
-    target_crs, 
+    traj, 
+    from_crs, 
+    to_crs, 
+    from_x, 
+    from_y, 
+    to_x,
+    to_y,
     spark_session
 ):
     """
     Helper function to project latitude/longitude columns to a new CRS using Spark.
     """
     SedonaRegistrator.registerAll(spark_session)
-    spark_df = spark_session.createDataFrame(df)
+    spark_df = spark_session.createDataFrame(traj)
     spark_df.createOrReplaceTempView("temp_view")
     query = f"""
         SELECT *, 
-            ST_X(ST_Transform(ST_Point({longitude_col}, {latitude_col}), '{source_crs}', '{target_crs}')) AS x,
-            ST_Y(ST_Transform(ST_Point({longitude_col}, {latitude_col}), '{source_crs}', '{target_crs}')) AS y
+            ST_X(ST_Transform(ST_Point({from_x}, {from_y}), '{from_crs}', '{to_crs}')) AS {to_x},
+            ST_Y(ST_Transform(ST_Point({from_x}, {from_y}), '{from_crs}', '{to_crs}')) AS {to_y}
         FROM temp_view
     """
     result_df = spark_session.sql(query)
@@ -124,229 +142,185 @@ def _to_projection_spark(
 
 
 def filter_to_polygon(
-    df: pd.DataFrame,
+    traj: pd.DataFrame,
     polygon: Polygon,
-    k: int,
     T0: str,
     T1: str,
+    k: int = 1,
     traj_cols: dict = None,
-    user_col: str = DEFAULT_SCHEMA["user_id"],
-    timestamp_col: str = DEFAULT_SCHEMA["timestamp"],
-    longitude_col: str = DEFAULT_SCHEMA["longitude"],
-    latitude_col: str = DEFAULT_SCHEMA["latitude"],
-    spark_session: SparkSession = None
-):
+    crs: str = "EPSG:3857",
+    spark_session: SparkSession = None,
+    **kwargs
+) -> pd.DataFrame:
     '''
     Filters DataFrame to keep points within a specified polygon's bounds.
 
     Parameters
     ----------
-    df : pd.DataFrame
-        Input DataFrame with latitude and longitude columns.
+    traj : pd.DataFrame
+        Trajectory DataFrame with latitude and longitude columns.
     polygon : shapely.geometry.Polygon
         Polygon defining the area to retain points within.
-    k : int
-        Minimum number of distinct days with pings inside the polygon for the user to be retained.
     T0 : str
         Start of the timeframe for filtering (as a string, or datetime).
     T1 : str
         End of the timeframe for filtering (as a string, or datetime).
+    k : int
+        Minimum number of distinct days with pings inside the polygon for the user to be retained.
+        Defaults to 1.
     traj_cols : dict, optional
-        Dictionary containing column mappings, 
-        e.g., {"user_id": "user_id", "timestamp": "timestamp"}.
-    user_col : str, optional
-        Name of the user column (default is "user_id").
-    timestamp_col : str, optional
-        Name of the timestamp column (default is "timestamp").
-    longitude_col : str, optional
-        Name of the longitude column (default is "longitude").
-    latitude_col : str, optional
-        Name of the latitude column (default is "latitude").
+        A dictionary defining column mappings for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'.
+        If not provided, the function will attempt to use default column names or those provided in `kwargs`.
+    crs : str, optional
+        Coordinate Reference System (CRS) for the polygon.
+        Defaults to "EPSG:3857".
     spark_session : SparkSession, optional
         Spark session for distributed computation, if needed.
+    **kwargs :
+        Additional parameters like 'user_id', 'latitude', 'longitude', or 'datetime' column names.
 
     Returns
     -------
     pd.DataFrame
         Filtered DataFrame with points inside the polygon's bounds.
     '''
-    if traj_cols:
-        user_col = traj_cols.get("user_id", user_col)
-        timestamp_col = traj_cols.get("timestamp", timestamp_col)
-        longitude_col = traj_cols.get("longitude", longitude_col)
-        latitude_col = traj_cols.get("latitude", latitude_col)
-    
-    if longitude_col not in df.columns or latitude_col not in df.columns:
-        raise ValueError(f"Longitude or latitude columns '{longitude_col}', '{latitude_col}' not found in DataFrame.")
+    traj = traj.copy()
+
+    # Check if user wants to use long and lat
+    long_lat = (
+        'latitude' in kwargs and 'longitude' in kwargs
+        and kwargs['latitude'] in traj.columns
+        and kwargs['longitude'] in traj.columns
+    )
+
+    # Set initial schema
+    if not traj_cols:
+        traj_cols = {}
+
+    traj_cols = loader._update_schema(traj_cols, kwargs)
+    traj_cols = loader._update_schema(constants.DEFAULT_SCHEMA, traj_cols)
+
+    # Tests to check for spatial and temporal columns
+    loader._has_spatial_cols(traj.columns, traj_cols)
+    loader._has_time_cols(traj.columns, traj_cols)
+
+    # Setting x and y as defaults if not specified by user in either traj_cols or kwargs
+    if not long_lat and traj_cols['x'] in traj.columns and traj_cols['y'] in traj.columns:
+        from_x, from_y = traj_cols['x'], traj_cols['y']
+    else:
+        from_x, from_y = traj_cols['longitude'], traj_cols['latitude']
 
     if not isinstance(polygon, Polygon):
         raise TypeError("Polygon parameter must be a Shapely Polygon object.")
 
     if spark_session:
         return _filter_to_polygon_spark(
-            df, polygon.wkt, k, T0, T1, spark_session, user_col, timestamp_col, longitude_col, latitude_col
-        )
-
+            traj, polygon.wkt, T0, T1, k, traj_cols, from_x, from_y, spark_session
+            )
     else:
         users = _filtered_users(
-            df, k, T0, T1, polygon, user_col, timestamp_col, latitude_col, longitude_col
+            traj, polygon, T0, T1, k, traj_cols, from_x, from_y, crs
         )
-        return df[df[user_col].isin(users)]
+        return traj[traj['user_id'].isin(users)]
 
 
 def _filtered_users(
-    df: pd.DataFrame,
-    k: int,
-    T0: str,
-    T1: str,
-    polygon: Polygon,
-    user_col: str,
-    timestamp_col: str,
-    latitude_col: str,
-    longitude_col: str
-) -> pd.DataFrame:
+    traj,
+    polygon,
+    T0,
+    T1,
+    k,
+    traj_cols,
+    from_x,
+    from_y,
+    crs
+):
     """
-    Subsets to users who have at least k distinct days with pings in the polygon 
-    within the timeframe T0 to T1.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        The input DataFrame containing user data with latitude, longitude, and timestamp.
-    k : int
-        Minimum number of distinct days with pings inside the polygon for the user to be retained.
-    T0 : str
-        Start of the timeframe (as a string, or datetime).
-    T1 : str
-        End of the timeframe (as a string, or datetime).
-    polygon : Polygon
-        The polygon to check whether pings are inside.
-    user_col : str
-        Name of the column containing user identifiers.
-    timestamp_col : str
-        Name of the column containing timestamps (as strings or datetime).
-    latitude_col : str
-        Name of the column containing latitude values.
-    longitude_col : str
-        Name of the column containing longitude values.
-
-    Returns
-    -------
-    pd.DataFrame
-        A Series containing the user IDs for users who have at 
-        least k distinct days with pings inside the polygon.
+    Helper function that returns a series containing users who have at least 
+    k distinct days with pings in the polygon within the timeframe T0 to T1.
     """
-    df_filtered = df[(df[timestamp_col] >= T0) & (df[timestamp_col] <= T1)]
-    df_filtered[timestamp_col] = pd.to_datetime(df_filtered[timestamp_col])
-    df_filtered = _in_geo(df_filtered, longitude_col, latitude_col, polygon)
-    df_filtered['date'] = df_filtered[timestamp_col].dt.date
+    traj_filtered = traj[(traj[traj_cols['timestamp']] >= T0) & (traj[traj_cols['timestamp']] <= T1)]
+    traj_filtered[traj_cols['timestamp']] = pd.to_datetime(traj_filtered[traj_cols['timestamp']])
+    traj_filtered = _in_geo(traj_filtered, from_x, from_y, polygon, crs)
+    traj_filtered['date'] = traj_filtered[traj_cols['timestamp']].dt.date
 
     filtered_users = (
-        df_filtered[df_filtered['in_geo']]
-        .groupby(user_col)['date']
+        traj_filtered[traj_filtered['in_geo']]
+        .groupby(traj_cols['user_id'])['date']
         .nunique()
         .reset_index()
     )
 
-    filtered_users = filtered_users[filtered_users['date'] >= k][user_col]
+    filtered_users = filtered_users[filtered_users['date'] >= k][traj_cols['user_id']]
 
     return filtered_users
 
 
 def _in_geo(
-    df: pd.DataFrame,
-    longitude_col: str,
-    latitude_col: str,
-    polygon: Polygon
-) -> pd.DataFrame:
+    traj,
+    from_x,
+    from_y,
+    polygon,
+    crs
+):
     """
-    Adds a new column to the DataFrame indicating whether points are 
-    inside the polygon (1) or not (0).
+    Helper function that adds a new column to the DataFrame indicating 
+    whether points are inside the polygon or not.
     """
+    points = gpd.GeoSeries(gpd.points_from_xy(traj[from_x], traj[from_y]), crs=crs)
+    traj = traj.reset_index(drop=True)
+    traj['in_geo'] = points.within(polygon)
 
-    points = gpd.GeoSeries(gpd.points_from_xy(df[longitude_col], df[latitude_col]), crs="EPSG:4326")
-    df = df.reset_index(drop=True)
-    df['in_geo'] = points.within(polygon)
-
-    return df
+    return traj
 
 
 def _filter_to_polygon_spark(
-    df: pyspark.sql.DataFrame,
-    bounding_wkt: str,
-    k: int,
-    T0: str,
-    T1: str,
-    spark: SparkSession,
-    user_col: str,
-    timestamp_col: str,
-    longitude_col: str,
-    latitude_col: str,
+    traj,
+    bounding_wkt,
+    T0,
+    T1,
+    k,
+    traj_cols,
+    from_x,
+    from_y,
+    spark,
 ):
     """
-    Filters a Spark DataFrame to include rows where geographical points fall within a specified geometry,
-    and retains only users who have at least k distinct days with pings inside the geometry between T0 and T1.
-
-    Parameters
-    ----------
-    df : pyspark.sql.DataFrame
-        Input Spark DataFrame containing coordinate columns.
-    bounding_wkt : str
-        Well-Known Text (WKT) string representing the bounding geometry (e.g., a polygon) in EPSG:4326 CRS.
-    k : int
-        Minimum number of distinct days with pings inside the polygon for the user to be retained.
-    T0 : str
-        Start of the timeframe for filtering (as a string compatible with date parsing).
-    T1 : str
-        End of the timeframe for filtering (as a string compatible with date parsing).
-    spark : SparkSession
-        The active SparkSession instance for executing Spark operations.
-    user_col : str
-        Name of the column containing user IDs.
-    timestamp_col : str
-        Name of the column containing timestamps.
-    longitude_col : str
-        Name of the longitude column.
-    latitude_col : str
-        Name of the latitude column.
-
-    Returns
-    -------
-    pyspark.sql.DataFrame
-        Filtered DataFrame including only rows within the specified timeframe, inside the specified geometry,
-        and belonging to users with at least k distinct days with pings inside the geometry.
+    Helper function that retains only users who have at least k distinct days 
+    with pings inside the geometry between T0 and T1.
     """
 
     SedonaRegistrator.registerAll(spark)
 
-    df = df.withColumn(timestamp_col, F.to_timestamp(F.col(timestamp_col)))
-    df_filtered = df.filter(
-        (F.col(timestamp_col) >= F.to_timestamp(F.lit(T0))) & 
-        (F.col(timestamp_col) <= F.to_timestamp(F.lit(T1)))
+    traj = traj.withColumn(traj_cols['timestamp'], F.to_timestamp(F.col(traj_cols['timestamp'])))
+    traj_filtered = traj.filter(
+        (F.col(traj_cols['timestamp']) >= F.to_timestamp(F.lit(T0))) & 
+        (F.col(traj_cols['timestamp']) <= F.to_timestamp(F.lit(T1)))
     )
-    df_filtered = df_filtered.withColumn(
+    traj_filtered = traj_filtered.withColumn(
         "coordinate", 
-        F.expr(f"ST_Point(CAST({longitude_col} AS DECIMAL(24,20)), CAST({latitude_col} AS DECIMAL(24,20)))")
+        F.expr(f"ST_Point(CAST({from_x} AS DECIMAL(24,20)), CAST({from_y} AS DECIMAL(24,20)))")
     )
 
-    df_filtered.createOrReplaceTempView("temp_df")
+    traj_filtered.createOrReplaceTempView("temp_df")
     query = f"""
-        SELECT *, DATE({timestamp_col}) AS date
+        SELECT *, DATE({traj_cols['timestamp']}) AS date
         FROM temp_df
         WHERE ST_Contains(ST_GeomFromWKT('{bounding_wkt}'), coordinate)
     """
 
-    df_inside = spark.sql(query)
+    traj_inside = spark.sql(query)
 
-    user_day_counts = df_inside.groupBy(user_col).agg(
+    user_day_counts = traj_inside.groupBy(traj_cols['user_id']).agg(
         F.countDistinct("date").alias("distinct_days")
     )
     users_with_k_days = user_day_counts.filter(
         F.col("distinct_days") >= k
-    ).select(user_col)
-    result_df = df_inside.join(users_with_k_days, on=user_col, how='inner')
+    ).select(traj_cols['user_id'])
 
-    return result_df
+    result_traj = traj_inside.join(users_with_k_days, on=traj_cols['user_id'], how='inner')
+
+    return result_traj
 
 
 def coarse_filter(df: pd.DataFrame):
