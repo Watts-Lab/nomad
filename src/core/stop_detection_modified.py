@@ -22,7 +22,7 @@ import constants as constants
 ########        Lachesis          ########
 ##########################################
 
-def diameter(coords, metric='euclidean'):
+def _diameter(coords, metric='euclidean'):
     """
     Calculate the diameter of a set of coordinates, defined as the maximum pairwise distance.
     
@@ -46,12 +46,12 @@ def diameter(coords, metric='euclidean'):
     if metric == 'haversine':
         coords = np.radians(coords)
         pairwise_dists = pdist(coords,
-                               metric=lambda u, v: haversine_distance(u, v))
+                               metric=lambda u, v: _haversine_distance(u, v))
         return np.max(pairwise_dists)
     return np.max(pdist(coords, metric=metric))
 
 
-def medoid(coords, metric='euclidean'):
+def _medoid(coords, metric='euclidean'):
     """
     Calculate the medoid of a set of coordinates, defined as the point with the minimal 
     sum of distances to all other points.
@@ -75,7 +75,7 @@ def medoid(coords, metric='euclidean'):
     
     if metric == 'haversine':
         coords = np.radians(coords)
-        distances = pairwise_haversine(coords)
+        distances = _pairwise_haversine(coords)
     else:
         distances = cdist(coords, coords, metric=metric)
     
@@ -84,7 +84,7 @@ def medoid(coords, metric='euclidean'):
     return coords[medoid_index, :]
 
 
-def haversine_distance(coord1, coord2):
+def _haversine_distance(coord1, coord2):
     """
     Compute the haversine distance between two points on Earth.
 
@@ -104,7 +104,7 @@ def haversine_distance(coord1, coord2):
     return earth_radius_meters * c  # Distance in meters
 
 
-def pairwise_haversine(coords):
+def _pairwise_haversine(coords):
     """
     Compute the pairwise Haversine distances between a set of coordinates.
     
@@ -124,12 +124,12 @@ def pairwise_haversine(coords):
     distances = np.zeros((n, n))
     for i in range(n):
         for j in range(i + 1, n):
-            distances[i, j] = haversine_distance(coords[i], coords[j])
+            distances[i, j] = _haversine_distance(coords[i], coords[j])
             distances[j, i] = distances[i, j]
     return distances
 
     
-def update_diameter(c_j, coords_prev, D_prev, metric='euclidean'):
+def _update_diameter(c_j, coords_prev, D_prev, metric='euclidean'):
     """
     Update the diameter of a set of coordinates when a new point is added.
     
@@ -162,7 +162,7 @@ def update_diameter(c_j, coords_prev, D_prev, metric='euclidean'):
 
         lat_j, lon_j = c_j[0], c_j[1]
         new_dists = np.array([
-            haversine_distance([lat_j, lon_j], [lat_i, lon_i])
+            _haversine_distance([lat_j, lon_j], [lat_i, lon_i])
             for lat_i, lon_i in coords_prev
         ])
 
@@ -204,7 +204,7 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
         - 'start_time', 'duration', 'x', 'y' (concise output).
         - Additional columns if `complete_output` is True: 'end_time', 'diameter', 'n_pings'.
     """
-    traj = traj.copy()
+    # traj = traj.copy()
     
     # Check if user wants long and lat
     long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs[
@@ -259,13 +259,9 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
     
     stops = np.empty((0, 6))
 
-    # [STEP0] starting the search
     i = 0
 
     while i < len(traj) - 1:
-
-        # [STEP1] - find the least amount of pings over a timerange > dur_min
-        # j_star is the candidate 'stop end'
         time_i = traj[timestamp_col].iat[i] if not datetime else traj[datetime_col].iat[i]
 
         if not datetime:
@@ -277,39 +273,27 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
                            (traj[datetime_col].iat[j] - time_i) >= timedelta(
                                minutes=dur_min)), -1)
 
-        # initial diameter
-        D_start = diameter(coords[i:j_star + 1],
+        d_start = _diameter(coords[i:j_star + 1],
                            metric='haversine' if long_lat else 'euclidean')
 
-        # CONDITIONS BLOCKING THE SEARCH
-        # conditions to block the j_star search
-        Cond_exhausted_traj = j_star == -1
-        # condition that diameter is over the delta_roam threshold
-        Cond_diam_OT = D_start > delta_roam
-        # condition that there is at least a consecutive ping pair that has a time-separation greater than dt_max
+        cond_exhausted_traj = j_star == -1
+        cond_diam_OT = d_start > delta_roam
+
         if not datetime:
-            Cond_cc_diff_OT = (traj[timestamp_col].loc[i:j_star + 1]
+            cond_cc_diff_OT = (traj[timestamp_col].loc[i:j_star + 1]
                                .diff().dropna() >= dt_max * 60).any()
         else:
-            Cond_cc_diff_OT = (traj[datetime_col].loc[i:j_star + 1]
+            cond_cc_diff_OT = (traj[datetime_col].loc[i:j_star + 1]
                                .diff().dropna().dt.total_seconds() >= dt_max * 60).any()
 
-        # [STEP2] - decide whether index i is a 'stop' or 'trip' ping
-        if Cond_exhausted_traj or Cond_diam_OT or Cond_cc_diff_OT:
-            # DISCARD i and j_star as candidate 'stop start' and 'stop end' pings
-            # move forward and update i, starting from scratch
+        if cond_exhausted_traj or cond_diam_OT or cond_cc_diff_OT:
             i += 1
         else:
-            # SELECT i as a 'stop start' ping AND
-            # [STEP3] proceed with the iterative search of 'stop end'
-            COND_found_jstar = False
+            cond_found_jstar = False
             for j in range(j_star, len(traj) - 1):
-
-                # update diameter
-                D_update = update_diameter(coords[j], coords[i:j], D_start,
+                d_update = _update_diameter(coords[j], coords[i:j], d_start,
                                            metric='haversine' if long_lat else 'euclidean')
 
-                # compute the conescutive ping's time difference
                 if datetime:
                     cc_diff = (traj[datetime_col].iat[j] -
                                traj[datetime_col].iat[j - 1]).total_seconds()
@@ -317,35 +301,27 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
                     cc_diff = traj[timestamp_col].iat[j] - \
                               traj[timestamp_col].iat[j - 1]
 
-                # verify that the new ping does not break the rule
-                COND_j = (D_update > delta_roam) or (cc_diff > dt_max * 60)
+                cond_j = (d_update > delta_roam) or (cc_diff > dt_max * 60)
 
-                if COND_j:
-                    # new ping broke the rule and the stop detection is completed
+                if cond_j:
                     j_star = j - 1
-                    COND_found_jstar = True
+                    cond_found_jstar = True
                     break
                 else:
-                    # the stop detection proceeds - update the diameter
-                    D_start = D_update
-            # handle the case in which no further pings
-            if not COND_found_jstar:
+                    d_start = d_update
+
+            if not cond_found_jstar:
                 j_star = len(traj) - 1
 
-            # COLLECT STOP INFORMATION
             start, end = (traj[datetime_col].iat[i],
                           traj[datetime_col].iat[j_star]) if datetime else (
             traj[timestamp_col].iat[i], traj[timestamp_col].iat[j_star])
-            stop_medoid = medoid(coords[i:j_star + 1])
+            stop_medoid = _medoid(coords[i:j_star + 1])
             n_pings = j_star - i + 1
             stop = np.array([[start, end, stop_medoid[0], stop_medoid[1],
-                              D_start, n_pings]])
-
-            # UPDATE THE STOP DATAFRAME
+                              d_start, n_pings]])
             stops = np.concatenate((stops, stop), axis=0)
 
-            # updating start index of the stop
-            # proceed the search
             i = j_star + 1
 
     if long_lat:
@@ -431,7 +407,7 @@ def _lachesis_labels(traj, dur_min, dt_max, delta_roam, traj_cols=None, **kwargs
 ########         DBSCAN           ########
 ##########################################
 
-def extract_middle(data):
+def _extract_middle(data):
     """
     Extract the middle segment of a cluster within the provided data.
     
@@ -462,7 +438,7 @@ def extract_middle(data):
     return (i, j)
 
 
-def find_neighbors(data, time_thresh, dist_thresh, long_lat, datetime, traj_cols):
+def _find_neighbors(data, time_thresh, dist_thresh, long_lat, datetime, traj_cols):
     """
     Compute neighbors within specified time and distance thresholds for a trajectory dataset.
     
@@ -517,7 +493,7 @@ def find_neighbors(data, time_thresh, dist_thresh, long_lat, datetime, traj_cols
     
     # Distance calculation
     if long_lat:
-        distances = np.array([haversine_distance(coords[i], coords[j]) for i, j in zip(*time_pairs)])
+        distances = np.array([_haversine_distance(coords[i], coords[j]) for i, j in zip(*time_pairs)])
     else:
         distances_sq = (coords[time_pairs[0], 0] - coords[time_pairs[1], 0])**2 + \
                        (coords[time_pairs[0], 1] - coords[time_pairs[1], 1])**2
@@ -592,7 +568,7 @@ def dbscan(data, time_thresh, dist_thresh, min_pts, long_lat, datetime, traj_col
             original_times = data[traj_cols['timestamp']].values
     
     if not neighbor_dict:
-        neighbor_dict = find_neighbors(data, time_thresh, dist_thresh, long_lat, datetime, traj_cols)
+        neighbor_dict = _find_neighbors(data, time_thresh, dist_thresh, long_lat, datetime, traj_cols)
     else:
         neighbor_dict = defaultdict(set,
                                     {k: v.intersection(valid_times) for k, v in
@@ -627,7 +603,7 @@ def dbscan(data, time_thresh, dist_thresh, min_pts, long_lat, datetime, traj_col
     return pd.DataFrame({'cluster': cluster_df, 'core': core_df})
 
 
-def process_clusters(data, time_thresh, dist_thresh, min_pts, output, long_lat, datetime, traj_cols, 
+def _process_clusters(data, time_thresh, dist_thresh, min_pts, output, long_lat, datetime, traj_cols, 
                      cluster_df=None, neighbor_dict=None, min_duration=4):
     """
     Recursively process spatiotemporal clusters from trajectory data to identify and refine valid clusters.
@@ -664,7 +640,7 @@ def process_clusters(data, time_thresh, dist_thresh, min_pts, output, long_lat, 
         True if at least one valid cluster is identified and processed, otherwise False.
     """
     if not neighbor_dict:
-        neighbor_dict = find_neighbors(data, time_thresh, dist_thresh, long_lat, datetime, traj_cols)
+        neighbor_dict = _find_neighbors(data, time_thresh, dist_thresh, long_lat, datetime, traj_cols)
     if cluster_df is None:
         cluster_df = dbscan(data, time_thresh, dist_thresh, min_pts, long_lat, datetime, traj_cols, neighbor_dict=neighbor_dict)
     if len(cluster_df) < min_pts:
@@ -699,17 +675,17 @@ def process_clusters(data, time_thresh, dist_thresh, min_pts, output, long_lat, 
    
     # There is more than one cluster
     elif len(cluster_df['cluster'].unique()) > 1:
-        i, j = extract_middle(cluster_df)  # Indices of the "middle" of the cluster
+        i, j = _extract_middle(cluster_df)  # Indices of the "middle" of the cluster
         
         # Recursively processes clusters
-        if process_clusters(data, time_thresh, dist_thresh, min_pts, output, long_lat, datetime, traj_cols, cluster_df = cluster_df[i:j]):  # Valid cluster in the middle
-            process_clusters(data, time_thresh, dist_thresh, min_pts, output,
+        if _process_clusters(data, time_thresh, dist_thresh, min_pts, output, long_lat, datetime, traj_cols, cluster_df = cluster_df[i:j]):  # Valid cluster in the middle
+            _process_clusters(data, time_thresh, dist_thresh, min_pts, output,
                              long_lat, datetime, traj_cols, cluster_df = cluster_df[:i])  # Process the initial stub
-            process_clusters(data, time_thresh, dist_thresh, min_pts, output,
+            _process_clusters(data, time_thresh, dist_thresh, min_pts, output,
                              long_lat, datetime, traj_cols, cluster_df = cluster_df[j:])  # Process the "tail"
             return True
         else:  # No valid cluster in the middle
-            return process_clusters(data, time_thresh, dist_thresh, min_pts, output, long_lat, datetime, traj_cols, pd.concat([cluster_df[:i], cluster_df[j:]]))
+            return _process_clusters(data, time_thresh, dist_thresh, min_pts, output, long_lat, datetime, traj_cols, pd.concat([cluster_df[:i], cluster_df[j:]]))
 
 
 def temporal_dbscan(data, time_thresh, dist_thresh, min_pts, traj_cols=None, complete_output=False, **kwargs):
@@ -836,7 +812,7 @@ def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, traj_cols=N
 
     output = pd.DataFrame({'cluster': -1, 'core': -1}, index=valid_times)
 
-    process_clusters(data_temp, time_thresh, dist_thresh, min_pts, output, long_lat, datetime, traj_cols, min_duration=4)
+    _process_clusters(data_temp, time_thresh, dist_thresh, min_pts, output, long_lat, datetime, traj_cols, min_duration=4)
 
     output.index = list(data[time_col_name])
 
@@ -846,12 +822,12 @@ def _stop_metrics(grouped_data, long_lat, datetime, traj_cols, complete_output):
     # Coordinates array and distance metrics
     if long_lat:
         coords = grouped_data[[traj_cols['longitude'], traj_cols['latitude']]].to_numpy()
-        stop_medoid = medoid(coords, metric='haversine')
-        diameter_m = diameter(coords, metric='haversine')
+        stop_medoid = _medoid(coords, metric='haversine')
+        diameter_m = _diameter(coords, metric='haversine')
     else:
         coords = grouped_data[[traj_cols['x'], traj_cols['y']]].to_numpy()
-        stop_medoid = medoid(coords, metric='euclidean')
-        diameter_m = diameter(coords, metric='euclidean')
+        stop_medoid = _medoid(coords, metric='euclidean')
+        diameter_m = _diameter(coords, metric='euclidean')
 
     # Compute duration and start and end time of stop
     if datetime:
