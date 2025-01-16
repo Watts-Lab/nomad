@@ -303,7 +303,7 @@ def lachesis(traj, dur_min, dt_max, delta_roam):
 
         j_star = next((j for j in range(i, len(traj)) if
                        traj['unix_timestamp'].iloc[j] - traj['unix_timestamp'].iloc[i] >= dur_min * 60), -1)
-
+        
         if (j_star == -1) or (diameter(coords[i:j_star+1]) > delta_roam):
             i += 1
         else:

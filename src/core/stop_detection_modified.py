@@ -9,6 +9,7 @@ import itertools
 from collections import defaultdict
 import sys
 import os
+import pdb
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "..")))
 import daphmeIO as loader
@@ -312,7 +313,7 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
 
             if not cond_found_jstar:
                 j_star = len(traj) - 1
-
+            
             start, end = (traj[datetime_col].iat[i],
                           traj[datetime_col].iat[j_star]) if datetime else (
             traj[timestamp_col].iat[i], traj[timestamp_col].iat[j_star])
