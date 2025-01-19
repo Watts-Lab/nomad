@@ -573,8 +573,6 @@ class Population:
                 partition_cols=partition
             )
 
-#     TODO: allow for parallelization
-
     def sample_step(self, agent, start_point, dest_building, dt):
         """
         From a destination diary, generates (x, y) pings.
