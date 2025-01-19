@@ -720,7 +720,7 @@ class Population:
 
         # Create visit frequency table is user does not already have one
         visit_freqs = Agent.visit_freqs
-        if not visit_freqs
+        if not visit_freqs:
             visit_freqs = pd.DataFrame({
                 'id': list(self.city.buildings.keys()),
                 'type': [b.building_type for b in self.city.buildings.values()],
@@ -848,8 +848,6 @@ class Population:
 
         return None
 
-
-    def sparsity_population
 
     def plot_population(self, ax, doors=True, address=True):
         for i, agent_id in enumerate(self.roster):
