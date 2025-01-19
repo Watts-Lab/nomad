@@ -19,7 +19,14 @@ import pdb
 # NHPP SAMPLER
 # =============================================================================
 
-def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, dt=1, ha=3/4, seed=None, output_bursts=False):
+def sample_hier_nhpp(traj,
+                     beta_start,
+                     beta_durations,
+                     beta_ping,
+                     dt=1,
+                     ha=3/4,
+                     seed=None,
+                     output_bursts=False):
     """
     Sample from simulated trajectory, drawn using hierarchical Poisson processes.
 
@@ -229,11 +236,18 @@ class Agent:
                 'location': home
                 }])
 
+        self.last_ping = trajectory.iloc[-1]
         self.trajectory = trajectory
         self.sparse_traj = None
         self.diary = diary
 
-    def plot_traj(self, ax, color='black', alpha=1, doors=True, address=True, heatmap=False):
+    def plot_traj(self,
+                  ax,
+                  color='black',
+                  alpha=1,
+                  doors=True,
+                  address=True,
+                  heatmap=False):
         """
         Plots the trajectory of the agent on the given axis.
 
@@ -258,7 +272,6 @@ class Agent:
         else:
             ax.scatter(self.trajectory.x, self.trajectory.y, s=6, color=color, alpha=alpha, zorder=2)
             self.city.plot_city(ax, doors=doors, address=address, zorder=1)
-
 
     def sample_traj_hier_nhpp(self,
                               beta_start,
@@ -316,13 +329,17 @@ class Agent:
             self.sparse_traj = pd.concat([self.sparse_traj, sparse_traj], ignore_index=False)
 
         if reset_traj:
-            self.trajectory = self.trajectory.tail(1)
+            self.last_ping = self.trajectory.iloc[-1]
+            self.trajectory = self.trajectory.loc[[]]  # empty df
 
         if output_bursts:
             return burst_info
 
 
-def _ortho_coord(multilines, distance, offset, eps=0.001):  # Calculus approach. Probably super slow.
+def _ortho_coord(multilines,
+                 distance,
+                 offset,
+                 eps=0.001):  # Calculus approach. Probably super slow.
     """
     Given a MultiLineString, a distance along it, an offset distance, and a small epsilon,
     returns the coordinates of a point that is distance along the MultiLineString and offset
@@ -479,7 +496,9 @@ class Population:
                           dt=dt)  # how do we add other args?
             self.add_agent(agent)
 
-    def save_pop(self, bucket, prefix):
+    def save_pop(self,
+                 bucket,
+                 prefix):
         """
         Save trajectories, homes, and diaries as Parquet files to S3.
 
@@ -624,7 +643,6 @@ class Population:
 
         destination_diary = agent.destination_diary
 
-        current_loc = agent.trajectory.iloc[-1]
         trajectory_update = []
 
         if agent.diary.empty:
@@ -638,7 +656,7 @@ class Population:
             duration = int(destination_info['duration'] * 1/dt)
             building_id = destination_info['location']
             for t in range(int(duration//dt)):
-                prev_ping = current_loc
+                prev_ping = agent.last_ping
                 start_point = (prev_ping['x'], prev_ping['y'])
                 dest_building = city.buildings[building_id]
                 unix_timestamp = prev_ping['unix_timestamp'] + 60*dt
@@ -655,8 +673,8 @@ class Population:
                         'unix_timestamp': unix_timestamp,
                         'identifier': agent.identifier}
 
-                current_loc = ping
                 trajectory_update.append(ping)
+                agent.last_ping = ping
                 if(current_entry == None or current_entry['location'] != location):
                     entry_update.append(current_entry)
                     current_entry = {'unix_timestamp': unix_timestamp,
@@ -736,10 +754,9 @@ class Population:
             visit_freqs.loc[initial_locs, 'freq'] += 1
 
         if agent.destination_diary.empty:
-            last_ping = agent.trajectory.iloc[-1]
-            start_time_local = last_ping.local_timestamp
-            start_time = last_ping.unix_timestamp
-            curr = self.city.get_block((last_ping.x, last_ping.y)).id  # Always a building?? Could be street
+            start_time_local = agent.last_ping.local_timestamp
+            start_time = agent.last_ping.unix_timestamp
+            curr = self.city.get_block((agent.last_ping.x, agent.last_ping.y)).id  # Always a building?? Could be street
         else:
             last_entry = agent.destination_diary.iloc[-1]
             start_time_local = last_entry.local_timestamp + timedelta(minutes=int(last_entry.duration))
