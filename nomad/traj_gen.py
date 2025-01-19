@@ -504,7 +504,8 @@ class Population:
                  save_sparse_traj=True,
                  save_homes=True,
                  save_diaries=True,
-                 partition_cols=None):
+                 partition_cols=None,
+                 roster=self.roster):
         """
         Save trajectories, homes, and diaries as Parquet files to S3.
 
@@ -532,7 +533,7 @@ class Population:
 
         # full trajectories
         if save_full_traj:
-            trajs = pd.concat([agent.trajectory for agent_id, agent in self.roster.items()]).reset_index(drop=True)
+            trajs = pd.concat([agent.trajectory for agent_id, agent in roster.items()]).reset_index(drop=True)
             partition = partition_cols.get('full_traj', []) if partition_cols else []
             trajs.to_parquet(
                 f's3://{bucket}/{prefix}trajectories.parquet',
@@ -543,7 +544,7 @@ class Population:
 
         # sparse trajectories
         if save_sparse_traj:
-            sparse_trajs = pd.concat([agent.sparse_traj for agent_id, agent in self.roster.items()]).reset_index(drop=True)
+            sparse_trajs = pd.concat([agent.sparse_traj for agent_id, agent in roster.items()]).reset_index(drop=True)
             partition = partition_cols.get('sparse_traj', []) if partition_cols else []
             sparse_trajs.to_parquet(
                 f's3://{bucket}/{prefix}sparse_trajectories.parquet',
@@ -554,7 +555,7 @@ class Population:
 
         # home table
         if save_homes:
-            homes = pd.DataFrame([(agent_id, agent.home, agent.workplace) for agent_id, agent in self.roster.items()],
+            homes = pd.DataFrame([(agent_id, agent.home, agent.workplace) for agent_id, agent in roster.items()],
                                  columns=['id', 'home', 'workplace'])
             homes.to_parquet(
                 f's3://{bucket}/{prefix}homes.parquet',
@@ -564,7 +565,7 @@ class Population:
 
         # diary
         if save_diaries:
-            diaries = pd.concat([agent.diary for agent_id, agent in self.roster.items()]).reset_index(drop=True)
+            diaries = pd.concat([agent.diary for agent_id, agent in roster.items()]).reset_index(drop=True)
             partition = partition_cols.get('diaries', []) if partition_cols else []
             diaries.to_parquet(
                 f's3://{bucket}/{prefix}diaries.parquet',
