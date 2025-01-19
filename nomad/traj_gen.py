@@ -43,7 +43,7 @@ def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, dt=1, ha=3/4, 
     seed : int0
         The seed for random number generation.
     output_bursts : bool
-        Whether to output the latent variables on when bursts start and end.
+        If True, outputs the latent variables on when bursts start and end.
     """
     if seed:
         npr.seed(seed)
@@ -258,7 +258,16 @@ class Agent:
             ax.scatter(self.trajectory.x, self.trajectory.y, s=6, color=color, alpha=alpha, zorder=2)
             self.city.plot_city(ax, doors=doors, address=address, zorder=1)
 
-    def sample_traj_hier_nhpp(self, beta_start, beta_durations, beta_ping, seed=0, ha=3/4, output_bursts=False):
+
+    def sample_traj_hier_nhpp(self,
+                              beta_start,
+                              beta_durations,
+                              beta_ping,
+                              seed=0,
+                              ha=3/4,
+                              output_bursts=False,
+                              reset_traj=False,
+                              save_to=None):
         """
         Samples a sparse trajectory using a hierarchical non-homogeneous Poisson process.
 
@@ -275,28 +284,42 @@ class Agent:
             which pings are sampled.
         seed : int
             Random seed for reproducibility.
+        ha : float
+            Horizontal accuracy
+        output_bursts : bool
+            If True, outputs the latent variables on when bursts start and end.
+        reset_traj : bool
+            if True, removes all but the last row of the Agent's trajectory DataFrame.
+        save_to : DataFrame
+            If provided, appends sparsified trajectory to the dataframe. Must have column
+            ['x', 'y', 'local_timestamp', 'unix_timestamp', 'identifier']
         """
 
+        result = sample_hier_nhpp(
+            self.trajectory, 
+            beta_start, 
+            beta_durations, 
+            beta_ping, 
+            dt=self.dt, 
+            ha=ha,
+            seed=seed, 
+            output_bursts=output_bursts
+        )
+
         if output_bursts:
-            sparse_traj, burst_info = sample_hier_nhpp(self.trajectory, 
-                                                       beta_start, 
-                                                       beta_durations, 
-                                                       beta_ping, 
-                                                       dt=self.dt, 
-                                                       ha=ha,
-                                                       seed=seed, 
-                                                       output_bursts=output_bursts)
+            sparse_traj, burst_info = result
         else:
-            sparse_traj = sample_hier_nhpp(self.trajectory, 
-                                           beta_start, 
-                                           beta_durations, 
-                                           beta_ping, 
-                                           dt=self.dt, 
-                                           ha=ha,
-                                           seed=seed, 
-                                           output_bursts=output_bursts)
-        sparse_traj = sparse_traj.set_index('unix_timestamp', drop=False)
-        self.sparse_traj = sparse_traj
+            sparse_traj = result
+
+        self.sparse_traj = sparse_traj.set_index('unix_timestamp', drop=False)
+
+        if reset_traj:
+            self.trajectory = self.trajectory.tail(1)
+
+        if save_to is not None:
+            # Append sparse_traj to save_to in place (indices will be messed up)
+            save_to.loc[len(save_to):] = self.sparse_traj
+
         if output_bursts:
             return burst_info
 
@@ -408,10 +431,12 @@ class Population:
                  city: City):
         self.roster = {}
         self.city = city
-        self.all_trajs = pd.DataFrame(columns=['x', 'y', 'local_timestamp', 'unix_timestamp', 'identifier'])
+        self.all_sparse_trajs = pd.DataFrame(
+            columns=['x', 'y', 'local_timestamp', 'unix_timestamp', 'identifier']
+        )
 
-    def add_agent(self, 
-                  agent: Agent, 
+    def add_agent(self,
+                  agent: Agent,
                   verbose: bool=True):
         """
         Adds an agent to the population. 
@@ -422,7 +447,7 @@ class Population:
         agent : Agent
             The agent to be added to the population.
         verbose : bool, optional
-            Whether to print a message if the agent identifier already exists in the population.
+            If True, prints a message if the agent identifier already exists in the population.
         """
 
         if verbose and agent.identifier in self.roster:
@@ -684,7 +709,7 @@ class Population:
             Parameter for exploring, influencing the probability of preferential return.
         seed : int
             Random seed for reproducibility.
-     """
+        """
         npr.seed(seed)
 
         id2door = pd.DataFrame([[s, b.door] for s, b in self.city.buildings.items()],
@@ -787,9 +812,9 @@ class Population:
 
     def generate_trajectory(self, 
                             agent: Agent, 
-                            T: datetime = None, 
-                            duration: int = 15, 
-                            seed: int = 0):
+                            T: datetime=None, 
+                            duration: int=15, 
+                            seed: int=0):
         """
         Generate a trajectory for an agent.
 
@@ -815,13 +840,16 @@ class Population:
         if agent.destination_diary.empty:
             if T is None:
                 raise ValueError(
-                    "Destination diary is empty. Provide a parameter T to generate destination diary from transition matrix."
+                    "Destination diary is empty. Provide an argument T to generate destination diary using EPR."
                 )
             self.generate_dest_diary(agent, T, duration=duration, seed=seed)
 
         self.traj_from_dest_diary(agent)
 
         return None
+
+
+    def sparsity_population
 
     def plot_population(self, ax, doors=True, address=True):
         for i, agent_id in enumerate(self.roster):
