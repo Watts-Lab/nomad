@@ -719,7 +719,7 @@ class Population:
             T = int(T.timestamp())  # Convert to unix
 
         # Create visit frequency table is user does not already have one
-        visit_freqs = Agent.visit_freqs
+        visit_freqs = agent.visit_freqs
         if not visit_freqs:
             visit_freqs = pd.DataFrame({
                 'id': list(self.city.buildings.keys()),
