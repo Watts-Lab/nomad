@@ -720,7 +720,7 @@ class Population:
 
         # Create visit frequency table is user does not already have one
         visit_freqs = agent.visit_freqs
-        if not visit_freqs:
+        if visit_freqs is None:
             visit_freqs = pd.DataFrame({
                 'id': list(self.city.buildings.keys()),
                 'type': [b.building_type for b in self.city.buildings.values()],
