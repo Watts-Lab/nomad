@@ -230,9 +230,7 @@ class Agent:
                 }])
 
         self.trajectory = trajectory
-        self.sparse_traj = pd.DataFrame(
-            columns=['x', 'y', 'local_timestamp', 'unix_timestamp', 'identifier']
-        )
+        self.sparse_traj = None
         self.diary = diary
 
     def plot_traj(self, ax, color='black', alpha=1, doors=True, address=True, heatmap=False):
@@ -309,9 +307,13 @@ class Agent:
             sparse_traj, burst_info = result
         else:
             sparse_traj = result
-
+            
         sparse_traj = sparse_traj.set_index('unix_timestamp', drop=False)
-        self.sparse_traj = pd.concat([self.sparse_traj, sparse_traj], ignore_index=False)
+
+        if self.sparse_traj is None:
+            self.sparse_traj = sparse_traj
+        else:
+            self.sparse_traj = pd.concat([self.sparse_traj, sparse_traj], ignore_index=False)
 
         if reset_traj:
             self.trajectory = self.trajectory.tail(1)
