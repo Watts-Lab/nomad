@@ -230,6 +230,9 @@ class Agent:
                 }])
 
         self.trajectory = trajectory
+        self.sparse_traj = pd.DataFrame(
+            columns=['x', 'y', 'local_timestamp', 'unix_timestamp', 'identifier']
+        )
         self.diary = diary
 
     def plot_traj(self, ax, color='black', alpha=1, doors=True, address=True, heatmap=False):
@@ -266,8 +269,7 @@ class Agent:
                               seed=0,
                               ha=3/4,
                               output_bursts=False,
-                              reset_traj=False,
-                              save_to=None):
+                              reset_traj=False):
         """
         Samples a sparse trajectory using a hierarchical non-homogeneous Poisson process.
 
@@ -290,9 +292,6 @@ class Agent:
             If True, outputs the latent variables on when bursts start and end.
         reset_traj : bool
             if True, removes all but the last row of the Agent's trajectory DataFrame.
-        save_to : DataFrame
-            If provided, appends sparsified trajectory to the dataframe. Must have column
-            ['x', 'y', 'local_timestamp', 'unix_timestamp', 'identifier']
         """
 
         result = sample_hier_nhpp(
@@ -311,14 +310,11 @@ class Agent:
         else:
             sparse_traj = result
 
-        self.sparse_traj = sparse_traj.set_index('unix_timestamp', drop=False)
+        sparse_traj = sparse_traj.set_index('unix_timestamp', drop=False)
+        self.sparse_traj = pd.concat([self.sparse_traj, sparse_traj], ignore_index=False)
 
         if reset_traj:
             self.trajectory = self.trajectory.tail(1)
-
-        if save_to is not None:
-            # Append sparse_traj to save_to in place (indices will be messed up)
-            save_to.loc[len(save_to):] = self.sparse_traj
 
         if output_bursts:
             return burst_info
@@ -431,9 +427,6 @@ class Population:
                  city: City):
         self.roster = {}
         self.city = city
-        self.all_sparse_trajs = pd.DataFrame(
-            columns=['x', 'y', 'local_timestamp', 'unix_timestamp', 'identifier']
-        )
 
     def add_agent(self,
                   agent: Agent,
