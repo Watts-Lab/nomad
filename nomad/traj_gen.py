@@ -208,7 +208,7 @@ class Agent:
                 columns=['unix_timestamp', 'local_timestamp', 'duration', 'location'])
 
         self.diary = diary if diary is not None else pd.DataFrame(
-            columns=['unix_timestamp', 'local_timestamp', 'duration', 'location'])
+            columns=['unix_timestamp', 'local_timestamp', 'duration', 'location', 'identifier'])
 
         self.still_probs = still_probs
         self.speeds = speeds
@@ -233,7 +233,8 @@ class Agent:
                 'unix_timestamp': unix_timestamp,
                 'local_timestamp': local_timestamp,
                 'duration': self.dt,
-                'location': home
+                'location': home,
+                'identifier': self.identifier
                 }])
 
         self.last_ping = trajectory.iloc[-1]
@@ -498,7 +499,12 @@ class Population:
 
     def save_pop(self,
                  bucket,
-                 prefix):
+                 prefix,
+                 save_full_traj=True,
+                 save_sparse_traj=True,
+                 save_homes=True,
+                 save_diaries=True,
+                 partition_cols=None):
         """
         Save trajectories, homes, and diaries as Parquet files to S3.
 
@@ -508,30 +514,64 @@ class Population:
             The name of the S3 bucket.
         prefix : str
             The path prefix within the bucket (e.g., 'folder/subfolder/').
+        save_full_traj : bool
+            If True, save the full (ground truth) trajectories.
+        save_sparse_traj : bool
+            If True, save the sparse trajectories.
+        save_homes : bool
+            If True, save a table mapping Agents to their homes.
+        save_diaries : bool
+            If True, save the diaries.
+        partition_cols : dict
+            A dictionary specifying partition columns for each dataset. Keys should match dataset names
+            ('full_traj', 'sparse_traj', 'diaries') and values should be lists of column names to partition on.
+            Example: {'full_traj': ['date'], 'diaries': ['user_id']}
         """
 
         fs = s3fs.S3FileSystem()
 
-        # raw trajectories
-        trajs = pd.concat([agent.trajectory for agent_id, agent in self.roster.items()])
-        trajs.to_parquet(f's3://{bucket}/{prefix}trajectories.parquet', engine='pyarrow', filesystem=fs)
+        # full trajectories
+        if save_full_traj:
+            trajs = pd.concat([agent.trajectory for agent_id, agent in self.roster.items()])
+            partition = partition_cols.get('full_traj', []) if partition_cols else []
+            trajs.to_parquet(
+                f's3://{bucket}/{prefix}trajectories.parquet',
+                engine='pyarrow',
+                filesystem=fs,
+                partition_cols=partition
+            )
 
         # sparse trajectories
-        sparse_trajs = pd.concat([agent.sparse_traj for agent_id, agent in self.roster.items()])
-        sparse_trajs.to_parquet(f's3://{bucket}/{prefix}sparse_trajectories.parquet', engine='pyarrow', filesystem=fs)
+        if save_sparse_traj:
+            sparse_trajs = pd.concat([agent.sparse_traj for agent_id, agent in self.roster.items()])
+            partition = partition_cols.get('sparse_traj', []) if partition_cols else []
+            sparse_trajs.to_parquet(
+                f's3://{bucket}/{prefix}sparse_trajectories.parquet',
+                engine='pyarrow',
+                filesystem=fs,
+                partition_cols=partition
+            )
 
         # home table
-        homes = pd.DataFrame([(agent_id, agent.home, agent.workplace) for agent_id, agent in self.roster.items()],
-                             columns=['id', 'home', 'workplace'])
-        homes.to_parquet(f's3://{bucket}/{prefix}homes.parquet', engine='pyarrow', filesystem=fs)
+        if save_homes:
+            homes = pd.DataFrame([(agent_id, agent.home, agent.workplace) for agent_id, agent in self.roster.items()],
+                                 columns=['id', 'home', 'workplace'])
+            homes.to_parquet(
+                f's3://{bucket}/{prefix}homes.parquet',
+                engine='pyarrow',
+                filesystem=fs
+            )
 
         # diary
-        diaries = []
-        for agent_id, agent in self.roster.items():
-            ag_d = agent.diary
-            ag_d['id'] = agent_id
-            diaries += [ag_d]
-        pd.concat(diaries).to_parquet(f's3://{bucket}/{prefix}diaries.parquet', engine='pyarrow', filesystem=fs)
+        if save_diaries:
+            diaries = pd.concat([agent.diary for agent_id, agent in self.roster.items()])
+            partition = partition_cols.get('diaries', []) if partition_cols else []
+            diaries.to_parquet(
+                f's3://{bucket}/{prefix}diaries.parquet',
+                engine='pyarrow',
+                filesystem=fs,
+                partition_cols=partition
+            )
 
 #     TODO: allow for parallelization
 
@@ -680,7 +720,8 @@ class Population:
                     current_entry = {'unix_timestamp': unix_timestamp,
                              'local_timestamp': local_timestamp,
                              'duration': dt,
-                             'location': location}
+                             'location': location,
+                             'identifier': agent.identifier}
                 else:
                     current_entry['duration'] += 1*dt
 
