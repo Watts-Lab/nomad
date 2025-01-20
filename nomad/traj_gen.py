@@ -505,7 +505,7 @@ class Population:
                  save_homes=True,
                  save_diaries=True,
                  partition_cols=None,
-                 roster=self.roster):
+                 roster=None):
         """
         Save trajectories, homes, and diaries as Parquet files to S3.
 
@@ -528,6 +528,9 @@ class Population:
             ('full_traj', 'sparse_traj', 'diaries') and values should be lists of column names to partition on.
             Example: {'full_traj': ['date'], 'diaries': ['user_id']}
         """
+
+        if roster is None:
+            roster = self.roster
 
         fs = s3fs.S3FileSystem()
 
