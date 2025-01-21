@@ -467,11 +467,12 @@ class Population:
             print("Agent identifier already exists in population. Replacing corresponding agent.")
         self.roster[agent.identifier] = agent
 
-    def generate_agents(self, 
+    def generate_agents(self,
                         N: int,
                         start_time: datetime = datetime(2024, 1, 1, hour=8, minute=0),
-                        dt: float = 1, 
-                        seed: int = 0):
+                        dt: float = 1,
+                        seed: int = 0,
+                        name_count: int = 2):
         """
         Generates N agents, with randomized attributes.
         """
@@ -486,7 +487,7 @@ class Population:
         homes = b_types[b_types['type'] == 'home'].sample(n=N, replace=True)
         workplaces = b_types[b_types['type'] == 'work'].sample(n=N, replace=True)
 
-        generator = funkybob.UniqueRandomNameGenerator(members=2, seed=seed)
+        generator = funkybob.UniqueRandomNameGenerator(members=name_count, seed=seed)
         for i in range(N):
             identifier = generator[i]
             agent = Agent(identifier=identifier,
