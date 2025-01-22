@@ -267,8 +267,7 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
 
         if not datetime:
             j_star = next((j for j in range(i, len(traj)) if (
-                        traj[timestamp_col].iat[j] - time_i) >= dur_min * 60),
-                          -1)
+                        traj[timestamp_col].iat[j] - time_i) >= dur_min * 60), -1)
         else:
             j_star = next((j for j in range(i, len(traj)) if
                            (traj[datetime_col].iat[j] - time_i) >= timedelta(
@@ -314,14 +313,22 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
             if not cond_found_jstar:
                 j_star = len(traj) - 1
             
-            start, end = (traj[datetime_col].iat[i],
-                          traj[datetime_col].iat[j_star]) if datetime else (
-            traj[timestamp_col].iat[i], traj[timestamp_col].iat[j_star])
-            stop_medoid = _medoid(coords[i:j_star + 1])
-            n_pings = j_star - i + 1
-            stop = np.array([[start, end, stop_medoid[0], stop_medoid[1],
-                              d_start, n_pings]])
-            stops = np.concatenate((stops, stop), axis=0)
+            start, end = (traj[datetime_col].iat[i], traj[datetime_col].iat[j_star]) if datetime else (traj[timestamp_col].iat[i], traj[timestamp_col].iat[j_star])
+            
+            if datetime:
+                duration = (traj[datetime_col].iat[j_star] - traj[datetime_col].iat[i]).total_seconds()
+                cc_diffs = traj[datetime_col].loc[i:j_star].diff().dt.total_seconds()
+            else:
+                duration = traj[timestamp_col].iat[j_star] - traj[timestamp_col].iat[i]
+                cc_diffs = traj[timestamp_col].loc[i:j_star].diff()
+        
+            if (duration >= dur_min * 60 and
+                d_start <= delta_roam and
+                (cc_diffs.dropna() <= dt_max * 60).all()):
+                stop_medoid = _medoid(coords[i:j_star + 1])
+                n_pings = j_star - i + 1
+                stop = np.array([[start, end, stop_medoid[0], stop_medoid[1], d_start, n_pings]])
+                stops = np.concatenate((stops, stop), axis=0)
 
             i = j_star + 1
 
