@@ -19,7 +19,14 @@ import pdb
 # NHPP SAMPLER
 # =============================================================================
 
-def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, dt=1, ha=3/4, seed=None, output_bursts=False):
+def sample_hier_nhpp(traj,
+                     beta_start,
+                     beta_durations,
+                     beta_ping,
+                     dt=1,
+                     ha=3/4,
+                     seed=None,
+                     output_bursts=False):
     """
     Sample from simulated trajectory, drawn using hierarchical Poisson processes.
 
@@ -43,7 +50,7 @@ def sample_hier_nhpp(traj, beta_start, beta_durations, beta_ping, dt=1, ha=3/4, 
     seed : int0
         The seed for random number generation.
     output_bursts : bool
-        Whether to output the latent variables on when bursts start and end.
+        If True, outputs the latent variables on when bursts start and end.
     """
     if seed:
         npr.seed(seed)
@@ -201,11 +208,12 @@ class Agent:
                 columns=['unix_timestamp', 'local_timestamp', 'duration', 'location'])
 
         self.diary = diary if diary is not None else pd.DataFrame(
-            columns=['unix_timestamp', 'local_timestamp', 'duration', 'location'])
+            columns=['unix_timestamp', 'local_timestamp', 'duration', 'location', 'identifier'])
 
         self.still_probs = still_probs
         self.speeds = speeds
         self.dt = dt
+        self.visit_freqs = None
 
         # If trajectory is not provided, then the first ping is at the home centroid at start_time
         if trajectory is None:
@@ -225,13 +233,22 @@ class Agent:
                 'unix_timestamp': unix_timestamp,
                 'local_timestamp': local_timestamp,
                 'duration': self.dt,
-                'location': home
+                'location': home,
+                'identifier': self.identifier
                 }])
 
+        self.last_ping = trajectory.iloc[-1]
         self.trajectory = trajectory
+        self.sparse_traj = None
         self.diary = diary
 
-    def plot_traj(self, ax, color='black', alpha=1, doors=True, address=True, heatmap=False):
+    def plot_traj(self,
+                  ax,
+                  color='black',
+                  alpha=1,
+                  doors=True,
+                  address=True,
+                  heatmap=False):
         """
         Plots the trajectory of the agent on the given axis.
 
@@ -257,7 +274,14 @@ class Agent:
             ax.scatter(self.trajectory.x, self.trajectory.y, s=6, color=color, alpha=alpha, zorder=2)
             self.city.plot_city(ax, doors=doors, address=address, zorder=1)
 
-    def sample_traj_hier_nhpp(self, beta_start, beta_durations, beta_ping, seed=0, ha=3/4, output_bursts=False):
+    def sample_traj_hier_nhpp(self,
+                              beta_start,
+                              beta_durations,
+                              beta_ping,
+                              seed=0,
+                              ha=3/4,
+                              output_bursts=False,
+                              reset_traj=False):
         """
         Samples a sparse trajectory using a hierarchical non-homogeneous Poisson process.
 
@@ -274,33 +298,49 @@ class Agent:
             which pings are sampled.
         seed : int
             Random seed for reproducibility.
+        ha : float
+            Horizontal accuracy
+        output_bursts : bool
+            If True, outputs the latent variables on when bursts start and end.
+        reset_traj : bool
+            if True, removes all but the last row of the Agent's trajectory DataFrame.
         """
 
+        result = sample_hier_nhpp(
+            self.trajectory, 
+            beta_start, 
+            beta_durations, 
+            beta_ping, 
+            dt=self.dt, 
+            ha=ha,
+            seed=seed, 
+            output_bursts=output_bursts
+        )
+
         if output_bursts:
-            sparse_traj, burst_info = sample_hier_nhpp(self.trajectory, 
-                                                       beta_start, 
-                                                       beta_durations, 
-                                                       beta_ping, 
-                                                       dt=self.dt, 
-                                                       ha=ha,
-                                                       seed=seed, 
-                                                       output_bursts=output_bursts)
+            sparse_traj, burst_info = result
         else:
-            sparse_traj = sample_hier_nhpp(self.trajectory, 
-                                           beta_start, 
-                                           beta_durations, 
-                                           beta_ping, 
-                                           dt=self.dt, 
-                                           ha=ha,
-                                           seed=seed, 
-                                           output_bursts=output_bursts)
+            sparse_traj = result
+            
         sparse_traj = sparse_traj.set_index('unix_timestamp', drop=False)
-        self.sparse_traj = sparse_traj
+
+        if self.sparse_traj is None:
+            self.sparse_traj = sparse_traj
+        else:
+            self.sparse_traj = pd.concat([self.sparse_traj, sparse_traj], ignore_index=False)
+
+        if reset_traj:
+            self.last_ping = self.trajectory.iloc[-1]
+            self.trajectory = self.trajectory.loc[[]]  # empty df
+
         if output_bursts:
             return burst_info
 
 
-def _ortho_coord(multilines, distance, offset, eps=0.001):  # Calculus approach. Probably super slow.
+def _ortho_coord(multilines,
+                 distance,
+                 offset,
+                 eps=0.001):  # Calculus approach. Probably super slow.
     """
     Given a MultiLineString, a distance along it, an offset distance, and a small epsilon,
     returns the coordinates of a point that is distance along the MultiLineString and offset
@@ -408,8 +448,8 @@ class Population:
         self.roster = {}
         self.city = city
 
-    def add_agent(self, 
-                  agent: Agent, 
+    def add_agent(self,
+                  agent: Agent,
                   verbose: bool=True):
         """
         Adds an agent to the population. 
@@ -420,18 +460,19 @@ class Population:
         agent : Agent
             The agent to be added to the population.
         verbose : bool, optional
-            Whether to print a message if the agent identifier already exists in the population.
+            If True, prints a message if the agent identifier already exists in the population.
         """
 
         if verbose and agent.identifier in self.roster:
             print("Agent identifier already exists in population. Replacing corresponding agent.")
         self.roster[agent.identifier] = agent
 
-    def generate_agents(self, 
+    def generate_agents(self,
                         N: int,
                         start_time: datetime = datetime(2024, 1, 1, hour=8, minute=0),
-                        dt: float = 1, 
-                        seed: int = 0):
+                        dt: float = 1,
+                        seed: int = 0,
+                        name_count: int = 2):
         """
         Generates N agents, with randomized attributes.
         """
@@ -446,7 +487,7 @@ class Population:
         homes = b_types[b_types['type'] == 'home'].sample(n=N, replace=True)
         workplaces = b_types[b_types['type'] == 'work'].sample(n=N, replace=True)
 
-        generator = funkybob.UniqueRandomNameGenerator(members=2, seed=seed)
+        generator = funkybob.UniqueRandomNameGenerator(members=name_count, seed=seed)
         for i in range(N):
             identifier = generator[i]
             agent = Agent(identifier=identifier,
@@ -457,7 +498,15 @@ class Population:
                           dt=dt)  # how do we add other args?
             self.add_agent(agent)
 
-    def save_pop(self, bucket, prefix):
+    def save_pop(self,
+                 bucket,
+                 prefix,
+                 save_full_traj=True,
+                 save_sparse_traj=True,
+                 save_homes=True,
+                 save_diaries=True,
+                 partition_cols=None,
+                 roster=None):
         """
         Save trajectories, homes, and diaries as Parquet files to S3.
 
@@ -467,32 +516,67 @@ class Population:
             The name of the S3 bucket.
         prefix : str
             The path prefix within the bucket (e.g., 'folder/subfolder/').
+        save_full_traj : bool
+            If True, save the full (ground truth) trajectories.
+        save_sparse_traj : bool
+            If True, save the sparse trajectories.
+        save_homes : bool
+            If True, save a table mapping Agents to their homes.
+        save_diaries : bool
+            If True, save the diaries.
+        partition_cols : dict
+            A dictionary specifying partition columns for each dataset. Keys should match dataset names
+            ('full_traj', 'sparse_traj', 'diaries') and values should be lists of column names to partition on.
+            Example: {'full_traj': ['date'], 'diaries': ['user_id']}
         """
+
+        if roster is None:
+            roster = self.roster
 
         fs = s3fs.S3FileSystem()
 
-        # raw trajectories
-        trajs = pd.concat([agent.trajectory for agent_id, agent in self.roster.items()])
-        trajs.to_parquet(f's3://{bucket}/{prefix}trajectories.parquet', engine='pyarrow', filesystem=fs)
+        # full trajectories
+        if save_full_traj:
+            trajs = pd.concat([agent.trajectory for agent_id, agent in roster.items()]).reset_index(drop=True)
+            partition = partition_cols.get('full_traj', []) if partition_cols else []
+            trajs.to_parquet(
+                f's3://{bucket}/{prefix}trajectories.parquet',
+                engine='pyarrow',
+                filesystem=fs,
+                partition_cols=partition
+            )
 
         # sparse trajectories
-        sparse_trajs = pd.concat([agent.sparse_traj for agent_id, agent in self.roster.items()])
-        sparse_trajs.to_parquet(f's3://{bucket}/{prefix}sparse_trajectories.parquet', engine='pyarrow', filesystem=fs)
+        if save_sparse_traj:
+            sparse_trajs = pd.concat([agent.sparse_traj for agent_id, agent in roster.items()]).reset_index(drop=True)
+            partition = partition_cols.get('sparse_traj', []) if partition_cols else []
+            sparse_trajs.to_parquet(
+                f's3://{bucket}/{prefix}sparse_trajectories.parquet',
+                engine='pyarrow',
+                filesystem=fs,
+                partition_cols=partition
+            )
 
         # home table
-        homes = pd.DataFrame([(agent_id, agent.home, agent.workplace) for agent_id, agent in self.roster.items()],
-                             columns=['id', 'home', 'workplace'])
-        homes.to_parquet(f's3://{bucket}/{prefix}homes.parquet', engine='pyarrow', filesystem=fs)
+        if save_homes:
+            homes = pd.DataFrame([(agent_id, agent.home, agent.workplace) for agent_id, agent in roster.items()],
+                                 columns=['id', 'home', 'workplace'])
+            homes.to_parquet(
+                f's3://{bucket}/{prefix}homes.parquet',
+                engine='pyarrow',
+                filesystem=fs
+            )
 
         # diary
-        diaries = []
-        for agent_id, agent in self.roster.items():
-            ag_d = agent.diary
-            ag_d['id'] = agent_id
-            diaries += [ag_d]
-        pd.concat(diaries).to_parquet(f's3://{bucket}/{prefix}diaries.parquet', engine='pyarrow', filesystem=fs)
-
-#     TODO: allow for parallelization
+        if save_diaries:
+            diaries = pd.concat([agent.diary for agent_id, agent in roster.items()]).reset_index(drop=True)
+            partition = partition_cols.get('diaries', []) if partition_cols else []
+            diaries.to_parquet(
+                f's3://{bucket}/{prefix}diaries.parquet',
+                engine='pyarrow',
+                filesystem=fs,
+                partition_cols=partition
+            )
 
     def sample_step(self, agent, start_point, dest_building, dt):
         """
@@ -602,7 +686,6 @@ class Population:
 
         destination_diary = agent.destination_diary
 
-        current_loc = agent.trajectory.iloc[-1]
         trajectory_update = []
 
         if agent.diary.empty:
@@ -616,7 +699,7 @@ class Population:
             duration = int(destination_info['duration'] * 1/dt)
             building_id = destination_info['location']
             for t in range(int(duration//dt)):
-                prev_ping = current_loc
+                prev_ping = agent.last_ping
                 start_point = (prev_ping['x'], prev_ping['y'])
                 dest_building = city.buildings[building_id]
                 unix_timestamp = prev_ping['unix_timestamp'] + 60*dt
@@ -633,14 +716,15 @@ class Population:
                         'unix_timestamp': unix_timestamp,
                         'identifier': agent.identifier}
 
-                current_loc = ping
                 trajectory_update.append(ping)
+                agent.last_ping = ping
                 if(current_entry == None or current_entry['location'] != location):
                     entry_update.append(current_entry)
                     current_entry = {'unix_timestamp': unix_timestamp,
                              'local_timestamp': local_timestamp,
                              'duration': dt,
-                             'location': location}
+                             'location': location,
+                             'identifier': agent.identifier}
                 else:
                     current_entry['duration'] += 1*dt
 
@@ -682,7 +766,7 @@ class Population:
             Parameter for exploring, influencing the probability of preferential return.
         seed : int
             Random seed for reproducibility.
-     """
+        """
         npr.seed(seed)
 
         id2door = pd.DataFrame([[s, b.door] for s, b in self.city.buildings.items()],
@@ -691,30 +775,32 @@ class Population:
         if isinstance(T, datetime):
             T = int(T.timestamp())  # Convert to unix
 
-        probs = pd.DataFrame({
-            'id': list(self.city.buildings.keys()),
-            'type': [b.building_type for b in self.city.buildings.values()],
-            'freq': 0,
-            'p': 0
-        }).set_index('id')
+        # Create visit frequency table is user does not already have one
+        visit_freqs = agent.visit_freqs
+        if visit_freqs is None:
+            visit_freqs = pd.DataFrame({
+                'id': list(self.city.buildings.keys()),
+                'type': [b.building_type for b in self.city.buildings.values()],
+                'freq': 0,
+                'p': 0
+            }).set_index('id')
 
-        # Initializes past counts randomly
-        probs.loc[agent.home, 'freq'] = 25
-        probs.loc[agent.workplace, 'freq'] = 25
-        probs.loc[probs.type == 'park', 'freq'] = 3  # Agents love to comeback to park
-        # ALTERNATIVELY: start with 1 at home and 1 at work, and do a burnout period of 2 weeks. 
+            # Initializes past counts randomly
+            visit_freqs.loc[agent.home, 'freq'] = 25
+            visit_freqs.loc[agent.workplace, 'freq'] = 25
+            visit_freqs.loc[visit_freqs.type == 'park', 'freq'] = 3  # Agents love to comeback to park
+            # ALTERNATIVELY: start with 1 at home and 1 at work, and do a burnout period of 2 weeks. 
 
-        initial_locs = []
-        initial_locs += list(npr.choice(probs.loc[probs.type == 'retail'].index, size=npr.poisson(8)))
-        initial_locs += list(npr.choice(probs.loc[probs.type == 'work'].index, size=npr.poisson(4)))
-        initial_locs += list(npr.choice(probs.loc[probs.type == 'home'].index, size=npr.poisson(4)))
-        probs.loc[initial_locs, 'freq'] += 1
+            initial_locs = []
+            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'retail'].index, size=npr.poisson(8)))
+            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'work'].index, size=npr.poisson(4)))
+            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'home'].index, size=npr.poisson(4)))
+            visit_freqs.loc[initial_locs, 'freq'] += 1
 
         if agent.destination_diary.empty:
-            last_ping = agent.trajectory.iloc[-1]
-            start_time_local = last_ping.local_timestamp
-            start_time = last_ping.unix_timestamp
-            curr = self.city.get_block((last_ping.x, last_ping.y)).id  # Always a building?? Could be street
+            start_time_local = agent.last_ping.local_timestamp
+            start_time = agent.last_ping.unix_timestamp
+            curr = self.city.get_block((agent.last_ping.x, agent.last_ping.y)).id  # Always a building?? Could be street
         else:
             last_entry = agent.destination_diary.iloc[-1]
             start_time_local = last_entry.local_timestamp + timedelta(minutes=int(last_entry.duration))
@@ -723,9 +809,9 @@ class Population:
 
         dest_update = []
         while start_time < T:
-            curr_type = probs.loc[curr, 'type']
+            curr_type = visit_freqs.loc[curr, 'type']
             allowed = allowed_buildings(start_time_local)
-            x = probs.loc[(probs['type'].isin(allowed)) & (probs.freq > 0)]
+            x = visit_freqs.loc[(visit_freqs['type'].isin(allowed)) & (visit_freqs.freq > 0)]
 
             S = len(x) # Fix depending on whether "explore" should depend only on allowed buildings
 
@@ -738,9 +824,9 @@ class Population:
 
             # Exploration
             elif npr.uniform() < p_exp:
-                probs['p'] = self.city.gravity.xs(
+                visit_freqs['p'] = self.city.gravity.xs(
                     self.city.buildings[curr].door, level=0).join(id2door, how='right').set_index('id')
-                y = probs.loc[(probs['type'].isin(allowed)) & (probs.freq == 0)]
+                y = visit_freqs.loc[(visit_freqs['type'].isin(allowed)) & (visit_freqs.freq == 0)]
 
                 if not y.empty and y['p'].sum() > 0:
                     curr = npr.choice(y.index, p=y['p']/y['p'].sum())
@@ -748,12 +834,12 @@ class Population:
                     # If there are no more buildings to explore, then preferential return
                     curr = npr.choice(x.index, p=x['freq']/x['freq'].sum())
 
-                probs.loc[curr, 'freq'] += 1
+                visit_freqs.loc[curr, 'freq'] += 1
 
             # Preferential return
             else:
                 curr = npr.choice(x.index, p=x['freq']/x['freq'].sum())
-                probs.loc[curr, 'freq'] += 1
+                visit_freqs.loc[curr, 'freq'] += 1
 
             # Update destination diary
             entry = {'unix_timestamp': start_time,
@@ -776,13 +862,15 @@ class Population:
             pd.concat([agent.destination_diary, pd.DataFrame(dest_update)], ignore_index=True)
         agent.destination_diary = condense_destinations(agent.destination_diary)
 
+        agent.visit_freqs = visit_freqs
+
         return None
 
     def generate_trajectory(self, 
                             agent: Agent, 
-                            T: datetime = None, 
-                            duration: int = 15, 
-                            seed: int = 0):
+                            T: datetime=None, 
+                            duration: int=15, 
+                            seed: int=0):
         """
         Generate a trajectory for an agent.
 
@@ -808,13 +896,14 @@ class Population:
         if agent.destination_diary.empty:
             if T is None:
                 raise ValueError(
-                    "Destination diary is empty. Provide a parameter T to generate destination diary from transition matrix."
+                    "Destination diary is empty. Provide an argument T to generate destination diary using EPR."
                 )
             self.generate_dest_diary(agent, T, duration=duration, seed=seed)
 
         self.traj_from_dest_diary(agent)
 
         return None
+
 
     def plot_population(self, ax, doors=True, address=True):
         for i, agent_id in enumerate(self.roster):
