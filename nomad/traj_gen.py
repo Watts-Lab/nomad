@@ -207,9 +207,9 @@ class Agent:
         }).set_index('id') # this should be an attribute of city since we end up using it a lot
 
         if home is None:
-            home = b_types[b_types['type'] == 'home'].sample(n=1)
+            home = b_types[b_types['type'] == 'home'].sample(n=1).index[0]
         if workplace is None:
-            workplace = b_types[b_types['type'] == 'work'].sample(n=1)
+            workplace = b_types[b_types['type'] == 'work'].sample(n=1).index[0]
 
         self.home = home
         self.workplace = workplace
