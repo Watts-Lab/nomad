@@ -155,16 +155,17 @@ class Agent:
 
     def __init__(self, 
                  identifier: str, 
-                 home: str, 
-                 workplace: str, 
                  city: City,
+                 home: str = None,
+                 workplace: str = None,
                  still_probs: dict = DEFAULT_STILL_PROBS, 
                  speeds: dict = DEFAULT_SPEEDS,
                  destination_diary: pd.DataFrame = None,
                  trajectory: pd.DataFrame = None,
                  diary: pd.DataFrame = None,
                  start_time: datetime=datetime(2024, 1, 1, hour=8, minute=0), 
-                 dt: float = 1):
+                 dt: float = 1,
+                 seed: int = 0):
         """
         Initializes an agent in the city simulation with a trajectory and diary.
         If `trajectory` is not provided, the agent initialize with a ping at their home.
@@ -195,10 +196,23 @@ class Agent:
             Time step duration.
         """
 
+        npr.seed(seed)
+        
         self.identifier = identifier
+        self.city = city
+
+        b_types = pd.DataFrame({
+            'id': list(self.city.buildings.keys()),
+            'type': [b.building_type for b in self.city.buildings.values()]
+        }).set_index('id') # this should be an attribute of city since we end up using it a lot
+
+        if home is None:
+            home = b_types[b_types['type'] == 'home'].sample(n=1)
+        if workplace is None:
+            workplace = b_types[b_types['type'] == 'work'].sample(n=1)
+
         self.home = home
         self.workplace = workplace
-        self.city = city
 
         if destination_diary is not None:
             start_time = destination_diary['local_timestamp'][0]
@@ -479,20 +493,10 @@ class Population:
 
         npr.seed(seed)
 
-        b_types = pd.DataFrame({
-            'id': list(self.city.buildings.keys()),
-            'type': [b.building_type for b in self.city.buildings.values()]
-        }).set_index('id')  # Maybe this should be an attribute of city since we end up using it a lot
-
-        homes = b_types[b_types['type'] == 'home'].sample(n=N, replace=True)
-        workplaces = b_types[b_types['type'] == 'work'].sample(n=N, replace=True)
-
         generator = funkybob.UniqueRandomNameGenerator(members=name_count, seed=seed)
         for i in range(N):
             identifier = generator[i]
             agent = Agent(identifier=identifier,
-                          home=homes.index[i],
-                          workplace=workplaces.index[i],
                           city=self.city,
                           start_time=start_time,
                           dt=dt)  # how do we add other args?
