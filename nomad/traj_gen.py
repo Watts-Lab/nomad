@@ -290,6 +290,7 @@ class Agent:
                               seed=0,
                               ha=3/4,
                               output_bursts=False,
+                              replace_sparse_traj=False,
                               reset_traj=False):
         """
         Samples a sparse trajectory using a hierarchical non-homogeneous Poisson process.
@@ -311,6 +312,9 @@ class Agent:
             Horizontal accuracy
         output_bursts : bool
             If True, outputs the latent variables on when bursts start and end.
+        replace_sparse_traj : bool
+            if True, replaces existing sparse_traj field with the new sparsified trajectory
+            rather than appending.
         reset_traj : bool
             if True, removes all but the last row of the Agent's trajectory DataFrame.
         """
@@ -333,7 +337,7 @@ class Agent:
             
         sparse_traj = sparse_traj.set_index('unix_timestamp', drop=False)
 
-        if self.sparse_traj is None:
+        if self.sparse_traj is None or replace_sparse_traj:
             self.sparse_traj = sparse_traj
         else:
             self.sparse_traj = pd.concat([self.sparse_traj, sparse_traj], ignore_index=False)
