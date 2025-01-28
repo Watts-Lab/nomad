@@ -201,15 +201,10 @@ class Agent:
         self.identifier = identifier
         self.city = city
 
-        b_types = pd.DataFrame({
-            'id': list(self.city.buildings.keys()),
-            'type': [b.building_type for b in self.city.buildings.values()]
-        }).set_index('id') # this should be an attribute of city since we end up using it a lot
-
         if home is None:
-            home = b_types[b_types['type'] == 'home'].sample(n=1).index[0]
+            home = city.building_types[city.building_types['type'] == 'home'].sample(n=1).index[0]
         if workplace is None:
-            workplace = b_types[b_types['type'] == 'work'].sample(n=1).index[0]
+            workplace = city.building_types[city.building_types['type'] == 'work'].sample(n=1).index[0]
 
         self.home = home
         self.workplace = workplace
@@ -491,15 +486,14 @@ class Population:
         Generates N agents, with randomized attributes.
         """
 
-        npr.seed(seed)
-
         generator = funkybob.UniqueRandomNameGenerator(members=name_count, seed=seed)
         for i in range(N):
             identifier = generator[i]
             agent = Agent(identifier=identifier,
                           city=self.city,
                           start_time=start_time,
-                          dt=dt)  # how do we add other args?
+                          dt=dt,
+                          seed=seed+i)
             self.add_agent(agent)
 
     def save_pop(self,
