@@ -252,7 +252,10 @@ class City:
         # add building
         self.buildings[building.id] = building
         self.buildings_outline = unary_union([self.buildings_outline, building.geometry])
-        self.building_types.append({"id": building.id, "type": building_type}, ignore_index=True)
+        self.building_types = pd.concat(
+            [self.building_types, pd.DataFrame([{"id": building.id, "type": building_type}])],
+            ignore_index=True
+        )
 
         # blocks are no longer streets
         for block in building.blocks:
