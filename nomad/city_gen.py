@@ -296,7 +296,8 @@ class City:
         bx, by = self.dimensions
 
         if (x < 0 or x >= bx or y < 0 or y >= bx):
-            return None
+            x = max(0, min(x, bx-1))
+            y = max(0, min(y, by-1))
 
         new_coords = (int(x), int(y))
         if new_coords in self.address_book:

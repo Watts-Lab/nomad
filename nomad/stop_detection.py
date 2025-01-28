@@ -339,12 +339,15 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
     stops = pd.DataFrame(stops, columns=col_names)
 
     # compute stop duration
-    if datetime:
+    if datetime and not stops.empty:
         stops['duration'] = (stops['end_time'] - stops['start_time']).dt.total_seconds() / 60.0
     else:
         stops['duration'] = (stops['end_time'] - stops['start_time']) / 60.0
-
     
+    # Ensure start_time, end_time columns are datetime64[ns]
+    stops['start_time'] = pd.to_datetime(stops['start_time'])
+    stops['end_time'] = pd.to_datetime(stops['end_time'])
+
     if complete_output:
         return stops
     else:
@@ -748,12 +751,21 @@ def temporal_dbscan(data, time_thresh, dist_thresh, min_pts, traj_cols=None, com
             time_col_name = traj_cols['timestamp']
 
     output = _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, traj_cols, **kwargs)
-    
+
     output = output[output['cluster'] != -1]
-    
+
     complete_data = pd.merge(output, data, left_index=True, right_on=time_col_name, how='inner')
     
-    stop_table = complete_data.groupby('cluster').apply(lambda group: _stop_metrics(group, long_lat, datetime, traj_cols, complete_output), include_groups=False)
+    if complete_data.empty:
+        stop_table = pd.DataFrame({
+            'start_time': pd.Series(dtype='datetime64[ns]'),
+            'duration': pd.Series(dtype='float64'),
+            'x': pd.Series(dtype='float64'),
+            'y': pd.Series(dtype='float64')
+        }, index=pd.Index([], name='cluster'))
+    else:
+        stop_table = complete_data.groupby('cluster').apply(
+            lambda group: _stop_metrics(group, long_lat, datetime, traj_cols, complete_output), include_groups=False)
     
     return stop_table
 
