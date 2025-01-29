@@ -11,9 +11,8 @@ import sys
 import os
 import pdb
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "..")))
-import daphmeIO as loader
-import constants as constants
+import nomad.daphmeIO as loader
+import nomad.constants as constants
 
 ##########################################
 ######## STOP DETECTION FUNCTIONS ########
