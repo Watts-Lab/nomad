@@ -10,7 +10,7 @@ from pyspark.sql import functions as F
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, LongType, DoubleType
 
 import nomad.daphmeIO as loader
-from nomad.constants as constants
+import nomad.constants as constants
 from nomad.constants import DEFAULT_SCHEMA
 import pdb
 
