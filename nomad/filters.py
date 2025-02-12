@@ -217,7 +217,7 @@ def filter_to_polygon(
         users = _filtered_users(
             traj, polygon, T0, T1, k, traj_cols, from_x, from_y, crs
         )
-        return traj[traj_cols['user_id'].isin(users)]
+        return traj[traj[traj_cols['user_id']].isin(users)]
 
 
 def _filtered_users(
