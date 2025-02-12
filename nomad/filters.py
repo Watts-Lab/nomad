@@ -217,7 +217,7 @@ def filter_to_polygon(
         users = _filtered_users(
             traj, polygon, T0, T1, k, traj_cols, from_x, from_y, crs
         )
-        return traj[traj[traj_cols['user_id']].isin(users)]
+        return traj[traj_cols['user_id'].isin(users)]
 
 
 def _filtered_users(
@@ -236,7 +236,7 @@ def _filtered_users(
     k distinct days with pings in the polygon within the timeframe T0 to T1.
     """
     traj_filtered = traj[(traj[traj_cols['datetime']] >= T0) & (traj[traj_cols['datetime']] <= T1)]
-    traj_filtered[traj_cols['datetime']] = pd.to_datetime(traj_filtered[traj_cols['datetime']])
+    traj_filtered.loc[:, traj_cols['datetime']] = pd.to_datetime(traj_filtered[traj_cols['datetime']])
     traj_filtered = _in_geo(traj_filtered, from_x, from_y, polygon, crs)
     traj_filtered['date'] = traj_filtered[traj_cols['datetime']].dt.date
 
