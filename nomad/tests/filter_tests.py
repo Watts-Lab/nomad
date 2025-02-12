@@ -7,6 +7,7 @@ from pyspark.sql import SparkSession
 
 from nomad.filters import to_projection, filter_to_polygon, _in_geo
 
+
 @pytest.fixture(scope="module")
 def spark():
     spark_session = SparkSession.builder \

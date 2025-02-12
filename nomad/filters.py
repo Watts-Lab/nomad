@@ -10,7 +10,6 @@ from pyspark.sql import functions as F
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, LongType, DoubleType
 
 import nomad.daphmeIO as loader
-import nomad.constants as constants
 from nomad.constants import DEFAULT_SCHEMA
 import pdb
 
@@ -75,7 +74,7 @@ def to_projection(
         traj_cols = {}
 
     traj_cols = loader._update_schema(traj_cols, kwargs)
-    traj_cols = loader._update_schema(constants.DEFAULT_SCHEMA, traj_cols)
+    traj_cols = loader._update_schema(DEFAULT_SCHEMA, traj_cols)
 
     # Test to check for spatial columns
     loader._has_spatial_cols(traj.columns, traj_cols)
@@ -195,7 +194,7 @@ def filter_to_polygon(
         traj_cols = {}
 
     traj_cols = loader._update_schema(traj_cols, kwargs)
-    traj_cols = loader._update_schema(constants.DEFAULT_SCHEMA, traj_cols)
+    traj_cols = loader._update_schema(DEFAULT_SCHEMA, traj_cols)
 
     # Tests to check for spatial and temporal columns
     loader._has_spatial_cols(traj.columns, traj_cols)
