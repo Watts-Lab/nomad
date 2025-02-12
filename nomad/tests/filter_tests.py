@@ -23,7 +23,7 @@ def simple_df_one_user():
          [1, 39.984198, 116.319322, '2008-10-23 13:53:06'],
          [1, 39.984224, 116.319402, '2008-10-23 13:53:11'],
          [1, 39.984211, 116.319389, '2008-10-23 13:53:16']],
-        columns=['user_id', 'latitude', 'longitude', 'timestamp']
+        columns=['user_id', 'latitude', 'longitude', 'datetime']
     )
     return df
 
@@ -42,7 +42,7 @@ def simple_df_multi_user():
          [4, 39.984100, 116.319500, '2023-01-03 13:53:20'],
          [4, 39.984300, 116.319600, '2023-01-04 13:53:25'],
          [4, 39.984400, 116.319700, '2023-01-04 13:53:30']],
-        columns=['user_id', 'latitude', 'longitude', 'timestamp']
+        columns=['user_id', 'latitude', 'longitude', 'datetime']
     )
     return df
 
@@ -53,7 +53,7 @@ def test_projection_output(simple_df_one_user):
          [1, 39.984198, 116.319322, '2008-10-23 13:53:06', 1.294861e+07, 4.863646e+06],
          [1, 39.984224, 116.319402, '2008-10-23 13:53:11', 1.294862e+07, 4.863650e+06],
          [1, 39.984211, 116.319389, '2008-10-23 13:53:16', 1.294862e+07, 4.863648e+06]],
-        columns=['user_id', 'latitude', 'longitude', 'timestamp', 'x', 'y']
+        columns=['user_id', 'latitude', 'longitude', 'datetime', 'x', 'y']
     )
 
     assert isinstance(result.iloc[0]['x'], float)
@@ -203,14 +203,14 @@ def test_filter_to_polygon_outside_time_frame_multi_user(simple_df_multi_user):
     assert len(result) == 4
 
 def test_projection_with_empty_df():
-    empty_df = pd.DataFrame(columns=['user_id', 'latitude', 'longitude', 'timestamp'])
+    empty_df = pd.DataFrame(columns=['user_id', 'latitude', 'longitude', 'datetime'])
     result = to_projection(traj=empty_df)
     assert 'x' in result.columns
     assert 'y' in result.columns
     assert len(result) == 0
 
 def test_filter_to_polygon_with_empty_df():
-    empty_df = pd.DataFrame(columns=['user_id', 'latitude', 'longitude', 'timestamp'])
+    empty_df = pd.DataFrame(columns=['user_id', 'latitude', 'longitude', 'datetime'])
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
     result = filter_to_polygon(empty_df, polygon, 
                                T0='2008-10-23 00:00:00', T1='2008-10-24 00:00:00', k=1,

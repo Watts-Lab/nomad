@@ -235,10 +235,10 @@ def _filtered_users(
     Helper function that returns a series containing users who have at least 
     k distinct days with pings in the polygon within the timeframe T0 to T1.
     """
-    traj_filtered = traj[(traj[traj_cols['timestamp']] >= T0) & (traj[traj_cols['timestamp']] <= T1)]
-    traj_filtered[traj_cols['timestamp']] = pd.to_datetime(traj_filtered[traj_cols['timestamp']])
+    traj_filtered = traj[(traj[traj_cols['datetime']] >= T0) & (traj[traj_cols['datetime']] <= T1)]
+    traj_filtered[traj_cols['datetime']] = pd.to_datetime(traj_filtered[traj_cols['datetime']])
     traj_filtered = _in_geo(traj_filtered, from_x, from_y, polygon, crs)
-    traj_filtered['date'] = traj_filtered[traj_cols['timestamp']].dt.date
+    traj_filtered['date'] = traj_filtered[traj_cols['datetime']].dt.date
 
     filtered_users = (
         traj_filtered[traj_filtered['in_geo']]
