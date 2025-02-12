@@ -219,7 +219,7 @@ def filter_to_polygon(
             )
     else:
         users = _filtered_users(
-            traj, polygon, T0, T1, k, traj_cols, from_x, from_y, crs
+            traj, polygon, T0, T1, k, m, traj_cols, from_x, from_y, crs
         )
         return traj[traj[traj_cols['user_id']].isin(users)]
 
@@ -303,6 +303,7 @@ def _filter_to_polygon_spark(
     spark,
 ):
     """
+    TODO: IMPLEMENT m
     Helper function that retains only users who have at least k distinct days 
     with pings inside the geometry between T0 and T1.
     """
