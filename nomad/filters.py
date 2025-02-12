@@ -246,7 +246,7 @@ def _filtered_users(
 
     # Filter points inside the polygon
     traj_filtered = _in_geo(traj_filtered, from_x, from_y, polygon, crs)
-    traj_filtered.loc[:, 'date'] = traj_filtered[traj_cols['datetime']].dt.date  # Extract date
+    traj_filtered.loc[:, 'date'] = pd.to_datetime(traj_filtered[traj_cols['datetime']].dt.date)
 
     # Count pings per user per date inside the polygon
     daily_ping_counts = (
