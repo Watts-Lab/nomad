@@ -143,6 +143,7 @@ def filter_to_polygon(
     T0: str,
     T1: str,
     k: int = 1,
+    m: int = 1,
     traj_cols: dict = None,
     crs: str = "EPSG:3857",
     spark_session: SparkSession = None,
@@ -162,7 +163,10 @@ def filter_to_polygon(
     T1 : str
         End of the timeframe for filtering (as a string, or datetime).
     k : int
-        Minimum number of distinct days with pings inside the polygon for the user to be retained.
+        Minimum number of distinct days with at least m pings inside the polygon for the user to be retained.
+        Defaults to 1.
+    m : int
+        See `k` parameter.
         Defaults to 1.
     traj_cols : dict, optional
         A dictionary defining column mappings for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'.
@@ -226,6 +230,7 @@ def _filtered_users(
     T0,
     T1,
     k,
+    m,
     traj_cols,
     from_x,
     from_y,
@@ -233,21 +238,37 @@ def _filtered_users(
 ):
     """
     Helper function that returns a series containing users who have at least 
-    k distinct days with pings in the polygon within the timeframe T0 to T1.
+    k distinct days with at least m pings in the polygon within the timeframe T0 to T1.
     """
-    traj_filtered = traj[(traj[traj_cols['datetime']] >= T0) & (traj[traj_cols['datetime']] <= T1)]
-    traj_filtered.loc[:, traj_cols['datetime']] = pd.to_datetime(traj_filtered[traj_cols['datetime']])
-    traj_filtered = _in_geo(traj_filtered, from_x, from_y, polygon, crs)
-    traj_filtered['date'] = traj_filtered[traj_cols['datetime']].dt.date
+    # Filter by time range
+    traj_filtered = traj[(traj[traj_cols['datetime']] >= T0) & (traj[traj_cols['datetime']] <= T1)].copy()
+    traj_filtered[traj_cols['datetime']] = pd.to_datetime(traj_filtered[traj_cols['datetime']])
 
-    filtered_users = (
+    # Filter points inside the polygon
+    traj_filtered = _in_geo(traj_filtered, from_x, from_y, polygon, crs)
+    traj_filtered.loc[:, 'date'] = traj_filtered[traj_cols['datetime']].dt.date  # Extract date
+
+    # Count pings per user per date inside the polygon
+    daily_ping_counts = (
         traj_filtered[traj_filtered['in_geo']]
-        .groupby(traj_cols['user_id'])['date']
-        .nunique()
-        .reset_index()
+        .groupby([traj_cols['user_id'], 'date'])
+        .size()
+        .reset_index(name='ping_count')
     )
 
-    filtered_users = filtered_users[filtered_users['date'] >= k][traj_cols['user_id']]
+    # Filter users who have at least `m` pings on a given day
+    users_with_m_pings = daily_ping_counts[daily_ping_counts['ping_count'] >= m]
+
+    # Count distinct days per user that satisfy the `m` pings condition
+    users_with_k_days = (
+        users_with_m_pings
+        .groupby(traj_cols['user_id'])['date']
+        .nunique()
+        .reset_index(name='days_in_polygon')
+    )
+
+    # Select users who have at least `k` such days
+    filtered_users = users_with_k_days[users_with_k_days['days_in_polygon'] >= k][traj_cols['user_id']]
 
     return filtered_users
 
