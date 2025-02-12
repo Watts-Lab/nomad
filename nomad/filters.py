@@ -137,11 +137,11 @@ def _to_projection_spark(
     return result_df.toPandas()
 
 
-def filter_to_polygon(
+def filter_users(
     traj: pd.DataFrame,
-    polygon: Polygon,
     T0: str,
     T1: str,
+    polygon: Polygon = None,
     k: int = 1,
     m: int = 1,
     traj_cols: dict = None,
@@ -150,18 +150,20 @@ def filter_to_polygon(
     **kwargs
 ) -> pd.DataFrame:
     '''
-    Filters DataFrame to keep points within a specified polygon's bounds.
+    Subsets to users who have at least k distinct days with at least m pings 
+    in the polygon within the timeframe T0 to T1.
 
     Parameters
     ----------
     traj : pd.DataFrame
         Trajectory DataFrame with latitude and longitude columns.
-    polygon : shapely.geometry.Polygon
-        Polygon defining the area to retain points within.
     T0 : str
         Start of the timeframe for filtering (as a string, or datetime).
     T1 : str
         End of the timeframe for filtering (as a string, or datetime).
+    polygon : shapely.geometry.Polygon
+        Polygon defining the area to retain points within.
+        If None, no spatial filtering is applied.
     k : int
         Minimum number of distinct days with at least m pings inside the polygon for the user to be retained.
         Defaults to 1.
@@ -210,25 +212,26 @@ def filter_to_polygon(
     else:
         from_x, from_y = traj_cols['longitude'], traj_cols['latitude']
 
-    if not isinstance(polygon, Polygon):
+    # Check if polygon is a valid Shapely Polygon object
+    if (polygon is not None) and (not isinstance(polygon, Polygon)):
         raise TypeError("Polygon parameter must be a Shapely Polygon object.")
 
     if spark_session:
-        return _filter_to_polygon_spark(
-            traj, polygon.wkt, T0, T1, k, traj_cols, from_x, from_y, spark_session
+        return _filter_users_spark(
+            traj, T0, T1, polygon.wkt, k, traj_cols, from_x, from_y, spark_session
             )
     else:
         users = _filtered_users(
-            traj, polygon, T0, T1, k, m, traj_cols, from_x, from_y, crs
+            traj, T0, T1, polygon, k, m, traj_cols, from_x, from_y, crs
         )
         return traj[traj[traj_cols['user_id']].isin(users)]
 
 
 def _filtered_users(
     traj,
-    polygon,
     T0,
     T1,
+    polygon,
     k,
     m,
     traj_cols,
@@ -245,7 +248,10 @@ def _filtered_users(
     traj_filtered[traj_cols['datetime']] = pd.to_datetime(traj_filtered[traj_cols['datetime']])
 
     # Filter points inside the polygon
-    traj_filtered = _in_geo(traj_filtered, from_x, from_y, polygon, crs)
+    if polygon is not None:
+        traj_filtered = _in_geo(traj_filtered, from_x, from_y, polygon, crs)
+    else:
+        traj_filtered['in_geo'] = True
     traj_filtered.loc[:, 'date'] = pd.to_datetime(traj_filtered[traj_cols['datetime']].dt.date)
 
     # Count pings per user per date inside the polygon
@@ -291,7 +297,7 @@ def _in_geo(
     return traj
 
 
-def _filter_to_polygon_spark(
+def _filter_users_spark(
     traj,
     bounding_wkt,
     T0,
