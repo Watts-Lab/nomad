@@ -6,9 +6,9 @@ setup(
     name='nomad',
     url='https://github.com/Watts-Lab/nomad',
     version='0.0.1',
-    author='Thomas Li, Francisco Barreras',
-    author_email='thomli@sas.upenn.edu, fbarrer@sas.upenn.edu',
-    description='Placeholder',
+    author='Francisco Barreras, Thomas Li, Federico Delussu',
+    author_email='fbarrer@sas.upenn.edu, thomli@sas.upenn.edu, fedde@dtu.dk',
+    description='NOMAD provides a repository of processing and analysis methods for GPS mobility data, centralizing tools necessary for large-scale analyses. This repository will serve the dual function of facilitating research for first-time users and enhancing the replicability and robustness of existing methodologies. By collecting many such methods in a single place and documenting their assumptions and robustness metrics, NOMAD aims to enhance methodological transparency and replicability of research.',
     packages=['nomad'],
     install_requires=[
         'pandas',
@@ -18,8 +18,10 @@ setup(
         'shapely',
         'matplotlib',
         'networkx',
-        'nx_parallel'
+        'pygeohash',
+        'libgeohash'
     ],
+    package_data={'nomad': ['data/*']
     classifiers=[
         'Programming Language :: Python :: 3',
         'License :: OSI Approved :: MIT License',
