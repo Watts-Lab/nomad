@@ -20,20 +20,20 @@ from scipy.spatial.distance import pdist, squareform
 from scipy.cluster.hierarchy import fcluster
 from heapq import heappop, heappush
 
-##########################################
-###############   SPARK   ################
-##########################################
+# ##########################################
+# ###############   SPARK   ################
+# ##########################################
 
-from pyspark.sql.functions import col, lit, udf, array
-from pyspark.sql.types import DoubleType
-import numpy as np
-from scipy.spatial.distance import pdist
-from pyspark.sql.functions import collect_list
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, lead, lag, unix_timestamp, when, collect_list, count, min, max
-from pyspark.sql.window import Window
-from pyspark.sql.types import StructType, StructField, DoubleType, StringType, IntegerType, TimestampType, ArrayType
-import numpy as np
+# from pyspark.sql.functions import col, lit, udf, array
+# from pyspark.sql.types import DoubleType
+# import numpy as np
+# from scipy.spatial.distance import pdist
+# from pyspark.sql.functions import collect_list
+# from pyspark.sql import SparkSession
+# from pyspark.sql.functions import col, lead, lag, unix_timestamp, when, collect_list, count, min, max
+# from pyspark.sql.window import Window
+# from pyspark.sql.types import StructType, StructField, DoubleType, StringType, IntegerType, TimestampType, ArrayType
+# import numpy as np
 
 
 ##########################################
@@ -932,6 +932,69 @@ def _stop_metrics(grouped_data, long_lat, datetime, traj_cols, complete_output):
 ##########################################
 ########        HDBSCAN           ########
 ##########################################
+def _find_neighbors_hdbscan(data, time_thresh, dist_thresh, long_lat, datetime, traj_cols, alpha=0.5):
+    """
+    Compute a weighted adjacency matrix based on a combination of spatial and temporal factors.
+
+    Returns
+    -------
+
+    """
+    if long_lat:
+        coords = np.radians(data[[traj_cols['latitude'], traj_cols['longitude']]].values)
+    else:
+        coords = data[[traj_cols['x'], traj_cols['y']]].values
+
+    if datetime:
+        times = data[traj_cols['datetime']].astype('datetime64[s]').astype(int).values
+    else:
+        # if timestamps, we change the values to seconds
+        first_timestamp = data[traj_cols['timestamp']].iloc[0]
+        timestamp_length = len(str(first_timestamp))
+
+        if timestamp_length > 10:
+            if timestamp_length == 13:
+                times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 3
+            elif timestamp_length == 19:
+                times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 9   
+        else:
+            times = data[traj_cols['timestamp']].values
+
+    n = len(data)
+
+    # Start with an "infinity" distance (no connection)
+    adjacency_matrix = np.full((n, n), np.inf)
+
+    # Pairwise time differences (convert seconds to minutes)
+    time_diffs = np.abs(times[:, np.newaxis] - times) / 60.0
+
+    # Compute spatial distances
+    if long_lat:
+        distances = np.array([[_haversine_distance(coords[i], coords[j]) for j in range(n)] for i in range(n)])
+    else:
+        distances = np.sqrt((coords[:, 0][:, np.newaxis] - coords[:, 0])**2 + 
+                            (coords[:, 1][:, np.newaxis] - coords[:, 1])**2)
+
+    # Normalize distances
+    max_dist = np.max(distances) if np.max(distances) > 0 else 1
+    max_time = np.max(time_diffs) if np.max(time_diffs) > 0 else 1
+
+    distances /= max_dist
+    time_diffs /= max_time
+
+    # Compute weighted combination
+    weighted_distances = alpha * distances + (1 - alpha) * time_diffs
+
+    # Apply a threshold to keep only valid neighbors
+    threshold = alpha * dist_thresh / max_dist + (1 - alpha) * time_thresh / max_time
+    adjacency_matrix[weighted_distances < threshold] = weighted_distances[weighted_distances < threshold]
+
+    # Ensure diagonal is zero (distance to self)
+    np.fill_diagonal(adjacency_matrix, 0)
+
+    return adjacency_matrix
+
+
 def hierarchical_temporal_dbscan(data, time_thresh, dist_thresh, min_pts, min_cluster_size, traj_cols=None, complete_output=False, **kwargs):
     # Check if user wants long and lat
     long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs['latitude'] in data.columns and kwargs['longitude'] in data.columns
@@ -984,26 +1047,20 @@ def hierarchical_temporal_dbscan(data, time_thresh, dist_thresh, min_pts, min_cl
         else:
             time_col_name = traj_cols['timestamp']
 
-    neighbor_dict = _find_neighbors(data, time_thresh, dist_thresh, long_lat, datetime, traj_cols)
+    # weighted adjacency matrix
+    adjacency_matrix = _find_neighbors(data, time_thresh, dist_thresh, long_lat, datetime, traj_cols, 0.5)
 
-    n = len(data)
-    adjacency_matrix = np.zeros((n, n))
-
-    index_map = {timestamp: idx for idx, timestamp in enumerate(data[time_col_name].values)}
-
-    for key, neighbors in neighbor_dict.items():
-        i = index_map[key]
-        for neighbor in neighbors:
-            j = index_map[neighbor]
-            adjacency_matrix[i, j] = 1
-            adjacency_matrix[j, i] = 1
-
+    # builds a MST
     mst_edges = _construct_mst(adjacency_matrix)
-
+    
+    # turns MST into hierarchical cluster tree
     cluster_tree = _extract_hierarchy(mst_edges)
-
+    
+    # turns hierarchical cluster tree into linkage matrix
     linkage_matrix = np.array(cluster_tree)
-    cluster_labels = _fcluster(linkage_matrix, min_cluster_size, criterion="distance") - 1
+
+    # cutting tree based on space and time and getting labels for stops
+    cluster_labels = _fcluster(linkage_matrix, dist_thresh, time_thresh) - 1
 
     # Assign cluster labels and remove noise
     data['cluster'] = cluster_labels
@@ -1026,7 +1083,7 @@ def _construct_mst(adjacency_matrix):
 
     visited[0] = True
     for j in range(1, n):
-        if adjacency_matrix[0, j] > 0:
+        if adjacency_matrix[0, j] < np.inf:
             heappush(pq, (adjacency_matrix[0, j], 0, j))
 
     while len(mst_edges) < n - 1:
@@ -1041,77 +1098,98 @@ def _construct_mst(adjacency_matrix):
         mst_edges.append((weight, u, v))
 
         for w in range(n):
-            if not visited[w] and adjacency_matrix[v, w] > 0:
+            if not visited[w] and adjacency_matrix[v, w] < np.inf:
                 heappush(pq, (adjacency_matrix[v, w], v, w))
 
     return mst_edges
 
-
 def _extract_hierarchy(mst_edges):
+    # sort edges by descending weight
     sorted_edges = sorted(mst_edges, reverse=True, key=lambda x: x[0])
+    # number of original points
     n = len(sorted_edges) + 1
+
+    # initialize each point as its own cluster
     clusters = {i: i for i in range(n)}
+    # stores the hierarchical cluster structure
     cluster_tree = []
+    # start assigning new cluster IDs beyond the original n
+    cluster_count = n
 
     for weight, u, v in sorted_edges:
         root_u, root_v = clusters[u], clusters[v]
+        # only merge if they belong to different clusters
         if root_u != root_v:
-            new_cluster = max(clusters.values()) + 1
+            # assign new cluster ID
+            new_cluster = cluster_count  
+            cluster_count += 1
+
+            # update all points in both clusters to the new cluster ID
             for k in clusters.keys():
                 if clusters[k] in (root_u, root_v):
                     clusters[k] = new_cluster
-            cluster_tree.append((root_u, root_v, weight, len([x for x in clusters.values() if x == new_cluster])))
+            
+            # compute the cluster size
+            cluster_size = sum(1 for x in clusters.values() if x == new_cluster)
+
+            # append to the cluster tree
+            cluster_tree.append((root_u, root_v, weight, cluster_size))
 
     return np.array(cluster_tree)
     
 
-def _fcluster(linkage_matrix, threshold, criterion="distance"):
+def _fcluster(linkage_matrix, threshold, criterion="distance_time"):
     """
-    Extract clusters from a hierarchical clustering tree.
-    
+    Extract clusters from a hierarchical clustering tree based on spatial and temporal constraints.
+
     Parameters
     ----------
     linkage_matrix : np.ndarray
         Hierarchical clustering linkage matrix (n-1 x 4).
-        Columns: [point1, point2, distance, cluster_size].
+        Columns: [cluster1, cluster2, edge_weight, cluster_size].
     threshold : float
         Cut-off threshold for forming clusters.
     criterion : str, optional
-        - "distance": Cut tree at a specified distance.
-        - "maxclust": Extract a specific number of clusters.
-    
+        Determines the rule for cutting the hierarchy:
+        - "distance_time": Uses the weighted MST edge weight.
+        - "distance": Uses only the spatial distance.
+        - "time": Uses only temporal differences.
+
     Returns
     -------
     np.ndarray
         Cluster labels for each point.
     """
-    n = linkage_matrix.shape[0] + 1  # Number of original points
-    cluster_labels = np.arange(n)  # Initially, each point is its own cluster
-    
-    if criterion == "distance":
-        # Cut tree where distance exceeds the threshold
-        cluster_count = n  # Start with maximum number of clusters
-        for i in range(linkage_matrix.shape[0]):
-            if linkage_matrix[i, 2] > threshold:
-                break  # Stop merging if threshold exceeded
-            
-            # Merge two clusters
-            cluster1, cluster2 = int(linkage_matrix[i, 0]), int(linkage_matrix[i, 1])
-            new_cluster_id = cluster_count
-            cluster_labels[cluster_labels == cluster1] = new_cluster_id
-            cluster_labels[cluster_labels == cluster2] = new_cluster_id
-            cluster_count += 1
+    # Number of original points
+    n = linkage_matrix.shape[0] + 1
 
-    elif criterion == "maxclust":
-        # Extract exactly `threshold` clusters
-        cluster_count = n  # Start with each point as its own cluster
-        for i in range(linkage_matrix.shape[0] - (threshold - 1)):
-            cluster1, cluster2 = int(linkage_matrix[i, 0]), int(linkage_matrix[i, 1])
-            new_cluster_id = cluster_count
-            cluster_labels[cluster_labels == cluster1] = new_cluster_id
-            cluster_labels[cluster_labels == cluster2] = new_cluster_id
-            cluster_count += 1
-    
+    # Initially, each point is its own cluster
+    cluster_labels = np.arange(n)  
+    cluster_count = n  # Start with the maximum number of clusters
+
+    for i in range(linkage_matrix.shape[0]):
+        cluster1, cluster2 = int(linkage_matrix[i, 0]), int(linkage_matrix[i, 1])
+        edge_weight = linkage_matrix[i, 2]  # MST edge weight (combined space-time distance)
+
+        # Merge condition depends on the selected criterion
+        if criterion == "distance_time":
+            if edge_weight > threshold:
+                continue  # Do not merge if it exceeds threshold
+        elif criterion == "distance":
+            spatial_dist = linkage_matrix[i, 2]  # Assuming column 2 stores spatial distances
+            if spatial_dist > threshold:
+                continue  # Do not merge if spatial distance is too large
+        elif criterion == "time":
+            time_diff = linkage_matrix[i, 3]  # Assuming column 3 stores time differences
+            if time_diff > threshold:
+                continue  # Do not merge if time difference is too large
+
+        # Merge two clusters
+        new_cluster_id = cluster_count
+        cluster_labels[cluster_labels == cluster1] = new_cluster_id
+        cluster_labels[cluster_labels == cluster2] = new_cluster_id
+        cluster_count += 1  # Increment cluster ID
+
     # Normalize cluster labels (assigning consecutive numbers)
     unique_clusters = np.unique(cluster_labels)
     final_labels = np.zeros_like(cluster_labels)
