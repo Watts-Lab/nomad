@@ -19,7 +19,10 @@ setup(
         'matplotlib',
         'networkx',
         'pygeohash',
-        'libgeohash'
+        'libgeohash',
+        'funkybob',
+        'scipy',
+        'pyarrow'
     ],
     package_data={'nomad': ['data/*']
     classifiers=[

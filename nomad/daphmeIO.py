@@ -371,7 +371,8 @@ def sample_from_file(filepath, users, format="csv", traj_cols=None, **kwargs):
         df = df[df[uid_col].isin(users)]
     else:
         df = dataset.to_table(
-            filter=ds.field(uid_col).isin(users)
+            filter=ds.field(uid_col).isin(users),
+            columns=None  # to include partition columns
         ).to_pandas()
 
     return _cast_traj_cols(df, traj_cols)
