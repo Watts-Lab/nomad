@@ -10,6 +10,8 @@ from collections import defaultdict
 import sys
 import os
 import pdb
+from heapq import heappush
+from heapq import heappop
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "..")))
 import daphmeIO as loader
@@ -599,9 +601,9 @@ def dbscan(data, time_thresh, dist_thresh, min_pts, long_lat, datetime, traj_col
 
     # Initialize cluster label
     cid = -1
-
+    
     for i, cluster in cluster_df.items():
-      if cluster < 0:  
+        if cluster < 0:
             if len(neighbor_dict[i]) < min_pts:
                 # Mark as noise if below min_pts
                 cluster_df[i] = -1  
@@ -677,7 +679,7 @@ def _process_clusters(data, time_thresh, dist_thresh, min_pts, output, long_lat,
 
     # There are no clusters
     if len(cluster_df['cluster'].unique()) == 0:
-      return False
+        return False
     
     # All pings are in the same cluster
     elif len(cluster_df['cluster'].unique()) == 1:
@@ -706,7 +708,7 @@ def _process_clusters(data, time_thresh, dist_thresh, min_pts, output, long_lat,
     # There is more than one cluster
     elif len(cluster_df['cluster'].unique()) > 1:
         # Indices of the "middle" of the data
-        i, j = _extract_middle(cluster_df)  
+        i, j = _extract_middle(cluster_df)
         
         # Recursively processes clusters if there is a valid cluster in the middle
         if _process_clusters(data, time_thresh, dist_thresh, min_pts, output, long_lat, datetime, traj_cols, cluster_df = cluster_df[i:j]):
@@ -828,14 +830,14 @@ def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, traj_cols=N
         if timestamp_length > 10:
             if timestamp_length == 13:
                 warnings.warn(
-                    f"The '{data[traj_cols['timestamp']]}' column appears to be in milliseconds. "
+                    f"The '{data[traj_cols['timestamp']]}' column appears to be in milliseconds."
                     "This may lead to inconsistencies."
                 )
                 valid_times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 3
                 time_col_name = traj_cols['timestamp']
             elif timestamp_length == 19:
                 warnings.warn(
-                    f"The '{timestamp_col_name}' column appears to be in nanoseconds. "
+                    f"The '{data[traj_cols['timestamp']]}' column appears to be in nanoseconds."
                     "This may lead to inconsistencies."
                 )
                 valid_times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 9
@@ -846,7 +848,7 @@ def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, traj_cols=N
 
     # Getting the labels through _process_clusters
     data_temp = data.copy()
-    data_temp.index = valid_times        
+    data_temp.index = valid_times
 
     output = pd.DataFrame({'cluster': -1, 'core': -1}, index=valid_times)
 
@@ -934,11 +936,9 @@ def _stop_metrics(grouped_data, long_lat, datetime, traj_cols, complete_output):
 ##########################################
 def _find_neighbors_hdbscan(data, time_thresh, dist_thresh, long_lat, datetime, traj_cols, alpha=0.5):
     """
-    Compute a weighted adjacency matrix based on a combination of spatial and temporal factors.
-
-    Returns
-    -------
-
+    - Computes pairwise distances between points based on space & time.
+    - If two points are connected, the matrix stores the weighted distance.
+    - Returns a weighted adjacency matrix, where edges represent spatiotemporal proximity.
     """
     if long_lat:
         coords = np.radians(data[[traj_cols['latitude'], traj_cols['longitude']]].values)
@@ -962,9 +962,8 @@ def _find_neighbors_hdbscan(data, time_thresh, dist_thresh, long_lat, datetime, 
 
     n = len(data)
 
-    # Start with an "infinity" distance (no connection)
-    adjacency_matrix = np.full((n, n), np.inf)
-
+    adjacency_matrix = {t: {} for t in times}
+    
     # Pairwise time differences (convert seconds to minutes)
     time_diffs = np.abs(times[:, np.newaxis] - times) / 60.0
 
@@ -982,20 +981,282 @@ def _find_neighbors_hdbscan(data, time_thresh, dist_thresh, long_lat, datetime, 
     distances /= max_dist
     time_diffs /= max_time
 
-    # Compute weighted combination
+    # compute weighted combination
     weighted_distances = alpha * distances + (1 - alpha) * time_diffs
 
-    # Apply a threshold to keep only valid neighbors
+    # apply a threshold to keep only valid neighbors
     threshold = alpha * dist_thresh / max_dist + (1 - alpha) * time_thresh / max_time
-    adjacency_matrix[weighted_distances < threshold] = weighted_distances[weighted_distances < threshold]
-
-    # Ensure diagonal is zero (distance to self)
-    np.fill_diagonal(adjacency_matrix, 0)
-
+    
+    for i, t1 in enumerate(times):
+        for j, t2 in enumerate(times):
+            if weighted_distances[i, j] < threshold and i != j:
+                adjacency_matrix[t1][t2] = weighted_distances[i, j]
+    
     return adjacency_matrix
 
+def _construct_mst(adjacency_matrix):
+    """
+    - Uses Prim’s algorithm to construct a Minimum Spanning Tree (MST).
+    - Works with a dictionary-based adjacency matrix indexed by timestamps.
+    - The edges retain spatiotemporal weights computed earlier.
+    - Ensures that every point remains part of the same structure.
 
-def hierarchical_temporal_dbscan(data, time_thresh, dist_thresh, min_pts, min_cluster_size, traj_cols=None, complete_output=False, **kwargs):
+    Parameters
+    ----------
+    adjacency_matrix : dict of dict
+        A dictionary where keys are timestamps and values are dictionaries of {neighbor_timestamp: weight}.
+
+    Returns
+    -------
+    list of tuples
+        A list of MST edges in the format: (weight, timestamp1, timestamp2).
+    """
+    timestamps = list(adjacency_matrix.keys())
+    mst_edges = []
+    visited = {t: False for t in timestamps}
+    pq = []
+
+    def find_next_start():
+        for t in timestamps:
+            if not visited[t] and adjacency_matrix[t]:
+                return t
+        return None
+
+    start_node = find_next_start()
+
+    while start_node is not None:
+        visited[start_node] = True
+        for neighbor, weight in adjacency_matrix[start_node].items():
+            heappush(pq, (weight, start_node, neighbor))
+
+        while pq:
+            weight, u, v = heappop(pq)
+
+            # only skip edges where both nodes are visited
+            if visited[u] and visited[v]:
+                continue
+
+            mst_edges.append((weight, u, v))
+
+            # visit the unvisited node
+            next_node = v if not visited[v] else u
+            visited[next_node] = True
+
+            for neighbor, edge_weight in adjacency_matrix[next_node].items():
+                if not visited[neighbor]:
+                    heappush(pq, (edge_weight, next_node, neighbor))
+
+        start_node = find_next_start()
+
+    return mst_edges
+
+def _extract_hierarchy(mst_edges, all_timestamps):
+    """
+    - Sorts MST edges by decreasing weight (weakest connections are removed first).
+    - Start with individual points as their own clusters.
+    - Iteratively merges clusters, creating a tree-like structure (dendrogram).
+    - Assigns `-1` to completely isolated timestamps (i.e., those missing from MST).
+    
+    Parameters
+    ----------
+    mst_edges : list of tuples
+        A list of edges in the format: (weight, timestamp1, timestamp2).
+    all_timestamps : set
+        The full set of timestamps that should be included in the clustering process.
+    
+    Returns
+    -------
+    np.ndarray
+        A hierarchical linkage matrix representing the clustering process.
+    dict
+        A dictionary mapping timestamps to their cluster labels (including `-1` for noise).
+    """
+
+    # sort edges by descending weight
+    sorted_edges = sorted(mst_edges, reverse=True, key=lambda x: x[0])
+
+    # initialize all timestamps as their own cluster
+    clusters = {t: t for t in all_timestamps}
+    cluster_tree = []
+    cluster_count = max(all_timestamps) + 1
+
+    for weight, u, v in sorted_edges:
+        root_u, root_v = clusters[u], clusters[v]
+
+        # only merge if they belong to different clusters
+        if root_u != root_v:
+            new_cluster = cluster_count
+            cluster_count += 1
+
+            # update all points in both clusters to the new cluster ID
+            for key in clusters.keys():
+                if clusters[key] in (root_u, root_v):
+                    clusters[key] = new_cluster
+
+            # compute cluster size
+            cluster_size = sum(1 for x in clusters.values() if x == new_cluster)
+
+            # append to the cluster tree
+            cluster_tree.append((root_u, root_v, weight, cluster_size))
+
+            
+    # identify timestamps that were never merged (completely isolated)
+    timestamps_in_mst = set()
+    for _, u, v in mst_edges:
+        timestamps_in_mst.update([u, v])
+
+    isolated_timestamps = all_timestamps - timestamps_in_mst
+
+    for t in isolated_timestamps:
+        clusters[t] = -1
+
+    return np.array(cluster_tree), clusters
+
+def _flat_cut(linkage_matrix, clusters, threshold, min_cluster_size=5):
+    """
+    Perform a flat cut of the hierarchical clustering at the specified threshold.
+    
+    Parameters
+    ----------
+    linkage_matrix : np.ndarray
+        The hierarchical linkage matrix from extract_hierarchy.
+    clusters : dict
+        Dictionary mapping timestamps to their initial cluster IDs.
+    threshold : float
+        The weight threshold at which to cut the dendrogram.
+    min_cluster_size : int, default=5
+        Minimum number of points required to form a valid cluster.
+        
+    Returns
+    -------
+    dict
+        A dictionary mapping timestamps to their final cluster labels after the cut.
+        Noise points are labeled as -1.
+    """
+    result_clusters = clusters.copy()
+    
+    # If we have an empty linkage matrix, return the original clusters
+    if len(linkage_matrix) == 0:
+        return result_clusters
+    
+    # Process the edges of the linkage matrix in order (from low to high weight)
+    for i in range(len(linkage_matrix)):
+        left, right, weight, size = linkage_matrix[i]
+        
+        # Only process edges with weights below the threshold
+        if weight <= threshold:
+            # Update all points in the 'right' cluster to be in the 'left' cluster
+            for ts in result_clusters:
+                if result_clusters[ts] == right:
+                    result_clusters[ts] = left
+    
+    # Count the sizes of each cluster
+    cluster_sizes = {}
+    for cluster_id in result_clusters.values():
+        if cluster_id == -1:
+            continue
+        if cluster_id not in cluster_sizes:
+            cluster_sizes[cluster_id] = 0
+        cluster_sizes[cluster_id] += 1
+    
+    # Mark clusters smaller than min_cluster_size as noise (-1)
+    for ts in result_clusters:
+        cluster_id = result_clusters[ts]
+        if cluster_id != -1 and cluster_sizes.get(cluster_id, 0) < min_cluster_size:
+            result_clusters[ts] = -1
+    
+    # Relabel the clusters to be consecutive integers starting from 0
+    valid_clusters = sorted({c for c in result_clusters.values() if c != -1})
+    mapping = {old_id: new_id for new_id, old_id in enumerate(valid_clusters)}
+    mapping[-1] = -1  # Keep noise points as -1
+    
+    for ts in result_clusters:
+        result_clusters[ts] = mapping[result_clusters[ts]]
+    
+    return result_clusters
+
+def _find_optimal_threshold(linkage_matrix, clusters, min_cluster_size=5, percentiles=[5, 10, 25, 50, 75, 90, 95]):
+    """
+    Find the optimal threshold for flat cutting by evaluating a subset of possible thresholds
+    based on percentile selection.
+
+    Parameters
+    ----------
+    linkage_matrix : np.ndarray
+        The hierarchical linkage matrix.
+    clusters : dict
+        Dictionary mapping timestamps to their cluster IDs.
+    min_cluster_size : int, default=5
+        Minimum cluster size to consider valid.
+    percentiles : list, default=[5, 10, 25, 50, 75, 90, 95]
+        Percentile values to select a subset of thresholds.
+
+    Returns
+    -------
+    float
+        The optimal threshold value.
+    """
+    if len(linkage_matrix) == 0:
+        return 0.0  # Return default if no valid threshold is found
+
+    # Step 1: Extract unique weights from the linkage matrix
+    all_thresholds = np.unique(linkage_matrix[:, 2])
+
+    if len(all_thresholds) == 0:
+        return 0.0  # No valid thresholds
+
+    # Step 2: Select a subset of weights based on percentiles
+    sampled_thresholds = np.percentile(all_thresholds, percentiles)
+
+    # Cache results from `_flat_cut` to avoid redundant computation
+    flat_cut_results = {}
+
+    results = []
+    for threshold in sampled_thresholds:
+        # If already computed, reuse result
+        if threshold in flat_cut_results:
+            flat_clusters = flat_cut_results[threshold]
+        else:
+            flat_clusters = _flat_cut(linkage_matrix, clusters, threshold, min_cluster_size)
+            flat_cut_results[threshold] = flat_clusters  # Cache result
+
+        # Count valid clusters (excluding noise)
+        valid_cluster_ids = set(flat_clusters.values()) - {-1}
+        num_clusters = len(valid_cluster_ids)
+
+        # Compute noise ratio (fraction of points labeled as noise)
+        total_points = len(flat_clusters)
+        assigned_points = sum(1 for c in flat_clusters.values() if c != -1)
+        noise_ratio = 1.0 - (assigned_points / total_points if total_points > 0 else 0)
+
+        # Compute stability (gap to the next threshold)
+        if threshold == sampled_thresholds[-1]:
+            stability = 0  # Last threshold has no stability measure
+        else:
+            next_idx = np.searchsorted(sampled_thresholds, threshold) + 1
+            stability = sampled_thresholds[next_idx] - threshold if next_idx < len(sampled_thresholds) else 0
+
+        # Step 3: Compute a score to determine the best threshold
+        score = (
+            (num_clusters * 0.4) +  # Favor more clusters
+            ((1 - noise_ratio) * 0.4) +  # Favor lower noise
+            (stability * 5.0 * 0.2)  # Favor stable thresholds
+        )
+
+        results.append((threshold, num_clusters, noise_ratio, stability, score))
+
+    # Step 4: Pick the best threshold based on the highest score
+    results.sort(key=lambda x: x[4], reverse=True)  # Sort by score descending
+
+    if not results:
+        return sampled_thresholds[0] if len(sampled_thresholds) > 0 else 0.0  # Return first threshold if no valid result
+
+    best_threshold = results[0][0]
+    return best_threshold
+
+def hierarchical_temporal_dbscan(traj, time_thresh, dist_thresh, min_cluster_size = 10, traj_cols=None, complete_output=False, **kwargs):
+    data = traj.copy()
+    
     # Check if user wants long and lat
     long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs['latitude'] in data.columns and kwargs['longitude'] in data.columns
 
@@ -1027,6 +1288,8 @@ def hierarchical_temporal_dbscan(data, time_thresh, dist_thresh, min_pts, min_cl
     # Timestamp handling
     if datetime:
         time_col_name = traj_cols['datetime']
+        # times = data[traj_cols['datetime']].astype('datetime64[s]').astype(int).values
+        data['mapped_time'] = data[traj_cols['datetime']].astype('datetime64[s]').astype(int)
     else:
         first_timestamp = data[traj_cols['timestamp']].iloc[0]
         timestamp_length = len(str(first_timestamp))
@@ -1038,162 +1301,50 @@ def hierarchical_temporal_dbscan(data, time_thresh, dist_thresh, min_pts, min_cl
                     "This may lead to inconsistencies."
                 )
                 time_col_name = traj_cols['timestamp']
+                data['mapped_time'] = data[traj_cols['timestamp']].values.view('int64') // 10**3
+                # times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 3
             elif timestamp_length == 19:
                 warnings.warn(
                     f"The '{time_col_name}' column appears to be in nanoseconds. "
                     "This may lead to inconsistencies."
                 )
                 time_col_name = traj_cols['timestamp']
+                data['mapped_time'] = data[traj_cols['timestamp']].values.view('int64') // 10**9
+                # times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 9
         else:
             time_col_name = traj_cols['timestamp']
+            data['mapped_time'] = data[traj_cols['timestamp']].values.view('int64')
+            # times = data[traj_cols['timestamp']].values
 
-    # weighted adjacency matrix
-    adjacency_matrix = _find_neighbors(data, time_thresh, dist_thresh, long_lat, datetime, traj_cols, 0.5)
+    # Build weighted adjacency matrix
+    adjacency_matrix = _find_neighbors_hdbscan(data, time_thresh, dist_thresh, long_lat, datetime, traj_cols, alpha=0.5)
 
-    # builds a MST
+    # Construct MST
     mst_edges = _construct_mst(adjacency_matrix)
-    
-    # turns MST into hierarchical cluster tree
-    cluster_tree = _extract_hierarchy(mst_edges)
-    
-    # turns hierarchical cluster tree into linkage matrix
-    linkage_matrix = np.array(cluster_tree)
 
-    # cutting tree based on space and time and getting labels for stops
-    cluster_labels = _fcluster(linkage_matrix, dist_thresh, time_thresh) - 1
+    # Extract hierarchical tree structure
+    cluster_tree, clusters = _extract_hierarchy(mst_edges, set(data['mapped_time'].unique()))
 
-    # Assign cluster labels and remove noise
-    data['cluster'] = cluster_labels
+    # Find the optimal threshold for flat cutting
+    optimal_threshold = _find_optimal_threshold(cluster_tree, clusters, min_cluster_size)
+
+    # Apply flat cut at optimal threshold
+    final_clusters = _flat_cut(cluster_tree, clusters, optimal_threshold, min_cluster_size)
+
+    # Assign cluster labels based on `mapped_time`
+    data['cluster'] = data['mapped_time'].map(final_clusters).fillna(-1).astype(int)
+    
+    hdbscan_labels = data[[time_col_name, 'cluster']]
+    hdbscan_labels = hdbscan_labels.set_index(traj_cols['datetime'])
+    hdbscan_labels.index.name = None
+
+    # Remove noise (-1 clusters)
     data = data[data['cluster'] != -1]
 
     # Compute stop metrics per cluster
     stop_table = data.groupby('cluster').apply(
-        lambda group: _stop_metrics(group, long_lat, datetime, traj_cols, complete_output),
-        include_groups=False
-    )
-
-    return stop_table
-
-
-def _construct_mst(adjacency_matrix):
-    n = adjacency_matrix.shape[0]
-    mst_edges = []
-    visited = np.zeros(n, dtype=bool)
-    pq = []
-
-    visited[0] = True
-    for j in range(1, n):
-        if adjacency_matrix[0, j] < np.inf:
-            heappush(pq, (adjacency_matrix[0, j], 0, j))
-
-    while len(mst_edges) < n - 1:
-        while pq:
-            weight, u, v = heappop(pq)
-            if not visited[v]:
-                break
-        else:
-            break
-
-        visited[v] = True
-        mst_edges.append((weight, u, v))
-
-        for w in range(n):
-            if not visited[w] and adjacency_matrix[v, w] < np.inf:
-                heappush(pq, (adjacency_matrix[v, w], v, w))
-
-    return mst_edges
-
-def _extract_hierarchy(mst_edges):
-    # sort edges by descending weight
-    sorted_edges = sorted(mst_edges, reverse=True, key=lambda x: x[0])
-    # number of original points
-    n = len(sorted_edges) + 1
-
-    # initialize each point as its own cluster
-    clusters = {i: i for i in range(n)}
-    # stores the hierarchical cluster structure
-    cluster_tree = []
-    # start assigning new cluster IDs beyond the original n
-    cluster_count = n
-
-    for weight, u, v in sorted_edges:
-        root_u, root_v = clusters[u], clusters[v]
-        # only merge if they belong to different clusters
-        if root_u != root_v:
-            # assign new cluster ID
-            new_cluster = cluster_count  
-            cluster_count += 1
-
-            # update all points in both clusters to the new cluster ID
-            for k in clusters.keys():
-                if clusters[k] in (root_u, root_v):
-                    clusters[k] = new_cluster
-            
-            # compute the cluster size
-            cluster_size = sum(1 for x in clusters.values() if x == new_cluster)
-
-            # append to the cluster tree
-            cluster_tree.append((root_u, root_v, weight, cluster_size))
-
-    return np.array(cluster_tree)
+        lambda group: _stop_metrics(group, long_lat, datetime, traj_cols, complete_output), include_groups=False)
     
-
-def _fcluster(linkage_matrix, threshold, criterion="distance_time"):
-    """
-    Extract clusters from a hierarchical clustering tree based on spatial and temporal constraints.
-
-    Parameters
-    ----------
-    linkage_matrix : np.ndarray
-        Hierarchical clustering linkage matrix (n-1 x 4).
-        Columns: [cluster1, cluster2, edge_weight, cluster_size].
-    threshold : float
-        Cut-off threshold for forming clusters.
-    criterion : str, optional
-        Determines the rule for cutting the hierarchy:
-        - "distance_time": Uses the weighted MST edge weight.
-        - "distance": Uses only the spatial distance.
-        - "time": Uses only temporal differences.
-
-    Returns
-    -------
-    np.ndarray
-        Cluster labels for each point.
-    """
-    # Number of original points
-    n = linkage_matrix.shape[0] + 1
-
-    # Initially, each point is its own cluster
-    cluster_labels = np.arange(n)  
-    cluster_count = n  # Start with the maximum number of clusters
-
-    for i in range(linkage_matrix.shape[0]):
-        cluster1, cluster2 = int(linkage_matrix[i, 0]), int(linkage_matrix[i, 1])
-        edge_weight = linkage_matrix[i, 2]  # MST edge weight (combined space-time distance)
-
-        # Merge condition depends on the selected criterion
-        if criterion == "distance_time":
-            if edge_weight > threshold:
-                continue  # Do not merge if it exceeds threshold
-        elif criterion == "distance":
-            spatial_dist = linkage_matrix[i, 2]  # Assuming column 2 stores spatial distances
-            if spatial_dist > threshold:
-                continue  # Do not merge if spatial distance is too large
-        elif criterion == "time":
-            time_diff = linkage_matrix[i, 3]  # Assuming column 3 stores time differences
-            if time_diff > threshold:
-                continue  # Do not merge if time difference is too large
-
-        # Merge two clusters
-        new_cluster_id = cluster_count
-        cluster_labels[cluster_labels == cluster1] = new_cluster_id
-        cluster_labels[cluster_labels == cluster2] = new_cluster_id
-        cluster_count += 1  # Increment cluster ID
-
-    # Normalize cluster labels (assigning consecutive numbers)
-    unique_clusters = np.unique(cluster_labels)
-    final_labels = np.zeros_like(cluster_labels)
-    for new_label, old_label in enumerate(unique_clusters):
-        final_labels[cluster_labels == old_label] = new_label + 1
-
-    return final_labels
+    stop_table.index.name = None
+    # Return stop metrics + timestamps with final cluster labels
+    return stop_table, hdbscan_labels
