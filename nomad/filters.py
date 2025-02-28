@@ -77,10 +77,9 @@ def to_projection(
     else:
         proj_cols = _to_projection(df[lon_col], df[lat_col], from_crs, to_crs)
         result_df = df.copy()
-        result_df['x'] = proj_cols['x']
-        result_df['y'] = proj_cols['y']
+        result_df['x'] = list(proj_cols['x'])
+        result_df['y'] = list(proj_cols['y'])
         return result_df
-
 
 def _to_projection(
     long_col,
