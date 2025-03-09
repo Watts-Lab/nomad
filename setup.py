@@ -22,7 +22,8 @@ setup(
         'libgeohash',
         'funkybob',
         'scipy',
-        'pyarrow'
+        'pyarrow',
+        's3fs'
     ],
     package_data={'nomad': ['data/*']
     classifiers=[

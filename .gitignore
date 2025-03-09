@@ -12,3 +12,4 @@
 .ipynb_checkpoints/
 # Exclude pycache
 __pycache__/
+**/*.png

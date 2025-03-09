@@ -1,17 +1,22 @@
-import pyarrow.parquet as pq
 import pandas as pd
+import geopandas as gpd
+import pyspark as psp
 from functools import partial
 import multiprocessing
 from multiprocessing import Pool
+import warnings
 import re
 from pyspark.sql import SparkSession
+from pyspark.sql.types import TimestampType, IntegerType, LongType, FloatType, DoubleType, StringType
+
 import sys
 import os
 import pyarrow.compute as pc
 import pyarrow.dataset as ds
 # from . import constants
-import nomad.constants
+from nomad import constants
 
+# utils
 def _update_schema(original, new_labels):
     
     updated_schema = dict(original)
@@ -19,6 +24,43 @@ def _update_schema(original, new_labels):
         if label in constants.DEFAULT_SCHEMA:
             updated_schema[label] = new_labels[label]
     return updated_schema
+
+def _is_traj_df(df, traj_cols = None, **kwargs):
+    
+    if not (isinstance(df, pd.DataFrame) or isinstance(df, gpd.GeoDataFrame)):
+        return False
+    
+    if not traj_cols:
+        traj_cols = _update_schema({}, kwargs) #kwargs ignored if traj_cols is passed
+        
+    traj_cols = _update_schema(constants.DEFAULT_SCHEMA, traj_cols)
+
+    if not _has_spatial_cols(df.columns, traj_cols) or not _has_time_cols(df.columns, traj_cols):
+        return False
+
+    # check datetime type
+    if 'datetime' in traj_cols and traj_cols['datetime'] in df.columns:
+        if not pd.core.dtypes.common.is_datetime64_any_dtype(df[traj_cols['datetime']].dtype):
+            return False
+
+    # check timestamp is integer type
+    if 'timestamp' in traj_cols and traj_cols['timestamp'] in df.columns:
+        if not pd.core.dtypes.common.is_integer_dtype(df[traj_cols['timestamp']].dtype):
+            return False
+
+    float_cols = ['latitude', 'longitude', 'x', 'y']
+    for col in float_cols:
+        if col in traj_cols and traj_cols[col] in df.columns:
+            if not pd.core.dtypes.common.is_float_dtype(df[traj_cols[col]].dtype):
+                return False
+
+    string_cols = ['user_id', 'geohash']
+    for col in string_cols:
+        if col in traj_cols and traj_cols[col] in df.columns:
+            if not pd.core.dtypes.common.is_string_dtype(df[traj_cols[col]].dtype):
+                return False
+
+    return True
 
 def _has_time_cols(col_names, traj_cols):
     
@@ -63,10 +105,137 @@ def _has_user_cols(col_names, traj_cols):
     
     return user_exists
 
+# SPARK check is traj_dataframe
+
+def _is_traj_df_spark(df, traj_cols = None, **kwargs):
+    
+    if not (isinstance(df, psp.sql.dataframe.DataFrame)):
+        return False
+    
+    if not traj_cols:
+        traj_cols = _update_schema({}, kwargs) #kwargs ignored if traj_cols is passed
+        
+    traj_cols = _update_schema(constants.DEFAULT_SCHEMA, traj_cols)
+    
+    if not _has_spatial_cols(df.columns, traj_cols) or not _has_time_cols(df.columns, traj_cols):
+        return False
+
+    # check datetime type
+    if 'datetime' in traj_cols and traj_cols['datetime'] in df.columns:
+            if not isinstance(df.schema[traj_cols['datetime']].dataType, TimestampType):
+                return False
+
+    # check timestamp is integer type
+    if 'timestamp' in traj_cols and traj_cols['timestamp'] in df.columns:
+        if not isinstance(df.schema[traj_cols['timestamp']].dataType, (IntegerType, LongType, TimestampType)):
+            return False
+
+    # Check float columns
+    float_cols = ['latitude', 'longitude', 'x', 'y']
+    for col in float_cols:
+        if col in traj_cols and traj_cols[col] in df.columns:
+            if not isinstance(df.schema[traj_cols[col]].dataType, (FloatType, DoubleType)):
+                return False
+
+    # Check string columns
+    string_cols = ['user_id', 'geohash']
+    for col in string_cols:
+        if col in traj_cols and traj_cols[col] in df.columns:
+            if not isinstance(df.schema[traj_cols[col]].dataType, StringType):
+                return False
+
+    return True
+
+
+# Cast data types and address datetime issues
+
+def _cast_traj_cols_spark(df, traj_cols):
+    """
+    Casts specified trajectory columns in a loaded Spark DataFrame to their expected data types, 
+    with warnings for timestamp precision and timezone-naive datetimes.
+
+    Parameters
+    ----------
+    df : pyspark.sql.DataFrame
+        The DataFrame containing the data to be cast.
+    traj_cols : dict
+        Dictionary mapping expected trajectory column names 
+        (e.g., 'latitude', 'longitude', 'timestamp', 'datetime', 'user_id', 'geohash')
+        to the actual column names in the DataFrame.
+
+    Returns
+    -------
+    pyspark.sql.DataFrame
+        The DataFrame with specified columns cast to their expected types.
+
+    Notes
+    -----
+    - The 'datetime' column is cast to TimestampType if not already of that type.
+      A warning is issued if the first row appears timezone-naive.
+    - The 'timestamp' column is cast to IntegerType, with a warning for possible millisecond or nanosecond precision.
+    - Spatial columns ('latitude', 'longitude', 'x', 'y') are cast to FloatType if necessary.
+    - User identifier and geohash columns are cast to StringType.
+    """
+
+    # Cast 'datetime' column appropriately
+    if 'datetime' in traj_cols and traj_cols['datetime'] in df.columns:
+        datetime_col = traj_cols['datetime']
+        if not isinstance(df.schema[datetime_col].dataType, TimestampType):
+            df = df.withColumn(datetime_col, col(datetime_col).cast(TimestampType()))
+        
+        # Check if the first row is timezone-naive (PySpark doesn't store tz info)
+        first_row = df.select(datetime_col).first()
+        if first_row and first_row[0] is not None:
+            if first_row[0].tzinfo is None:
+                warnings.warn(
+                    f"The '{datetime_col}' column appears to be timezone-naive. "
+                    "Consider localizing to a timezone to avoid inconsistencies."
+                )
+
+    # Cast 'timestamp' column to IntegerType and check precision
+    if 'timestamp' in traj_cols and traj_cols['timestamp'] in df.columns:
+        timestamp_col = traj_cols['timestamp']
+        if not isinstance(df.schema[timestamp_col].dataType, (IntegerType, LongType)):
+            df = df.withColumn(timestamp_col, col(timestamp_col).cast(IntegerType()))
+
+        # Check for millisecond/nanosecond values by inspecting first row
+        first_timestamp = df.select(timestamp_col).first()
+        if first_timestamp and first_timestamp[0] is not None:
+            timestamp_length = len(str(first_timestamp[0]))
+            
+            if timestamp_length == 13:
+                warnings.warn(
+                    f"The '{timestamp_col}' column appears to be in milliseconds. "
+                    "This may lead to inconsistencies, converting to seconds is recommended."
+                )
+            elif timestamp_length == 19:
+                warnings.warn(
+                    f"The '{timestamp_col}' column appears to be in nanoseconds. "
+                    "This may lead to inconsistencies, converting to seconds is recommended."
+                )
+
+    # Cast spatial columns to FloatType or DoubleType
+    float_cols = ['latitude', 'longitude', 'x', 'y']
+    for col_name in float_cols:
+        if col_name in traj_cols and traj_cols[col_name] in df.columns:
+            actual_col = traj_cols[col_name]
+            if not isinstance(df.schema[actual_col].dataType, (FloatType, DoubleType)):
+                df = df.withColumn(actual_col, col(actual_col).cast(FloatType()))
+
+    # Cast identifier and geohash columns to StringType
+    string_cols = ['user_id', 'geohash']
+    for col_name in string_cols:
+        if col_name in traj_cols and traj_cols[col_name] in df.columns:
+            actual_col = traj_cols[col_name]
+            if not isinstance(df.schema[actual_col].dataType, StringType):
+                df = df.withColumn(actual_col, col(actual_col).cast(StringType()))
+
+    return df
+    
 
 def _cast_traj_cols(df, traj_cols):
     """
-    Casts specified trajectory columns in a DataFrame to their expected data types, 
+    Casts specified trajectory columns in a loaded DataFrame to their expected data types, 
     with warnings for timestamp precision and timezone-naive datetimes.
 
     Parameters
@@ -85,7 +254,7 @@ def _cast_traj_cols(df, traj_cols):
 
     Notes
     -----
-    - The 'datetime' column is converted to datetime if not already of a datetime type.
+    - The 'datetime' column is cast to datetime.datetime if not already of a datetime type.
       A warning is issued if it is timezone-naive.
     - The 'timestamp' column is expected to contain Unix timestamps in seconds.
       If values appear to be in milliseconds or nanoseconds, a warning will recommend conversion.
@@ -93,7 +262,7 @@ def _cast_traj_cols(df, traj_cols):
     - User identifier and geohash columns are cast to strings.
     """
 
-    # Convert 'datetime' column to datetime, warn if timezone-naive
+    # cast 'datetime' column to datetime, warn if timezone-naive
     if 'datetime' in traj_cols and traj_cols['datetime'] in df:
         if not pd.core.dtypes.common.is_datetime64_any_dtype(df[traj_cols['datetime']].dtype):
             df[traj_cols['datetime']] = pd.to_datetime(df[traj_cols['datetime']])
@@ -105,7 +274,7 @@ def _cast_traj_cols(df, traj_cols):
                     "Consider localizing to a timezone to avoid inconsistencies."
                 )
 
-    # Convert 'timestamp' column to integer, check precision and recommend seconds
+    # cast 'timestamp' column to integer, check precision and recommend seconds
     if 'timestamp' in traj_cols and traj_cols['timestamp'] in df:
         timestamp_col_name = traj_cols['timestamp']
         if not pd.core.dtypes.common.is_integer_dtype(df[timestamp_col_name].dtype):
@@ -143,43 +312,14 @@ def _cast_traj_cols(df, traj_cols):
 
     return df
 
-def _is_traj_df(df, traj_cols = None, **kwargs):
-    
-    if not (isinstance(df, pd.DataFrame) or isinstance(df, gpd.GeoDataFrame)):
-        return False
-    
-    if not traj_cols:
-        traj_cols = _update_schema({}, kwargs) #kwargs ignored if traj_cols is passed
-        
-    traj_cols = _update_schema(constants.DEFAULT_SCHEMA, traj_cols)
-    
-    if not _has_traj_cols(df, traj_cols):
-        return False
-    
-    if 'datetime' in traj_cols and traj_cols['datetime'] in df:
-        if not pd.core.dtypes.common.is_datetime64_any_dtype(df[traj_cols['datetime']].dtype):
-            return False
-    elif 'timestamp' in traj_cols and traj_cols['timestamp'] in df:
-        if not pd.core.dtypes.common.is_integer_dtype(df[traj_cols['timestamp']].dtype):
-            return False
+# spark casting functions (only on schema)    
 
-    float_cols = ['latitude', 'longitude', 'x', 'y']
-    for col in float_cols:
-        if col in traj_cols and traj_cols[col] in df:
-            if not pd.core.dtypes.common.is_float_dtype(df[traj_cols[col]].dtype):
-                return False
-
-    string_cols = ['user_id', 'geohash']
-    for col in string_cols:
-        if col in traj_cols and traj_cols[col] in df:
-            if not pd.core.dtypes.common.is_string_dtype(df[traj_cols[col]].dtype):
-                return False
-
-    return True
-
-
-def from_pandas(df, traj_cols=None, spark_enabled=False, **kwargs):
-    
+def from_pandas(df, traj_cols=None, spark=None, **kwargs):
+    """
+    Parameters
+    ----------
+    spark : pyspark spark session
+    """
     if not (isinstance(df, pd.DataFrame) or isinstance(df, gpd.GeoDataFrame)):
         raise TypeError(
             "Expected the data argument to be either a pandas DataFrame or a GeoPandas GeoDataFrame."
