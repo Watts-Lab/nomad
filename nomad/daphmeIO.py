@@ -19,7 +19,6 @@ import pyarrow.dataset as ds
 from nomad import constants
 
 # utils
-
 def _update_schema(original, new_labels):
     updated_schema = dict(original)
     for label in new_labels:
