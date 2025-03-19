@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from matplotlib import cm
 import networkx as nx
-import nx_parallel as nxp
+
 
 import pdb
 
@@ -323,7 +323,7 @@ class City:
             self.street_graph[coords] = [neighbor for neighbor in neighbors if neighbor in self.streets]
 
         G = nx.from_dict_of_lists(self.street_graph)
-        sp = dict(nxp.all_pairs_shortest_path(G))
+        sp = dict(nx.all_pairs_shortest_path(G))
         self.shortest_paths = {node: paths for node, paths in sp.items()}
 
         data = [

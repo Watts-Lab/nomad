@@ -9,7 +9,7 @@ from pandas.testing import assert_frame_equal
 from shapely.geometry import Polygon
 from pyspark.sql import SparkSession
 
-from ..filters import to_projection, filter_to_polygon, _in_geo
+from nomad.filters import to_projection, filter_to_polygon, _in_geo
 
 @pytest.fixture(scope="module")
 def spark():

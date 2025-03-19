@@ -42,9 +42,9 @@ def to_projection(
     y : str, optional
         Name of the y coordinate column.
     from_crs : str, optional
-        EPSG code for the original CRS (default is "EPSG:4326").
+        EPSG code for the original CRS (default is "EPSG:4326", spherical).
     to_crs : str, optional
-        EPSG code for the target CRS (default is "EPSG:3857").
+        EPSG code for the target CRS (default is "EPSG:3857", web mercator).
     spark_session : SparkSession, optional
         Spark session for distributed computation, if needed.
 
