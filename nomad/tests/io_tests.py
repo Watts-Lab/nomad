@@ -1,37 +1,71 @@
 import pytest
 import warnings
+from pathlib import Path
 import pandas as pd
-from .. import daphmeIO as loader
-from .. import constants
+import geopandas as gpd
+import pygeohash as gh
+import pdb
+from nomad import daphmeIO as loader
+from nomad import constants
 
-
-# many columns, 2 users, different types for timestamp, 
 @pytest.fixture
-def simple_df_multi_user():
-    df = pd.DataFrame(
-        [[1, 39.984094, 116.319236, '2023-01-01 13:53:05'],
-         [1, 39.984198, 116.319322, '2023-01-02 13:53:06'],
-         [1, 39.984224, 116.319402, '2023-01-02 13:53:11'],
-         [1, 39.984211, 116.319389, '2023-01-07 13:53:16'],
-         [2, 39.984100, 116.319500, '2023-01-01 13:53:20'],
-         [2, 39.984300, 116.319600, '2023-01-01 13:53:25'],
-         [2, 39.984400, 116.319700, '2023-01-01 13:53:30'],
-         [3, 20.984000, 116.319800, '2023-01-04 13:53:35'],
-         [3, 20.984500, 116.319900, '2023-01-05 13:53:40'],
-         [4, 39.984100, 116.319500, '2023-01-03 13:53:20'],
-         [4, 39.984300, 116.319600, '2023-01-04 13:53:25'],
-         [4, 39.984400, 116.319700, '2023-01-04 13:53:30']],
-        columns=['user_id', 'latitude', 'longitude', 'timestamp']
-    )
+def base_df():
+    test_dir = Path(__file__).resolve().parent
+    data_path = test_dir.parent / "data" / "gc_sample.csv"
+    df = pd.read_csv(data_path)
+
+    # create tz_offset column
+    df['tz_offset'] = 0
+    df.loc[df.index[:5000],'tz_offset'] = -7200
+    df.loc[df.index[-5000:], 'tz_offset'] = 3600
+
+    # create string datetime column
+    df['local_datetime'] = loader._unix_offset_to_str(df.timestamp, df.tz_offset)
+
+    # create x, y columns in web mercator
+    gdf = gpd.GeoSeries(gpd.points_from_xy(df.longitude, df.latitude),
+                            crs="EPSG:4326")
+    projected = gdf.to_crs("EPSG:3857")
+    df['x'] = projected.x
+    df['y'] = projected.y
+    
+    df['geohash'] = df.apply(lambda x: gh.encode(x.latitude, x.longitude, precision=7), axis=1)
+    # col names:  ['uid', 'timestamp', 'latitude', 'longitude', 'tz_offset', 'local_datetime', 'x', 'y', 'geohash'
+    # dtypes: [object, int64, float64, float64, int64, object, float64, float64, object]
     return df
 
-
 @pytest.fixture
-def path_1()
+def col_variations():
+    col_vars = {
+        "default-basic":([0, 1, 2, 3], ["user_id", "timestamp", "latitude", "longitude"], ["user_id", "timestamp", "latitude", "longitude"]),
+        "alt-names-basic":([0, 1, 2, 3], ["uid", "unix_time", "lat", "lon"], ["user_id", "timestamp", "latitude", "longitude"]),
+        "alt-names-dt-xy":([5,6,7], ["event_zoned_datetime", "device_x", "device_y"], ["datetime", "x", "y"]),
+        "alt-names-ts-gh":([1,8], ["unix_ts", "geohash_7"], ["timestamp", "geohash"]),
+        "default-dt-xy":([0, 4, 5, 6, 7], ["user_id", "tz_offset", "datetime", "x", "y"], [])
+    }
+    return col_vars
 
-# from_object works on simple_df, i.e. _is_traj_df
+# # Mock test (Test# 0) 
+# def test_print_sample_df(base_df):
+#     print(base_df.head())  
+#     assert not base_df.empty
 
-# from_object works with different names
+# from_df simple and provided names (Test # 1)
+@pytest.mark.parametrize("variation", ["default-basic", "alt-names-basic", "alt-names-dt-xy", "alt-names-ts-gh", "default-dt-xy"])
+def test_from_df_name_handling(base_df, col_variations, variation):
+    cols, col_names, keys = col_variations[variation]
+    df = base_df.iloc[:, cols]
+    df.columns = col_names
+
+    traj_cols = None
+    if len(keys)>0:
+        traj_cols = dict(zip(keys, col_names))
+
+    result = loader.from_df(df, traj_cols=traj_cols, parse_dates=False)
+
+    assert loader._is_traj_df(result, traj_cols=traj_cols, parse_dates=False), "from_df() output is not a valid trajectory DataFrame"
+
+
 
 # from_object has correct values in some entries
 
