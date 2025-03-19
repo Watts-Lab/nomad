@@ -7,8 +7,7 @@ DEFAULT_SCHEMA = {
     "x": "x",
     "y": "y",
     "geohash": "geohash",
-    "tz_offset": "tz_offset"
-}
+    "tz_offset": "tz_offset"}
 
 ALLOWED_BUILDINGS = {
     0: ['home'], 1: ['home'], 2: ['home'], 3: ['home'], 4: ['home'],
