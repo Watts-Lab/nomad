@@ -10,6 +10,9 @@ import os
 import pyarrow.compute as pc
 import pyarrow.dataset as ds
 import nomad.constants as constants
+import numpy as np
+import geopandas as gpd
+import warnings
 
 # utils
 def _update_schema(original, new_labels):
@@ -611,7 +614,7 @@ def from_df(df, traj_cols=None, parse_dates=True, mixed_timezone_behavior="naive
     return _cast_traj_cols(df, traj_cols, parse_dates=parse_dates, mixed_timezone_behavior="naive", fixed_format=None)
 
 
-def from_file(filepath, format="csv", traj_cols=None, **kwargs):
+def from_file(filepath, format="csv", traj_cols=None, parse_dates=True, mixed_timezone_behavior="naive", **kwargs):
     """
     Load and cast trajectory data from a specified file path or list of paths.
 
@@ -669,7 +672,7 @@ def from_file(filepath, format="csv", traj_cols=None, **kwargs):
     else:
         df = dataset.to_table().to_pandas()
 
-    return _cast_traj_cols(df, traj_cols)
+    return _cast_traj_cols(df, traj_cols, parse_dates=parse_dates, mixed_timezone_behavior=mixed_timezone_behavior)
         
 
 def sample_users(filepath, format="csv", frac_users=1.0, traj_cols=None, **kwargs):
@@ -722,7 +725,7 @@ def sample_users(filepath, format="csv", frac_users=1.0, traj_cols=None, **kwarg
 
     return user_ids.sample(frac=frac_users) if frac_users < 1.0 else user_ids
 
-def sample_from_file(filepath, users, format="csv", traj_cols=None, parse_dates=True, **kwargs):
+def sample_from_file(filepath, users, format="csv", traj_cols=None, parse_dates=True, mixed_timezone_behavior="naive", **kwargs):
     """
     Loads data for specified users from a file path or list of paths.
 
@@ -782,4 +785,4 @@ def sample_from_file(filepath, users, format="csv", traj_cols=None, parse_dates=
             columns=None  # to include partition columns
         ).to_pandas()
 
-    return _cast_traj_cols(df, traj_cols=traj_cols, parse_dates=parse_dates)
+    return _cast_traj_cols(df, traj_cols=traj_cols, parse_dates=parse_dates, mixed_timezone_behavior=mixed_timezone_behavior)
