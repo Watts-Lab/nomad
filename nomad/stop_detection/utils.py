@@ -1,16 +1,10 @@
 import pandas as pd
 from scipy.spatial.distance import pdist, cdist
 import numpy as np
-import math
 import datetime as dt
 from datetime import timedelta
-import matplotlib.pyplot as plt
 import itertools
-from collections import defaultdict
-import sys
 import os
-import pdb
-import nomad.daphmeIO as loader
 import nomad.constants as constants
 
 def _diameter(coords, metric='euclidean'):

@@ -13,8 +13,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "..")))
 import nomad.io.base as loader
 import nomad.constants as constants
 import nomad.filters as filters
-from nomad.stop_detection.ta_dbscan import temporal_dbscan, _temporal_dbscan_labels
-from nomad.stop_detection.lachesis import lachesis, _lachesis_labels
+from stop_detection.ta_dbscan import temporal_dbscan, _temporal_dbscan_labels
+from stop_detection.lachesis import lachesis, _lachesis_labels
 
 
 def extract_user(df, user_id):
@@ -58,8 +58,8 @@ def test_lon_lat_datetime_lachesis(sample_df_lon_lat_datetime):
                        -1, -1, -1, -1, -1, -1, -1, -1, -1,
                        5, 5, 5, 5, 5, 5]
 
-    actual_stops = lachesis(traj=user_df, dur_min=DUR_MIN, dt_max=DT_MAX, delta_roam=DELTA_ROAM, traj_cols=traj_cols, complete_output=False)
-    actual_labels = _lachesis_labels(traj=user_df, dur_min=DUR_MIN, dt_max=DT_MAX, delta_roam=DELTA_ROAM, traj_cols=traj_cols)
+    actual_stops = sd.lachesis(traj=user_df, dur_min=DUR_MIN, dt_max=DT_MAX, delta_roam=DELTA_ROAM, traj_cols=traj_cols, complete_output=False)
+    actual_labels = sd._lachesis_labels(traj=user_df, dur_min=DUR_MIN, dt_max=DT_MAX, delta_roam=DELTA_ROAM, traj_cols=traj_cols)
 
     assert expected_durs == list(actual_stops['duration'])
     assert expected_labels == list(actual_labels['cluster'])
@@ -78,8 +78,8 @@ def test_x_y_timestamp_lachesis(sample_df_x_y_timestamp):
                        -1, -1, -1, -1, -1, -1, -1, -1, -1,
                        -1, -1, 4, 4, 4, 4, 4, 4]
 
-    actual_stops = lachesis(traj=user_df, dur_min=DUR_MIN, dt_max=DT_MAX, delta_roam=DELTA_ROAM, traj_cols=traj_cols, complete_output=False)
-    actual_labels = _lachesis_labels(traj=user_df, dur_min=DUR_MIN, dt_max=DT_MAX, delta_roam=DELTA_ROAM, traj_cols=traj_cols)
+    actual_stops = sd.lachesis(traj=user_df, dur_min=DUR_MIN, dt_max=DT_MAX, delta_roam=DELTA_ROAM, traj_cols=traj_cols, complete_output=False)
+    actual_labels = sd._lachesis_labels(traj=user_df, dur_min=DUR_MIN, dt_max=DT_MAX, delta_roam=DELTA_ROAM, traj_cols=traj_cols)
 
     assert expected_durs == list(actual_stops['duration'])
     assert expected_labels == list(actual_labels['cluster'])
@@ -107,8 +107,8 @@ def test_lon_lat_datetime_dbscan(sample_df_lon_lat_datetime):
                        -1, 1, 1, 1, 1, 1, -1, -1, 
                        -1, 0, 0, 0, -1, -1, -1]
 
-    actual_stops = temporal_dbscan(user_df, TIME_THRESH, DIST_THRESH, MIN_PTS, traj_cols=traj_cols, complete_output=False)
-    actual_labels = _temporal_dbscan_labels(user_df, TIME_THRESH, DIST_THRESH, MIN_PTS, traj_cols=traj_cols)
+    actual_stops = sd.temporal_dbscan(user_df, TIME_THRESH, DIST_THRESH, MIN_PTS, traj_cols=traj_cols, complete_output=False)
+    actual_labels = sd._temporal_dbscan_labels(user_df, TIME_THRESH, DIST_THRESH, MIN_PTS, traj_cols=traj_cols)
 
     assert expected_durs == list(actual_stops['duration'])
     assert expected_labels == list(actual_labels['cluster'])
@@ -129,8 +129,8 @@ def test_x_y_timestamp_dbscan(sample_df_x_y_timestamp):
                        -1, 1, 1, 1, 1, 1, -1, -1, 
                        -1, 0, 0, 0, -1, -1, -1]
 
-    actual_stops = temporal_dbscan(user_df, TIME_THRESH, DIST_THRESH, MIN_PTS, traj_cols=traj_cols, complete_output=False)
-    actual_labels = _temporal_dbscan_labels(user_df, TIME_THRESH, DIST_THRESH, MIN_PTS, traj_cols=traj_cols)
+    actual_stops = sd.temporal_dbscan(user_df, TIME_THRESH, DIST_THRESH, MIN_PTS, traj_cols=traj_cols, complete_output=False)
+    actual_labels = sd._temporal_dbscan_labels(user_df, TIME_THRESH, DIST_THRESH, MIN_PTS, traj_cols=traj_cols)
 
     assert expected_durs == list(actual_stops['duration'])
     assert expected_labels == list(actual_labels['cluster'])
