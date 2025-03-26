@@ -5,7 +5,7 @@ import pandas as pd
 import geopandas as gpd
 import pygeohash as gh
 import pdb
-from nomad import daphmeIO as loader
+from nomad.io import base as loader
 from nomad import constants
 
 @pytest.fixture
