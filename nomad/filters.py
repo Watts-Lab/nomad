@@ -11,6 +11,69 @@ from pyspark.sql.types import StructType, StructField, StringType, IntegerType, 
 
 from nomad.constants import DEFAULT_SCHEMA
 import pdb
+import warnings
+
+
+
+def to_timestamp(
+    datetime: pd.Series,
+    tz_offset: pd.Series = None
+):
+    """
+    Changing datetime values to timestamps.
+    
+    Parameters
+    ----------
+
+    Returns
+    -------
+    """
+    
+    dtype = datetime.dtype
+    
+    # Validate input type
+    if not (
+        pd.core.dtypes.common.is_datetime64_any_dtype(dtype) or
+        pd.core.dtypes.common.is_string_dtype(dtype) or
+        (pd.core.dtypes.common.is_object_dtype(dtype) and _is_series_of_timestamps(datetime))
+    ):
+        raise TypeError(
+            f"Input must be of type datetime64, string, or an array of Timestamp objects, "
+            f"but it is of type {dtype}."
+        )
+
+    if tz_offset and not pd.core.dtypes.common.is_integer_dtype(tz_offset.dtype):
+        tz_offset = tz_offset.astype('int64')
+
+    # datetime with timezone
+    if pd.core.dtypes.common.is_datetime64tz_dtype(dtype):
+        # Zoned datetime: safe to convert
+        return datetime.astype('int64') // 10**9
+    # datetime without timezone
+    elif pd.core.dtypes.common.is_datetime64_dtype(dtype):
+        if tz_offset:
+            return datetime.astype('int64') // 10**9 + tz_offset
+        else:
+            warnings.warn(
+                f"The input is timezone-naive. UTC will be assumed."
+                "Consider localizing to a timezone or passing a timezone offset column.")
+            return datetime.astype('int64') // 10**9
+            
+    # datetime as string
+    elif pd.core.dtypes.common.is_string_dtype(dtype):
+        result = pd.to_datetime(datetime, errors="coerce", utc=True)
+        if tz_offset:
+            return result.astype('int64') // 10**9 + tz_offset
+        else:
+            # TODO: warning when datetime is naive
+            return result.astype('int64') // 10**9
+    # datetime is pandas.Timestamp object
+    else:
+        if tz_offset:
+            f = np.frompyfunc(lambda x: x.timestamp(), 1, 1)
+            return pd.Series(f(datetime).astype("float64"), index=datetime.index)
+        else:
+            return datetime.astype('int64') // 10**9
 
 def to_projection(
     df: pd.DataFrame,
