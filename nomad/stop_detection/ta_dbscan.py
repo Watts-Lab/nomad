@@ -50,7 +50,11 @@ def _find_neighbors(data, time_thresh, dist_thresh, long_lat, datetime, traj_col
     
     # getting times based on whether they are datetime values or timestamps, changed to seconds for calculations
     if datetime:
-        times = data[traj_cols['datetime']].astype('datetime64[s]').astype(int).values
+        times = pd.to_datetime(data[traj_cols['datetime']])
+        times = times.dt.tz_convert('UTC').dt.tz_localize(None)
+        times = times.astype('int64') // 10**9
+        times = times.values
+        
     else:
         # if timestamps, we change the values to seconds
         first_timestamp = data[traj_cols['timestamp']].iloc[0]
@@ -153,7 +157,10 @@ def dbscan(data, time_thresh, dist_thresh, min_pts, long_lat, datetime, traj_col
     """
     # getting the values for time, both the original and changed to seconds for calculations
     if datetime:
-        valid_times = data[traj_cols['datetime']].astype('datetime64[s]').astype(int).values
+        valid_times = pd.to_datetime(data[traj_cols['datetime']])
+        valid_times = valid_times.dt.tz_convert('UTC').dt.tz_localize(None)
+        valid_times = valid_times.astype('int64') // 10**9
+        valid_times = valid_times.values
     else:
         first_timestamp = data[traj_cols['timestamp']].iloc[0]
         timestamp_length = len(str(first_timestamp))
@@ -161,8 +168,9 @@ def dbscan(data, time_thresh, dist_thresh, min_pts, long_lat, datetime, traj_col
         if timestamp_length > 10:
             if timestamp_length == 13:
                 valid_times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 3
+                
             elif timestamp_length == 19:
-                valid_times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 9 
+                valid_times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 9
         else:
             valid_times = data[traj_cols['timestamp']].values
         
@@ -293,7 +301,7 @@ def temporal_dbscan(data, time_thresh, dist_thresh, min_pts, traj_cols=None, com
     long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs['latitude'] in data.columns and kwargs['longitude'] in data.columns
 
     # Check if user wants datetime
-    datetime = 'datetime' in kwargs and kwargs['datetime'] in data.column
+    datetime = 'datetime' in kwargs and kwargs['datetime'] in data.columns
 
     # Set initial schema
     if not traj_cols:
@@ -307,13 +315,13 @@ def temporal_dbscan(data, time_thresh, dist_thresh, min_pts, traj_cols=None, com
     loader._has_time_cols(data.columns, traj_cols)
 
     # Setting x and y as defaults if not specified by user in either traj_cols or kwargs
-    if traj_cols['x'] in data.columns and traj_cols['y'] in data.columns:
+    if traj_cols['x'] in data.columns and traj_cols['y'] in data.columns and not long_lat:
         long_lat = False
     else:
         long_lat = True
 
     # Setting timestamp as default if not specified by user in either traj_cols or kwargs
-    if traj_cols['timestamp'] in data.columns:
+    if traj_cols['timestamp'] in data.columns and not datetime:
         datetime = False
     else:
         datetime = True
@@ -356,7 +364,7 @@ def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, traj_cols=N
     long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs['latitude'] in data.columns and kwargs['longitude'] in data.columns
 
     # Check if user wants datetime
-    datetime = 'datetime' in kwargs and kwargs['datetime'] in data.column
+    datetime = 'datetime' in kwargs and kwargs['datetime'] in data.columns
 
     # Set initial schema
     if not traj_cols:
@@ -370,20 +378,24 @@ def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, traj_cols=N
     loader._has_time_cols(data.columns, traj_cols)
 
     # Setting x and y as defaults if not specified by user in either traj_cols or kwargs
-    if traj_cols['x'] in data.columns and traj_cols['y'] in data.columns:
+    if traj_cols['x'] in data.columns and traj_cols['y'] in data.columns and not long_lat:
         long_lat = False
     else:
         long_lat = True
 
     # Setting timestamp as default if not specified by user in either traj_cols or kwargs
-    if traj_cols['timestamp'] in data.columns:
+    if traj_cols['timestamp'] in data.columns and not datetime:
         datetime = False
     else:
         datetime = True
 
     if datetime:
-        valid_times = data[traj_cols['datetime']].astype('datetime64[s]').astype(int).values
         time_col_name = traj_cols['datetime']
+
+        valid_times = pd.to_datetime(data[traj_cols['datetime']])
+        valid_times = valid_times.dt.tz_convert('UTC').dt.tz_localize(None)
+        valid_times = valid_times.astype('int64') // 10**9
+        valid_times = valid_times.values
     else:
         first_timestamp = data[traj_cols['timestamp']].iloc[0]
         timestamp_length = len(str(first_timestamp))
