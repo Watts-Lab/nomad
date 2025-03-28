@@ -15,11 +15,11 @@ import pdb
 
 def to_projection(
     traj: pd.DataFrame,
-    from_crs: str = "EPSG:4326",
-    to_crs: str = "EPSG:3857",
+    input_crs: str = "EPSG:4326",
+    output_crs: str = "EPSG:3857",
     traj_cols: dict = None,
-    to_x: str = "x",
-    to_y: str = "y",
+    output_x_col: str = "x",
+    output_y_col: str = "y",
     spark_session: SparkSession = None,
     **kwargs
 ) -> pd.DataFrame:
@@ -35,19 +35,19 @@ def to_projection(
     ----------
     traj : pd.DataFrame
         Trajectory DataFrame containing coordinate columns.
-    from_crs : str, optional
+    input_crs : str, optional
         EPSG code for the original CRS.
         Defaults to "EPSG:4326".
-    to_crs : str, optional
+    output_crs : str, optional
         EPSG code for the target CRS.
         Defaults to "EPSG:3857".
     traj_cols : dict, optional
         A dictionary defining column mappings for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'.
         If not provided, the function will attempt to use default column names or those provided in `kwargs`.
-    to_x : str, optional
+    output_x_col : str, optional
         Name of the projected x column.
         Defaults to 'x'.
-    to_y : str, optional
+    output_y_col : str, optional
         Name of the projected y column.
         Defaults to 'y'.
     spark_session : SparkSession, optional.
@@ -59,11 +59,16 @@ def to_projection(
     -------
     pd.DataFrame
         DataFrame with new 'x' and 'y' columns representing projected coordinates.
+
+    Raises
+    ------
+    ValueError
+        If expected coordinate columns are missing.
     """
     traj = traj.copy()
 
     # Check if user wants to project from x and y
-    x_y = (
+    spatial_cols_provided = (
         'x' in kwargs and 'y' in kwargs 
         and kwargs['x'] in traj.columns 
         and kwargs['y'] in traj.columns
@@ -80,45 +85,48 @@ def to_projection(
     loader._has_spatial_cols(traj.columns, traj_cols)
 
     # Setting long and lat as defaults if not specified by user in either traj_cols or kwargs
-    if not x_y and traj_cols['longitude'] in traj.columns and traj_cols['latitude'] in traj.columns:
-        from_x, from_y = traj_cols['longitude'], traj_cols['latitude']
+    if not spatial_cols_provided and traj_cols['longitude'] in traj.columns and traj_cols['latitude'] in traj.columns:
+        input_x_col, input_y_col = traj_cols['longitude'], traj_cols['latitude']
     else:
-        from_x, from_y = traj_cols['x'], traj_cols['y']
+        input_x_col, input_y_col = traj_cols['x'], traj_cols['y']
+
+    if input_x_col not in traj.columns or input_y_col not in traj.columns:
+        raise ValueError(f"Coordinate columns '{input_x_col}' and/or '{input_y_col}' not found in DataFrame.")
 
     if spark_session:
-        return _to_projection_spark(traj, from_crs, to_crs, from_x, from_y, to_x, to_y, spark_session)
+        return _to_projection_spark(traj, input_crs, output_crs, input_x_col, input_y_col, output_x_col, output_y_col, spark_session)
     else:
-        return _to_projection(traj, from_crs, to_crs, from_x, from_y, to_x, to_y)
+        return _to_projection(traj, input_crs, output_crs, input_x_col, input_y_col, output_x_col, output_y_col)
 
 
 def _to_projection(
     traj,
-    from_crs,
-    to_crs,
-    from_x,
-    from_y,
-    to_x,
-    to_y
+    input_crs,
+    output_crs,
+    input_x_col,
+    input_y_col,
+    output_x_col,
+    output_y_col
 ):
     """
     Helper function to project latitude/longitude columns to a new CRS.
     """
-    gdf = gpd.GeoSeries(gpd.points_from_xy(traj[from_x], traj[from_y]), crs=from_crs)
-    projected = gdf.to_crs(to_crs)
-    traj[to_x] = projected.x
-    traj[to_y] = projected.y
+    gdf = gpd.GeoSeries(gpd.points_from_xy(traj[input_x_col], traj[input_y_col]), crs=input_crs)
+    projected = gdf.to_crs(output_crs)
+    traj[output_x_col] = projected.x
+    traj[output_y_col] = projected.y
 
     return traj
 
 
 def _to_projection_spark(
     traj, 
-    from_crs, 
-    to_crs, 
-    from_x, 
-    from_y, 
-    to_x,
-    to_y,
+    input_crs, 
+    output_crs, 
+    input_x_col, 
+    input_y_col, 
+    output_x_col,
+    output_y_col,
     spark_session
 ):
     """
@@ -129,8 +137,8 @@ def _to_projection_spark(
     spark_df.createOrReplaceTempView("temp_view")
     query = f"""
         SELECT *, 
-            ST_X(ST_Transform(ST_Point({from_x}, {from_y}), '{from_crs}', '{to_crs}')) AS {to_x},
-            ST_Y(ST_Transform(ST_Point({from_x}, {from_y}), '{from_crs}', '{to_crs}')) AS {to_y}
+            ST_X(ST_Transform(ST_Point({input_x_col}, {input_y_col}), '{input_crs}', '{output_crs}')) AS {output_x_col},
+            ST_Y(ST_Transform(ST_Point({input_x_col}, {input_y_col}), '{input_crs}', '{output_crs}')) AS {output_y_col}
         FROM temp_view
     """
     result_df = spark_session.sql(query)
@@ -139,36 +147,33 @@ def _to_projection_spark(
 
 def filter_users(
     traj: pd.DataFrame,
-    T0: str,
-    T1: str,
+    start_time: str,
+    end_time: str,
     polygon: Polygon = None,
-    k: int = 1,
-    m: int = 1,
+    min_active_days: int = 1,
+    min_pings_per_day: int = 1,
     traj_cols: dict = None,
     crs: str = "EPSG:3857",
     spark_session: SparkSession = None,
     **kwargs
 ) -> pd.DataFrame:
     '''
-    Subsets to users who have at least k distinct days with at least m pings 
-    in the polygon within the timeframe T0 to T1.
+    Subsets to users who have at least min_pings_per_day pings on min_active_days distinct days
+    in the polygon within the timeframe start_time to start_time.
 
     Parameters
     ----------
     traj : pd.DataFrame
         Trajectory DataFrame with latitude and longitude columns.
-    T0 : str
+    start_time : str
         Start of the timeframe for filtering (as a string, or datetime).
-    T1 : str
+    end_time : str
         End of the timeframe for filtering (as a string, or datetime).
     polygon : shapely.geometry.Polygon
         Polygon defining the area to retain points within.
         If None, no spatial filtering is applied.
-    k : int
-        Minimum number of distinct days with at least m pings inside the polygon for the user to be retained.
-        Defaults to 1.
-    m : int
-        See `k` parameter.
+    min_active_days, min_pings_per_day: int
+        User is retained if they have at least min_pings_per_day pings on min_active_days distinct days.
         Defaults to 1.
     traj_cols : dict, optional
         A dictionary defining column mappings for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'.
@@ -218,22 +223,22 @@ def filter_users(
 
     if spark_session:
         return _filter_users_spark(
-            traj, T0, T1, polygon.wkt, k, traj_cols, from_x, from_y, spark_session
+            traj, start_time, end_time, polygon.wkt, min_active_days, min_pings_per_day, traj_cols, from_x, from_y, spark_session
             )
     else:
         users = _filtered_users(
-            traj, T0, T1, polygon, k, m, traj_cols, from_x, from_y, crs
+            traj, start_time, end_time, polygon, min_active_days, min_pings_per_day, traj_cols, from_x, from_y, crs
         )
         return traj[traj[traj_cols['user_id']].isin(users)]
 
 
 def _filtered_users(
     traj,
-    T0,
-    T1,
+    start_time,
+    end_time,
     polygon,
-    k,
-    m,
+    min_active_days,
+    min_pings_per_day,
     traj_cols,
     from_x,
     from_y,
@@ -244,7 +249,7 @@ def _filtered_users(
     k distinct days with at least m pings in the polygon within the timeframe T0 to T1.
     """
     # Filter by time range
-    traj_filtered = traj[(traj[traj_cols['datetime']] >= T0) & (traj[traj_cols['datetime']] <= T1)].copy()
+    traj_filtered = traj[(traj[traj_cols['datetime']] >= start_time) & (traj[traj_cols['datetime']] <= end_time)].copy()
     traj_filtered[traj_cols['datetime']] = pd.to_datetime(traj_filtered[traj_cols['datetime']])
 
     # Filter points inside the polygon
@@ -263,7 +268,7 @@ def _filtered_users(
     )
 
     # Filter users who have at least `m` pings on a given day
-    users_with_m_pings = daily_ping_counts[daily_ping_counts['ping_count'] >= m]
+    users_with_m_pings = daily_ping_counts[daily_ping_counts['ping_count'] >= min_pings_per_day]
 
     # Count distinct days per user that satisfy the `m` pings condition
     users_with_k_days = (
@@ -274,7 +279,7 @@ def _filtered_users(
     )
 
     # Select users who have at least `k` such days
-    filtered_users = users_with_k_days[users_with_k_days['days_in_polygon'] >= k][traj_cols['user_id']]
+    filtered_users = users_with_k_days[users_with_k_days['days_in_polygon'] >= min_active_days][traj_cols['user_id']]
 
     return filtered_users
 
@@ -302,14 +307,15 @@ def _filter_users_spark(
     bounding_wkt,
     T0,
     T1,
-    k,
+    min_days,
+    min_pings,
     traj_cols,
     from_x,
     from_y,
     spark,
 ):
     """
-    TODO: IMPLEMENT m
+    TODO: IMPLEMENT min_pings
     Helper function that retains only users who have at least k distinct days 
     with pings inside the geometry between T0 and T1.
     """
@@ -339,16 +345,12 @@ def _filter_users_spark(
         F.countDistinct("date").alias("distinct_days")
     )
     users_with_k_days = user_day_counts.filter(
-        F.col("distinct_days") >= k
+        F.col("distinct_days") >= min_days
     ).select(traj_cols['user_id'])
 
     result_traj = traj_inside.join(users_with_k_days, on=traj_cols['user_id'], how='inner')
 
     return result_traj
-
-
-def coarse_filter(df: pd.DataFrame):
-    pass
 
 
 def q_filter(df: pd.DataFrame,
