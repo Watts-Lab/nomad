@@ -177,23 +177,22 @@ def _custom_parse_date(series, parse_dates, mixed_timezone_behavior, fixed_forma
         Otherwise, offset_series is None.
     """
 
-    dtype = series.dtype
     col_name = series.name  # The actual column name in df
 
     # Validate input type
     if not (
-        pd.core.dtypes.common.is_datetime64_any_dtype(dtype) or
-        pd.core.dtypes.common.is_string_dtype(dtype) or
-        (pd.core.dtypes.common.is_object_dtype(dtype) and _is_series_of_timestamps(series))
+        pd.core.dtypes.common.is_datetime64_any_dtype(series) or
+        pd.core.dtypes.common.is_string_dtype(series) or
+        (pd.core.dtypes.common.is_object_dtype(series) and _is_series_of_timestamps(series))
     ):
         raise TypeError(
             f"Column '{col_name}' (mapped as 'datetime' in traj_cols) must be of type datetime64, string, or an array of Timestamp objects, "
-            f"but it is of type {dtype}."
+            f"but it is of type {series.dtype}."
         )
 
     if not parse_dates:
         # If check_valid_datetime_str=True and the dtype is string, validate the string format
-        if check_valid_datetime_str and pd.core.dtypes.common.is_string_dtype(dtype):
+        if check_valid_datetime_str and pd.core.dtypes.common.is_string_dtype(series):
             invalid_dates = pd.to_datetime(series, errors="coerce", utc=True).isna()
             if invalid_dates.any():
                 raise ValueError(
@@ -240,46 +239,47 @@ def _is_traj_df(df, traj_cols=None, parse_dates=True, check_valid_datetime_str=T
 
     datetime_col = traj_cols.get('datetime')
     if datetime_col and datetime_col in df.columns:
-        dtype = df[datetime_col].dtype
-        if pd.core.dtypes.common.is_string_dtype(dtype):
+
+        col = df[datetime_col]
+        if pd.core.dtypes.common.is_string_dtype(col):
             if not parse_dates and check_valid_datetime_str:
                 invalid_dates = pd.to_datetime(df[datetime_col], errors="coerce", utc=True).isna()
                 if invalid_dates.any():
                     print(f"Failure: Column '{datetime_col}' contains invalid datetime strings.")
                     return False
 
-        elif pd.core.dtypes.common.is_object_dtype(dtype):
+        elif pd.core.dtypes.common.is_object_dtype(col):
             if not _is_series_of_timestamps(df[datetime_col]):
                 print(f"Failure: Column '{datetime_col}' is object type but not an array of Timestamp objects.")
                 return False
 
-        elif not pd.core.dtypes.common.is_datetime64_any_dtype(dtype):
-            print(f"Failure: Column '{datetime_col}' is not a valid datetime type. Found dtype: {dtype}")
+        elif not pd.core.dtypes.common.is_datetime64_any_dtype(col):
+            print(f"Failure: Column '{datetime_col}' is not a valid datetime type. Found dtype: {col.dtype}")
             return False
 
     timestamp_col = traj_cols.get('timestamp')
     if timestamp_col and timestamp_col in df.columns:
-        if not pd.core.dtypes.common.is_integer_dtype(df[timestamp_col].dtype):
+        if not pd.core.dtypes.common.is_integer_dtype(df[timestamp_col]):
             print(f"Failure: Column '{timestamp_col}' is not an integer type.")
             return False
 
     tz_offset_col = traj_cols.get('tz_offset')
     if tz_offset_col and tz_offset_col in df.columns:
-        if not pd.core.dtypes.common.is_integer_dtype(df[tz_offset_col].dtype):
+        if not pd.core.dtypes.common.is_integer_dtype(df[tz_offset_col]):
             print(f"Failure: Column '{tz_offset_col}' is not an integer type.")
             return False
 
     for col_key in ['latitude', 'longitude', 'x', 'y']:
         col_name = traj_cols.get(col_key)
         if col_name and col_name in df.columns:
-            if not pd.core.dtypes.common.is_float_dtype(df[col_name].dtype):
+            if not pd.core.dtypes.common.is_float_dtype(df[col_name]):
                 print(f"Failure: Column '{col_name}' (mapped as '{col_key}') is not a float type.")
                 return False
 
     for col_key in ['user_id', 'geohash']:
         col_name = traj_cols.get(col_key)
         if col_name and col_name in df.columns:
-            if not pd.core.dtypes.common.is_string_dtype(df[col_name].dtype):
+            if not pd.core.dtypes.common.is_string_dtype(df[col_name]):
                 print(f"Failure: Column '{col_name}' (mapped as '{col_key}') is not a string type.")
                 return False
 
@@ -450,14 +450,14 @@ def _cast_traj_cols_spark(df, traj_cols):
 def _process_datetime_column(df, col, parse_dates, mixed_timezone_behavior, fixed_format, tz_offset_key, traj_cols):
     dtype = df[col].dtype
 
-    if is_datetime64_any_dtype(dtype):
+    if is_datetime64_any_dtype(df[col]):
         if df[col].dt.tz is None:
             warnings.warn(
                 f"The '{col}' column is timezone-naive. "
                 "Consider localizing to a timezone or using a unix timestamp to avoid inconsistencies."
             )
 
-    elif is_string_dtype(dtype):
+    elif is_string_dtype(df[col]):
         parsed, offset = _custom_parse_date(
             df[col], parse_dates=parse_dates,
             mixed_timezone_behavior=mixed_timezone_behavior,
@@ -473,7 +473,7 @@ def _process_datetime_column(df, col, parse_dates, mixed_timezone_behavior, fixe
                 f"The '{col}' column has mixed timezones. "
                 "Consider localizing to a single timezone or using a unix timestamp to avoid inconsistencies."
             )
-        elif is_datetime64_any_dtype(df[col].dtype) and df[col].dt.tz is None:
+        elif is_datetime64_any_dtype(df[col]) and df[col].dt.tz is None:
             warnings.warn(
                 f"The '{col}' column is timezone-naive. "
                 "Consider localizing to a timezone or using a unix timestamp to avoid inconsistencies."
@@ -493,7 +493,7 @@ def _process_datetime_column(df, col, parse_dates, mixed_timezone_behavior, fixe
                     "Consider localizing to a timezone or using a unix timestamp to avoid inconsistencies."
                 )
     else:
-        raise ValueError(f"dtype {dtype} for '{col}' is not supported for datetime handling.")
+        raise ValueError(f"dtype {df[col].dtype} for '{col}' is not supported for datetime handling.")
 
 
 def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_format=None):
