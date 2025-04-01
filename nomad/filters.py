@@ -9,67 +9,78 @@ from pyspark.sql import SQLContext
 from pyspark.sql import functions as F
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, LongType, DoubleType
 
+from nomad.io.base import _is_series_of_timestamps
 from nomad.constants import DEFAULT_SCHEMA
 import pdb
 import warnings
-
-
+import numpy as np
 
 def to_timestamp(
     datetime: pd.Series,
     tz_offset: pd.Series = None
-):
+) -> pd.Series:
     """
-    Changing datetime values to timestamps.
+    Convert a datetime series into UNIX timestamps (seconds).
     
     Parameters
     ----------
+    datetime : pd.Series
+    tz_offset : pd.Series, optional
 
     Returns
     -------
+    pd.Series
+        UNIX timestamps as int64 values (seconds since epoch).
     """
-    
-    dtype = datetime.dtype
-    
     # Validate input type
     if not (
-        pd.core.dtypes.common.is_datetime64_any_dtype(dtype) or
-        pd.core.dtypes.common.is_string_dtype(dtype) or
-        (pd.core.dtypes.common.is_object_dtype(dtype) and _is_series_of_timestamps(datetime))
+        
+        pd.api.types.is_datetime64_any_dtype(datetime) or
+        pd.api.types.is_string_dtype(datetime) or
+        (pd.api.types.is_object_dtype(datetime) and _is_series_of_timestamps(datetime))
     ):
         raise TypeError(
             f"Input must be of type datetime64, string, or an array of Timestamp objects, "
-            f"but it is of type {dtype}."
+            f"but it is of type {datetime.dtype}."
         )
-
-    if tz_offset and not pd.core.dtypes.common.is_integer_dtype(tz_offset.dtype):
-        tz_offset = tz_offset.astype('int64')
+    
+    if tz_offset is not None:
+        if not pd.api.types.is_integer_dtype(tz_offset):
+            tz_offset = tz_offset.astype('int64')
 
     # datetime with timezone
-    if pd.core.dtypes.common.is_datetime64tz_dtype(dtype):
-        # Zoned datetime: safe to convert
-        return datetime.astype('int64') // 10**9
+    if pd.api.types.is_datetime64tz_dtype(datetime):
+        return datetime.astype("int64") // 10**9
+    
     # datetime without timezone
-    elif pd.core.dtypes.common.is_datetime64_dtype(dtype):
-        if tz_offset:
-            return datetime.astype('int64') // 10**9 + tz_offset
-        else:
-            warnings.warn(
+    elif pd.api.types.is_datetime64_dtype(datetime):
+        if tz_offset is not None:
+            return datetime.astype("int64") // 10**9 + tz_offset
+        warnings.warn(
                 f"The input is timezone-naive. UTC will be assumed."
                 "Consider localizing to a timezone or passing a timezone offset column.")
-            return datetime.astype('int64') // 10**9
-            
+        return datetime.astype("int64") // 10**9
+    
     # datetime as string
-    elif pd.core.dtypes.common.is_string_dtype(dtype):
+    elif pd.api.types.is_string_dtype(datetime):
         result = pd.to_datetime(datetime, errors="coerce", utc=True)
-        if tz_offset:
-            return result.astype('int64') // 10**9 + tz_offset
-        else:
-            # TODO: warning when datetime is naive
+
+        # contains timezone e.g. '2024-01-01 12:29:00-02:00'
+        if datetime.str.contains(r'(Z|[+-]\d{2}:\d{2})$', regex=True, na=False).any():
             return result.astype('int64') // 10**9
+        else:
+            # naive e.g. "2024-01-01 12:29:00"
+            if tz_offset is not None and not tz_offset.empty:
+                return result.astype('int64') // 10**9 + tz_offset
+            else:
+                warnings.warn(
+                    f"The input is timezone-naive. UTC will be assumed."
+                    "Consider localizing to a timezone or passing a timezone offset column.")
+                return result.astype('int64') // 10**9
+                
     # datetime is pandas.Timestamp object
     else:
-        if tz_offset:
+        if tz_offset is not None and not tz_offset.empty:
             f = np.frompyfunc(lambda x: x.timestamp(), 1, 1)
             return pd.Series(f(datetime).astype("float64"), index=datetime.index)
         else:
