@@ -10,7 +10,7 @@ from collections import defaultdict
 import sys
 import os
 import pdb
-import nomad.daphmeIO as loader
+import nomad.io.base as loader
 import nomad.constants as constants
 from nomad.stop_detection import utils
 
