@@ -219,6 +219,74 @@ def _custom_parse_date(series, parse_dates, mixed_timezone_behavior, fixed_forma
         raise ValueError("mixed_timezone_behavior must be one of 'utc', 'naive', or 'object'")
 
 
+def _is_stop_df(df, traj_cols=None, parse_dates=True, check_valid_datetime_str=True, **kwargs):
+    """For unit testing: checks that all present stop-related columns are present and of correct type."""
+    if not isinstance(df, (pd.DataFrame, gpd.GeoDataFrame)):
+        print("Failure: Input is not a DataFrame or GeoDataFrame.")
+        return False
+
+    traj_cols = _parse_traj_cols(df.columns, traj_cols, kwargs)
+
+    if not _has_spatial_cols(df.columns, traj_cols):
+        print("Failure: Missing required spatial columns.")
+        return False
+
+    if not _has_time_cols(df.columns, traj_cols):
+        print("Failure: Missing required start time columns.")
+        return False
+
+    if not (_has_end_cols(df.columns, traj_cols) or _has_duration_cols(df.columns, traj_cols)):
+        print("Failure: Missing required end time or duration columns")
+        return False
+
+    # check datetime types
+    for col_key in ['datetime', 'start_datetime', 'end_datetime']:
+        col_name = traj_cols.get(col_key)
+        if col_name and col_name in df.columns:    
+            col = df[col_name]
+            if pd.core.dtypes.common.is_string_dtype(col):
+                if not parse_dates and check_valid_datetime_str:
+                    invalid_dates = pd.to_datetime(df[datetime_col], errors="coerce", utc=True).isna()
+                    if invalid_dates.any():
+                        print(f"Failure: Column '{datetime_col}' contains invalid datetime strings.")
+                        return False
+    
+            elif pd.core.dtypes.common.is_object_dtype(col):
+                if not _is_series_of_timestamps(df[datetime_col]):
+                    print(f"Failure: Column '{datetime_col}' is object type but not an array of Timestamp objects.")
+                    return False
+    
+            elif not pd.core.dtypes.common.is_datetime64_any_dtype(col):
+                print(f"Failure: Column '{datetime_col}' is not a valid datetime type. Found dtype: {col.dtype}")
+                return False
+                
+    # check integer types
+    for col_key in ['timestamp', 'start_timestamp', 'end_timestamp', 'tz_offset', 'duration']:
+        col_name = traj_cols.get(col_key)
+        if col_name and col_name in df.columns:
+            if not pd.core.dtypes.common.is_integer_dtype(df[col_name]):
+                print(f"Failure: Column '{col_name}' is not an integer type.")
+                return False
+
+    # check double types
+    for col_key in ['latitude', 'longitude', 'x', 'y']:
+        col_name = traj_cols.get(col_key)
+        if col_name and col_name in df.columns:
+            if not pd.core.dtypes.common.is_float_dtype(df[col_name]):
+                print(f"Failure: Column '{col_name}' (mapped as '{col_key}') is not a float type.")
+                return False
+                
+    #check string types
+    for col_key in ['user_id', 'geohash']:
+        col_name = traj_cols.get(col_key)
+        if col_name and col_name in df.columns:
+            if not pd.core.dtypes.common.is_string_dtype(df[col_name]):
+                print(f"Failure: Column '{col_name}' (mapped as '{col_key}') is not a string type.")
+                return False
+
+    return True    
+        
+
 # for testing only
 def _is_traj_df(df, traj_cols=None, parse_dates=True, check_valid_datetime_str=True, **kwargs):
     """For unit testing: checks that all present trajectory columns are of correct type."""
@@ -237,31 +305,34 @@ def _is_traj_df(df, traj_cols=None, parse_dates=True, check_valid_datetime_str=T
         print("Failure: Missing required time columns.")
         return False
 
-    datetime_col = traj_cols.get('datetime')
-    if datetime_col and datetime_col in df.columns:
-
-        col = df[datetime_col]
-        if pd.core.dtypes.common.is_string_dtype(col):
-            if not parse_dates and check_valid_datetime_str:
-                invalid_dates = pd.to_datetime(df[datetime_col], errors="coerce", utc=True).isna()
-                if invalid_dates.any():
-                    print(f"Failure: Column '{datetime_col}' contains invalid datetime strings.")
+    # check datetime types
+    for col_key in ['datetime', 'start_datetime']:
+        col_name = traj_cols.get(col_key)
+        if col_name and col_name in df.columns:    
+            col = df[col_name]
+            if pd.core.dtypes.common.is_string_dtype(col):
+                if not parse_dates and check_valid_datetime_str:
+                    invalid_dates = pd.to_datetime(col, errors="coerce", utc=True).isna()
+                    if invalid_dates.any():
+                        print(f"Failure: Column '{col_name}' contains invalid datetime strings.")
+                        return False
+    
+            elif pd.core.dtypes.common.is_object_dtype(col):
+                if not _is_series_of_timestamps(df[datetime_col]):
+                    print(f"Failure: Column '{datetime_col}' is object type but not an array of Timestamp objects.")
                     return False
-
-        elif pd.core.dtypes.common.is_object_dtype(col):
-            if not _is_series_of_timestamps(df[datetime_col]):
-                print(f"Failure: Column '{datetime_col}' is object type but not an array of Timestamp objects.")
+    
+            elif not pd.core.dtypes.common.is_datetime64_any_dtype(col):
+                print(f"Failure: Column '{datetime_col}' is not a valid datetime type. Found dtype: {col.dtype}")
                 return False
 
-        elif not pd.core.dtypes.common.is_datetime64_any_dtype(col):
-            print(f"Failure: Column '{datetime_col}' is not a valid datetime type. Found dtype: {col.dtype}")
-            return False
-
-    timestamp_col = traj_cols.get('timestamp')
-    if timestamp_col and timestamp_col in df.columns:
-        if not pd.core.dtypes.common.is_integer_dtype(df[timestamp_col]):
-            print(f"Failure: Column '{timestamp_col}' is not an integer type.")
-            return False
+    # check integer types
+    for col_key in ['timestamp', 'start_timestamp', 'tz_offset']:
+        col_name = traj_cols.get(col_key)
+        if col_name and col_name in df.columns:
+            if not pd.core.dtypes.common.is_integer_dtype(df[col_name]):
+                print(f"Failure: Column '{col_name}' is not an integer type.")
+                return False
 
     tz_offset_col = traj_cols.get('tz_offset')
     if tz_offset_col and tz_offset_col in df.columns:
