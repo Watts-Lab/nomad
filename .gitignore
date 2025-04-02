@@ -13,3 +13,4 @@
 # Exclude pycache
 __pycache__/
 **/*.png
+.DS_Store
