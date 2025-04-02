@@ -55,7 +55,7 @@ def col_variations():
 @pytest.mark.parametrize("variation", ["default-basic", "alt-names-basic", "alt-names-dt-xy", "alt-names-ts-gh", "default-dt-xy"])
 def test_from_df_name_handling(base_df, col_variations, variation):
     cols, col_names, keys = col_variations[variation]
-    df = base_df.iloc[:, cols]
+    df = base_df.iloc[:, cols].copy()
     df.columns = col_names
 
     traj_cols = None
@@ -77,7 +77,7 @@ def test_date_parsing_from_df(base_df):
     result = loader.from_df(df, parse_dates=True, mixed_timezone_behavior="naive")
     result['timestamp'] = to_timestamp(result.datetime, result.tz_offset)
     #equals what's expected
-    assert result.timestamp.equals(expected_ts) and result.tz_offset.equals(expected_tz_offset)
+    assert (result.timestamp.values == expected_ts.values).all() and (result.tz_offset.values == expected_tz_offset.values).all()
 
 # from object fails if no spatial or temporal columns are provided (and no defaults)
 

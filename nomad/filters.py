@@ -48,14 +48,14 @@ def to_timestamp(
         if not pd.api.types.is_integer_dtype(tz_offset):
             tz_offset = tz_offset.astype('int64')
 
-    # datetime with timezone
-    if pd.api.types.is_datetime64tz_dtype(datetime):
+    # timezone-aware datetime64
+    if isinstance(datetime.dtype, pd.DatetimeTZDtype):
         return datetime.astype("int64") // 10**9
     
     # datetime without timezone
     elif pd.api.types.is_datetime64_dtype(datetime):
         if tz_offset is not None:
-            return datetime.astype("int64") // 10**9 + tz_offset
+            return datetime.astype("int64") // 10**9 - tz_offset
         warnings.warn(
                 f"The input is timezone-naive. UTC will be assumed."
                 "Consider localizing to a timezone or passing a timezone offset column.")
@@ -71,20 +71,18 @@ def to_timestamp(
         else:
             # naive e.g. "2024-01-01 12:29:00"
             if tz_offset is not None and not tz_offset.empty:
-                return result.astype('int64') // 10**9 + tz_offset
+                return result.astype('int64') // 10**9 - tz_offset
             else:
                 warnings.warn(
                     f"The input is timezone-naive. UTC will be assumed."
                     "Consider localizing to a timezone or passing a timezone offset column.")
                 return result.astype('int64') // 10**9
                 
-    # datetime is pandas.Timestamp object
+    # datetime is a series of pandas.Timestamp object. Always has unix timestamp in value
     else:
-        if tz_offset is not None and not tz_offset.empty:
-            f = np.frompyfunc(lambda x: x.timestamp(), 1, 1)
-            return pd.Series(f(datetime).astype("float64"), index=datetime.index)
-        else:
-            return datetime.astype('int64') // 10**9
+        f = np.frompyfunc(lambda x: x.timestamp(), 1, 1)
+        return pd.Series(f(datetime).astype("int64"), index=datetime.index)
+
 
 def to_projection(
     df: pd.DataFrame,

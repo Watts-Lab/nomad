@@ -4,6 +4,7 @@ from functools import partial
 import multiprocessing
 from multiprocessing import Pool
 import re
+import pdb
 from pyspark.sql import SparkSession
 import sys
 import os
@@ -462,7 +463,6 @@ def _process_datetime_column(df, col, parse_dates, mixed_timezone_behavior, fixe
             df[col], parse_dates=parse_dates,
             mixed_timezone_behavior=mixed_timezone_behavior,
             fixed_format=fixed_format)
-
         df[col] = parsed
 
         if parse_dates and tz_offset_key and tz_offset_key not in df:
@@ -473,7 +473,7 @@ def _process_datetime_column(df, col, parse_dates, mixed_timezone_behavior, fixe
                 f"The '{col}' column has mixed timezones. "
                 "Consider localizing to a single timezone or using a unix timestamp to avoid inconsistencies."
             )
-        elif is_datetime64_any_dtype(df[col]) and df[col].dt.tz is None:
+        elif is_datetime64_any_dtype(df[col]) and df[col].dt.tz is None and offset is None:
             warnings.warn(
                 f"The '{col}' column is timezone-naive. "
                 "Consider localizing to a timezone or using a unix timestamp to avoid inconsistencies."
