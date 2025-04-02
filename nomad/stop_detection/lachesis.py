@@ -56,11 +56,7 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
     datetime = 'datetime' in kwargs and kwargs['datetime'] in traj.columns
 
     # Set initial schema
-    if not traj_cols:
-        traj_cols = {}
-    
-    traj_cols = loader._update_schema(traj_cols, kwargs)
-    traj_cols = loader._update_schema(constants.DEFAULT_SCHEMA, traj_cols)
+    traj_cols = _parse_traj_cols(traj.columns, traj_cols, kwargs)
 
     # Tests to check for spatial and temporal columns
     loader._has_spatial_cols(traj.columns, traj_cols)
@@ -98,6 +94,9 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
     else:
         datetime = True
         datetime_col = traj_cols['datetime']
+        # Error if the datetime column contains strings
+        if not pd.core.dtypes.common.is_datetime64_any_dtype(traj[datetime_col]):
+            raise TypeError(f"Failure: Column '{datetime_col}' is not a valid datetime type. Found dtype: {traj[datetime_col].dtype}")
     
     stops = np.empty((0, 6))
 
