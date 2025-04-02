@@ -7,6 +7,7 @@ import pygeohash as gh
 import pdb
 from nomad.io import base as loader
 from nomad import constants
+from nomad.filters import to_timestamp
 
 @pytest.fixture
 def base_df():
@@ -66,8 +67,17 @@ def test_from_df_name_handling(base_df, col_variations, variation):
     assert loader._is_traj_df(result, traj_cols=traj_cols, parse_dates=False), "from_df() output is not a valid trajectory DataFrame"
 
 
-
 # from_object has correct values in some entries
+def test_date_parsing_from_df(base_df):
+    df = base_df.iloc[:, [0, 5, 6, 7]].copy()
+    df.columns = ["user_id", "datetime", "x", "y"]
+    expected_tz_offset = base_df.tz_offset
+    expected_ts = base_df.timestamp
+
+    result = loader.from_df(df, parse_dates=True, mixed_timezone_behavior="naive")
+    result['timestamp'] = to_timestamp(result.datetime, result.tz_offset)
+    #equals what's expected
+    assert result.timestamp.equals(expected_ts) and result.tz_offset.equals(expected_tz_offset)
 
 # from object fails if no spatial or temporal columns are provided (and no defaults)
 
