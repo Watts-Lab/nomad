@@ -45,6 +45,16 @@ def col_variations():
     }
     return col_vars
 
+
+@pytest.fixture
+def stop_df():
+    test_dir = Path(__file__).resolve().parent
+    data_path = test_dir.parent / "data" / "gc_stops.csv"
+    df = pd.read_csv(data_path)
+
+    
+    
+    
 # # Mock test (Test# 0) 
 # def test_print_sample_df(base_df):
 #     print(base_df.head())  
@@ -65,7 +75,8 @@ def test_from_df_name_handling(base_df, col_variations, variation):
 
     assert loader._is_traj_df(result, traj_cols=traj_cols, parse_dates=False), "from_df() output is not a valid trajectory DataFrame"
 
-
+def test_from_df_stop_table(stop_df):
+    return None
 
 # from_object has correct values in some entries
 

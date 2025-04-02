@@ -53,21 +53,17 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
         'latitude'] in traj.columns and kwargs['longitude'] in traj.columns
 
     # Check if user wants datetime
-    datetime = 'datetime' in kwargs and kwargs['datetime'] in traj.column
+    datetime = 'datetime' in kwargs and kwargs['datetime'] in traj.columns
 
     # Set initial schema
-    if not traj_cols:
-        traj_cols = {}
-
-    traj_cols = loader._update_schema(traj_cols, kwargs)
-    traj_cols = loader._update_schema(constants.DEFAULT_SCHEMA, traj_cols)
+    traj_cols = loader._parse_traj_cols(traj.columns, traj_cols, kwargs)
 
     # Tests to check for spatial and temporal columns
     loader._has_spatial_cols(traj.columns, traj_cols)
     loader._has_time_cols(traj.columns, traj_cols)
 
     # Setting x and y as defaults if not specified by user in either traj_cols or kwargs
-    if traj_cols['x'] in traj.columns and traj_cols['y'] in traj.columns:
+    if traj_cols['x'] in traj.columns and traj_cols['y'] in traj.columns and not long_lat:
         long_lat = False
         coords = traj[[traj_cols['x'], traj_cols['y']]].to_numpy()
     else:
@@ -75,7 +71,7 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
         coords = traj[[traj_cols['longitude'], traj_cols['latitude']]].to_numpy()
 
     # Setting timestamp as default if not specified by user in either traj_cols or kwargs
-    if traj_cols['timestamp'] in traj.columns:
+    if traj_cols['timestamp'] in traj.columns and not datetime:
         datetime = False
         timestamp_col = traj_cols['timestamp']
 
@@ -98,6 +94,9 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
     else:
         datetime = True
         datetime_col = traj_cols['datetime']
+        # Error if the datetime column contains strings
+        if not pd.core.dtypes.common.is_datetime64_any_dtype(traj[datetime_col]):
+            raise TypeError(f"Failure: Column '{datetime_col}' is not a valid datetime type. Found dtype: {traj[datetime_col].dtype}")
     
     stops = np.empty((0, 6))
 
@@ -186,7 +185,6 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
     else:
         stops['duration'] = (stops['end_time'] - stops['start_time']) / 60.0
 
-    
     if complete_output:
         return stops
     else:
@@ -220,12 +218,22 @@ def _lachesis_labels(traj, dur_min, dt_max, delta_roam, traj_cols=None, **kwargs
         - Points not in any stop are assigned a label of -1.
     """
     stops = lachesis(traj, dur_min, dt_max, delta_roam, traj_cols = traj_cols, complete_output = True, **kwargs)
+
+    traj_cols = loader._update_schema(traj_cols, kwargs)
+    traj_cols = loader._update_schema(constants.DEFAULT_SCHEMA, traj_cols)
+
+    # Check if user wants long and lat
+    long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs[
+        'latitude'] in traj.columns and kwargs['longitude'] in traj.columns
+
+    # Check if user wants datetime
+    datetime = 'datetime' in kwargs and kwargs['datetime'] in traj.columns
     
     # Determine the timestamp column to use
-    if traj_cols.get('timestamp') in traj.columns:
+    if traj_cols.get('timestamp') in traj.columns and not datetime:
         datetime = False
         timestamp_col = traj_cols['timestamp']
-    elif traj_cols.get('datetime') in traj.columns:
+    elif traj_cols.get('datetime') in traj.columns and datetime:
         datetime = True
         datetime_col = traj_cols['datetime']
 
