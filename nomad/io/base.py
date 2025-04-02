@@ -285,6 +285,42 @@ def _is_traj_df(df, traj_cols=None, parse_dates=True, check_valid_datetime_str=T
 
     return True
 
+def _has_start_cols():
+    start_exists = (
+        ('datetime' in traj_cols and traj_cols['datetime'] in col_names) or
+        ('timestamp' in traj_cols and traj_cols['timestamp'] in col_names) or
+        ('start_datetime' in traj_cols and traj_cols['start_datetime'] in col_names) or
+        ('start_timestamp' in traj_cols and traj_cols['start_timestamp'] in col_names)
+    )
+
+    if not start_exists:
+        raise ValueError(
+            "Could not find required start time column in {}. The dataset must contain or map to either 'datetime', 'timestamp', 'start_datetime', or 'start_timestamp'.".format(col_names)
+        )
+    
+    return start_exists
+
+def _has_end_cols():
+    end_exists = ('end_datetime' in traj_cols and traj_cols['end_datetime'] in col_names or
+                 'end_timestamp' in traj_cols and traj_cols['end_timestamp'] in col_names)
+
+    if not end_exists:
+        raise ValueError(
+            "Could not find required end time column in {}. The dataset must contain or map to either 'end_datetime' or 'end_timestamp'.".format(col_names)
+        )
+    
+    return end_exists
+
+def _has_duration_cols():
+    duration_exists = ('duration' in traj_cols and traj_cols['duration'] in col_names)
+
+    if not duration_exists:
+        raise ValueError(
+            "Could not find required duration column in {}. The dataset must contain or map to 'duration'.".format(col_names)
+        )
+    
+    return duration_exists
+
 
 def _has_time_cols(col_names, traj_cols):
     
