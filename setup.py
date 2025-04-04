@@ -25,11 +25,11 @@ setup(
         'pyarrow',
         's3fs'
     ],
-    package_data={'nomad': ['data/*', 'data/**/*']
+    package_data={'nomad': ['data/*', 'data/**/*']},
     classifiers=[
         'Programming Language :: Python :: 3',
         'License :: OSI Approved :: MIT License',
         'Operating System :: OS Independent',
     ],
-    python_requires='>=3.10',
+    python_requires='>=3.9',
 )
