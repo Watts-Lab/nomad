@@ -2,7 +2,7 @@ import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Polygon, Point
 
-from sedona.register import SedonaRegistrator
+#from sedona.register import SedonaRegistrator
 import pyspark
 from pyspark.sql import SparkSession
 from pyspark.sql import SQLContext
