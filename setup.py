@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 
-from setuptools import setup
+from setuptools import setup, find_packages
 
+long_description = open('README.md').read()
 setup(
     name='nomad',
     url='https://github.com/Watts-Lab/nomad',
