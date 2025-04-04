@@ -6,7 +6,7 @@ DEFAULT_SCHEMA = {
     "start_datetime":"start_datetime",
     "end_datetime":"end_datetime",
     "start_timestamp":"start_timestamp",
-    "end_datetime":"end_timestamp",
+    "end_timestamp":"end_timestamp",
     "timestamp": "timestamp",
     "x": "x",
     "y": "y",
