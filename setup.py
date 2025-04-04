@@ -23,7 +23,8 @@ setup(
         'funkybob',
         'scipy',
         'pyarrow',
-        's3fs'
+        's3fs',
+        'sedona'
     ],
     package_data={'nomad': ['data/*', 'data/**/*']},
     classifiers=[
