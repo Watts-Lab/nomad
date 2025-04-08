@@ -10,15 +10,17 @@ from collections import defaultdict
 import sys
 import os
 import pdb
+import geopandas as gpd
 import nomad.io.base as loader
 import nomad.constants as constants
 from nomad.stop_detection import utils
+from nomad.filters import to_timestamp
 
 ##########################################
 ########        Lachesis          ########
 ##########################################
 
-def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=False, **kwargs):
+def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=False, keep_col_names = True, **kwargs):
     """
     Detects stops in trajectory data by analyzing spatial and temporal patterns.
 
@@ -26,9 +28,9 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
     ----------
     traj : pd.DataFrame
         Input trajectory data containing columns for spatial coordinates and timestamps.
-    dur_min : float
+    dur_min : int
         Minimum duration (in minutes) for a valid stop.
-    dt_max : float
+    dt_max : int
         Maximum allowed time difference (in minutes) between consecutive pings within a stop. dt_max should be greater than dur_min
     delta_roam : float
         Maximum roaming distance for a stop.
@@ -38,6 +40,10 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
     complete_output : bool, optional
         If True, returns a detailed output with additional stop metrics; otherwise, provides a concise output.
         Defaults to False.
+    keep_col_names : bool, optional
+        If True, the output keeps the same names for coordinate and temporal columns, otherwise the output table
+        uses default column names from constants.DEFAULT_SCHEMA
+        Defaults to True.
     **kwargs :
         Additional parameters like 'latitude', 'longitude', or 'datetime' column names.
 
@@ -48,153 +54,157 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
         - 'start_time', 'duration', 'x', 'y' (concise output).
         - Additional columns if `complete_output` is True: 'end_time', 'diameter', 'n_pings'.
     """
-    # Check if user wants long and lat
-    long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs[
-        'latitude'] in traj.columns and kwargs['longitude'] in traj.columns
+    if not isinstance(traj, (pd.DataFrame, gpd.GeoDataFrame)):
+         raise TypeError("Input 'traj' must be a pandas DataFrame or GeoDataFrame.")
+    if traj.empty:
+        return pd.DataFrame()
 
-    # Check if user wants datetime
-    datetime = 'datetime' in kwargs and kwargs['datetime'] in traj.column
-
-    # Set initial schema
-    if not traj_cols:
-        traj_cols = {}
-
-    traj_cols = loader._update_schema(traj_cols, kwargs)
-    traj_cols = loader._update_schema(constants.DEFAULT_SCHEMA, traj_cols)
-
-    # Tests to check for spatial and temporal columns
+    # To DO: implement safe handling of multiple
+    # user data (should raise or cluster separately with groupby)
+        
+    traj_cols = loader._parse_traj_cols(traj.columns, traj_cols, kwargs)
     loader._has_spatial_cols(traj.columns, traj_cols)
     loader._has_time_cols(traj.columns, traj_cols)
 
-    # Setting x and y as defaults if not specified by user in either traj_cols or kwargs
-    if traj_cols['x'] in traj.columns and traj_cols['y'] in traj.columns:
-        long_lat = False
-        coords = traj[[traj_cols['x'], traj_cols['y']]].to_numpy()
-    else:
-        long_lat = True
-        coords = traj[[traj_cols['longitude'], traj_cols['latitude']]].to_numpy()
+    # Determine projection and time format preferences
 
-    # Setting timestamp as default if not specified by user in either traj_cols or kwargs
+    use_latlon = False
+    if (traj_cols['x'] in traj.columns and traj_cols['y'] in traj.columns):
+        metric = 'euclidean'
+        spatial_cols_in = [traj_cols['x'], traj_cols['y']]
+        coord_key1, coord_key2 = 'x', 'y'
+    else:
+        use_latlon = True
+
+    # Check explicit user kwargs preference FIRST
+    if 'latitude' in kwargs and 'longitude' in kwargs:
+         # Explicit lat/lon preference, *if available*
+         if traj_cols['latitude'] in traj.columns and traj_cols['longitude'] in traj.columns:
+             use_latlon = True
+
+    # Set final parameters based on use_latlon flag
+    if use_latlon:
+        metric = 'haversine'
+        spatial_cols_in = [traj_cols['longitude'], traj_cols['latitude']] # Lon, Lat for util
+        coord_key1, coord_key2 = 'longitude', 'latitude'
+
+    coords = traj[spatial_cols_in].to_numpy(dtype='float64')
+
+    use_datetime = False
     if traj_cols['timestamp'] in traj.columns:
-        datetime = False
-        timestamp_col = traj_cols['timestamp']
-
-        first_timestamp = traj[timestamp_col].iloc[0]
-        timestamp_length = len(str(first_timestamp))
-
-        if timestamp_length > 10:
-            if timestamp_length == 13:
-                warnings.warn(
-                    f"The '{traj[timestamp_col]}' column appears to be in milliseconds. "
-                    "This may lead to inconsistencies."
-                )
-                traj[timestamp_col] = traj[timestamp_col].values.view('int64') // 10 ** 3
-            elif timestamp_length == 19:
-                warnings.warn(
-                    f"The '{timestamp_col_name}' column appears to be in nanoseconds. "
-                    "This may lead to inconsistencies."
-                )
-                traj[timestamp_col] = traj[timestamp_col].values.view('int64') // 10 ** 9
+        time_col_in = traj_cols['timestamp']
+        time_key = 'timestamp'
+    elif traj_cols['start_timestamp'] in traj.columns:
+        time_col_in = traj_cols['start_timestamp']
+        time_key = 'start_timestamp'
     else:
-        datetime = True
-        datetime_col = traj_cols['datetime']
-    
-    stops = np.empty((0, 6))
-
-    i = 0
-
-    while i < len(traj) - 1:
-        time_i = traj[timestamp_col].iat[i] if not datetime else traj[datetime_col].iat[i]
-
-        if not datetime:
-            j_star = next((j for j in range(i, len(traj)) if (
-                        traj[timestamp_col].iat[j] - time_i) >= dur_min * 60), -1)
-        else:
-            j_star = next((j for j in range(i, len(traj)) if
-                           (traj[datetime_col].iat[j] - time_i) >= timedelta(
-                               minutes=dur_min)), -1)
-
-        d_start = utils._diameter(coords[i:j_star + 1],
-                           metric='haversine' if long_lat else 'euclidean')
-
-        cond_exhausted_traj = j_star == -1
-        cond_diam_OT = d_start > delta_roam
-
-        if not datetime:
-            cond_cc_diff_OT = (traj[timestamp_col].loc[i:j_star + 1]
-                               .diff().dropna() >= dt_max * 60).any()
-        else:
-            cond_cc_diff_OT = (traj[datetime_col].loc[i:j_star + 1]
-                               .diff().dropna().dt.total_seconds() >= dt_max * 60).any()
-
-        if cond_exhausted_traj or cond_diam_OT or cond_cc_diff_OT:
-            i += 1
-        else:
-            cond_found_jstar = False
-            for j in range(j_star, len(traj) - 1):
-                d_update = utils._update_diameter(coords[j], coords[i:j], d_start,
-                                           metric='haversine' if long_lat else 'euclidean')
-
-                if datetime:
-                    cc_diff = (traj[datetime_col].iat[j] -
-                               traj[datetime_col].iat[j - 1]).total_seconds()
-                else:
-                    cc_diff = traj[timestamp_col].iat[j] - \
-                              traj[timestamp_col].iat[j - 1]
-
-                cond_j = (d_update > delta_roam) or (cc_diff > dt_max * 60)
-
-                if cond_j:
-                    j_star = j - 1
-                    cond_found_jstar = True
-                    break
-                else:
-                    d_start = d_update
-
-            if not cond_found_jstar:
-                j_star = len(traj) - 1
-            
-            start, end = (traj[datetime_col].iat[i], traj[datetime_col].iat[j_star]) if datetime else (traj[timestamp_col].iat[i], traj[timestamp_col].iat[j_star])
-            
-            if datetime:
-                duration = (traj[datetime_col].iat[j_star] - traj[datetime_col].iat[i]).total_seconds()
-                cc_diffs = traj[datetime_col].loc[i:j_star].diff().dt.total_seconds()
-            else:
-                duration = traj[timestamp_col].iat[j_star] - traj[timestamp_col].iat[i]
-                cc_diffs = traj[timestamp_col].loc[i:j_star].diff()
+        use_datetime = True
         
-            if (duration >= dur_min * 60 and
-                d_start <= delta_roam and
-                (cc_diffs.dropna() <= dt_max * 60).all()):
-                stop_medoid = utils._medoid(coords[i:j_star + 1])
-                n_pings = j_star - i + 1
-                stop = np.array([[start, end, stop_medoid[0], stop_medoid[1], d_start, n_pings]])
-                stops = np.concatenate((stops, stop), axis=0)
+    #check user preferences
+    if 'datetime' in kwargs or 'start_datetime' in kwargs:
+        # Explicit datetime preference if available
+        if traj_cols['datetime'] or traj_cols['start_datetime'] in traj.columns:
+            use_datetime = True
 
-            i = j_star + 1
-
-    if long_lat:
-        col_names = ['start_time', 'end_time', traj_cols['longitude'], traj_cols['latitude'], 'diameter', 'n_pings']
-    else:
-        col_names = ['start_time', 'end_time', traj_cols['x'], traj_cols['y'], 'diameter', 'n_pings']
+    # set final parameters based on use_datetime flag
+    if use_datetime and traj_cols['datetime'] in traj.columns:
+        time_col_in = traj_cols['datetime']
+        time_key = 'datetime'
+    elif use_datetime and traj_cols['start_datetime'] in traj.columns:
+        time_col_in = traj_cols['start_datetime']
+        time_key = 'start_datetime'
     
-    stops = pd.DataFrame(stops, columns=col_names)
-
-    # compute stop duration
-    if datetime:
-        stops['duration'] = (stops['end_time'] - stops['start_time']).dt.total_seconds() / 60.0
+    # Parse if necessary
+    if use_datetime:
+        # Use to_timestamp to convert datetime series to UNIX timestamps (seconds)
+        time_series = to_timestamp(traj[time_col_in])
     else:
-        stops['duration'] = (stops['end_time'] - stops['start_time']) / 60.0
-
-    
-    if complete_output:
-        return stops
-    else:
-        stops.drop(columns=['end_time', 'diameter', 'n_pings'], inplace=True)
-        if long_lat:
-            return stops[['start_time', 'duration', traj_cols['longitude'], traj_cols['latitude']]]
+        first_val = traj[time_col_in].iloc[0]
+        s_val = str(first_val)
+        if len(s_val) > 10:
+            if len(s_val) == 13:
+                warnings.warn(f"The '{time_col_in}' column appears to be in milliseconds. Converting to seconds.")
+                time_series = traj[time_col_in].astype('int64') // 10**3
+            elif len(s_val) == 19:
+                warnings.warn(f"The '{time_col_in}' column appears to be in nanoseconds. Converting to seconds.")
+                time_series = traj[time_col_in].astype('int64') // 10**9
+            else:
+                time_series = traj[time_col_in]
         else:
-            return stops[['start_time', 'duration', traj_cols['x'], traj_cols['y']]]
+            time_series = traj[time_col_in]
+  
+    stops = []
+    i = 0
+    n = len(traj)
+    while i < n - 1:
+        t_i = time_series.iloc[i]
+        j_star = next((j for j in range(i, n) if (time_series.iloc[j] - t_i) >= dur_min * 60), -1)
+        if j_star == -1:
+            break
+
+        d_start = utils._diameter(coords[i:j_star + 1], metric=metric)
+        time_diffs = np.diff(time_series.iloc[i:j_star + 1].values)
+        if (time_diffs >= dt_max * 60).any() or d_start > delta_roam:
+            i += 1
+            continue
+
+        j_final = j_star
+        for j in range(j_star, n):
+            d_update = utils._update_diameter(coords[j], coords[i:j], d_start, metric=metric)
+            cc_diff = time_series.iloc[j] - time_series.iloc[j - 1]
+            if d_update > delta_roam or cc_diff > dt_max * 60:
+                j_final = j - 1
+                break
+            d_start = d_update
+        else:
+            j_final = n - 1
+
+        duration = (time_series.iloc[j_final] - time_series.iloc[i]) // 60
+        if duration >= dur_min:
+            if use_datetime:
+                start_val = traj[time_col_in].iloc[i]
+                end_val = traj[time_col_in].iloc[j_final]
+            else:
+                start_val = time_series.iloc[i]
+                end_val = time_series.iloc[j_final]
+
+            medoid = utils._medoid(coords[i:j_final + 1])
+            if complete_output:
+                row = [
+                    start_val,
+                    end_val,
+                    duration,
+                    medoid[0],
+                    medoid[1],
+                    d_start,
+                    j_final - i + 1
+                ]
+            else:
+                row = [
+                    start_val,
+                    duration,
+                    medoid[0],
+                    medoid[1]
+                ]
+            stops.append(row)
+
+        i = j_final + 1
+
+    if keep_col_names:
+        coord_cols = [traj_cols[coord_key1], traj_cols[coord_key2]]
+        start_col = time_col_in
+    else:
+        coord_cols = [constants.DEFAULT_SCHEMA[coord_key1], constants.DEFAULT_SCHEMA[coord_key2]]
+        start_col = constants.DEFAULT_SCHEMA['start_datetime'] if use_datetime else constants.DEFAULT_SCHEMA['start_timestamp']
+
+    end_col = constants.DEFAULT_SCHEMA['end_datetime'] if use_datetime else constants.DEFAULT_SCHEMA['end_timestamp']
+
+    if complete_output:
+        columns = [start_col, end_col, 'duration'] + coord_cols + ['diameter', 'n_pings']
+    else:
+        columns = [start_col, 'duration'] + coord_cols
+
+    return pd.DataFrame(stops, columns=columns)
 
 def _lachesis_labels(traj, dur_min, dt_max, delta_roam, traj_cols=None, **kwargs):
     """
@@ -220,12 +230,22 @@ def _lachesis_labels(traj, dur_min, dt_max, delta_roam, traj_cols=None, **kwargs
         - Points not in any stop are assigned a label of -1.
     """
     stops = lachesis(traj, dur_min, dt_max, delta_roam, traj_cols = traj_cols, complete_output = True, **kwargs)
+
+    traj_cols = loader._update_schema(traj_cols, kwargs)
+    traj_cols = loader._update_schema(constants.DEFAULT_SCHEMA, traj_cols)
+
+    # Check if user wants long and lat
+    long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs[
+        'latitude'] in traj.columns and kwargs['longitude'] in traj.columns
+
+    # Check if user wants datetime
+    datetime = 'datetime' in kwargs and kwargs['datetime'] in traj.columns
     
     # Determine the timestamp column to use
-    if traj_cols.get('timestamp') in traj.columns:
+    if traj_cols.get('timestamp') in traj.columns and not datetime:
         datetime = False
         timestamp_col = traj_cols['timestamp']
-    elif traj_cols.get('datetime') in traj.columns:
+    elif traj_cols.get('datetime') in traj.columns and datetime:
         datetime = True
         datetime_col = traj_cols['datetime']
 
