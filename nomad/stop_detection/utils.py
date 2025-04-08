@@ -6,6 +6,7 @@ from datetime import timedelta
 import itertools
 import os
 import nomad.constants as constants
+import pdb
 
 def _diameter(coords, metric='euclidean'):
     """
@@ -27,13 +28,14 @@ def _diameter(coords, metric='euclidean'):
     """
     if len(coords) < 2:
         return 0
-        
+   
     if metric == 'haversine':
         coords = np.radians(coords)
         pairwise_dists = pdist(coords,
                                metric=lambda u, v: _haversine_distance(u, v))
         return np.max(pairwise_dists)
-    return np.max(pdist(coords, metric=metric))
+    else:
+        return np.max(pdist(coords, metric=metric))
 
 
 def _medoid(coords, metric='euclidean'):

@@ -49,13 +49,13 @@ def to_timestamp(
             tz_offset = tz_offset.astype('int64')
 
     # datetime with timezone
-    if pd.api.types.is_datetime64tz_dtype(datetime):
+    if isinstance(datetime.dtype, pd.DatetimeTZDtype):
         return datetime.astype("int64") // 10**9
     
     # datetime without timezone
     elif pd.api.types.is_datetime64_dtype(datetime):
         if tz_offset is not None:
-            return datetime.astype("int64") // 10**9 + tz_offset
+            return datetime.astype("int64") // 10**9 - tz_offset
         warnings.warn(
                 f"The input is timezone-naive. UTC will be assumed."
                 "Consider localizing to a timezone or passing a timezone offset column.")
@@ -66,12 +66,12 @@ def to_timestamp(
         result = pd.to_datetime(datetime, errors="coerce", utc=True)
 
         # contains timezone e.g. '2024-01-01 12:29:00-02:00'
-        if datetime.str.contains(r'(Z|[+-]\d{2}:\d{2})$', regex=True, na=False).any():
+        if datetime.str.contains(r'(?:Z|[+\-]\d{2}:\d{2})$', regex=True, na=False).any():
             return result.astype('int64') // 10**9
         else:
             # naive e.g. "2024-01-01 12:29:00"
             if tz_offset is not None and not tz_offset.empty:
-                return result.astype('int64') // 10**9 + tz_offset
+                return result.astype('int64') // 10**9 - tz_offset
             else:
                 warnings.warn(
                     f"The input is timezone-naive. UTC will be assumed."
@@ -309,7 +309,7 @@ def _filtered_users(
         A Series containing the user IDs for users who have at 
         least k distinct days with pings inside the polygon.
     """
-    df_filtered = df[(df[timestamp_col] >= T0) & (df[timestamp_col] <= T1)]
+    df_filtered = df[(df[timestamp_col] >= T0) & (df[timestamp_col] <= T1)].copy()
     df_filtered[timestamp_col] = pd.to_datetime(df_filtered[timestamp_col])
     df_filtered = _in_geo(df_filtered, longitude_col, latitude_col, polygon)
     df_filtered['date'] = df_filtered[timestamp_col].dt.date
