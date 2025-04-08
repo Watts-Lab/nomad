@@ -2,7 +2,6 @@ import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Polygon, Point
 
-from sedona.register import SedonaRegistrator
 import pyspark
 from pyspark.sql import SparkSession
 from pyspark.sql import SQLContext
@@ -183,6 +182,8 @@ def _to_projection_spark(
     """
     Helper function to project latitude/longitude columns to a new CRS using Spark.
     """
+    from sedona.register import SedonaRegistrator
+    
     SedonaRegistrator.registerAll(spark_session)
     spark_df = spark_session.createDataFrame(df)
     spark_df.createOrReplaceTempView("temp_view")
@@ -389,7 +390,8 @@ def _filter_to_polygon_spark(
         Filtered DataFrame including only rows within the specified timeframe, inside the specified geometry,
         and belonging to users with at least k distinct days with pings inside the geometry.
     """
-
+    from sedona.register import SedonaRegistrator
+    
     SedonaRegistrator.registerAll(spark)
 
     df = df.withColumn(timestamp_col, F.to_timestamp(F.col(timestamp_col)))
