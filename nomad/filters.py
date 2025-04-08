@@ -1,7 +1,6 @@
 import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Polygon, Point
-
 import pyspark
 from pyspark.sql import SparkSession
 from pyspark.sql import SQLContext
@@ -183,7 +182,6 @@ def _to_projection_spark(
     Helper function to project latitude/longitude columns to a new CRS using Spark.
     """
     from sedona.register import SedonaRegistrator
-    
     SedonaRegistrator.registerAll(spark_session)
     spark_df = spark_session.createDataFrame(df)
     spark_df.createOrReplaceTempView("temp_view")
