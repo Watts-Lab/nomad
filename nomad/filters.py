@@ -1,8 +1,6 @@
 import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Polygon, Point
-
-from sedona.register import SedonaRegistrator
 import pyspark
 from pyspark.sql import SparkSession
 from pyspark.sql import SQLContext
@@ -48,7 +46,6 @@ def to_timestamp(
         if not pd.api.types.is_integer_dtype(tz_offset):
             tz_offset = tz_offset.astype('int64')
 
-    # timezone-aware datetime64
     if isinstance(datetime.dtype, pd.DatetimeTZDtype):
         return datetime.astype("int64") // 10**9
     
@@ -66,7 +63,7 @@ def to_timestamp(
         result = pd.to_datetime(datetime, errors="coerce", utc=True)
 
         # contains timezone e.g. '2024-01-01 12:29:00-02:00'
-        if datetime.str.contains(r'(Z|[+-]\d{2}:\d{2})$', regex=True, na=False).any():
+        if datetime.str.contains(r'(?:Z|[+\-]\d{2}:\d{2})$', regex=True, na=False).any():
             return result.astype('int64') // 10**9
         else:
             # naive e.g. "2024-01-01 12:29:00"
@@ -181,7 +178,7 @@ def _to_projection_spark(
     """
     Helper function to project latitude/longitude columns to a new CRS using Spark.
     """
-    from sedona.register import SedonaRegistrator    
+    from sedona.register import SedonaRegistrator
     SedonaRegistrator.registerAll(spark_session)
     spark_df = spark_session.createDataFrame(df)
     spark_df.createOrReplaceTempView("temp_view")
@@ -389,6 +386,7 @@ def _filter_to_polygon_spark(
         and belonging to users with at least k distinct days with pings inside the geometry.
     """
     from sedona.register import SedonaRegistrator
+    
     SedonaRegistrator.registerAll(spark)
 
     df = df.withColumn(timestamp_col, F.to_timestamp(F.col(timestamp_col)))
