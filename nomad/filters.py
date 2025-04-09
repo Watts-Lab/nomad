@@ -181,6 +181,7 @@ def _to_projection_spark(
     """
     Helper function to project latitude/longitude columns to a new CRS using Spark.
     """
+    from sedona.register import SedonaRegistrator    
     SedonaRegistrator.registerAll(spark_session)
     spark_df = spark_session.createDataFrame(df)
     spark_df.createOrReplaceTempView("temp_view")
@@ -307,7 +308,7 @@ def _filtered_users(
         A Series containing the user IDs for users who have at 
         least k distinct days with pings inside the polygon.
     """
-    df_filtered = df[(df[timestamp_col] >= T0) & (df[timestamp_col] <= T1)]
+    df_filtered = df[(df[timestamp_col] >= T0) & (df[timestamp_col] <= T1)].copy()
     df_filtered[timestamp_col] = pd.to_datetime(df_filtered[timestamp_col])
     df_filtered = _in_geo(df_filtered, longitude_col, latitude_col, polygon)
     df_filtered['date'] = df_filtered[timestamp_col].dt.date
@@ -387,7 +388,7 @@ def _filter_to_polygon_spark(
         Filtered DataFrame including only rows within the specified timeframe, inside the specified geometry,
         and belonging to users with at least k distinct days with pings inside the geometry.
     """
-
+    from sedona.register import SedonaRegistrator
     SedonaRegistrator.registerAll(spark)
 
     df = df.withColumn(timestamp_col, F.to_timestamp(F.col(timestamp_col)))
