@@ -424,7 +424,7 @@ def _has_duration_cols(col_names, traj_cols):
     duration_exists = (duration_col is not None and duration_col in col_names)
     return duration_exists
 
-def _has_spatial_cols(col_names, traj_cols):
+def _has_spatial_cols(col_names, traj_cols, exclusive=False):
     
     spatial_exists = (
         ('latitude' in traj_cols and 'longitude' in traj_cols and 
@@ -439,8 +439,20 @@ def _has_spatial_cols(col_names, traj_cols):
             "Could not find required spatial columns in {}. The dataset must contain or map to at least one of the following sets: "
             "('latitude', 'longitude'), ('x', 'y'), or 'geohash'.".format(col_names)
         )
+
+    if exclusive:
+        single_spatial = (
+            ('latitude' in traj_cols and 'longitude' in traj_cols and 
+             traj_cols['latitude'] in col_names and traj_cols['longitude'] in col_names) ^
+            ('x' in traj_cols and 'y' in traj_cols and 
+             traj_cols['x'] in col_names and traj_cols['y'] in col_names) 
+        )
+        raise ValueError(
+            f"Too many user provided spatial columns in arguments {traj_cols}, only one pair of spatial coordinates is required."
+        )
     
     return spatial_exists
+
 
 def _has_user_cols(col_names, traj_cols):
     
