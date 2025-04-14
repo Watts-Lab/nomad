@@ -1,6 +1,7 @@
 import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Polygon, Point
+import warnings
 
 from sedona.register import SedonaRegistrator
 import pyspark
@@ -9,27 +10,24 @@ from pyspark.sql import SQLContext
 from pyspark.sql import functions as F
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, LongType, DoubleType
 
-import nomad.daphmeIO as loader
+import nomad.io.base as loader
 from nomad.constants import DEFAULT_SCHEMA
 import pdb
 
 def to_projection(
     traj: pd.DataFrame,
-    input_crs: str = "EPSG:4326",
-    output_crs: str = "EPSG:3857",
-    traj_cols: dict = None,
-    output_x_col: str = "x",
-    output_y_col: str = "y",
+    input_crs = None,
+    output_crs = None,
     spark_session: SparkSession = None,
     **kwargs
-) -> pd.DataFrame:
+):
     """
     Projects coordinate columns from one Coordinate Reference System (CRS) to another.
 
     This function takes a DataFrame containing coordinate columns and projects them from one CRS to another specified CRS. 
     It supports both local and distributed computation using Spark. (TODO: SPARK)
 
-    If `traj_cols` is not provided, the function will attempt to use default column names or those provided in `kwargs`.
+    If columns names are not specified in `kwargs`, the function will attempt to use default column names.
 
     Parameters
     ----------
@@ -37,66 +35,47 @@ def to_projection(
         Trajectory DataFrame containing coordinate columns.
     input_crs : str, optional
         EPSG code for the original CRS.
-        Defaults to "EPSG:4326".
     output_crs : str, optional
         EPSG code for the target CRS.
-        Defaults to "EPSG:3857".
-    traj_cols : dict, optional
-        A dictionary defining column mappings for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'.
-        If not provided, the function will attempt to use default column names or those provided in `kwargs`.
-    output_x_col : str, optional
-        Name of the projected x column.
-        Defaults to 'x'.
-    output_y_col : str, optional
-        Name of the projected y column.
-        Defaults to 'y'.
     spark_session : SparkSession, optional.
         Spark session for distributed computation, if needed.
     **kwargs :
-        Additional parameters like 'latitude' or 'longitude' column names.
+        Additional parameters to specify names of spatial columns to project from.
+        E.g., 'latitude', 'longitude' or 'x', 'y'.
 
     Returns
     -------
-    pd.DataFrame
-        DataFrame with new 'x' and 'y' columns representing projected coordinates.
+    (pd.Series, pd.Series)
+        A pair of Series with the new projected coordinates.
 
     Raises
     ------
     ValueError
         If expected coordinate columns are missing.
     """
-    traj = traj.copy()
+    # Check whether traj contains spatial columns
+    loader._has_spatial_cols(traj.columns, kwargs)#, exclusive=True)
 
     # Check if user wants to project from x and y
-    spatial_cols_provided = (
-        'x' in kwargs and 'y' in kwargs 
-        and kwargs['x'] in traj.columns 
-        and kwargs['y'] in traj.columns
-    )
-
-    # Set initial schema
-    if not traj_cols:
-        traj_cols = {}
-
-    traj_cols = loader._update_schema(traj_cols, kwargs)
-    traj_cols = loader._update_schema(DEFAULT_SCHEMA, traj_cols)
-
-    # Test to check for spatial columns
-    loader._has_spatial_cols(traj.columns, traj_cols)
-
-    # Setting long and lat as defaults if not specified by user in either traj_cols or kwargs
-    if not spatial_cols_provided and traj_cols['longitude'] in traj.columns and traj_cols['latitude'] in traj.columns:
-        input_x_col, input_y_col = traj_cols['longitude'], traj_cols['latitude']
+    if ('x' in kwargs and 'y' in kwargs):
+        input_x_col, input_y_col = kwargs['x'], kwargs['y']
+        if input_crs is None:
+            raise ValueError("input_crs not found in arguments.")
+        if output_crs is None:
+            output_crs = "EPSG:4326"
+            warnings.warn("output_crs not provided. Defaulting to EPSG:4326.")
     else:
-        input_x_col, input_y_col = traj_cols['x'], traj_cols['y']
-
-    if input_x_col not in traj.columns or input_y_col not in traj.columns:
-        raise ValueError(f"Coordinate columns '{input_x_col}' and/or '{input_y_col}' not found in DataFrame.")
+        input_x_col, input_y_col = kwargs['longitude'], kwargs['latitude']
+        if input_crs is None:
+            input_crs = "EPSG:4326"
+            warnings.warn("input_crs not provided. Defaulting to EPSG:4326.")
+        if output_crs is None:
+            raise ValueError("output_crs not found in arguments.")
 
     if spark_session:
-        return _to_projection_spark(traj, input_crs, output_crs, input_x_col, input_y_col, output_x_col, output_y_col, spark_session)
+        return _to_projection_spark(traj, input_crs, output_crs, input_x_col, input_y_col, spark_session)
     else:
-        return _to_projection(traj, input_crs, output_crs, input_x_col, input_y_col, output_x_col, output_y_col)
+        return _to_projection(traj, input_crs, output_crs, input_x_col, input_y_col)
 
 
 def _to_projection(
@@ -104,19 +83,14 @@ def _to_projection(
     input_crs,
     output_crs,
     input_x_col,
-    input_y_col,
-    output_x_col,
-    output_y_col
+    input_y_col
 ):
     """
     Helper function to project latitude/longitude columns to a new CRS.
     """
     gdf = gpd.GeoSeries(gpd.points_from_xy(traj[input_x_col], traj[input_y_col]), crs=input_crs)
     projected = gdf.to_crs(output_crs)
-    traj[output_x_col] = projected.x
-    traj[output_y_col] = projected.y
-
-    return traj
+    return projected.x, projected.y
 
 
 def _to_projection_spark(
@@ -125,8 +99,6 @@ def _to_projection_spark(
     output_crs, 
     input_x_col, 
     input_y_col, 
-    output_x_col,
-    output_y_col,
     spark_session
 ):
     """
@@ -136,13 +108,13 @@ def _to_projection_spark(
     spark_df = spark_session.createDataFrame(traj)
     spark_df.createOrReplaceTempView("temp_view")
     query = f"""
-        SELECT *, 
-            ST_X(ST_Transform(ST_Point({input_x_col}, {input_y_col}), '{input_crs}', '{output_crs}')) AS {output_x_col},
-            ST_Y(ST_Transform(ST_Point({input_x_col}, {input_y_col}), '{input_crs}', '{output_crs}')) AS {output_y_col}
+        SELECT
+            ST_X(ST_Transform(ST_Point({input_x_col}, {input_y_col}), '{input_crs}', '{output_crs}')),
+            ST_Y(ST_Transform(ST_Point({input_x_col}, {input_y_col}), '{input_crs}', '{output_crs}'))
         FROM temp_view
     """
     result_df = spark_session.sql(query)
-    return result_df.toPandas()
+    return result_df.toPandas()  # TODO: make it return as pd.Series
 
 
 def filter_users(
@@ -192,29 +164,15 @@ def filter_users(
         Filtered DataFrame with points inside the polygon's bounds.
     '''
 
-    # Check if user wants to use long and lat
-    long_lat = (
-        'latitude' in kwargs and 'longitude' in kwargs
-        and kwargs['latitude'] in traj.columns
-        and kwargs['longitude'] in traj.columns
-    )
-
-    # Set initial schema
-    if not traj_cols:
-        traj_cols = {}
-
-    traj_cols = loader._update_schema(traj_cols, kwargs)
-    traj_cols = loader._update_schema(DEFAULT_SCHEMA, traj_cols)
-
-    # Tests to check for spatial and temporal columns
-    loader._has_spatial_cols(traj.columns, traj_cols)
+    traj_cols = loader._parse_traj_cols(traj.columns, traj_cols, kwargs)
+    loader._has_spatial_cols(traj.columns, traj_cols)#, exclusive=True)
     loader._has_time_cols(traj.columns, traj_cols)
 
-    # Setting x and y as defaults if not specified by user in either traj_cols or kwargs
-    if not long_lat and traj_cols['x'] in traj.columns and traj_cols['y'] in traj.columns:
-        input_x, input_y = traj_cols['x'], traj_cols['y']
+    # Check which spatial columns to project from
+    if ('x' in kwargs and 'y' in kwargs):
+        input_x_col, input_y_col = kwargs['x'], kwargs['y']
     else:
-        input_x, input_y = traj_cols['longitude'], traj_cols['latitude']
+        input_x_col, input_y_col = kwargs['longitude'], kwargs['latitude']
 
     # Check if polygon is a valid Shapely Polygon object
     if (polygon is not None) and (not isinstance(polygon, Polygon)):
@@ -225,11 +183,11 @@ def filter_users(
 
     if spark_session:
         return _filter_users_spark(
-            traj, start_time, end_time, polygon.wkt, min_active_days, min_pings_per_day, traj_cols, input_x, input_y, spark_session
+            traj, start_time, end_time, polygon.wkt, min_active_days, min_pings_per_day, traj_cols, input_x_col, input_y_col, spark_session
             )
     else:
         users = _filtered_users(
-            traj, start_time, end_time, polygon, min_active_days, min_pings_per_day, traj_cols, input_x, input_y, crs
+            traj, start_time, end_time, polygon, min_active_days, min_pings_per_day, traj_cols, input_x_col, input_y_col, crs
         )
         return traj[traj[traj_cols['user_id']].isin(users)]
 
@@ -440,97 +398,3 @@ def _compute_q_stat(user, timestamp_col):
     # Compute q as the proportion of unique hours to total hours
     q_stat = unique_hours / total_hours if total_hours > 0 else 0
     return q_stat
-
-
-def compute_persistence(df: pd.DataFrame, 
-                        max_gap: int,
-                        user_col: str, 
-                        timestamp_col: str,) -> pd.DataFrame:
-    """
-    TODO: FIX CODE 
-
-    Computes the persistence for each user, defined as:
-    P[X[t, t+max_gap] is not empty | X[t] is not empty], where X[t] = 1 indicates a ping
-    occurred at time t, and X[t, t+max_gap] indicates any ping in the interval [t, t+max_gap].
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Input DataFrame containing 'uid' (user ID) and 'local_timestamp' (datetime of pings).
-    max_gap : int
-        The maximum number of hours to check for the presence of pings after time t.
-
-    Returns
-    -------
-    pd.DataFrame
-        A DataFrame containing the persistence for each user ('uid', 'persistence').
-    """
-    df['hour'] = pd.to_datetime(df[timestamp_col]).dt.floor('h')
-    df_hourly = df.groupby([user_col, 'hour']).size().clip(upper=1).reset_index(name='ping')
-
-    # Generate a complete range of hours for each user within the target time window
-    uids = df[user_col].unique()
-    all_hours = pd.MultiIndex.from_product(
-        [uids, pd.date_range(start=pd.Timestamp('2024-01-01 08:00:00'),
-                             end=pd.Timestamp('2024-01-15 07:00:00'), freq='h')],
-        names=[user_col, 'hour']
-    )
-
-    # Create a DataFrame with all hours for all users
-    all_hours_df = pd.DataFrame(index=all_hours).reset_index()
-
-    # Merge with the hourly pings data
-    df_complete = pd.merge(all_hours_df, df_hourly, on=[user_col, 'hour'], how='left').fillna(0)
-    df_complete['ping'] = df_complete['ping'].astype(int)
-
-    # Initialize a column to store whether there is a ping within the next max_gap hours
-    df_complete['has_future_ping'] = 0
-
-    # Compute the condition: Check for pings within [t, t+max_gap] for each user
-    for uid, group in df_complete.groupby(user_col):
-        for idx, row in group.iterrows():
-            current_hour = row['hour']
-            future_pings = group[(group['hour'] > current_hour) & 
-                                 (group['hour'] <= current_hour + pd.Timedelta(hours=max_gap))]
-            if future_pings['ping'].sum() > 0:
-                df_complete.at[idx, 'has_future_ping'] = 1
-
-    # Compute persistence for each user
-    user_persistence_list = []
-    for uid, group in df_complete.groupby(user_col):
-        numerator = ((group['ping'] == 1) & (group['has_future_ping'] == 1)).sum()
-        denominator = (group['ping'] == 1).sum()
-        persistence = numerator / denominator if denominator > 0 else 0
-        user_persistence_list.append({user_col: uid, 'persistence': persistence})
-
-    # Convert to DataFrame
-    persistence_df = pd.DataFrame(user_persistence_list)
-
-    return persistence_df
-
-
-def filter_users_by_persistence_new(df: pd.DataFrame, max_gap: int, epsilon: float) -> pd.Series:
-    """
-    Filters users based on their persistence value, keeping only users with persistence above epsilon.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Input DataFrame containing 'uid' (user ID) and 'local_timestamp' (datetime of pings).
-    max_gap : int
-        The maximum number of hours to check for the presence of pings after time t.
-    epsilon : float
-        The persistence threshold; only users with persistence > epsilon will be retained.
-
-    Returns
-    -------
-    pd.Series
-        A Series containing the user IDs of users whose persistence > epsilon.
-    """
-    # Compute persistence for each user
-    persistence_df = user_persistence_new(df, max_gap)
-
-    # Filter users with persistence > epsilon
-    filtered_users = persistence_df[persistence_df['persistence'] > epsilon]['uid']
-
-    return filtered_users

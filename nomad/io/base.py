@@ -1,5 +1,4 @@
 import pyarrow.parquet as pq
-import pandas as pd
 from functools import partial
 import multiprocessing
 from multiprocessing import Pool
@@ -9,19 +8,53 @@ import sys
 import os
 import pyarrow.compute as pc
 import pyarrow.dataset as ds
-import nomad.constants as constants
+from nomad.constants import DEFAULT_SCHEMA
 import numpy as np
 import geopandas as gpd
 import warnings
+import pdb
+
+import pandas as pd
+from pandas.api.types import (
+    is_datetime64_any_dtype,
+    is_string_dtype,
+    is_float_dtype,
+    is_integer_dtype,
+    is_object_dtype, 
+    is_extension_array_dtype 
+)
+from pandas import Int64Dtype, Float64Dtype, StringDtype # For isinstance if needed later
+
+
 
 # utils
 def _update_schema(original, new_labels):
     updated_schema = dict(original)
     for label in new_labels:
-        if label in constants.DEFAULT_SCHEMA:
+        if label in DEFAULT_SCHEMA:
             updated_schema[label] = new_labels[label]
     return updated_schema
 
+def _parse_traj_cols(columns, traj_cols, optional_args):
+    """
+    Internal helper to finalize trajectory column names using user input and defaults.
+    """
+    if traj_cols:
+        for k in optional_args:
+            if k in traj_cols and optional_args[k] != traj_cols[k]:
+                raise ValueError(
+                    f"Conflicting column name for '{k}': '{traj_cols[k]}' (from traj_cols) vs '{optional_args[k]}' (from keyword arguments)."
+                )
+        traj_cols = _update_schema(traj_cols, optional_args)
+    else:
+        traj_cols = _update_schema({}, optional_args)
+
+    for key, value in traj_cols.items():
+        if value not in columns:
+            warnings.warn(f"Trajectory column '{value}' specified for '{key}' not found in DataFrame.")
+
+    return _update_schema(DEFAULT_SCHEMA, traj_cols)
+    
 def _offset_seconds_from_ts(ts):
     """
     Given a Timestamp ts, return its UTC offset in seconds.
@@ -37,12 +70,17 @@ def _offset_seconds_from_ts(ts):
 
 def _offset_string_hrs(offset_seconds):
     mapping = {}
-    for offset in offset_seconds.unique():
+    unique_offsets = offset_seconds.dropna().unique()
+    for offset in unique_offsets:
+        offset = int(offset) # Convert after dropna
         abs_off = abs(offset)
         hours = abs_off // 3600
         minutes = (abs_off % 3600) // 60
         hours_signed = hours if offset >= 0 else -hours
         mapping[offset] = f"{hours_signed:+03d}:{minutes:02d}"
+    # Add NA mapping if necessary
+    if offset_seconds.hasnans:
+        mapping[pd.NA] = pd.NA 
     return offset_seconds.map(mapping)
 
 def naive_datetime_from_unix_and_offset(utc_timestamps, timezone_offset):
@@ -55,19 +93,25 @@ def _naive_to_localized_str(naive_dt, timezone_offset):
             "dtype {} is not supported, only dtype datetime64[ns] is supported.".format(naive_dt.dtype)
         )
     else:
-        dt_str = naive_dt.astype(str) 
+        dt_str = naive_dt.astype(str).replace('NaT', pd.NA)
         offset_str = _offset_string_hrs(timezone_offset)
         return dt_str + offset_str
 
 def _unix_offset_to_str(utc_timestamps, timezone_offset):
-    if not pd.core.dtypes.common.is_integer_dtype(utc_timestamps.dtype):
-        raise ValueError(
-            "dtype {} is not supported, only dtype int is supported.".format(utc_timestamps.dtype)
-        )
-    else:
-        dt_str = naive_datetime_from_unix_and_offset(utc_timestamps, timezone_offset).astype(str) 
-        offset_str = _offset_string_hrs(timezone_offset)
-        return dt_str + offset_str
+    # Check if integer-like (standard numpy int or nullable Int64)
+    if not (is_integer_dtype(utc_timestamps.dtype) or isinstance(utc_timestamps.dtype, Int64Dtype)):
+         try: 
+              utc_timestamps = utc_timestamps.astype('Int64')
+         except (ValueError, TypeError):
+              raise ValueError(
+                  f"dtype {utc_timestamps.dtype} is not supported for utc_timestamps, only integer types are supported."
+              )
+
+    dt = naive_datetime_from_unix_and_offset(utc_timestamps, timezone_offset)
+    dt_str = dt.astype(str).replace('NaT', pd.NA).astype('string') 
+    offset_str = _offset_string_hrs(timezone_offset).astype('string')
+
+    return dt_str + offset_str
 
 def _is_series_of_timestamps(series):
     """Check if all elements in a pandas Series are of type pd.Timestamp."""
@@ -149,23 +193,22 @@ def _custom_parse_date(series, parse_dates, mixed_timezone_behavior, fixed_forma
         Otherwise, offset_series is None.
     """
 
-    dtype = series.dtype
     col_name = series.name  # The actual column name in df
 
     # Validate input type
     if not (
-        pd.core.dtypes.common.is_datetime64_any_dtype(dtype) or
-        pd.core.dtypes.common.is_string_dtype(dtype) or
-        (pd.core.dtypes.common.is_object_dtype(dtype) and _is_series_of_timestamps(series))
+        pd.core.dtypes.common.is_datetime64_any_dtype(series) or
+        pd.core.dtypes.common.is_string_dtype(series) or
+        (pd.core.dtypes.common.is_object_dtype(series) and _is_series_of_timestamps(series))
     ):
         raise TypeError(
             f"Column '{col_name}' (mapped as 'datetime' in traj_cols) must be of type datetime64, string, or an array of Timestamp objects, "
-            f"but it is of type {dtype}."
+            f"but it is of type {series.dtype}."
         )
 
     if not parse_dates:
         # If check_valid_datetime_str=True and the dtype is string, validate the string format
-        if check_valid_datetime_str and pd.core.dtypes.common.is_string_dtype(dtype):
+        if check_valid_datetime_str and pd.core.dtypes.common.is_string_dtype(series):
             invalid_dates = pd.to_datetime(series, errors="coerce", utc=True).isna()
             if invalid_dates.any():
                 raise ValueError(
@@ -191,92 +234,194 @@ def _custom_parse_date(series, parse_dates, mixed_timezone_behavior, fixed_forma
     else:
         raise ValueError("mixed_timezone_behavior must be one of 'utc', 'naive', or 'object'")
 
-
-
-# for testing only
-def _is_traj_df(df, traj_cols=None, parse_dates=True, check_valid_datetime_str=True, **kwargs):
+def _is_stop_df(df, traj_cols=None, parse_dates=True, check_valid_datetime_str=True, **kwargs):
+    """Checks stop DataFrame structure and column types."""
+    # Check DataFrame type
     if not isinstance(df, (pd.DataFrame, gpd.GeoDataFrame)):
-        print("Failure: Input is not a DataFrame or GeoDataFrame.")
         return False
 
-    if not traj_cols:
-        traj_cols = _update_schema({}, kwargs)  # kwargs ignored if traj_cols is passed
-        
-    traj_cols = _update_schema(constants.DEFAULT_SCHEMA, traj_cols)
+    traj_cols = _parse_traj_cols(df.columns, traj_cols, kwargs)
 
-    if not _has_spatial_cols(df.columns, traj_cols):
+    try:
+        _has_spatial_cols(df.columns, traj_cols)
+    except (ValueError, TypeError, Exception):
         print("Failure: Missing required spatial columns.")
         return False
 
-    if not _has_time_cols(df.columns, traj_cols):
-        print("Failure: Missing required time columns.")
+    try:
+        _has_time_cols(df.columns, traj_cols)
+    except (ValueError, TypeError, Exception):
+        print("Failure: Missing required (start) temporal columns.")
         return False
 
-    # Check datetime type
-    datetime_col = traj_cols.get('datetime')
-    if datetime_col and datetime_col in df.columns:
-        dtype = df[datetime_col].dtype
-        if pd.core.dtypes.common.is_string_dtype(dtype):
-            if not parse_dates and check_valid_datetime_str:
-                invalid_dates = pd.to_datetime(df[datetime_col], errors="coerce", utc=True).isna()
-                if invalid_dates.any():
-                    print(f"Failure: Column '{datetime_col}' contains invalid datetime strings.")
-                    return False
+    # Check stop-specific requirement: end time OR duration
+    end_col_present = _has_end_cols(df.columns, traj_cols)
+    duration_col_present = _has_duration_cols(df.columns, traj_cols)
 
-        elif pd.core.dtypes.common.is_object_dtype(dtype):
-            if not _is_series_of_timestamps(df[datetime_col]):
-                print(f"Failure: Column '{datetime_col}' is object type but not an array of Timestamp objects.")
+    if not (end_col_present or duration_col_present):
+        print("Failure: Missing required (end or duration) temporal columns.")
+        return False
+
+
+    # Datetime types
+    for col_key in ['datetime', 'start_datetime', 'end_datetime']:
+        col_name = traj_cols.get(col_key)
+        if col_name and col_name in df.columns:
+            col = df[col_name]
+            is_parsed_dt_col = parse_dates and is_datetime64_any_dtype(col)
+            if is_parsed_dt_col: pass
+            elif is_string_dtype(col) or isinstance(col.dtype, StringDtype):
+                if not parse_dates and check_valid_datetime_str:
+                     try: pd.to_datetime(col.dropna(), errors="raise", utc=True) #fastest check
+                     except (ValueError, TypeError): return False
+            elif is_object_dtype(col) and _is_series_of_timestamps(col): pass
+            elif not is_datetime64_any_dtype(col):
+                 if parse_dates: return False
+
+    # Integer types
+    for col_key in ['timestamp', 'start_timestamp', 'end_timestamp', 'tz_offset', 'duration']:
+        col_name = traj_cols.get(col_key)
+        if col_name and col_name in df.columns:
+            col = df[col_name]
+            # Check if standard numpy int OR pandas Int64Dtype
+            if not ( is_integer_dtype(col.dtype) or isinstance(col.dtype, Int64Dtype) ):
+                print(f"Failure: column {col_name} is not of integer type.")
                 return False
 
-        elif not pd.core.dtypes.common.is_datetime64_any_dtype(dtype):
-            print(f"Failure: Column '{datetime_col}' is not a valid datetime type. Found dtype: {dtype}")
-            return False
-
-    # Check timestamp type
-    timestamp_col = traj_cols.get('timestamp')
-    if timestamp_col and timestamp_col in df.columns:
-        if not pd.core.dtypes.common.is_integer_dtype(df[timestamp_col].dtype):
-            print(f"Failure: Column '{timestamp_col}' is not an integer type.")
-            return False
-
-    # Check tz_offset type
-    tz_offset_col = traj_cols.get('tz_offset')
-    if tz_offset_col and tz_offset_col in df.columns:
-        if not pd.core.dtypes.common.is_integer_dtype(df[tz_offset_col].dtype):
-            print(f"Failure: Column '{tz_offset_col}' is not an integer type.")
-            return False
-
-    # Check float columns
+    # Float types
     for col_key in ['latitude', 'longitude', 'x', 'y']:
         col_name = traj_cols.get(col_key)
         if col_name and col_name in df.columns:
-            if not pd.core.dtypes.common.is_float_dtype(df[col_name].dtype):
-                print(f"Failure: Column '{col_name}' (mapped as '{col_key}') is not a float type.")
-                return False
+             col = df[col_name]
+             # Check if standard numpy float OR pandas Float64Dtype
+             if not ( is_float_dtype(col.dtype) or isinstance(col.dtype, Float64Dtype) ):
+                 print(f"Failure: column {col_name} is not of float type.")
+                 return False
 
-    # Check string columns
+    # String types
     for col_key in ['user_id', 'geohash']:
         col_name = traj_cols.get(col_key)
         if col_name and col_name in df.columns:
-            if not pd.core.dtypes.common.is_string_dtype(df[col_name].dtype):
-                print(f"Failure: Column '{col_name}' (mapped as '{col_key}') is not a string type.")
-                return False
+             col_dtype = df[col_name].dtype
+             # Allow standard string, nullable string, or object
+             if not (is_string_dtype(col_dtype) or isinstance(col_dtype, StringDtype) or is_object_dtype(col_dtype)):
+                 print(f"Failure: column {col_name} is not of string type.")
+                 return False
 
+    return True
+        
+
+# for testing only
+def _is_traj_df(df, traj_cols=None, parse_dates=True, check_valid_datetime_str=True, **kwargs):
+    """Checks trajectory DataFrame structure and column types."""
+    if not isinstance(df, (pd.DataFrame, gpd.GeoDataFrame)):
+        print("Failure: Input is not a DataFrame or GeoDataFrame.")
+        return False
+    traj_cols = _parse_traj_cols(df.columns, traj_cols, kwargs)
+
+    try:
+        _has_spatial_cols(df.columns, traj_cols)
+    except (ValueError, TypeError, Exception):
+        print("Failure: Missing required spatial columns.")
+        return False
+
+    try:
+        _has_time_cols(df.columns, traj_cols)
+    except (ValueError, TypeError, Exception):
+        print("Failure: Missing required temporal columns.")
+        return False
+
+    for col_key in ['datetime', 'start_datetime']: # Trajectory relevant keys
+        col_name = traj_cols.get(col_key)
+        if col_name and col_name in df.columns:
+            col = df[col_name]
+            is_parsed_dt_col = parse_dates and is_datetime64_any_dtype(col)
+            if is_parsed_dt_col: pass
+            elif is_string_dtype(col) or isinstance(col.dtype, StringDtype):
+                if not parse_dates and check_valid_datetime_str:
+                     try: pd.to_datetime(col.dropna(), errors="raise", utc=True)
+                     except (ValueError, TypeError):
+                          print(f"Failure: Column '{col_name}' contains invalid datetime strings.")
+                          return False
+            elif is_object_dtype(col) and _is_series_of_timestamps(df[col_name]): pass # Use df[col_name]
+            elif not is_datetime64_any_dtype(col):
+                 if parse_dates:
+                     print(f"Failure: Column '{col_name}' is not a valid datetime type after parsing. Found dtype: {col.dtype}")
+                     return False
+
+    # Integer types (Modified check)
+    for col_key in ['timestamp', 'start_timestamp', 'tz_offset']: # Trajectory relevant keys
+        col_name = traj_cols.get(col_key)
+        if col_name and col_name in df.columns:
+            col = df[col_name]
+            # Check if standard numpy int  OR pandas Int64Dtype
+            if not ( is_integer_dtype(col.dtype) or isinstance(col.dtype, Int64Dtype) ):
+                 print(f"Failure: Column '{col_name}' (mapped as '{col_key}') is not an integer type. Found dtype: {col.dtype}")
+                 return False
+
+    # Float types (Modified check)
+    for col_key in ['latitude', 'longitude', 'x', 'y']: # Spatial keys
+        col_name = traj_cols.get(col_key)
+        if col_name and col_name in df.columns:
+             col = df[col_name]
+             # Check if standard numpy float OR pandas Float64Dtype
+             if not ( is_float_dtype(col.dtype) or isinstance(col.dtype, Float64Dtype) ):
+                  print(f"Failure: Column '{col_name}' (mapped as '{col_key}') is not a float type. Found dtype: {col.dtype}")
+                  return False
+
+    # String types (Modified check)
+    for col_key in ['user_id', 'geohash']: # Trajectory relevant keys
+        col_name = traj_cols.get(col_key)
+        if col_name and col_name in df.columns:
+             col_dtype = df[col_name].dtype
+             # Allow standard string, nullable string, or object
+             if not (is_string_dtype(col_dtype) or isinstance(col_dtype, StringDtype) or is_object_dtype(col_dtype)):
+                  print(f"Failure: Column '{col_name}' (mapped as '{col_key}') is not a string type. Found dtype: {col.dtype}")
+                  return False
+                 
     return True
 
 def _has_time_cols(col_names, traj_cols):
-    
+    """Checks for at least one primary or start time column."""
+    dt_col = traj_cols.get('datetime')
+    ts_col = traj_cols.get('timestamp')
+    start_dt_col = traj_cols.get('start_datetime')
+    start_ts_col = traj_cols.get('start_timestamp')
+
     temporal_exists = (
-        ('datetime' in traj_cols and traj_cols['datetime'] in col_names) or
-        ('timestamp' in traj_cols and traj_cols['timestamp'] in col_names)
+        (dt_col and dt_col in col_names) or
+        (ts_col and ts_col in col_names) or
+        (start_dt_col and start_dt_col in col_names) or
+        (start_ts_col and start_ts_col in col_names)
     )
 
     if not temporal_exists:
         raise ValueError(
-            "Could not find required temporal columns in {}. The dataset must contain or map to either 'datetime' or 'timestamp'.".format(col_names)
+            "Could not find required temporal columns in {}. The dataset must contain or map to "
+            "at least one of 'datetime', 'timestamp', 'start_datetime', or 'start_timestamp'.".format(list(col_names))
         )
-    
-    return temporal_exists
+
+    return temporal_exists # Returns the boolean result
+
+def _has_end_cols(col_names, traj_cols):
+    """Checks if at least one end time column exists (returns bool)."""
+    end_dt_col = traj_cols.get('end_datetime')
+    end_ts_col = traj_cols.get('end_timestamp')
+    # Corrected boolean logic
+    end_dt_exists = (end_dt_col is not None and end_dt_col in col_names)
+    end_ts_exists = (end_ts_col is not None and end_ts_col in col_names)
+
+    end_exists = end_dt_exists or end_ts_exists
+    return end_exists
+
+
+def _has_duration_cols(col_names, traj_cols):
+    """Checks if a duration column exists (returns bool)."""
+    duration_col = traj_cols.get('duration')
+
+    # Corrected boolean logic
+    duration_exists = (duration_col is not None and duration_col in col_names)
+    return duration_exists
 
 def _has_spatial_cols(col_names, traj_cols):
     
@@ -309,43 +454,35 @@ def _has_user_cols(col_names, traj_cols):
 
 # SPARK check is traj_dataframe
 
-def _is_traj_df_spark(df, traj_cols = None, **kwargs):
-    if not (isinstance(df, psp.sql.dataframe.DataFrame)):
+def _is_traj_df_spark(df, traj_cols=None, **kwargs):
+    if not isinstance(df, psp.sql.dataframe.DataFrame):
         return False
-    
-    if not traj_cols:
-        traj_cols = _update_schema({}, kwargs) #kwargs ignored if traj_cols is passed
-        
-    traj_cols = _update_schema(constants.DEFAULT_SCHEMA, traj_cols)
-    
+
+    traj_cols = _parse_traj_cols(df.columns, traj_cols, kwargs)
+
     if not _has_spatial_cols(df.columns, traj_cols) or not _has_time_cols(df.columns, traj_cols):
         return False
 
-    # check datetime type
     if 'datetime' in traj_cols and traj_cols['datetime'] in df.columns:
-            if not isinstance(df.schema[traj_cols['datetime']].dataType, TimestampType):
-                return False
+        if not isinstance(df.schema[traj_cols['datetime']].dataType, TimestampType):
+            return False
 
-    # check timestamp is integer type
     if 'timestamp' in traj_cols and traj_cols['timestamp'] in df.columns:
         if not isinstance(df.schema[traj_cols['timestamp']].dataType, (IntegerType, LongType, TimestampType)):
             return False
 
-    # Check float columns
-    float_cols = ['latitude', 'longitude', 'x', 'y']
-    for col in float_cols:
+    for col in ['latitude', 'longitude', 'x', 'y']:
         if col in traj_cols and traj_cols[col] in df.columns:
             if not isinstance(df.schema[traj_cols[col]].dataType, (FloatType, DoubleType)):
                 return False
 
-    # Check string columns
-    string_cols = ['user_id', 'geohash']
-    for col in string_cols:
+    for col in ['user_id', 'geohash']:
         if col in traj_cols and traj_cols[col] in df.columns:
             if not isinstance(df.schema[traj_cols[col]].dataType, StringType):
                 return False
 
     return True
+
 
 
 # Cast data types and address datetime issues
@@ -433,124 +570,102 @@ def _cast_traj_cols_spark(df, traj_cols):
 
     return df
     
-def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_format=None):
-    """
-    Casts specified trajectory columns in a loaded DataFrame to their expected data types, 
-    with warnings for timestamp precision and timezone-naive datetimes.
+def _process_datetime_column(df, col, parse_dates, mixed_timezone_behavior, fixed_format, tz_offset_key, traj_cols):
+    """Processes a datetime column: parses strings, handles timezones, adds offset."""
+    dtype = df[col].dtype
 
-    Parameters
-    ----------
-    df : pd.DataFrame
-        The DataFrame containing the data to be cast.
-    traj_cols : dict
-        Dictionary mapping expected trajectory column names 
-        (e.g., 'latitude', 'longitude', 'timestamp', 'datetime', 'user_id', 'geohash')
-        to the actual column names in the DataFrame.
-    parse_dates : bool
-        whether to parse a string datetime if it is found in index given by traj_cols.
+    if is_datetime64_any_dtype(dtype):
+        if df[col].dt.tz is None:
+            warnings.warn(f"The '{col}' column is timezone-naive. Consider localizing or using unix timestamps.")
 
-    Returns
-    -------
-    pd.DataFrame
-        The DataFrame with specified columns cast to their expected types.
+    elif is_string_dtype(dtype) or isinstance(dtype, StringDtype):
+        parsed, offset = _custom_parse_date(
+            df[col], parse_dates=parse_dates,
+            mixed_timezone_behavior=mixed_timezone_behavior,
+            fixed_format=fixed_format,
+            check_valid_datetime_str=False
+        )
+        df[col] = parsed
 
-    Notes
-    -----
-    - The 'datetime' column is cast to datetime64 dtype (or Series of object dtype
-      containing datetime.datetime). A warning is issued if it is timezone-naive or 
-      has mixed timezones.
-    - If mixed_timezone = "naive" an additional column with tz_offset is generated.
-    - The 'timestamp' column is expected to contain Unix timestamps in seconds.
-      If values appear to be in milliseconds or nanoseconds, a warning will recommend conversion.
-    - Spatial columns ('latitude', 'longitude', 'x', 'y') are cast to floats if necessary.
-    - User identifier and geohash columns are cast to strings.
-    """
-    if 'datetime' in traj_cols and traj_cols['datetime'] in df:       
-        if pd.core.dtypes.common.is_datetime64_any_dtype(df[traj_cols['datetime']].dtype):
-            if df[traj_cols['datetime']].dt.tz is None:
-                warnings.warn(
-                    f"The '{traj_cols['datetime']}' column is timezone-naive. "
-                    "Consider localizing to a timezone or using a unix timestamp to avoid inconsistencies\
-                    in timezone-aware analyses.")
-        
-        elif pd.core.dtypes.common.is_string_dtype(df[traj_cols['datetime']].dtype):
-            parsed_dt_series, offset_int_series = _custom_parse_date(df[traj_cols['datetime']],
-                                                                     parse_dates=parse_dates,
-                                                                     mixed_timezone_behavior=mixed_timezone_behavior,
-                                                                     fixed_format=fixed_format)
-            df.loc[:, traj_cols['datetime']] = parsed_dt_series
-            if parse_dates and not ('tz_offset' in traj_cols and traj_cols['tz_offset'] in df):
-               df[traj_cols['tz_offset']] = offset_int_series
-                
-            # Warn if datetime is timezone-naive
-            if _is_series_of_timestamps(df[traj_cols['datetime']]):
-                if _has_mixed_timezones(df[traj_cols['datetime']]):
-                    warnings.warn(
-                        f"The '{traj_cols['datetime']}' column has mixed timezones. "
-                        "Consider localizing to a single timezone or using a unix timestamp to avoid inconsistencies\
-                        in timezone-aware analyses.")
-            
-            elif pd.core.dtypes.common.is_datetime64_any_dtype(df[traj_cols['datetime']].dtype) and df[traj_cols['datetime']].dt.tz is None:
-                warnings.warn(
-                    f"The '{traj_cols['datetime']}' column is timezone-naive. "
-                    "Consider localizing to a timezone or using a unix timestamp to avoid inconsistencies.")
-                
-        elif _is_series_of_timestamps(df[traj_cols['datetime']]):
-            if _has_mixed_timezones(df[traj_cols['datetime']]):
-                warnings.warn(
-                    f"The '{traj_cols['datetime']}' column has mixed timezones. "
-                    "Consider localizing to a single timezone or using a unix timestamp to avoid inconsistencies\
-                    in timezone-aware analyses.")
-            else:
-                df[traj_cols['datetime']] = pd.to_datetime(df[traj_cols['datetime']], format=fixed_format)
-                if df[traj_cols['datetime']].dt.tz is None:
-                    warnings.warn(
-                        f"The '{traj_cols['datetime']}' column is timezone-naive. "
-                        "Consider localizing to a timezone or using a unix timestamp to avoid inconsistencies\
-                        in timezone-aware analyses.")                
-            
+        actual_offset_col = traj_cols.get(tz_offset_key) if tz_offset_key else None
+        if parse_dates and mixed_timezone_behavior == 'naive' and actual_offset_col and actual_offset_col not in df.columns:
+            if offset is not None and len(offset) == len(df):
+                df[actual_offset_col] = offset.astype("Int64") # Use string alias "Int64"
+
+        col_after_parse = df[col]
+        if is_object_dtype(col_after_parse.dtype) and _has_mixed_timezones(col_after_parse):
+             warnings.warn(f"The '{col}' column has mixed timezones after processing.")
+        elif is_datetime64_any_dtype(col_after_parse.dtype) and col_after_parse.dt.tz is None:
+             if offset is None or offset.isna().any():
+                 warnings.warn(f"The '{col}' column is timezone-naive consider localizing or using unix timestamps.")
+
+    elif is_object_dtype(dtype) and _is_series_of_timestamps(df[col]):
+        series = df[col]
+        if _has_mixed_timezones(series):
+            warnings.warn(f"The '{col}' column (object of Timestamps) has mixed timezones.")
         else:
-            raise ValueError(
-            "dtype {} is not supported and cannot be cast to datetime64[tz] or Timestamp.".format(df[traj_cols['datetime']].dtype))
+            try:
+                 converted = pd.to_datetime(series, errors='coerce', format=fixed_format)
+                 if is_datetime64_any_dtype(converted.dtype):
+                      df[col] = converted
+                      if df[col].dt.tz is None: warnings.warn(f"The '{col}' column (object of Timestamps) is timezone-naive.")
+            except Exception: pass
 
-    if 'tz_offset' in traj_cols and traj_cols['tz_offset'] in df:
-        tz_offset_col_name = traj_cols['tz_offset']
-        if not pd.core.dtypes.common.is_integer_dtype(df[tz_offset_col_name].dtype):
-            df[tz_offset_col_name] = df[tz_offset_col_name].astype("Int64")
-    
-    if 'timestamp' in traj_cols and traj_cols['timestamp'] in df:
-        timestamp_col_name = traj_cols['timestamp']
-        if not pd.core.dtypes.common.is_integer_dtype(df[timestamp_col_name].dtype):
-            df[timestamp_col_name] = df[timestamp_col_name].astype("Int64")
 
-        # Check for possible millisecond or nanosecond values and issue a warning
-        first_timestamp = df[timestamp_col_name].iloc[0]
-        timestamp_length = len(str(first_timestamp))
-        
-        if timestamp_length > 10:
-            if timestamp_length == 13:
-                warnings.warn(
-                    f"The '{timestamp_col_name}' column appears to be in milliseconds. "
-                    "This may lead to inconsistencies, converting to seconds is recommended."
-                )
-            elif timestamp_length == 19:
-                warnings.warn(
-                    f"The '{timestamp_col_name}' column appears to be in nanoseconds. "
-                    "This may lead to inconsistencies, converting to seconds is recommended."
-                )
+def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_format=None):
+    df = df.copy() # Work on a copy
 
-    float_cols = ['latitude', 'longitude', 'x', 'y']
-    for col in float_cols:
-        if col in traj_cols and traj_cols[col] in df:
-            if not pd.core.dtypes.common.is_float_dtype(df[traj_cols[col]].dtype):
-                df[traj_cols[col]] = df[traj_cols[col]].astype("float")
+    # Datetime processing (Keep as is)
+    for key in ['datetime', 'start_datetime', 'end_datetime']:
+        actual_col_name = traj_cols.get(key)
+        if actual_col_name and actual_col_name in df.columns:
+            # Assume _process_datetime_column is correct
+            _process_datetime_column(df, actual_col_name, parse_dates, mixed_timezone_behavior, fixed_format, traj_cols.get('tz_offset'), traj_cols)
 
-    string_cols = ['user_id', 'geohash']
-    for col in string_cols:
-        if col in traj_cols and traj_cols[col] in df:
-            if not pd.core.dtypes.common.is_string_dtype(df[traj_cols[col]].dtype):
-                df[traj_cols[col]] = df[traj_cols[col]].astype("str")
+    # Integers (Aim for Int64, handle float/object source)
+    for key in ['timestamp', 'start_timestamp', 'end_timestamp', 'tz_offset', 'duration']:
+        actual_col_name = traj_cols.get(key)
+        if actual_col_name and actual_col_name in df.columns:
+            col = df[actual_col_name]
+            # Cast to Int64 if it's not already, or if it's a compatible type
+            if not isinstance(col.dtype, Int64Dtype):
+                try: df[actual_col_name] = col.astype("Int64")
+                except (ValueError, TypeError, OverflowError):
+                     warnings.warn(f"Could not cast column '{actual_col_name}' to Int64. Skipping.")
+                     pass # Keep original type if cast fails
 
+            # Timestamp length warning (keep as is, check after cast)
+            if key == 'timestamp' and actual_col_name in df.columns and not df[actual_col_name].empty:
+                first_val = df[actual_col_name].dropna().iloc[0] if not df[actual_col_name].dropna().empty else None
+                if first_val is not None:
+                    try:
+                        ts_len = len(str(int(first_val)))
+                        if ts_len == 13: warnings.warn(f"...")
+                        elif ts_len == 19: warnings.warn(f"...")
+                    except (ValueError, TypeError): pass
+
+    # Floats (Aim for Float64)
+    for key in ['latitude', 'longitude', 'x', 'y']:
+        actual_col_name = traj_cols.get(key)
+        if actual_col_name and actual_col_name in df.columns:
+            col = df[actual_col_name]
+            # Cast to Float64 if not already standard float or Float64
+            if not (is_float_dtype(col.dtype) or isinstance(col.dtype, Float64Dtype)):
+                try: df[actual_col_name] = col.astype('float64')
+                except (ValueError, TypeError):
+                    warnings.warn(f"Could not cast column '{actual_col_name}' to Float64. Skipping.")
+                    pass
+
+    # Strings (Aim for StringDtype)
+    for key in ['user_id', 'geohash']:
+        actual_col_name = traj_cols.get(key)
+        if actual_col_name and actual_col_name in df.columns:
+            col = df[actual_col_name]
+            if not isinstance(col.dtype, StringDtype):
+                 try: df[actual_col_name] = col.astype("string")
+                 except (ValueError, TypeError):
+                      warnings.warn(f"Could not cast column '{actual_col_name}' to string. Skipping.")
+                      pass
     return df
 
 def from_df(df, traj_cols=None, parse_dates=True, mixed_timezone_behavior="naive", fixed_format=None, **kwargs):
@@ -585,36 +700,25 @@ def from_df(df, traj_cols=None, parse_dates=True, mixed_timezone_behavior="naive
     Notes
     -----
     - Any specified `traj_cols` that do not exist in `df` will trigger a warning.
-    - If `traj_cols` is not provided, missing trajectory columns are inferred from `kwargs` and filled with default schema values when possible.
+    - If `traj_cols` is not provided, missing trajectory columns are inferred from `kwargs` or filled with default schema values when possible.
     - Spatial columns are validated, and datetime columns are processed based on `parse_dates` and `mixed_timezone_behavior`.
     - If `mixed_timezone_behavior='naive'`, a separate column storing UTC offsets (in seconds) is added.
     """
+    if not isinstance(df, (pd.DataFrame, gpd.GeoDataFrame)):
+        raise TypeError("Expected the data argument to be either a pandas DataFrame or a GeoPandas GeoDataFrame.")
 
-    if not (isinstance(df, pd.DataFrame) or isinstance(df, gpd.GeoDataFrame)):
-        raise TypeError(
-            "Expected the data argument to be either a pandas DataFrame or a GeoPandas GeoDataFrame."
-        )
+    traj_cols = _parse_traj_cols(df.columns, traj_cols, kwargs)
 
-    if not traj_cols:
-        traj_cols = _update_schema({}, kwargs) #kwargs ignored if traj_cols is passed
- 
-    # Warn if any specified trajectory columns are not found in df
-    for key, value in traj_cols.items():
-        if value not in df:
-            warnings.warn(f"Trajectory column '{value}' specified for '{key}' not found in df.")
-
-    # Update traj_cols with default schema values when missing
-    traj_cols = _update_schema(constants.DEFAULT_SCHEMA, traj_cols)
-
-    # Perform spatial and temporal column checks
     _has_spatial_cols(df.columns, traj_cols)
     _has_time_cols(df.columns, traj_cols)
 
-    # Cast trajectory columns as necessary
-    return _cast_traj_cols(df, traj_cols, parse_dates=parse_dates, mixed_timezone_behavior="naive", fixed_format=None)
+    return _cast_traj_cols(df, traj_cols, parse_dates=parse_dates,
+                           mixed_timezone_behavior=mixed_timezone_behavior,
+                           fixed_format=fixed_format)
 
 
-def from_file(filepath, format="csv", traj_cols=None, parse_dates=True, mixed_timezone_behavior="naive", **kwargs):
+def from_file(filepath, format="csv", traj_cols=None, parse_dates=True,
+              mixed_timezone_behavior="naive", fixed_format=None, **kwargs):
     """
     Load and cast trajectory data from a specified file path or list of paths.
 
@@ -638,41 +742,33 @@ def from_file(filepath, format="csv", traj_cols=None, parse_dates=True, mixed_ti
     -----
     - Checks before loading that files have required trajectory columns for analysis. 
     """
-    
     assert format in ["csv", "parquet"]
 
-    if not traj_cols:
-        traj_cols = _update_schema({}, kwargs) #kwargs ignored if traj_cols is passed
-        
     if isinstance(filepath, list):
-        # Pyarrow does not support lists of directories
         datasets = [ds.dataset(path, format=format, partitioning="hive") for path in filepath]
         dataset = ds.UnionDataset(schema=datasets[0].schema, children=datasets)
         column_names = dataset.schema.names
-        
     elif format == 'parquet' or os.path.isdir(filepath):
         dataset = ds.dataset(filepath, format=format, partitioning="hive")
         column_names = dataset.schema.names
     else:
         column_names = pd.read_csv(filepath, nrows=0).columns
 
-    for key, value in traj_cols.items():
-        if value not in column_names:
-            warnings.warn(f"Trajectory column '{value}' specified for '{key}' not found in the data source.")
+    traj_cols = _parse_traj_cols(column_names, traj_cols, kwargs)
 
-    # add default column names to traj_cols when missing
-    traj_cols = _update_schema(constants.DEFAULT_SCHEMA, traj_cols)
     _has_spatial_cols(column_names, traj_cols)
     _has_time_cols(column_names, traj_cols)
 
     if format == "csv" and not os.path.isdir(filepath):
-        # pass kwargs to read_csv without unexpected keyword argument errors
         read_csv_kwargs = {k: v for k, v in kwargs.items() if k in inspect.signature(pd.read_csv).parameters}
         df = pd.read_csv(filepath, **read_csv_kwargs)
     else:
         df = dataset.to_table().to_pandas()
 
-    return _cast_traj_cols(df, traj_cols, parse_dates=parse_dates, mixed_timezone_behavior=mixed_timezone_behavior)
+    return _cast_traj_cols(df, traj_cols, parse_dates=parse_dates,
+                           mixed_timezone_behavior=mixed_timezone_behavior,
+                           fixed_format=fixed_format)
+
         
 
 def sample_users(filepath, format="csv", frac_users=1.0, traj_cols=None, **kwargs):
@@ -698,34 +794,29 @@ def sample_users(filepath, format="csv", frac_users=1.0, traj_cols=None, **kwarg
         A Series of sampled user IDs.
     """
     assert format in ["csv", "parquet"]
-   
-    if not traj_cols:
-        traj_cols = _update_schema({}, kwargs) #kwargs ignored if traj_cols is passed
-        
-    traj_cols = _update_schema(constants.DEFAULT_SCHEMA, traj_cols)
+
+    # Resolve trajectory column mapping
+    traj_cols = _parse_traj_cols(_get_columns_from_source(filepath, format), traj_cols, kwargs)
     uid_col = traj_cols['user_id']
 
     if isinstance(filepath, list):
         datasets = [ds.dataset(path, format=format, partitioning="hive") for path in filepath]
         dataset = ds.UnionDataset(schema=datasets[0].schema, children=datasets)
-        column_names = dataset.schema.names
     elif format == 'parquet' or os.path.isdir(filepath):
         dataset = ds.dataset(filepath, format=format, partitioning="hive")
-        column_names = dataset.schema.names
     else:
-        column_names = pd.read_csv(filepath, nrows=0).columns
-
-    _has_user_cols(column_names, traj_cols)
-
-    if format == "csv" and not os.path.isdir(filepath):
         df = pd.read_csv(filepath, usecols=[uid_col])
         user_ids = df[uid_col].unique()
-    else:
-        user_ids = pc.unique(dataset.to_table(columns=[uid_col])[uid_col]).to_pandas()
+        return user_ids.sample(frac=frac_users) if frac_users < 1.0 else user_ids
 
+    _has_user_cols(dataset.schema.names, traj_cols)
+
+    user_ids = pc.unique(dataset.to_table(columns=[uid_col])[uid_col]).to_pandas()
     return user_ids.sample(frac=frac_users) if frac_users < 1.0 else user_ids
 
-def sample_from_file(filepath, users, format="csv", traj_cols=None, parse_dates=True, mixed_timezone_behavior="naive", **kwargs):
+def sample_from_file(filepath, users, format="csv", traj_cols=None,
+                     parse_dates=True, mixed_timezone_behavior="naive",
+                     fixed_format=None, **kwargs):
     """
     Loads data for specified users from a file path or list of paths.
 
@@ -749,10 +840,6 @@ def sample_from_file(filepath, users, format="csv", traj_cols=None, parse_dates=
     """
     assert format in ["csv", "parquet"]
 
-    if not traj_cols:
-        traj_cols = _update_schema({}, kwargs) #kwargs ignored if traj_cols is passed
-
-    # Load schema for PyArrow datasets or CSV header to perform column checks
     if isinstance(filepath, list):
         datasets = [ds.dataset(path, format=format, partitioning="hive") for path in filepath]
         dataset = ds.UnionDataset(schema=datasets[0].schema, children=datasets)
@@ -763,26 +850,23 @@ def sample_from_file(filepath, users, format="csv", traj_cols=None, parse_dates=
     else:
         column_names = pd.read_csv(filepath, nrows=0).columns
 
-    for key, value in traj_cols.items():
-        if value not in column_names:
-            warnings.warn(f"Trajectory column '{value}' specified for '{key}' not found in the data source.")
-
-    traj_cols = _update_schema(constants.DEFAULT_SCHEMA, traj_cols)
+    traj_cols = _parse_traj_cols(column_names, traj_cols, kwargs)
     uid_col = traj_cols['user_id']
 
-    # Perform required column checks
     _has_user_cols(column_names, traj_cols)
     _has_spatial_cols(column_names, traj_cols)
     _has_time_cols(column_names, traj_cols)
 
-    # Load data and filter by specified users
     if format == "csv" and not os.path.isdir(filepath):
         df = pd.read_csv(filepath)
         df = df[df[uid_col].isin(users)]
     else:
         df = dataset.to_table(
             filter=ds.field(uid_col).isin(users),
-            columns=None  # to include partition columns
+            columns=None
         ).to_pandas()
 
-    return _cast_traj_cols(df, traj_cols=traj_cols, parse_dates=parse_dates, mixed_timezone_behavior=mixed_timezone_behavior)
+    return _cast_traj_cols(df, traj_cols=traj_cols,
+                           parse_dates=parse_dates,
+                           mixed_timezone_behavior=mixed_timezone_behavior,
+                           fixed_format=fixed_format)
