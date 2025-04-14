@@ -205,7 +205,7 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
 
     return pd.DataFrame(stops, columns=columns)
 
-def _lachesis_labels(traj, dur_min, dt_max, delta_roam, traj_cols=None, keep_col_names = True, **kwargs):
+def _lachesis_labels(traj, dur_min, dt_max, delta_roam, traj_cols=None, **kwargs):
     """
     Assigns a label to every point in the trajectory based on the stop it belongs to.
 
@@ -234,7 +234,7 @@ def _lachesis_labels(traj, dur_min, dt_max, delta_roam, traj_cols=None, keep_col
                      delta_roam,
                      traj_cols = traj_cols,
                      complete_output = True,
-                     keep_col_names = keep_col_names,
+                     keep_col_names = False,
                      **kwargs)
     
     traj_cols = loader._parse_traj_cols(traj.columns, traj_cols, kwargs)
@@ -244,10 +244,8 @@ def _lachesis_labels(traj, dur_min, dt_max, delta_roam, traj_cols=None, keep_col
     use_datetime = False
     if traj_cols['timestamp'] in traj.columns:
         time_col_in = traj_cols['timestamp']
-        time_key = 'timestamp'
     elif traj_cols['start_timestamp'] in traj.columns:
         time_col_in = traj_cols['start_timestamp']
-        time_key = 'start_timestamp'
     else:
         use_datetime = True
         
@@ -260,30 +258,20 @@ def _lachesis_labels(traj, dur_min, dt_max, delta_roam, traj_cols=None, keep_col
     # set final parameters based on use_datetime flag
     if use_datetime and traj_cols['datetime'] in traj.columns:
         time_col_in = traj_cols['datetime']
-        time_key = 'datetime'
     elif use_datetime and traj_cols['start_datetime'] in traj.columns:
         time_col_in = traj_cols['start_datetime']
-        time_key = 'start_datetime'
     
-    if keep_col_names:
-        start_col = time_col_in
-    else:
-        start_col = constants.DEFAULT_SCHEMA['start_datetime'] if use_datetime else constants.DEFAULT_SCHEMA['start_timestamp']
-
+    start_col = constants.DEFAULT_SCHEMA['start_datetime'] if use_datetime else constants.DEFAULT_SCHEMA['start_timestamp']
     end_col = constants.DEFAULT_SCHEMA['end_datetime'] if use_datetime else constants.DEFAULT_SCHEMA['end_timestamp']
 
     # Initialize the stop_label column with default value -1
-    output = traj.copy()
-    output['cluster'] = -1
+    stop_labels = pd.Series(-1, index=traj[time_col_in])
     
     # Iterate through detected stops and assign labels
     for stop_idx, stop in stops.iterrows():
         stop_start = stop[start_col]
         stop_end = stop[end_col]
-        output.loc[(output[time_col_in] >= stop_start) & (output[time_col_in] <= stop_end), 'cluster'] = stop_idx
-        
-    # Keep only the time and cluster columns
-    output = output[['cluster']]
-    output.index = list(traj[time_col_in])
+        mask = (traj[time_col_in] >= stop_start) & (traj[time_col_in] <= stop_end)
+        stop_labels.loc[traj[time_col_in][mask]] = stop_idx
     
-    return output
+    return stop_labels
