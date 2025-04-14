@@ -11,3 +11,4 @@ funkybob
 scipy
 pyarrow
 s3fs
+sedona

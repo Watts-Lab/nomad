@@ -8,7 +8,7 @@ Author-email: fbarrer@sas.upenn.edu, thomli@sas.upenn.edu, fedde@dtu.dk
 Classifier: Programming Language :: Python :: 3
 Classifier: License :: OSI Approved :: MIT License
 Classifier: Operating System :: OS Independent
-Requires-Python: >=3.10
+Requires-Python: >=3.9
 Requires-Dist: pandas
 Requires-Dist: numpy
 Requires-Dist: datetime
@@ -22,6 +22,7 @@ Requires-Dist: funkybob
 Requires-Dist: scipy
 Requires-Dist: pyarrow
 Requires-Dist: s3fs
+Requires-Dist: sedona
 Dynamic: author
 Dynamic: author-email
 Dynamic: classifier
