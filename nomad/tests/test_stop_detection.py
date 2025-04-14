@@ -13,35 +13,14 @@ from nomad import constants
 from nomad import filters
 import nomad.stop_detection.ta_dbscan as DBSCAN
 import nomad.stop_detection.lachesis as LACHESIS
-import nomad.traj_gen as tg
-import nomad.city_gen as cg
-from nomad.traj_gen import Agent, Population
+import pdb
 
 @pytest.fixture
 def agent_traj_ground_truth():
-    city = cg.load('../../examples/garden-city.pkl')
-    population = Population(city)
-    start_time = [datetime(2024, 6, 1, hour=0, minute=0) + timedelta(minutes=60*t) for t in range(5)]
-    unix_timestamp = [int(t.timestamp()) for t in start_time]
-    duration = [60]*5  # in minutes
-    location = ['h-x13-y11'] * 1 + ['h-x13-y8'] * 1 + ['r-x18-y10'] * 3
-    destination = pd.DataFrame(
-        {"unix_timestamp": unix_timestamp, "local_timestamp": start_time,
-         "duration": duration, "location": location}
-    )
-    destination = tg.condense_destinations(destination)
-    
-    Charlie = Agent(identifier="Charlie",
-                    home='h-x13-y11',
-                    workplace='w-x15-y9',
-                    city=city,
-                    destination_diary=destination,
-                    dt=1)
-    
-    population.add_agent(Charlie)
-    population.generate_trajectory(Charlie, seed=75)
-    
-    return Charlie.trajectory
+    test_dir = Path(__file__).resolve().parent
+    traj_path = test_dir.parent / "data" / "gc_3_stops.csv"
+    df = loader.from_file(traj_path, timestamp='unix_timestamp', datetime='local_timestamp', user_id='identifier')
+    return df
 
 @pytest.fixture
 def base_df():
