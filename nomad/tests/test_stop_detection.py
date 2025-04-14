@@ -1,139 +1,195 @@
-from pathlib import Path
 import pandas as pd
 import geopandas as gpd
 from pandas.testing import assert_frame_equal
 from scipy.spatial.distance import pdist, cdist
-import numpy as np
+import pygeohash as gh
 import itertools
 from collections import defaultdict
-import sys
-import os
 import pytest
-sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "..")))
-
+from pathlib import Path
 import nomad.io.base as loader
-import nomad.constants as constants
-import nomad.filters as filters
-from nomad.stop_detection.ta_dbscan import temporal_dbscan, _temporal_dbscan_labels
-from nomad.stop_detection.lachesis import lachesis, _lachesis_labels
+from nomad import constants
+from nomad import filters
+import nomad.stop_detection.ta_dbscan as DBSCAN
+import nomad.stop_detection.lachesis as LACHESIS
+
+import pdb
 
 
-def extract_user(df, user_id):
-    return df[df['user_id'] == user_id]
+@pytest.fixture
+def base_df():
+    test_dir = Path(__file__).resolve().parent
+    data_path = test_dir.parent / "data" / "gc_sample.csv"
+    df = pd.read_csv(data_path)
+
+    # create tz_offset column
+    df['tz_offset'] = -3600
+    df.loc[df.index[:5000],'tz_offset'] = -7200
+    df.loc[df.index[-5000:], 'tz_offset'] = 3600
+
+    # create string datetime column
+    df['local_datetime'] = loader._unix_offset_to_str(df.timestamp, df.tz_offset)
     
-@pytest.fixture
-def sample_df_lon_lat_datetime():
-    test_dir = Path(__file__).resolve().parent
-    path = test_dir.parent / "data" / "partitioned_csv"
-    traj_cols = {'user_id':'user_id', 'latitude':'dev_lat', 'longitude':'dev_lon', 'datetime':'local_datetime'}
-    df = loader.from_file(path, traj_cols=traj_cols, format='csv')
+    # create x, y columns in web mercator
+    gdf = gpd.GeoSeries(gpd.points_from_xy(df.longitude, df.latitude),
+                            crs="EPSG:4326")
+    projected = gdf.to_crs("EPSG:3857")
+    df['x'] = projected.x
+    df['y'] = projected.y
+    
+    df['geohash'] = df.apply(lambda x: gh.encode(x.latitude, x.longitude, precision=7), axis=1)
+    # col names:  ['uid', 'timestamp', 'latitude', 'longitude', 'tz_offset', 'local_datetime', 'x', 'y', 'geohash'
+    # dtypes: [object, int64, float64, float64, int64, object, float64, float64, object]
     return df
 
 @pytest.fixture
-def sample_df_x_y_timestamp():
-    test_dir = Path(__file__).resolve().parent
-    path = test_dir.parent / "data" / "partitioned_csv"
-    traj_cols = {'user_id':'user_id', 'latitude':'dev_lat', 'longitude':'dev_lon', 'datetime':'local_datetime'}
-    df = loader.from_file(path, traj_cols=traj_cols, format='csv')
-    df = filters.to_projection(df, longitude='dev_lon', latitude='dev_lat')
-    df['unix_time'] = df['local_datetime'].astype('int64') // 10**9
-    return df
+def single_user_df(base_df):
+    uid = base_df.uid.iloc[0]
+    return base_df[base_df.uid == uid].copy().drop(columns=['uid'])
+
+@pytest.fixture
+def column_variations():
+    return {
+        # 0->timestamp, 1->latitude, 2->longitude, 3->tz_offset, 4->local_datetime, 5->x, 6->y, 7->geohash
+        "default-timestamp-xy": ([0, 5, 6], ["timestamp", "x", "y"], ["timestamp", "x", "y"]),
+        "alt-timestamp-xy": ([0, 5, 6], ["unix_time", "merc_x", "merc_y"], ["timestamp", "x", "y"]),
+        # note we want [longitude, latitude] for latlon
+        "default-datetime-latlon": ([4, 2, 1], ["local_datetime", "longitude", "latitude"], ["datetime", "longitude", "latitude"]),
+        "alt-datetime-latlon": ([4, 2, 1], ["event_time", "lon", "lat"], ["datetime", "longitude", "latitude"]),
+        "explicit-start-datetime": ([4, 2, 1], ["start_dt_col", "lon", "lat"], ["start_datetime", "longitude", "latitude"])
+    }
+
+@pytest.mark.parametrize("mixed_tz_bhv", ['naive', 'utc', 'object'])
+def test_to_timestamp(base_df, mixed_tz_bhv):
+    df = base_df.iloc[:, [2, 3, 5]].copy()
+    traj_cols = {'latitude':'latitude', 'longitude':'longitude', 'datetime':'local_datetime'}
+
+    df = loader.from_df(df, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior=mixed_tz_bhv)
+
+    if mixed_tz_bhv == 'naive':
+        timestamp_col = filters.to_timestamp(df.local_datetime, df.tz_offset)
+    else:
+        timestamp_col = filters.to_timestamp(df.local_datetime, base_df.tz_offset)
+    
+    assert (timestamp_col.values==base_df.timestamp).all()
+
+## ============================================= TESTS =========================================
+def test_lachesis_output_is_valid_stop_df(base_df):
+    """Tests if Lachesis concise output conforms to the stop DataFrame standard."""
+    traj_cols = {
+        "user_id": "uid", "timestamp": "timestamp",
+        "x": "x", "y": "y"
+    }
+    df = loader.from_df(base_df, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior="utc")
+
+    first_user = df[traj_cols["user_id"]].iloc[0]
+    single_user_df = df[df[traj_cols["user_id"]] == first_user].copy()
+
+    stops_df = LACHESIS.lachesis(
+        traj=single_user_df,
+        dur_min=5,
+        dt_max=10,
+        delta_roam=100,
+        traj_cols=traj_cols,
+        complete_output=False
+    )
+    del traj_cols['user_id']
+    is_valid = loader._is_stop_df(stops_df, traj_cols=traj_cols, parse_dates=False)
+
+    assert is_valid, "Lachesis concise output failed validation by _is_stop_df"
 
 
+@pytest.mark.parametrize("variation_key", [
+    "default-timestamp-xy",
+    "alt-timestamp-xy",
+    "default-datetime-latlon",
+    "alt-datetime-latlon",
+    "explicit-start-datetime",
+])
+@pytest.mark.parametrize("complete_output", [True, False])
+@pytest.mark.parametrize("keep_col_names", [True, False])
+def test_lachesis_name_handling_from_variants(single_user_df, column_variations, variation_key, complete_output, keep_col_names):
+    indices, new_names, keys = column_variations[variation_key]
+    df_subset = single_user_df.iloc[:, indices].copy()
+    df_subset.columns = new_names
+
+    # Build traj_cols from the keys => new_names
+    traj_cols = dict(zip(keys, new_names))
+
+    result = LACHESIS.lachesis(
+        traj=df_subset,
+        dur_min=5,
+        dt_max=10,
+        delta_roam=100,
+        traj_cols=traj_cols,
+        complete_output=complete_output,
+        keep_col_names=keep_col_names
+    )
+
+    use_dt = keys[0] in ('datetime', 'start_datetime')
+    uses_xy = 'x' in keys or 'y' in keys
+
+    check_cols = {}
+    if use_dt:
+        check_cols['start_datetime'] = 'start_datetime'
+    else:
+        check_cols['start_timestamp'] = 'start_timestamp'
+
+    if complete_output:
+        if use_dt:
+            check_cols['end_datetime'] = 'end_datetime'
+        else:
+            check_cols['end_timestamp'] = 'end_timestamp'
+
+    check_cols['duration'] = 'duration'
+
+    if uses_xy:
+        check_cols['x'] = 'x'
+        check_cols['y'] = 'y'
+    else:
+        check_cols['longitude'] = 'longitude'
+        check_cols['latitude'] = 'latitude'
+
+    final_traj_cols = traj_cols.copy() if keep_col_names else None
+
+    assert loader._is_stop_df(
+        result,
+        traj_cols=final_traj_cols,
+        parse_dates='datetime' in keys or 'start_datetime' in keys
+    )
+
+    start_key = 'start_datetime' if use_dt else 'start_timestamp'
+    end_key = 'end_datetime' if use_dt else 'end_timestamp'
+
+    expected_start = (
+        traj_cols.get(keys[0]) if keep_col_names else check_cols[start_key]
+    )
+
+    if uses_xy:
+        coord1_key, coord2_key = 'x', 'y'
+    else:
+        coord1_key, coord2_key = 'longitude', 'latitude'
+
+    if keep_col_names:
+        expected_coord1 = traj_cols.get(coord1_key)
+        expected_coord2 = traj_cols.get(coord2_key)
+    else:
+        expected_coord1 = check_cols[coord1_key]
+        expected_coord2 = check_cols[coord2_key]
+
+    expected_columns = [expected_start, 'duration', expected_coord1, expected_coord2]
+    if complete_output:
+        end_val = check_cols[end_key]
+        expected_columns = [expected_start, end_val, 'duration', expected_coord1, expected_coord2, 'diameter', 'n_pings']
+
+    actual_cols = list(result.columns)
+    assert actual_cols == expected_columns, f"For {variation_key}, c={complete_output}, keep={keep_col_names}, got {actual_cols}, expected {expected_columns}"
+
+    
 ##########################################
 ####          LACHESIS TESTS          #### 
 ##########################################
 
-DUR_MIN = 60
-DT_MAX = 120
-DELTA_ROAM = 50
-
-def test_lon_lat_datetime_lachesis(sample_df_lon_lat_datetime):
-    traj_cols = {'user_id':'user_id', 'latitude':'dev_lat', 'longitude':'dev_lon', 'datetime':'local_datetime'}
-    df = sample_df_lon_lat_datetime
-    user_df = extract_user(df, user_id = 'wonderful_swirles')
-    expected_durs = [68.0, 62.0, 60.0, 62.0, 121.0, 499.0]
-    expected_labels = [-1, 0, 0, 0, 0, 0, 0, 0, -1, -1, -1,
-                       -1, -1, -1, 1, 1, 1, 1, 1, -1, -1, 
-                       -1, -1, -1, -1, -1, -1, -1, -1, -1,
-                       -1, -1, -1, -1, 2, 2, 2, 2, 3, 3, 3, 
-                       3, 3, 3, 4, 4, 4, 4, 4, 4, -1, -1, 
-                       -1, -1, -1, -1, -1, -1, -1, -1, -1,
-                       5, 5, 5, 5, 5, 5]
-
-    actual_stops = lachesis(traj=user_df, dur_min=DUR_MIN, dt_max=DT_MAX, delta_roam=DELTA_ROAM, traj_cols=traj_cols, complete_output=False)
-    actual_labels = _lachesis_labels(traj=user_df, dur_min=DUR_MIN, dt_max=DT_MAX, delta_roam=DELTA_ROAM, traj_cols=traj_cols)
-
-    assert expected_durs == list(actual_stops['duration'])
-    assert expected_labels == list(actual_labels['cluster'])
-
-def test_x_y_timestamp_lachesis(sample_df_x_y_timestamp):
-    traj_cols = {'user_id':'user_id', 'x':'x', 'y':'y', 'timestamp':'unix_time'}
-    df = sample_df_x_y_timestamp
-    user_df = extract_user(df, user_id = 'wonderful_swirles')
-    
-    expected_durs = [62.0, 60.0, 62.0, 121.0, 499.0]
-    expected_labels = [-1, -1, -1, -1, -1, -1, -1, -1, -1,
-                       -1, -1, -1, -1, -1, 0, 0, 0, 0, 0,
-                       -1, -1, -1, -1, -1, -1, -1, -1, -1,
-                       -1, -1, -1, -1, -1, -1, 1, 1, 1, 1,
-                       2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3,
-                       -1, -1, -1, -1, -1, -1, -1, -1, -1,
-                       -1, -1, 4, 4, 4, 4, 4, 4]
-
-    actual_stops = lachesis(traj=user_df, dur_min=DUR_MIN, dt_max=DT_MAX, delta_roam=DELTA_ROAM, traj_cols=traj_cols, complete_output=False)
-    actual_labels = _lachesis_labels(traj=user_df, dur_min=DUR_MIN, dt_max=DT_MAX, delta_roam=DELTA_ROAM, traj_cols=traj_cols)
-
-    assert expected_durs == list(actual_stops['duration'])
-    assert expected_labels == list(actual_labels['cluster'])
-
 ##########################################
 ####           DBSCAN TESTS           #### 
 ##########################################
-
-TIME_THRESH = 10
-DIST_THRESH = 10
-MIN_PTS = 2
-
-def test_lon_lat_datetime_dbscan(sample_df_lon_lat_datetime):
-    traj_cols = {'user_id':'user_id', 'latitude':'dev_lat', 'longitude':'dev_lon', 'datetime':'local_datetime'}
-    df = sample_df_lon_lat_datetime
-    user_df = extract_user(df, user_id = 'wonderful_swirles')
-    expected_durs = [5.0, 18.0, 12.0, 20.0, 15.0]
-    expected_labels = [-1, -1, -1, -1, 4, 4, 4, -1, 
-                       3, 3, 3, 3, 3, -1, -1, -1, 
-                       -1, -1, -1, -1, -1, -1, -1, 
-                       -1, -1, -1, -1, -1, -1, -1, 
-                       -1, -1, -1, -1, -1, -1, -1, 
-                       -1, -1, -1, 2, 2, 2, -1, -1, 
-                       -1, -1, -1, -1, -1, -1, -1, 
-                       -1, 1, 1, 1, 1, 1, -1, -1, 
-                       -1, 0, 0, 0, -1, -1, -1]
-
-    actual_stops = temporal_dbscan(user_df, TIME_THRESH, DIST_THRESH, MIN_PTS, traj_cols=traj_cols, complete_output=False)
-    actual_labels = _temporal_dbscan_labels(user_df, TIME_THRESH, DIST_THRESH, MIN_PTS, traj_cols=traj_cols)
-
-    assert expected_durs == list(actual_stops['duration'])
-    assert expected_labels == list(actual_labels['cluster'])
-
-def test_x_y_timestamp_dbscan(sample_df_x_y_timestamp):
-    traj_cols = {'user_id':'user_id', 'x':'x', 'y':'y', 'timestamp':'unix_time'}
-    df = sample_df_x_y_timestamp
-    user_df = extract_user(df, user_id = 'wonderful_swirles')
-    
-    expected_durs = [5.0, 18.0, 12.0, 20.0, 15.0]
-    expected_labels = [-1, -1, -1, -1, 4, 4, 4, -1,
-                       3, 3, 3, 3, 3, -1, -1, -1, 
-                       -1, -1, -1, -1, -1, -1, -1, 
-                       -1, -1, -1, -1, -1, -1, -1, 
-                       -1, -1, -1, -1, -1, -1, -1, 
-                       -1, -1, -1, 2, 2, 2, -1, -1,
-                       -1, -1, -1, -1, -1, -1, -1, 
-                       -1, 1, 1, 1, 1, 1, -1, -1, 
-                       -1, 0, 0, 0, -1, -1, -1]
-
-    actual_stops = temporal_dbscan(user_df, TIME_THRESH, DIST_THRESH, MIN_PTS, traj_cols=traj_cols, complete_output=False)
-    actual_labels = _temporal_dbscan_labels(user_df, TIME_THRESH, DIST_THRESH, MIN_PTS, traj_cols=traj_cols)
-
-    assert expected_durs == list(actual_stops['duration'])
-    assert expected_labels == list(actual_labels['cluster'])

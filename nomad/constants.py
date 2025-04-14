@@ -3,11 +3,16 @@ DEFAULT_SCHEMA = {
     "latitude": "latitude",
     "longitude": "longitude",
     "datetime": "datetime",
+    "start_datetime":"start_datetime",
+    "end_datetime":"end_datetime",
+    "start_timestamp":"start_timestamp",
+    "end_timestamp":"end_timestamp",
     "timestamp": "timestamp",
     "x": "x",
     "y": "y",
     "geohash": "geohash",
-    "tz_offset": "tz_offset"}
+    "tz_offset": "tz_offset",
+    "duration" : "duration"}
 
 ALLOWED_BUILDINGS = {
     0: ['home'], 1: ['home'], 2: ['home'], 3: ['home'], 4: ['home'],

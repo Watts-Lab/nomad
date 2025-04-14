@@ -1,5 +1,7 @@
 import pytest
 import pandas as pd
+import numpy as np
+import pdb
 import geopandas as gpd
 from pandas.testing import assert_frame_equal, assert_series_equal
 from shapely.geometry import Polygon
@@ -27,6 +29,32 @@ def simple_df_one_user():
     return df
 
 @pytest.fixture
+def base_df():
+    test_dir = Path(__file__).resolve().parent
+    data_path = test_dir.parent / "data" / "gc_sample.csv"
+    df = pd.read_csv(data_path)
+
+    # create tz_offset column
+    df['tz_offset'] = 0
+    df.loc[df.index[:5000],'tz_offset'] = -7200
+    df.loc[df.index[-5000:], 'tz_offset'] = 3600
+
+    # create string datetime column
+    df['local_datetime'] = _unix_offset_to_str(df.timestamp, df.tz_offset)
+    
+    # create x, y columns in web mercator
+    gdf = gpd.GeoSeries(gpd.points_from_xy(df.longitude, df.latitude),
+                            crs="EPSG:4326")
+    projected = gdf.to_crs("EPSG:3857")
+    df['x'] = projected.x
+    df['y'] = projected.y
+    
+    df['geohash'] = df.apply(lambda x: gh.encode(x.latitude, x.longitude, precision=7), axis=1)
+    # col names:  ['uid', 'timestamp', 'latitude', 'longitude', 'tz_offset', 'local_datetime', 'x', 'y', 'geohash'
+    # dtypes: [object, int64, float64, float64, int64, object, float64, float64, object]
+    return df
+
+@pytest.fixture
 def simple_df_multi_user():
     df = pd.DataFrame(
         [[1, 39.984094, 116.319236, '2023-01-01 13:53:05'],
@@ -45,6 +73,10 @@ def simple_df_multi_user():
     )
     return df
 
+def test_to_timestamp(base_df):
+    timestamp_col = to_timestamp(base_df.local_datetime, base_df.tz_offset)
+    assert np.array_equal(timestamp_col.values, base_df.timestamp.values)
+    
 def test_projection_output(simple_df_one_user):
     # Basic test
     result = to_projection(traj=simple_df_one_user,

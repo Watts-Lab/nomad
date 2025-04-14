@@ -13,6 +13,79 @@ from pyspark.sql.types import StructType, StructField, StringType, IntegerType, 
 import nomad.io.base as loader
 from nomad.constants import DEFAULT_SCHEMA
 import pdb
+import warnings
+import numpy as np
+
+def to_timestamp(
+    datetime: pd.Series,
+    tz_offset: pd.Series = None
+) -> pd.Series:
+    """
+    Convert a datetime series into UNIX timestamps (seconds).
+    
+    Parameters
+    ----------
+    datetime : pd.Series
+    tz_offset : pd.Series, optional
+
+    Returns
+    -------
+    pd.Series
+        UNIX timestamps as int64 values (seconds since epoch).
+    """
+    # Validate input type
+    if not (
+        
+        pd.api.types.is_datetime64_any_dtype(datetime) or
+        pd.api.types.is_string_dtype(datetime) or
+        (pd.api.types.is_object_dtype(datetime) and _is_series_of_timestamps(datetime))
+    ):
+        raise TypeError(
+            f"Input must be of type datetime64, string, or an array of Timestamp objects, "
+            f"but it is of type {datetime.dtype}."
+        )
+    
+    if tz_offset is not None:
+        if not pd.api.types.is_integer_dtype(tz_offset):
+            tz_offset = tz_offset.astype('int64')
+
+    # datetime with timezone
+    if isinstance(datetime.dtype, pd.DatetimeTZDtype):
+        return datetime.astype("int64") // 10**9
+    
+    # datetime without timezone
+    elif pd.api.types.is_datetime64_dtype(datetime):
+        if tz_offset is not None:
+            return datetime.astype("int64") // 10**9 - tz_offset
+        warnings.warn(
+                f"The input is timezone-naive. UTC will be assumed."
+                "Consider localizing to a timezone or passing a timezone offset column.")
+        return datetime.astype("int64") // 10**9
+    
+    # datetime as string
+    elif pd.api.types.is_string_dtype(datetime):
+        result = pd.to_datetime(datetime, errors="coerce", utc=True)
+
+        # contains timezone e.g. '2024-01-01 12:29:00-02:00'
+        if datetime.str.contains(r'(?:Z|[+\-]\d{2}:\d{2})$', regex=True, na=False).any():
+            return result.astype('int64') // 10**9
+        else:
+            # naive e.g. "2024-01-01 12:29:00"
+            if tz_offset is not None and not tz_offset.empty:
+                return result.astype('int64') // 10**9 - tz_offset
+            else:
+                warnings.warn(
+                    f"The input is timezone-naive. UTC will be assumed."
+                    "Consider localizing to a timezone or passing a timezone offset column.")
+                return result.astype('int64') // 10**9
+                
+    # datetime is pandas.Timestamp object
+    else:
+        if tz_offset is not None and not tz_offset.empty:
+            f = np.frompyfunc(lambda x: x.timestamp(), 1, 1)
+            return pd.Series(f(datetime).astype("float64"), index=datetime.index)
+        else:
+            return datetime.astype('int64') // 10**9
 
 def to_projection(
     traj: pd.DataFrame,
@@ -104,6 +177,7 @@ def _to_projection_spark(
     """
     Helper function to project latitude/longitude columns to a new CRS using Spark.
     """
+    from sedona.register import SedonaRegistrator
     SedonaRegistrator.registerAll(spark_session)
     spark_df = spark_session.createDataFrame(traj)
     spark_df.createOrReplaceTempView("temp_view")
@@ -279,7 +353,8 @@ def _filter_users_spark(
     Helper function that retains only users who have at least k distinct days 
     with pings inside the geometry between T0 and T1.
     """
-
+    from sedona.register import SedonaRegistrator
+    
     SedonaRegistrator.registerAll(spark)
 
     traj = traj.withColumn(traj_cols['timestamp'], F.to_timestamp(F.col(traj_cols['timestamp'])))
