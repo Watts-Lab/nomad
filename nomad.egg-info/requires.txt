@@ -1,0 +1,14 @@
+pandas
+geopandas
+numpy
+datetime
+pyspark
+shapely
+matplotlib
+networkx
+pygeohash
+libgeohash
+funkybob
+scipy
+pyarrow
+s3fs
