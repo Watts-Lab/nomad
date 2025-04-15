@@ -4,12 +4,13 @@ Version: 0.0.1
 Summary: NOMAD provides a repository of processing and analysis methods for GPS mobility data, centralizing tools necessary for large-scale analyses. This repository will serve the dual function of facilitating research for first-time users and enhancing the replicability and robustness of existing methodologies. By collecting many such methods in a single place and documenting their assumptions and robustness metrics, NOMAD aims to enhance methodological transparency and replicability of research.
 Home-page: https://github.com/Watts-Lab/nomad
 Author: Francisco Barreras, Thomas Li, Federico Delussu, Andres Mondragon
-Author-email: fbarrer@sas.upenn.edu, thomli@sas.upenn.edu, fedde@dtu.dk
+Author-email: fbarrer@sas.upenn.edu, thomli@sas.upenn.edu, fedde@dtu.dk, amt00@sas.upenn.edu
 Classifier: Programming Language :: Python :: 3
 Classifier: License :: OSI Approved :: MIT License
 Classifier: Operating System :: OS Independent
 Requires-Python: >=3.10
 Requires-Dist: pandas
+Requires-Dist: geopandas
 Requires-Dist: numpy
 Requires-Dist: datetime
 Requires-Dist: pyspark
@@ -22,6 +23,7 @@ Requires-Dist: funkybob
 Requires-Dist: scipy
 Requires-Dist: pyarrow
 Requires-Dist: s3fs
+Requires-Dist: sedona
 Dynamic: author
 Dynamic: author-email
 Dynamic: classifier
