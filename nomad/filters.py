@@ -3,7 +3,6 @@ import geopandas as gpd
 from shapely.geometry import Polygon, Point
 import warnings
 
-from sedona.register import SedonaRegistrator
 import pyspark
 from pyspark.sql import SparkSession
 from pyspark.sql import SQLContext
@@ -12,7 +11,6 @@ from pyspark.sql.types import StructType, StructField, StringType, IntegerType, 
 
 import nomad.io.base as loader
 from nomad.constants import DEFAULT_SCHEMA
-import pdb
 import warnings
 import numpy as np
 
@@ -38,7 +36,7 @@ def to_timestamp(
         
         pd.api.types.is_datetime64_any_dtype(datetime) or
         pd.api.types.is_string_dtype(datetime) or
-        (pd.api.types.is_object_dtype(datetime) and _is_series_of_timestamps(datetime))
+        (pd.api.types.is_object_dtype(datetime) and loader._is_series_of_timestamps(datetime))
     ):
         raise TypeError(
             f"Input must be of type datetime64, string, or an array of Timestamp objects, "
@@ -179,22 +177,26 @@ def _to_projection_spark(
     """
     from sedona.register import SedonaRegistrator
     SedonaRegistrator.registerAll(spark_session)
+
     spark_df = spark_session.createDataFrame(traj)
     spark_df.createOrReplaceTempView("temp_view")
+
     query = f"""
         SELECT
-            ST_X(ST_Transform(ST_Point({input_x_col}, {input_y_col}), '{input_crs}', '{output_crs}')),
-            ST_Y(ST_Transform(ST_Point({input_x_col}, {input_y_col}), '{input_crs}', '{output_crs}'))
+            ST_X(ST_Transform(ST_Point({input_x_col}, {input_y_col}), '{input_crs}', '{output_crs}')) AS x,
+            ST_Y(ST_Transform(ST_Point({input_x_col}, {input_y_col}), '{input_crs}', '{output_crs}')) AS y
         FROM temp_view
     """
+    
     result_df = spark_session.sql(query)
-    return result_df.toPandas()  # TODO: make it return as pd.Series
+    pandas_df = result_df.toPandas()
+    return pandas_df['x'], pandas_df['y']
 
 
 def filter_users(
     traj: pd.DataFrame,
-    start_time: str,
-    end_time: str,
+    start_time: pd.Timestamp,
+    end_time: pd.Timestamp,
     polygon: Polygon = None,
     min_active_days: int = 1,
     min_pings_per_day: int = 1,
@@ -211,10 +213,10 @@ def filter_users(
     ----------
     traj : pd.DataFrame
         Trajectory DataFrame with latitude and longitude columns.
-    start_time : str
-        Start of the timeframe for filtering (as a string, or datetime).
-    end_time : str
-        End of the timeframe for filtering (as a string, or datetime).
+    start_time : pd.Timestamp
+        Start of the timeframe for filtering.
+    end_time : pd.Timestamp
+        End of the timeframe for filtering.
     polygon : shapely.geometry.Polygon
         Polygon defining the area to retain points within.
         If None, no spatial filtering is applied.
@@ -244,24 +246,32 @@ def filter_users(
 
     # Check which spatial columns to project from
     if ('x' in kwargs and 'y' in kwargs):
-        input_x_col, input_y_col = kwargs['x'], kwargs['y']
+        input_x_col, input_y_col = traj_cols['x'], traj_cols['y']
     else:
-        input_x_col, input_y_col = kwargs['longitude'], kwargs['latitude']
+        input_x_col, input_y_col = traj_cols['longitude'], traj_cols['latitude']
+
+    # Check which time column to use from
+    if ('datetime' in kwargs):
+        time_col = traj_cols['datetime']
+    else:  # defaults to unix timestamps
+        time_col = traj_cols['timestamp']
+        start_time = int(start_time.timestamp())
+        end_time = int(end_time.timestamp())
 
     # Check if polygon is a valid Shapely Polygon object
     if (polygon is not None) and (not isinstance(polygon, Polygon)):
         raise TypeError("Polygon parameter must be a Shapely Polygon object.")
     
     # Filter to the desired time range
-    traj = traj[(traj[traj_cols['datetime']] >= start_time) & (traj[traj_cols['datetime']] <= end_time)].copy()
+    traj = traj[(traj[time_col] >= start_time) & (traj[time_col] <= end_time)].copy()
 
     if spark_session:
         return _filter_users_spark(
-            traj, start_time, end_time, polygon.wkt, min_active_days, min_pings_per_day, traj_cols, input_x_col, input_y_col, spark_session
+            traj, start_time, end_time, polygon.wkt, min_active_days, min_pings_per_day, traj_cols, input_x_col, input_y_col, time_col, spark_session
             )
     else:
         users = _filtered_users(
-            traj, start_time, end_time, polygon, min_active_days, min_pings_per_day, traj_cols, input_x_col, input_y_col, crs
+            traj, start_time, end_time, polygon, min_active_days, min_pings_per_day, traj_cols, input_x_col, input_y_col, time_col, crs
         )
         return traj[traj[traj_cols['user_id']].isin(users)]
 
@@ -276,21 +286,39 @@ def _filtered_users(
     traj_cols,
     input_x,
     input_y,
+    time_col,
     crs
 ):
     """
     Helper function that returns a series containing users who have at least 
     k distinct days with at least m pings in the polygon within the timeframe T0 to T1.
     """
-    # Filter by time range
-    traj_filtered = traj[(traj[traj_cols['datetime']] >= start_time) & (traj[traj_cols['datetime']] <= end_time)].copy()
-    traj_filtered[traj_cols['datetime']] = pd.to_datetime(traj_filtered[traj_cols['datetime']])
+    # Filter by time range (this logic would not necessarily remove pings outside the timeframe.
+    # Rather, it use pings inside the timeframe to determine whether a user is sufficient "complete".)
+    # traj_filtered = traj[(traj[time_col] >= start_time) & (traj[time_col] <= end_time)].copy()
+    # traj_filtered[time_col] = pd.to_datetime(traj_filtered[time_col])
+    traj_filtered = traj.copy()
+
+    if traj_filtered.empty:
+        return pd.Series()
 
     # Filter points inside the polygon
     if polygon is not None:
         traj_filtered = _in_geo(traj_filtered, input_x, input_y, polygon, crs)
     else:
         traj_filtered['in_geo'] = True
+    
+    if traj_cols['tz_offset'] not in traj_filtered.columns:
+        traj_filtered[traj_cols['tz_offset']] = 0
+        warnings.warn(
+            f"The trajectory dataframe does not have a tz_offset (timezone offset) column."
+            "UTC (tz_offset=0) will be assumed.")
+
+    if traj_cols['datetime'] not in traj_filtered.columns:
+        traj_filtered[traj_cols['datetime']] = loader.naive_datetime_from_unix_and_offset(
+            traj_filtered[traj_cols[time_col]], traj_filtered[traj_cols['tz_offset']]
+        )
+
     traj_filtered['date'] = pd.to_datetime(traj_filtered[traj_cols['datetime']].dt.date)
 
     # Count pings per user per date inside the polygon
@@ -301,7 +329,7 @@ def _filtered_users(
         .reset_index(name='ping_count')
     )
 
-    # Filter users who have at least `m` pings on a given day
+    # Filter users who have at least `m` (`min_pings_per_day`) pings on a given day
     users_with_m_pings = daily_ping_counts[daily_ping_counts['ping_count'] >= min_pings_per_day]
 
     # Count distinct days per user that satisfy the `m` pings condition
@@ -312,7 +340,7 @@ def _filtered_users(
         .reset_index(name='days_in_polygon')
     )
 
-    # Select users who have at least `k` such days
+    # Select users who have at least `k` (`min_active_days`) such days
     filtered_users = users_with_k_days[users_with_k_days['days_in_polygon'] >= min_active_days][traj_cols['user_id']]
 
     return filtered_users
@@ -349,24 +377,33 @@ def _filter_users_spark(
     spark,
 ):
     """
-    TODO: IMPLEMENT min_pings
     Helper function that retains only users who have at least k distinct days 
     with pings inside the geometry between T0 and T1.
+
+    TODO: I don't know if this works / if it could be more efficient
     """
     from sedona.register import SedonaRegistrator
-    
     SedonaRegistrator.registerAll(spark)
 
-    traj = traj.withColumn(traj_cols['timestamp'], F.to_timestamp(F.col(traj_cols['timestamp'])))
+    # Ensure timestamp column is proper type
+    traj = traj.withColumn(
+        traj_cols['timestamp'], 
+        F.to_timestamp(F.col(traj_cols['timestamp']))
+    )
+
+    # Time filter
     traj_filtered = traj.filter(
         (F.col(traj_cols['timestamp']) >= F.to_timestamp(F.lit(T0))) & 
         (F.col(traj_cols['timestamp']) <= F.to_timestamp(F.lit(T1)))
     )
+
+    # Add geometry point column
     traj_filtered = traj_filtered.withColumn(
         "coordinate", 
         F.expr(f"ST_Point(CAST({input_x} AS DECIMAL(24,20)), CAST({input_y} AS DECIMAL(24,20)))")
     )
 
+    # Spatial filter + extract date
     traj_filtered.createOrReplaceTempView("temp_df")
     query = f"""
         SELECT *, DATE({traj_cols['timestamp']}) AS date
@@ -376,14 +413,22 @@ def _filter_users_spark(
 
     traj_inside = spark.sql(query)
 
-    user_day_counts = traj_inside.groupBy(traj_cols['user_id']).agg(
-        F.countDistinct("date").alias("distinct_days")
+    # Count pings per user per day
+    daily_counts = traj_inside.groupBy(traj_cols['user_id'], "date").agg(
+        F.count("*").alias("ping_count")
     )
-    users_with_k_days = user_day_counts.filter(
-        F.col("distinct_days") >= min_days
+
+    # Keep only user-day combos with at least `min_pings`
+    filtered_days = daily_counts.filter(F.col("ping_count") >= min_pings)
+
+    # Count how many qualifying days each user has
+    qualifying_users = filtered_days.groupBy(traj_cols['user_id']).agg(
+        F.countDistinct("date").alias("qualified_days")
+    ).filter(
+        F.col("qualified_days") >= min_days
     ).select(traj_cols['user_id'])
 
-    result_traj = traj_inside.join(users_with_k_days, on=traj_cols['user_id'], how='inner')
+    result_traj = traj_inside.join(qualifying_users, on=traj_cols['user_id'], how='inner')
 
     return result_traj
 

@@ -3,11 +3,14 @@ import pandas as pd
 import numpy as np
 import pdb
 import geopandas as gpd
+import pygeohash as gh
 from pandas.testing import assert_frame_equal, assert_series_equal
 from shapely.geometry import Polygon
 from pyspark.sql import SparkSession
-
-from nomad.filters import to_projection, filter_users, _in_geo
+from pathlib import Path
+import nomad.io.base as loader
+from nomad.io.base import _unix_offset_to_str
+from nomad.filters import to_projection, filter_users, _in_geo, to_timestamp
 
 @pytest.fixture(scope="module")
 def spark():
@@ -26,6 +29,31 @@ def simple_df_one_user():
          [1, 39.984211, 116.319389, '2008-10-23 13:53:16']],
         columns=['user_id', 'latitude', 'longitude', 'datetime']
     )
+    df['datetime'] = pd.to_datetime(df['datetime']).dt.tz_localize('America/New_York')
+    df['timestamp'] = to_timestamp(df['datetime'])
+    df['tz_offset'] = df['datetime'].apply(lambda x: loader._offset_seconds_from_ts(x))
+    return df
+
+@pytest.fixture
+def simple_df_multi_user():
+    df = pd.DataFrame(
+        [[1, 39.984094, 116.319236, '2023-01-01 13:53:05'],
+         [1, 39.984198, 116.319322, '2023-01-02 13:53:06'],
+         [1, 39.984224, 116.319402, '2023-01-02 13:53:11'],
+         [1, 39.984211, 116.319389, '2023-01-07 13:53:16'],
+         [2, 39.984100, 116.319500, '2023-01-01 13:53:20'],
+         [2, 39.984300, 116.319600, '2023-01-01 13:53:25'],
+         [2, 39.984400, 116.319700, '2023-01-01 13:53:30'],
+         [3, 20.984000, 116.319800, '2023-01-04 13:53:35'],
+         [3, 20.984500, 116.319900, '2023-01-05 13:53:40'],
+         [4, 39.984100, 116.319500, '2023-01-03 13:53:20'],
+         [4, 39.984300, 116.319600, '2023-01-04 13:53:25'],
+         [4, 39.984400, 116.319700, '2023-01-04 13:53:30']],
+        columns=['user_id', 'latitude', 'longitude', 'datetime']
+    )
+    df['datetime'] = pd.to_datetime(df['datetime']).dt.tz_localize('America/New_York')
+    df['timestamp'] = to_timestamp(df['datetime'])
+    df['tz_offset'] = df['datetime'].apply(lambda x: loader._offset_seconds_from_ts(x))
     return df
 
 @pytest.fixture
@@ -52,25 +80,6 @@ def base_df():
     df['geohash'] = df.apply(lambda x: gh.encode(x.latitude, x.longitude, precision=7), axis=1)
     # col names:  ['uid', 'timestamp', 'latitude', 'longitude', 'tz_offset', 'local_datetime', 'x', 'y', 'geohash'
     # dtypes: [object, int64, float64, float64, int64, object, float64, float64, object]
-    return df
-
-@pytest.fixture
-def simple_df_multi_user():
-    df = pd.DataFrame(
-        [[1, 39.984094, 116.319236, '2023-01-01 13:53:05'],
-         [1, 39.984198, 116.319322, '2023-01-02 13:53:06'],
-         [1, 39.984224, 116.319402, '2023-01-02 13:53:11'],
-         [1, 39.984211, 116.319389, '2023-01-07 13:53:16'],
-         [2, 39.984100, 116.319500, '2023-01-01 13:53:20'],
-         [2, 39.984300, 116.319600, '2023-01-01 13:53:25'],
-         [2, 39.984400, 116.319700, '2023-01-01 13:53:30'],
-         [3, 20.984000, 116.319800, '2023-01-04 13:53:35'],
-         [3, 20.984500, 116.319900, '2023-01-05 13:53:40'],
-         [4, 39.984100, 116.319500, '2023-01-03 13:53:20'],
-         [4, 39.984300, 116.319600, '2023-01-04 13:53:25'],
-         [4, 39.984400, 116.319700, '2023-01-04 13:53:30']],
-        columns=['user_id', 'latitude', 'longitude', 'datetime']
-    )
     return df
 
 def test_to_timestamp(base_df):
@@ -140,60 +149,64 @@ def test_in_geo(simple_df_multi_user):
 
 def test_filter_no_polygon(simple_df_multi_user):
     result = filter_users(simple_df_multi_user,
-                          start_time='2023-01-01 00:00:00', 
-                          end_time='2023-01-08 00:00:00', 
+                          start_time=pd.Timestamp('2023-01-01 00:00:00', tz='America/New_York'),
+                          end_time=pd.Timestamp('2023-01-08 00:00:00', tz='America/New_York'),
                           min_active_days=1,
                           crs='EPSG:4326', 
                           longitude='longitude', 
-                          latitude='latitude')
+                          latitude='latitude',
+                          timestamp='timestamp')
+    assert len(result) == 12
+
+def test_filter_datetime(simple_df_multi_user):
+    result = filter_users(simple_df_multi_user,
+                          start_time=pd.Timestamp('2023-01-01 00:00:00', tz='America/New_York'),
+                          end_time=pd.Timestamp('2023-01-08 00:00:00', tz='America/New_York'),
+                          min_active_days=1,
+                          crs='EPSG:4326', 
+                          longitude='longitude', 
+                          latitude='latitude',
+                          datetime='datetime')
     assert len(result) == 12
 
 def test_filter_users_within_bounds(simple_df_one_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
     result = filter_users(simple_df_one_user,
                           polygon=polygon,
-                          start_time='2008-10-23 00:00:00',
-                          end_time='2008-10-24 00:00:00',
+                          start_time=pd.Timestamp('2008-10-23 00:00:00', tz='America/New_York'),
+                          end_time=pd.Timestamp('2008-10-24 00:00:00', tz='America/New_York'),
                           min_active_days=1,
-                          crs='EPSG:4326',
-                          longitude='longitude',
-                          latitude='latitude')
+                          crs='EPSG:4326')
     assert len(result) == 4
 
 def test_filter_users_outside_bounds(simple_df_one_user):
     polygon = Polygon([(116.3180, 39.9830), (116.3185, 39.9830), (116.3185, 39.9835), (116.3180, 39.9835)])
     result = filter_users(simple_df_one_user,
                           polygon=polygon,
-                          start_time='2008-10-23 00:00:00',
-                          end_time='2008-10-24 00:00:00',
+                          start_time=pd.Timestamp('2008-10-23 00:00:00', tz='America/New_York'),
+                          end_time=pd.Timestamp('2008-10-24 00:00:00', tz='America/New_York'),
                           min_active_days=1,
-                          crs='EPSG:4326',
-                          longitude='longitude',
-                          latitude='latitude')
+                          crs='EPSG:4326')
     assert len(result) == 0
 
 def test_filter_users_within_bounds_multi_user(simple_df_multi_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
     result = filter_users(simple_df_multi_user, 
                           polygon=polygon,
-                          start_time='2023-01-01 00:00:00',
-                          end_time='2023-01-08 00:00:00',
+                          start_time=pd.Timestamp('2023-01-01 00:00:00', tz='America/New_York'),
+                          end_time=pd.Timestamp('2023-01-08 00:00:00', tz='America/New_York'),
                           min_active_days=1,
-                          crs='EPSG:4326',
-                          longitude='longitude',
-                          latitude='latitude')
+                          crs='EPSG:4326')
     assert len(result) == 10
 
 def test_filter_users_outside_bounds_multi_user(simple_df_multi_user):
     polygon = Polygon([(116.3180, 39.9830), (116.3185, 39.9830), (116.3185, 39.9835), (116.3180, 39.9835)])
     result = filter_users(simple_df_multi_user,
                           polygon=polygon,
-                          start_time='2023-01-01 00:00:00',
-                          end_time='2023-01-08 00:00:00',
+                          start_time=pd.Timestamp('2023-01-01 00:00:00', tz='America/New_York'),
+                          end_time=pd.Timestamp('2023-01-08 00:00:00', tz='America/New_York'),
                           min_active_days=1,
-                          crs='EPSG:4326',
-                          longitude='longitude',
-                          latitude='latitude')
+                          crs='EPSG:4326')
     assert len(result) == 0
 
 # def test_filter_users_with_spark(simple_df_one_user, spark):
@@ -206,8 +219,8 @@ def test_filter_users_with_custom_columns(simple_df_one_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
     result = filter_users(df_custom,
                           polygon=polygon,
-                          start_time='2008-10-23 00:00:00',
-                          end_time='2008-10-24 00:00:00',
+                          start_time=pd.Timestamp('2008-10-23 00:00:00', tz='America/New_York'),
+                          end_time=pd.Timestamp('2008-10-24 00:00:00', tz='America/New_York'),
                           min_active_days=1,
                           crs='EPSG:4326',
                           longitude='lon',
@@ -218,35 +231,29 @@ def test_filter_users_invalid_polygon(simple_df_one_user):
     with pytest.raises(TypeError):
         filter_users(simple_df_one_user,
                      "invalid_polygon",
-                     start_time='2008-10-23 00:00:00',
-                     end_time='2008-10-24 00:00:00',
+                     start_time=pd.Timestamp('2008-10-23 00:00:00', tz='America/New_York'),
+                     end_time=pd.Timestamp('2008-10-24 00:00:00', tz='America/New_York'),
                      min_active_days=1,
-                     crs='EPSG:4326',
-                     longitude='longitude',
-                     latitude='latitude')
+                     crs='EPSG:4326')
 
 def test_filter_users_k2(simple_df_multi_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
     result = filter_users(simple_df_multi_user,
                           polygon=polygon,
-                          start_time='2023-01-01 00:00:00',
-                          end_time='2023-01-08 00:00:00',
+                          start_time=pd.Timestamp('2023-01-01 00:00:00', tz='America/New_York'),
+                          end_time=pd.Timestamp('2023-01-08 00:00:00', tz='America/New_York'),
                           min_active_days=2,
-                          crs='EPSG:4326',
-                          longitude='longitude',
-                          latitude='latitude')
+                          crs='EPSG:4326')
     assert len(result) == 7  # Users 1, 2, and 4 have points within the polygon on at least 2 distinct days
 
 def test_filter_users_k4(simple_df_multi_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
     result = filter_users(simple_df_multi_user,
                           polygon=polygon,
-                          start_time='2023-01-01 00:00:00',
-                          end_time='2023-01-08 00:00:00',
+                          start_time=pd.Timestamp('2023-01-01 00:00:00', tz='America/New_York'),
+                          end_time=pd.Timestamp('2023-01-08 00:00:00', tz='America/New_York'),
                           min_active_days=4,
-                          crs='EPSG:4326',
-                          longitude='longitude',
-                          latitude='latitude')
+                          crs='EPSG:4326')
     assert len(result) == 0  # No users have points within the polygon on at least 3 distinct days
 
 def test_projection_and_filter_users(simple_df_one_user):
@@ -262,8 +269,8 @@ def test_projection_and_filter_users(simple_df_one_user):
     simple_df_one_user['y'] = projected_y
     result = filter_users(simple_df_one_user,
                           polygon=polygon,
-                          start_time='2008-10-23 00:00:00',
-                          end_time='2008-10-24 00:00:00',
+                          start_time=pd.Timestamp('2008-10-23 00:00:00', tz='America/New_York'),
+                          end_time=pd.Timestamp('2008-10-24 00:00:00', tz='America/New_York'),
                           min_active_days=1,
                           x='x',
                           y='y')
@@ -282,70 +289,58 @@ def test_projection_and_filter_users_wrong_cols(simple_df_one_user):
     simple_df_one_user['y'] = projected_y
     result = filter_users(simple_df_one_user,
                           polygon=polygon,
-                          start_time='2008-10-23 00:00:00',
-                          end_time='2008-10-24 00:00:00',
-                          min_active_days=1,
-                          longitude='longitude',
-                          latitude='latitude')
+                          start_time=pd.Timestamp('2008-10-23 00:00:00', tz='America/New_York'),
+                          end_time=pd.Timestamp('2008-10-24 00:00:00', tz='America/New_York'),
+                          min_active_days=1)
     assert len(result) == 0
 
 def test_filter_users_within_time_frame(simple_df_one_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
     result = filter_users(simple_df_one_user,
                           polygon=polygon,
-                          start_time='2008-10-23 13:53:00',
-                          end_time='2008-10-23 13:53:10',
+                          start_time=pd.Timestamp('2008-10-23 13:53:00', tz='America/New_York'),
+                          end_time=pd.Timestamp('2008-10-23 13:53:10', tz='America/New_York'),
                           min_active_days=1,
-                          crs='EPSG:4326',
-                          longitude='longitude',
-                          latitude='latitude')
+                          crs='EPSG:4326')
     assert len(result) == 2
 
 def test_filter_users_outside_time_frame(simple_df_one_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
     result = filter_users(simple_df_one_user,
                           polygon=polygon,
-                          start_time='2008-10-23 13:53:20',
-                          end_time='2008-10-23 13:53:30',
+                          start_time=pd.Timestamp('2008-10-23 13:53:20', tz='America/New_York'),
+                          end_time=pd.Timestamp('2008-10-23 13:53:30', tz='America/New_York'),
                           min_active_days=1,
-                          crs='EPSG:4326',
-                          longitude='longitude',
-                          latitude='latitude')
+                          crs='EPSG:4326')
     assert len(result) == 0
 
 def test_filter_users_within_time_frame_multi_user(simple_df_multi_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
     result = filter_users(simple_df_multi_user,
                           polygon=polygon,
-                          start_time='2023-01-01 00:00:00',
-                          end_time='2023-01-03 00:00:00',
+                          start_time=pd.Timestamp('2023-01-01 00:00:00', tz='America/New_York'),
+                          end_time=pd.Timestamp('2023-01-03 00:00:00', tz='America/New_York'),
                           min_active_days=1,
-                          crs='EPSG:4326',
-                          longitude='longitude',
-                          latitude='latitude')
+                          crs='EPSG:4326')
     assert len(result) == 6
 
 def test_filter_users_outside_time_frame_multi_user(simple_df_multi_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
     result = filter_users(simple_df_multi_user,
                           polygon=polygon,
-                          start_time='2023-01-05 00:00:00',
-                          end_time='2023-01-08 00:00:00',
+                          start_time=pd.Timestamp('2023-01-05 00:00:00', tz='America/New_York'),
+                          end_time=pd.Timestamp('2023-01-08 00:00:00', tz='America/New_York'),
                           min_active_days=1,
-                          crs='EPSG:4326',
-                          longitude='longitude',
-                          latitude='latitude')
+                          crs='EPSG:4326')
     assert len(result) == 1
 
 def test_filter_users_with_empty_df():
-    empty_df = pd.DataFrame(columns=['user_id', 'latitude', 'longitude', 'datetime'])
+    empty_df = pd.DataFrame(columns=['user_id', 'latitude', 'longitude', 'datetime', 'timestamp', 'tz_offset'])
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
     result = filter_users(empty_df,
                           polygon=polygon,
-                          start_time='2008-10-23 00:00:00',
-                          end_time='2008-10-24 00:00:00',
+                          start_time=pd.Timestamp('2008-10-23 00:00:00', tz='America/New_York'),
+                          end_time=pd.Timestamp('2008-10-24 00:00:00', tz='America/New_York'),
                           min_active_days=1,
-                          crs='EPSG:4326',
-                          longitude='longitude',
-                          latitude='latitude')
+                          crs='EPSG:4326')
     assert len(result) == 0

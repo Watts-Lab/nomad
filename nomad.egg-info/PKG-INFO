@@ -23,6 +23,7 @@ Requires-Dist: funkybob
 Requires-Dist: scipy
 Requires-Dist: pyarrow
 Requires-Dist: s3fs
+Requires-Dist: sedona
 Dynamic: author
 Dynamic: author-email
 Dynamic: classifier

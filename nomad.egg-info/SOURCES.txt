@@ -11,7 +11,9 @@ nomad.egg-info/SOURCES.txt
 nomad.egg-info/dependency_links.txt
 nomad.egg-info/requires.txt
 nomad.egg-info/top_level.txt
+nomad/data/__init__.py
 nomad/data/gc_sample.csv
+nomad/data/gc_stops.csv
 nomad/data/partitioned_csv/2024-01-01/part-0.csv
 nomad/data/partitioned_csv/2024-01-02/part-0.csv
 nomad/data/partitioned_csv/2024-01-03/part-0.csv
@@ -44,3 +46,14 @@ nomad/data/partitioned_parquet/date=2024-01-14/aad4a23f7a90441aa0f55f06e5e4313d-
 nomad/data/partitioned_parquet/date=2024-01-15/aad4a23f7a90441aa0f55f06e5e4313d-0.parquet
 nomad/data/single_csv/sample2.csv
 nomad/data/single_parquet/part-00000-611b5978.parquet
+nomad/io/__init__.py
+nomad/io/base.py
+nomad/stop_detection/__init__.py
+nomad/stop_detection/hdbscan.py
+nomad/stop_detection/lachesis.py
+nomad/stop_detection/ta_dbscan.py
+nomad/stop_detection/utils.py
+nomad/tests/__init__.py
+nomad/tests/test_filter.py
+nomad/tests/test_io.py
+nomad/tests/test_stop_detection.py
