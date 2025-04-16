@@ -1,14 +1,17 @@
 from shapely.geometry import box, Point, LineString, MultiLineString
 from shapely.ops import unary_union
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import timedelta
+from zoneinfo import ZoneInfo
 import numpy as np
 import numpy.random as npr
 from matplotlib import cm
+import warnings
 import funkybob
 import s3fs
 
 from nomad.city_gen import *
+import nomad.io.base as loader 
 from nomad.constants import DEFAULT_SPEEDS, FAST_SPEEDS, SLOW_SPEEDS, DEFAULT_STILL_PROBS
 from nomad.constants import FAST_STILL_PROBS, SLOW_STILL_PROBS, ALLOWED_BUILDINGS, DEFAULT_STAY_PROBS
 
@@ -155,16 +158,17 @@ class Agent:
 
     def __init__(self, 
                  identifier: str, 
-                 home: str, 
-                 workplace: str, 
                  city: City,
+                 home: str = None,
+                 workplace: str = None,
                  still_probs: dict = DEFAULT_STILL_PROBS, 
                  speeds: dict = DEFAULT_SPEEDS,
                  destination_diary: pd.DataFrame = None,
                  trajectory: pd.DataFrame = None,
                  diary: pd.DataFrame = None,
-                 start_time: datetime=datetime(2024, 1, 1, hour=8, minute=0), 
-                 dt: float = 1):
+                 start_time: pd.Timestamp=pd.Timestamp('2024-01-01 08:00', tz='UTC'),
+                 dt: float = 1,
+                 seed: int = 0):
         """
         Initializes an agent in the city simulation with a trajectory and diary.
         If `trajectory` is not provided, the agent initialize with a ping at their home.
@@ -189,30 +193,48 @@ class Agent:
             DataFrame containing the following columns: 'x', 'y', 'local_timestamp', 'unix_timestamp', 'identifier'.
         diary : pandas.DataFrame,  optional (default=None)
             DataFrame containing the following columns: 'unix_timestamp', 'local_timestamp', 'duration', 'location'.
-        start_time : datetime, optional (default=datetime(2024, 1, 1, hour=8, minute=0))
-            If `trajectory` is None, the first ping will occur at `start_time`.
+        start_time : pd.Timestamp, optional (default=pd.Timestamp('2024-01-01 08:00', tz='UTC')
+            If `trajectory` is None, the first ping will occur at `start_time`. 
+            Remember to include the desired timezone.
         dt : float, optional (default=1)
             Time step duration.
         """
 
+        npr.seed(seed)
+        
         self.identifier = identifier
+        self.city = city
+
+        if home is None:
+            home = city.building_types[city.building_types['type'] == 'home'].sample(n=1)['id'].iloc[0]
+        if workplace is None:
+            workplace = city.building_types[city.building_types['type'] == 'work'].sample(n=1)['id'].iloc[0]
+
         self.home = home
         self.workplace = workplace
-        self.city = city
 
         if destination_diary is not None:
             start_time = destination_diary['local_timestamp'][0]
             self.destination_diary = destination_diary
         else:
             self.destination_diary = pd.DataFrame(
-                columns=['unix_timestamp', 'local_timestamp', 'duration', 'location'])
+                columns=['local_timestamp', 'unix_timestamp', 'tz_offset', 'duration', 'location'])
+            
+        if start_time.tz is None:
+            self.tz = 'UTC'
+            warnings.warn(
+                f"The start_time input is timezone-naive. UTC will be assumed."
+                "Consider localizing to a timezone.")
+        else:
+            self.tz = start_time.tz
 
         self.diary = diary if diary is not None else pd.DataFrame(
-            columns=['unix_timestamp', 'local_timestamp', 'duration', 'location', 'identifier'])
+            columns=['local_timestamp', 'unix_timestamp', 'tz_offset', 'duration', 'location', 'identifier'])
 
         self.still_probs = still_probs
         self.speeds = speeds
         self.dt = dt
+        self.tz_offset = loader._offset_seconds_from_ts(start_time)
         self.visit_freqs = None
 
         # If trajectory is not provided, then the first ping is at the home centroid at start_time
@@ -226,12 +248,14 @@ class Agent:
                 'y': y_coord,
                 'local_timestamp': local_timestamp,
                 'unix_timestamp': unix_timestamp,
+                'tz_offset': self.tz_offset,
                 'identifier': self.identifier
                 }])
 
             diary = pd.DataFrame([{
-                'unix_timestamp': unix_timestamp,
                 'local_timestamp': local_timestamp,
+                'unix_timestamp': unix_timestamp,
+                'tz_offset': self.tz_offset,
                 'duration': self.dt,
                 'location': home,
                 'identifier': self.identifier
@@ -281,6 +305,7 @@ class Agent:
                               seed=0,
                               ha=3/4,
                               output_bursts=False,
+                              replace_sparse_traj=False,
                               reset_traj=False):
         """
         Samples a sparse trajectory using a hierarchical non-homogeneous Poisson process.
@@ -302,6 +327,9 @@ class Agent:
             Horizontal accuracy
         output_bursts : bool
             If True, outputs the latent variables on when bursts start and end.
+        replace_sparse_traj : bool
+            if True, replaces existing sparse_traj field with the new sparsified trajectory
+            rather than appending.
         reset_traj : bool
             if True, removes all but the last row of the Agent's trajectory DataFrame.
         """
@@ -324,7 +352,7 @@ class Agent:
             
         sparse_traj = sparse_traj.set_index('unix_timestamp', drop=False)
 
-        if self.sparse_traj is None:
+        if self.sparse_traj is None or replace_sparse_traj:
             self.sparse_traj = sparse_traj
         else:
             self.sparse_traj = pd.concat([self.sparse_traj, sparse_traj], ignore_index=False)
@@ -395,11 +423,11 @@ def condense_destinations(destination_diary):
 
     # Create segment identifiers for grouping
     destination_diary['segment_id'] = destination_diary['new_segment'].cumsum()
-
     # Aggregate data by segment
     condensed_df = destination_diary.groupby('segment_id').agg({
-        'unix_timestamp': 'first',
         'local_timestamp': 'first',
+        'unix_timestamp': 'first',
+        'tz_offset': 'first',
         'duration': 'sum',
         'location': 'first'
     }).reset_index(drop=True)
@@ -469,7 +497,7 @@ class Population:
 
     def generate_agents(self,
                         N: int,
-                        start_time: datetime = datetime(2024, 1, 1, hour=8, minute=0),
+                        start_time: pd.Timestamp=pd.Timestamp('2024-01-01 08:00', tz='UTC'),
                         dt: float = 1,
                         seed: int = 0,
                         name_count: int = 2):
@@ -477,25 +505,14 @@ class Population:
         Generates N agents, with randomized attributes.
         """
 
-        npr.seed(seed)
-
-        b_types = pd.DataFrame({
-            'id': list(self.city.buildings.keys()),
-            'type': [b.building_type for b in self.city.buildings.values()]
-        }).set_index('id')  # Maybe this should be an attribute of city since we end up using it a lot
-
-        homes = b_types[b_types['type'] == 'home'].sample(n=N, replace=True)
-        workplaces = b_types[b_types['type'] == 'work'].sample(n=N, replace=True)
-
         generator = funkybob.UniqueRandomNameGenerator(members=name_count, seed=seed)
         for i in range(N):
             identifier = generator[i]
             agent = Agent(identifier=identifier,
-                          home=homes.index[i],
-                          workplace=workplaces.index[i],
                           city=self.city,
                           start_time=start_time,
-                          dt=dt)  # how do we add other args?
+                          dt=dt,
+                          seed=seed+i)
             self.add_agent(agent)
 
     def save_pop(self,
@@ -617,7 +634,6 @@ class Population:
             if npr.uniform() < p:
                 coord = curr
             else:
-
                 # Draw until coord falls inside building
                 while True:
                     coord = np.random.normal(loc=curr, scale=sigma*np.sqrt(dt), size=2)
@@ -703,7 +719,8 @@ class Population:
                 start_point = (prev_ping['x'], prev_ping['y'])
                 dest_building = city.buildings[building_id]
                 unix_timestamp = prev_ping['unix_timestamp'] + 60*dt
-                local_timestamp = pd.to_datetime(unix_timestamp, unit='s')
+                local_timestamp = loader.naive_datetime_from_unix_and_offset(unix_timestamp, agent.tz_offset)
+                local_timestamp = local_timestamp.tz_localize(agent.tz)
 
                 # You should be asleep between 0:00 and 5:59!
                 # if local_timestamp.hour <= 5:
@@ -711,20 +728,23 @@ class Population:
                 #     location = building_id
                 # else:
                 coord, location = self.sample_step(agent, start_point, dest_building, dt)
-                ping = {'x': coord[0], 'y': coord[1],
+                ping = {'x': coord[0], 
+                        'y': coord[1],
                         'local_timestamp': local_timestamp,
                         'unix_timestamp': unix_timestamp,
+                        'tz_offset': agent.tz_offset,
                         'identifier': agent.identifier}
 
                 trajectory_update.append(ping)
                 agent.last_ping = ping
                 if(current_entry == None or current_entry['location'] != location):
                     entry_update.append(current_entry)
-                    current_entry = {'unix_timestamp': unix_timestamp,
-                             'local_timestamp': local_timestamp,
-                             'duration': dt,
-                             'location': location,
-                             'identifier': agent.identifier}
+                    current_entry = {'local_timestamp': local_timestamp,
+                                     'unix_timestamp': unix_timestamp,
+                                     'tz_offset': agent.tz_offset,
+                                     'duration': dt,
+                                     'location': location,
+                                     'identifier': agent.identifier}
                 else:
                     current_entry['duration'] += 1*dt
 
@@ -740,7 +760,7 @@ class Population:
 
     def generate_dest_diary(self, 
                             agent: Agent, 
-                            T: datetime, 
+                            T: pd.Timestamp, 
                             duration: int = 15,
                             stay_probs: dict = DEFAULT_STAY_PROBS,
                             rho: float = 0.6, 
@@ -753,7 +773,7 @@ class Population:
         ----------
         agent : Agent
             The agent for whom to generate the destination diary.
-        T : datetime
+        T : pd.Timestamp
             The end time to generate the destination diary until.
         duration : int
             The duration of each destination entry in minutes.
@@ -772,7 +792,12 @@ class Population:
         id2door = pd.DataFrame([[s, b.door] for s, b in self.city.buildings.items()],
                                columns=['id', 'door']).set_index('door')  # could this be a field of city?
 
-        if isinstance(T, datetime):
+        if T.tz is None:
+            T.tz_localize(agent.tz)
+            warnings.warn(
+                f"The T input is timezone-naive. {agent.tz} will be assumed.")
+
+        if isinstance(T, pd.Timestamp):
             T = int(T.timestamp())  # Convert to unix
 
         # Create visit frequency table is user does not already have one
@@ -842,8 +867,9 @@ class Population:
                 visit_freqs.loc[curr, 'freq'] += 1
 
             # Update destination diary
-            entry = {'unix_timestamp': start_time,
-                     'local_timestamp': start_time_local,
+            entry = {'local_timestamp': start_time_local,
+                     'unix_timestamp': start_time,
+                     'tz_offset': agent.tz_offset,
                      'duration': duration,
                      'location': curr}
             dest_update.append(entry)
@@ -868,7 +894,7 @@ class Population:
 
     def generate_trajectory(self, 
                             agent: Agent, 
-                            T: datetime=None, 
+                            T: pd.Timestamp=None, 
                             duration: int=15, 
                             seed: int=0):
         """
@@ -878,7 +904,7 @@ class Population:
         ----------
         agent : Agent
             The agent for whom to generate a trajectory.
-        T : datetime, optional
+        T : pd.Timestamp, optional
             The end time to generate the trajectory until.
         duration : int, optional
             The duration of each destination entry in minutes.
