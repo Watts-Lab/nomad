@@ -67,7 +67,7 @@ def column_variations():
 
 @pytest.mark.parametrize("mixed_tz_bhv", ['naive', 'utc', 'object'])
 def test_to_timestamp(base_df, mixed_tz_bhv):
-    df = base_df.iloc[:, [2, 3, 5]].copy()
+    df = base_df.iloc[:, [2, 3, 4, 5]].copy()
     traj_cols = {'latitude':'latitude', 'longitude':'longitude', 'datetime':'local_datetime'}
 
     df = loader.from_df(df, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior=mixed_tz_bhv)
@@ -186,7 +186,7 @@ def test_lachesis_name_handling_from_variants(single_user_df, column_variations,
     expected_columns = [expected_start, 'duration', expected_coord1, expected_coord2]
     if complete_output:
         end_val = check_cols[end_key]
-        expected_columns = [expected_start, end_val, 'duration', expected_coord1, expected_coord2, 'diameter', 'n_pings']
+        expected_columns = [expected_start, end_val, 'duration', expected_coord1, expected_coord2, 'diameter', 'n_pings', 'max_gap']
 
     actual_cols = list(result.columns)
     assert actual_cols == expected_columns, f"For {variation_key}, c={complete_output}, keep={keep_col_names}, got {actual_cols}, expected {expected_columns}"
@@ -215,18 +215,17 @@ def test_lachesis_number_labels(single_user_df):
         keep_col_names=False
     )
     
-    labels_df = LACHESIS._lachesis_labels(
+    labels = LACHESIS._lachesis_labels(
         traj=single_user_df,
         dur_min=5,
         dt_max=10,
         delta_roam=100,
-        traj_cols=traj_cols,
-        keep_col_names=False
+        traj_cols=traj_cols
     )
 
-    labels_df = labels_df[labels_df['cluster'] != -1]
+    labels = labels[~(labels == -1)]
 
-    assert len(stops_df) == labels_df['cluster'].nunique()
+    assert len(stops_df) == labels.nunique()
 
 # Test to see if they identify correct number of stops
 def test_lachesis_ground_truth(agent_traj_ground_truth):
@@ -237,9 +236,8 @@ def test_lachesis_ground_truth(agent_traj_ground_truth):
              'timestamp':'unix_timestamp'}
     lachesis_out = LACHESIS._lachesis_labels(agent_traj_ground_truth,
                                              *lachesis_params,
-                                             traj_cols,
-                                             keep_col_names=False)
-    num_clusters = sum(lachesis_out.cluster.unique() > -1)
+                                             traj_cols)
+    num_clusters = sum(lachesis_out.unique() > -1)
     assert num_clusters == 3
 
 ##########################################
