@@ -9,7 +9,7 @@ from shapely.geometry import Polygon
 from pyspark.sql import SparkSession
 from pathlib import Path
 import nomad.io.base as loader
-from nomad.io.base import _unix_offset_to_str
+from nomad.io.base import _unix_offset_to_str, _is_traj_df, from_df
 from nomad.filters import to_projection, filter_users, _in_geo, to_timestamp
 
 @pytest.fixture(scope="module")
@@ -32,7 +32,7 @@ def simple_df_one_user():
     df['datetime'] = pd.to_datetime(df['datetime']).dt.tz_localize('America/New_York')
     df['timestamp'] = to_timestamp(df['datetime'])
     df['tz_offset'] = df['datetime'].apply(lambda x: loader._offset_seconds_from_ts(x))
-    return df
+    return from_df(df)
 
 @pytest.fixture
 def simple_df_multi_user():
@@ -54,7 +54,7 @@ def simple_df_multi_user():
     df['datetime'] = pd.to_datetime(df['datetime']).dt.tz_localize('America/New_York')
     df['timestamp'] = to_timestamp(df['datetime'])
     df['tz_offset'] = df['datetime'].apply(lambda x: loader._offset_seconds_from_ts(x))
-    return df
+    return from_df(df)
 
 @pytest.fixture
 def base_df():
@@ -80,7 +80,7 @@ def base_df():
     df['geohash'] = df.apply(lambda x: gh.encode(x.latitude, x.longitude, precision=7), axis=1)
     # col names:  ['uid', 'timestamp', 'latitude', 'longitude', 'tz_offset', 'local_datetime', 'x', 'y', 'geohash'
     # dtypes: [object, int64, float64, float64, int64, object, float64, float64, object]
-    return df
+    return from_df(df)
 
 def test_to_timestamp(base_df):
     timestamp_col = to_timestamp(base_df.local_datetime, base_df.tz_offset)
@@ -147,6 +147,7 @@ def test_in_geo(simple_df_multi_user):
     expected_values = [1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0]
     assert df['in_geo'].tolist() == expected_values
 
+
 def test_filter_no_polygon(simple_df_multi_user):
     result = filter_users(simple_df_multi_user,
                           start_time=pd.Timestamp('2023-01-01 00:00:00', tz='America/New_York'),
@@ -157,6 +158,7 @@ def test_filter_no_polygon(simple_df_multi_user):
                           latitude='latitude',
                           timestamp='timestamp')
     assert len(result) == 12
+    assert _is_traj_df(result, longitude='longitude', latitude='latitude', timestamp='timestamp')
 
 def test_filter_datetime(simple_df_multi_user):
     result = filter_users(simple_df_multi_user,
@@ -168,6 +170,7 @@ def test_filter_datetime(simple_df_multi_user):
                           latitude='latitude',
                           datetime='datetime')
     assert len(result) == 12
+    assert _is_traj_df(result, longitude='longitude', latitude='latitude', datetime='datetime')
 
 def test_filter_users_within_bounds(simple_df_one_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
@@ -178,6 +181,7 @@ def test_filter_users_within_bounds(simple_df_one_user):
                           min_active_days=1,
                           crs='EPSG:4326')
     assert len(result) == 4
+    assert _is_traj_df(result)
 
 def test_filter_users_outside_bounds(simple_df_one_user):
     polygon = Polygon([(116.3180, 39.9830), (116.3185, 39.9830), (116.3185, 39.9835), (116.3180, 39.9835)])
@@ -198,6 +202,7 @@ def test_filter_users_within_bounds_multi_user(simple_df_multi_user):
                           min_active_days=1,
                           crs='EPSG:4326')
     assert len(result) == 10
+    assert _is_traj_df(result)
 
 def test_filter_users_outside_bounds_multi_user(simple_df_multi_user):
     polygon = Polygon([(116.3180, 39.9830), (116.3185, 39.9830), (116.3185, 39.9835), (116.3180, 39.9835)])
@@ -208,6 +213,7 @@ def test_filter_users_outside_bounds_multi_user(simple_df_multi_user):
                           min_active_days=1,
                           crs='EPSG:4326')
     assert len(result) == 0
+    assert _is_traj_df(result)
 
 # def test_filter_users_with_spark(simple_df_one_user, spark):
 #     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
@@ -226,6 +232,7 @@ def test_filter_users_with_custom_columns(simple_df_one_user):
                           longitude='lon',
                           latitude='lat')
     assert len(result) == 4
+    assert _is_traj_df(result, longitude='lon', latitude='lat')
 
 def test_filter_users_invalid_polygon(simple_df_one_user):
     with pytest.raises(TypeError):
