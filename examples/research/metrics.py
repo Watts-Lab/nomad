@@ -55,6 +55,106 @@ def identify_stop(alg_out, sparse_traj, stop_table, city, method='mode'):
     return stop_table
 
 
+def mode(alg_out, sparse_traj, stop_table, city, method='mode'):
+    """
+    Given the output of a stop detection algorithm, maps each cluster to a location
+    by the method specified.
+   
+    Parameters
+    ----------
+    alg_out : pd.DataFrame
+        DataFrame containing cluster assignments (one row per ping), indexed by ping ID.
+        Must have a column 'cluster' indicating each ping's cluster.
+    sparse_traj : pd.DataFrame
+        DataFrame containing ping coordinates (x, y) by ping ID.
+    stop_table : pd.DataFrame
+        DataFrame containing stop clusters (one row per cluster), with a 'cluster_id' column.
+    city : City
+        An object providing the `get_block((x, y))` method returning a building or location with an `id`.
+    method : str, optional
+        The method to use for mapping clusters to locations. Options are:
+        - 'mode': Assigns the most frequent location ID associated with each cluster.
+        - 'centroid': Assigns the centroid of the cluster to the location.
+    
+    Returns
+    -------
+    pd.DataFrame
+        Updated stop_table with a 'location' column indicating location associated with each cluster.
+    """
+
+    # If either alg_out or stop_table is empty, there's nothing to do
+    if alg_out.empty or stop_table.empty:
+        stop_table['location'] = pd.Series(dtype='object')
+        return stop_table
+
+    # Merge the cluster assignments with coordinates
+    alg_out.index = alg_out.index.map(lambda x: int(x.timestamp()))  # use unix timestamps as index
+    merged_df = alg_out.merge(sparse_traj, left_index=True, right_index=True)
+
+    # Compute the location for each cluster
+    if method == 'centroid':
+        centroids = merged_df.groupby('cluster')[['x', 'y']].mean()
+        locations = centroids.apply(lambda row: city.get_block((row['x'], row['y'])).id, axis=1)
+    else:  # method == 'mode'
+        # Extract location IDs for each ping
+        merged_df['location'] = [
+            city.get_block((x, y)).id 
+            for x, y in zip(merged_df['x'], merged_df['y'])
+        ]
+        locations = merged_df.groupby('cluster')['location'].agg(lambda x: x.mode().iat[0])
+
+    # Map the mode location back to the stop_table
+    stop_table['location'] = stop_table.index.map(locations)
+
+    return stop_table
+
+def nearest(df, poi_table, traj_cols, **kwargs):
+    """
+    Given the output of a stop detection algorithm, maps each cluster to a location
+    by the method specified.
+   
+    Parameters
+    ----------
+    alg_out : pd.DataFrame
+        DataFrame containing cluster assignments (one row per ping), indexed by ping ID.
+        Must have a column 'cluster' indicating each ping's cluster.
+    sparse_traj : pd.DataFrame
+        DataFrame containing ping coordinates (x, y) by ping ID.
+    stop_table : pd.DataFrame
+        DataFrame containing stop clusters (one row per cluster), with a 'cluster_id' column.
+    city : City
+        An object providing the `get_block((x, y))` method returning a building or location with an `id`.
+    method : str, optional
+        The method to use for mapping clusters to locations. Options are:
+        - 'mode': Assigns the most frequent location ID associated with each cluster.
+        - 'centroid': Assigns the centroid of the cluster to the location.
+    
+    Returns
+    -------
+    pd.DataFrame
+        Updated stop_table with a 'location' column indicating location associated with each cluster.
+    """
+
+    # If either alg_out or stop_table is empty, there's nothing to do
+    if df.empty or stop_table.empty:
+        stop_table['location'] = pd.Series(dtype='object')
+        return stop_table
+
+    # Merge the cluster assignments with coordinates
+    alg_out.index = alg_out.index.map(lambda x: int(x.timestamp()))  # use unix timestamps as index
+    merged_df = alg_out.merge(sparse_traj, left_index=True, right_index=True)
+
+    # Compute the location for each cluster
+    if method == 'centroid':
+        centroids = merged_df.groupby('cluster')[['x', 'y']].mean()
+        locations = centroids.apply(lambda row: city.get_block((row['x'], row['y'])).id, axis=1)
+
+    # Map the mode location back to the stop_table
+    stop_table['location'] = stop_table.index.map(locations)
+
+    return stop_table
+
+
 def q_stat(agent):
     # CHECK
     # How to handle partial hours? If last ping is 18:00, count that hour or not?
