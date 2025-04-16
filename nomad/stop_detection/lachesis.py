@@ -67,7 +67,6 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
     loader._has_time_cols(traj.columns, traj_cols)
 
     # Determine projection and time format preferences
-
     use_latlon = False
     if (traj_cols['x'] in traj.columns and traj_cols['y'] in traj.columns):
         metric = 'euclidean'
@@ -169,7 +168,14 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
                 end_val = time_series.iloc[j_final]
 
             medoid = utils._medoid(coords[i:j_final + 1])
+
+           
+            
             if complete_output:
+                cluster_times = time_series.iloc[i:j_final + 1].sort_values()
+                cluster_diffs = np.diff(cluster_times.values)
+                max_gap = int(np.max(cluster_diffs) // 60)
+                
                 row = [
                     start_val,
                     end_val,
@@ -177,7 +183,8 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
                     medoid[0],
                     medoid[1],
                     d_start,
-                    j_final - i + 1
+                    j_final - i + 1,
+                    max_gap
                 ]
             else:
                 row = [
@@ -200,7 +207,7 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
     end_col = constants.DEFAULT_SCHEMA['end_datetime'] if use_datetime else constants.DEFAULT_SCHEMA['end_timestamp']
 
     if complete_output:
-        columns = [start_col, end_col, 'duration'] + coord_cols + ['diameter', 'n_pings']
+        columns = [start_col, end_col, 'duration'] + coord_cols + ['diameter', 'n_pings', 'max_gap']
     else:
         columns = [start_col, 'duration'] + coord_cols
 
@@ -229,45 +236,50 @@ def _lachesis_labels(traj, dur_min, dt_max, delta_roam, traj_cols=None, **kwargs
         - Labels are integers corresponding to stop indices.
         - Points not in any stop are assigned a label of -1.
     """
-    stops = lachesis(traj, dur_min, dt_max, delta_roam, traj_cols = traj_cols, complete_output = True, **kwargs)
-
-    traj_cols = loader._update_schema(traj_cols, kwargs)
-    traj_cols = loader._update_schema(constants.DEFAULT_SCHEMA, traj_cols)
-
-    # Check if user wants long and lat
-    long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs[
-        'latitude'] in traj.columns and kwargs['longitude'] in traj.columns
-
-    # Check if user wants datetime
-    datetime = 'datetime' in kwargs and kwargs['datetime'] in traj.columns
+    stops = lachesis(traj,
+                     dur_min,
+                     dt_max,
+                     delta_roam,
+                     traj_cols = traj_cols,
+                     complete_output = True,
+                     keep_col_names = False,
+                     **kwargs)
     
-    # Determine the timestamp column to use
-    if traj_cols.get('timestamp') in traj.columns and not datetime:
-        datetime = False
-        timestamp_col = traj_cols['timestamp']
-    elif traj_cols.get('datetime') in traj.columns and datetime:
-        datetime = True
-        datetime_col = traj_cols['datetime']
+    traj_cols = loader._parse_traj_cols(traj.columns, traj_cols, kwargs)
+    loader._has_spatial_cols(traj.columns, traj_cols)
+    loader._has_time_cols(traj.columns, traj_cols)
+
+    use_datetime = False
+    if traj_cols['timestamp'] in traj.columns:
+        time_col_in = traj_cols['timestamp']
+    elif traj_cols['start_timestamp'] in traj.columns:
+        time_col_in = traj_cols['start_timestamp']
+    else:
+        use_datetime = True
+        
+    #check user preferences
+    if 'datetime' in kwargs or 'start_datetime' in kwargs:
+        # Explicit datetime preference if available
+        if traj_cols['datetime'] or traj_cols['start_datetime'] in traj.columns:
+            use_datetime = True
+
+    # set final parameters based on use_datetime flag
+    if use_datetime and traj_cols['datetime'] in traj.columns:
+        time_col_in = traj_cols['datetime']
+    elif use_datetime and traj_cols['start_datetime'] in traj.columns:
+        time_col_in = traj_cols['start_datetime']
+    
+    start_col = constants.DEFAULT_SCHEMA['start_datetime'] if use_datetime else constants.DEFAULT_SCHEMA['start_timestamp']
+    end_col = constants.DEFAULT_SCHEMA['end_datetime'] if use_datetime else constants.DEFAULT_SCHEMA['end_timestamp']
 
     # Initialize the stop_label column with default value -1
-    output = traj.copy()
-    output['cluster'] = -1
-
+    stop_labels = pd.Series(-1, index=traj[time_col_in])
+    
     # Iterate through detected stops and assign labels
     for stop_idx, stop in stops.iterrows():
-        stop_start = stop['start_time']
-        stop_end = stop['end_time']
-        if datetime:
-            output.loc[(output[datetime_col] >= stop_start) & (output[datetime_col] <= stop_end), 'cluster'] = stop_idx
-        else:
-            output.loc[(output[timestamp_col] >= stop_start) & (output[timestamp_col] <= stop_end), 'cluster'] = stop_idx
-
-    # Keep only the time and cluster columns
-    if datetime:
-        output = output[['cluster']]
-        output.index = list(traj[datetime_col])
-    else:
-        output = output[['cluster']]
-        output.index = list(traj[timestamp_col])
+        stop_start = stop[start_col]
+        stop_end = stop[end_col]
+        mask = (traj[time_col_in] >= stop_start) & (traj[time_col_in] <= stop_end)
+        stop_labels.loc[traj[time_col_in][mask]] = stop_idx
     
-    return output
+    return stop_labels
