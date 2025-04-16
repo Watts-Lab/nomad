@@ -10,7 +10,18 @@
 
 # Exclude Jupyter Notebook checkpoints
 .ipynb_checkpoints/
+
 # Exclude pycache
 __pycache__/
+
+# Exclude images
 **/*.png
+
+# macOS system file
 .DS_Store
+
+# Exclude Python egg files and build artifacts
+*.egg
+*.egg-info/
+dist/
+build/

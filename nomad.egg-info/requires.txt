@@ -1,4 +1,5 @@
 pandas
+geopandas
 numpy
 datetime
 pyspark
@@ -11,3 +12,4 @@ funkybob
 scipy
 pyarrow
 s3fs
+sedona
