@@ -1,6 +1,7 @@
 import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Polygon, Point
+import matplotlib.patches as patches
 import warnings
 
 import pyspark
@@ -433,11 +434,10 @@ def _filter_users_spark(
     return result_traj
 
 
-def q_filter(df: pd.DataFrame,
+def q_filter(traj: pd.DataFrame,
              qbar: float,
-             traj_cols: dict = None,
-             user_id: str = DEFAULT_SCHEMA["user_id"],
-             timestamp: str = DEFAULT_SCHEMA["timestamp"]):
+             sliding_window: int,
+             traj_cols: dict = DEFAULT_SCHEMA):
     """
     Computes the q statistic for each user as the proportion of unique hours with pings 
     over the total observed hours (last hour - first hour) and filters users where q > qbar.
@@ -448,73 +448,90 @@ def q_filter(df: pd.DataFrame,
         Input DataFrame with user_id and timestamp columns.
     qbar : float
         The threshold q value; users with q > qbar will be retained.
+    sliding_window : int
+        The size of the sliding window in days.
     traj_cols : dict, optional
         Dictionary containing column mappings, 
         e.g., {"user_id": "user_id", "timestamp": "timestamp"}.
-    user_id : str, optional
-        Name of the user_id column (default is "user_id").
-    timestamp : str, optional
-        Name of the timestamp column (default is "timestamp").
 
     Returns
     -------
     pd.Series
         A Series containing the user IDs for users whose q_stat > qbar.
     """
-    user_col = traj_cols.get("user_id", user_id) if traj_cols else user_id
-    timestamp_col = traj_cols.get("timestamp", timestamp) if traj_cols else timestamp
 
-    user_q_stats = df.groupby(user_col).apply(
-        lambda group: _compute_q_stat(group, timestamp_col)
-    ).reset_index(name='q_stat')
+    Q = _generate_Q_matrix(traj, traj_cols)
 
-    # Filter users where q > qbar
-    filtered_users = user_q_stats[user_q_stats['q_stat'] > qbar][user_col]
+    SW_dates = Q.index[:-sliding_window]  # dates involved in the sliding window computation
+
+    Q_window = pd.DataFrame(
+        [_compute_mean_q(Q, date, sliding_window) for date in SW_dates],
+        index=SW_dates
+    )
+    user_means = Q_window.mean(axis=0)
+
+    # Filter users where mean q > qbar
+    filtered_users = user_means[user_means > qbar].index.tolist()
 
     return filtered_users
 
 
-# the user can pass **kwargs with timestamp or datetime, then if you absolutely need datetime then 
-# create a variable, not a column in the dataframe
-def q_stats(df: pd.DataFrame, user_id: str, timestamp: str):
-    
-    """
-    Computes the q statistic for each user as the proportion of unique hours with pings 
-    over the total observed hours (last hour - first hour).
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        A DataFrame containing user IDs and timestamps.
-    user_id : str
-        The name of the column containing user IDs.
-    timestamp_col : str
-        The name of the column containing timestamps.
-
-    Returns
-    -------
-    pd.DataFrame
-        A DataFrame containing each user and their respective q_stat.
-    """
-    # only create a DATETIME column if it doesn't already exist (but what if the user knows datetime is wrong?)
-    df[timestamp] = pd.to_datetime(df[timestamp], unit='s')
-
-    q_stats = df.groupby(user_id).apply(
-        lambda group: _compute_q_stat(group, timestamp)
-    ).reset_index(name='q_stat')
-
-    return q_stats
+def _generate_Q_matrix(traj, traj_cols):
+    '''
+    generate Q daily matrix
+    '''
+    df = traj.copy()
+    #Compute number of complete users over each window with 1-day timestep
+    df['date_hour'] = df[traj_cols['datetime']].dt.floor('h')
+    df['date'] = df[traj_cols['datetime']].dt.date
+    df_downsampled_1hour = df[[traj_cols['user_id'],'date','date_hour']].drop_duplicates()
+    df_date_nhours = df_downsampled_1hour.groupby([traj_cols['user_id'],'date']).size().reset_index()
+    df_date_nhours.rename(columns = {0:'nhours'}, inplace = True)
+    df_date_nhours['perc_hours'] = df_date_nhours['nhours']/24
+    Q = df_date_nhours.pivot(index = 'date', 
+                             columns = traj_cols['user_id'], 
+                             values = 'perc_hours').fillna(0)
+    return Q
 
 
-def _compute_q_stat(user, timestamp_col):
-    user['hour_period'] = user[timestamp_col].dt.to_period('h')
-    unique_hours = user['hour_period'].nunique()
+def _compute_mean_q(Q, date, SW_width_days):
+    '''
+    compute average q over a single sliding window iteration 
+    that is for a given day, take the window [day, day + SW_width_days] and compute individual q mean for all users
+    '''
+    #select index corresponding to the date
+    i = np.argwhere(Q.index==date).ravel()[0]
+    #compute the q mean over the specific sliding window iteration
+    return Q[i:i+SW_width_days].mean(axis=0)
 
-    # Calculate total observed hours (difference between last and first hour)
-    first_hour = user[timestamp_col].min()
-    last_hour = user[timestamp_col].max()
-    total_hours = (last_hour - first_hour).total_seconds() / 3600
 
-    # Compute q as the proportion of unique hours to total hours
-    q_stat = unique_hours / total_hours if total_hours > 0 else 0
-    return q_stat
+def _ax_visual_ticklabel(ax, DICT_xtl, axis='x'): 
+    xt, xtl, rot, size = (DICT_xtl[c] for c in ['t', 'tl','rot','size'])
+    if axis=='x':
+        ax.set_xticks(xt)
+        ax.set_xticklabels(xtl, rotation = rot, size = size)
+    if axis=='y':
+        ax.set_yticks(xt)
+        ax.set_yticklabels(xtl, rotation = rot, size = size)   
+
+
+def _ax_visual_labeltitles(ax, DICT_lt): 
+    xl = DICT_lt['xlabel']
+    yl = DICT_lt['ylabel']
+    title = DICT_lt['title']
+    size_l = DICT_lt['label_size']
+    size_t = DICT_lt['title_size']
+    ax.set_xlabel(xl, size = size_l)
+    ax.set_ylabel(yl, size = size_l)
+    ax.set_title(title, size = size_t)
+
+
+def _ax_visual_legend(ax, DICT_legend): 
+    Colors = DICT_legend['colors']
+    Indicators = DICT_legend['classes']
+    Patches = [patches.Patch(color=c, label=l)  for c,l in zip(Colors, Indicators)]
+    ax.legend(handles= Patches, 
+              title=  DICT_legend['title'], 
+              loc            = DICT_legend['loc'], 
+              fontsize       = DICT_legend['fontsize'],
+              title_fontsize = DICT_legend['title_fontsize'])
