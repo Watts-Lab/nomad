@@ -305,8 +305,8 @@ def test_filter_users_within_time_frame(simple_df_one_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
     result = filter_users(simple_df_one_user,
                           polygon=polygon,
-                          start_time=pd.Timestamp('2008-10-23 13:53:00', tz='America/New_York'),
-                          end_time=pd.Timestamp('2008-10-23 13:53:10', tz='America/New_York'),
+                          start_time='2008-10-23 17:53:00',
+                          end_time='2008-10-23 17:53:10',
                           min_active_days=1,
                           crs='EPSG:4326')
     assert len(result) == 2
@@ -325,8 +325,8 @@ def test_filter_users_within_time_frame_multi_user(simple_df_multi_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
     result = filter_users(simple_df_multi_user,
                           polygon=polygon,
-                          start_time=pd.Timestamp('2023-01-01 00:00:00', tz='America/New_York'),
-                          end_time=pd.Timestamp('2023-01-03 00:00:00', tz='America/New_York'),
+                          start_time='2023-01-01 05:00:00',
+                          end_time='2023-01-03 05:00:00',
                           min_active_days=1,
                           crs='EPSG:4326')
     assert len(result) == 6
