@@ -16,11 +16,26 @@ import numpy as np
 
 
 def _timestamp_handling(
-        ts,
-        output_type
+    ts,
+    output_type,
+    timezone=None
 ):
     """
-    Convert timestamp to either pandas Timestamp or UNIX timestamp.
+    Convert timestamp to either pandas Timestamp or UNIX timestamp, with optional timezone handling.
+
+    Parameters
+    ----------
+    ts : str, int, float, pd.Timestamp, or np.datetime64
+    The input timestamp to be converted.
+    output_type : str
+    Desired output type: "pd.timestamp" or "unix".
+    timezone : str, optional
+    Timezone to localize or convert the timestamp to. If None, no timezone conversion is applied.
+
+    Returns
+    -------
+    pd.Timestamp or int
+    Converted timestamp in the desired format.
     """
     if isinstance(ts, str):
         ts = pd.to_datetime(ts, errors="coerce")
@@ -30,6 +45,9 @@ def _timestamp_handling(
         ts = pd.to_datetime(ts, unit='s', errors="coerce")
     else:
         raise TypeError("Unsupported input type for timestamp conversion.")
+
+    if timezone:
+        ts = ts.tz_localize(timezone)
 
     if output_type == "pd.timestamp":
         return ts
@@ -223,6 +241,7 @@ def filter_users(
     traj: pd.DataFrame,
     start_time,
     end_time,
+    timezone: str = None,
     polygon: Polygon = None,
     min_active_days: int = 1,
     min_pings_per_day: int = 1,
@@ -279,12 +298,12 @@ def filter_users(
     # Check which time column to use from
     if ('datetime' in kwargs):
         time_col = traj_cols['datetime']
-        start_time = _timestamp_handling(start_time, "pd.timestamp")
-        end_time = _timestamp_handling(end_time, "pd.timestamp")
+        start_time = _timestamp_handling(start_time, "pd.timestamp", timezone)
+        end_time = _timestamp_handling(end_time, "pd.timestamp", timezone)
     else:  # defaults to unix timestamps
         time_col = traj_cols['timestamp']
-        start_time = _timestamp_handling(start_time, "unix")
-        end_time = _timestamp_handling(end_time, "unix")
+        start_time = _timestamp_handling(start_time, "unix", timezone)
+        end_time = _timestamp_handling(end_time, "unix", timezone)
 
     # Check if polygon is a valid Shapely Polygon object
     if (polygon is not None) and (not isinstance(polygon, Polygon)):
