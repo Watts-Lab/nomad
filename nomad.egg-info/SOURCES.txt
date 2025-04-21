@@ -12,6 +12,7 @@ nomad.egg-info/dependency_links.txt
 nomad.egg-info/requires.txt
 nomad.egg-info/top_level.txt
 nomad/data/__init__.py
+nomad/data/gc_3_stops.csv
 nomad/data/gc_sample.csv
 nomad/data/gc_stops.csv
 nomad/data/partitioned_csv/2024-01-01/part-0.csv

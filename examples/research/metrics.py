@@ -156,21 +156,7 @@ def nearest(df, poi_table, traj_cols, **kwargs):
 
 
 def q_stat(agent):
-    # CHECK
-    # How to handle partial hours? If last ping is 18:00, count that hour or not?
-
-    sparse_traj = agent.sparse_traj
-    traj = agent.trajectory
-
-    if sparse_traj.empty:
-        return 0
-
-    sparse_hours = sparse_traj['local_timestamp'].dt.to_period('h')
-    full_hours = traj['local_timestamp'].dt.to_period('h')
-    num_hours = sparse_hours.nunique()
-    total_hours = full_hours.nunique()
-    q_stat = num_hours / total_hours
-    return q_stat
+    pass
 
 
 def radius_of_gyration(df):
@@ -178,50 +164,7 @@ def radius_of_gyration(df):
     return rog
 
 
-def expand_timestamps(df, dt, colname='local_timestamp'):
-    """
-    Expand rows in a DataFrame to cover each individual time step of a given duration.
-
-    Assumes that:
-    - The DataFrame has a 'duration' column indicating how many minutes each entry spans.
-    - The DataFrame has a 'local_timestamp' column as a datetime-like column.
-    - There is a 'stop_id' column to group by when expanding minutes.
-
-    The function:
-    1. Repeats rows based on 'duration' so each row is expanded into multiple rows,
-       one for each minute of that duration.
-    2. Increments the 'local_timestamp' by 1 minute for each expanded row.
-    3. Removes the intermediate columns and sets the index to 'unix_timestamp'.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        A DataFrame containing at least 'duration', 'local_timestamp', and 'stop_id'.
-    dt : float, optional
-        The time step between pings in minutes.
-
-    Returns
-    -------
-    pd.DataFrame
-        A DataFrame with each minute of the duration expanded as separate rows, indexed by 'unix_timestamp'.
-    """
-    # Repeat each row as many times as the duration indicates
-    repeated_df = df.loc[df.index.repeat(df['duration']/dt)].reset_index(drop=True)
-
-    # Modify the timestamps to reflect the dt increments
-    repeated_df.rename(columns={colname: 'local_timestamp'}, inplace=True)
-    repeated_df['minute_increment'] = repeated_df.groupby(['local_timestamp', 'stop_id']).cumcount()*dt
-    repeated_df['local_timestamp'] = repeated_df['local_timestamp'] + pd.to_timedelta(repeated_df['minute_increment'], unit='m')
-    expanded = repeated_df.drop(columns=['minute_increment', 'duration'])
-
-    # Convert to Unix timestamp and set as the index
-    expanded['unix_timestamp'] = expanded['local_timestamp'].astype('int64') // 10**9
-    expanded = expanded.set_index('unix_timestamp', drop=True)
-
-    return expanded
-
-
-def prepare_diary(agent, dt, keep_all_stops=True):
+def prepare_diary(agent, dt, city, keep_all_stops=True):
     """
     Create stop IDs and optionally filter for stops that have at least one ping
     in agent.sparse_traj
@@ -322,7 +265,7 @@ def prepare_stop_table(stop_table, diary, dt):
     return stop_table
 
 
-def cluster_metrics(stop_table, agent):
+def cluster_metrics(stop_table, agent, city):
     """
     Multiclass classification: compute precision, recall for each class separately,
     then use microaveraging to get the overall precision and recall.
@@ -331,7 +274,7 @@ def cluster_metrics(stop_table, agent):
 
     # Prepare diary: create stop IDs
     dt = agent.dt
-    diary = prepare_diary(agent, dt)
+    diary = prepare_diary(agent, dt, city)
 
     # Prepare stop table: map detected stops to diary stops
     stop_table = prepare_stop_table(stop_table, diary, dt)
@@ -340,48 +283,109 @@ def cluster_metrics(stop_table, agent):
     stop_table_exploded = stop_table.explode("mapped_stop_ids")
     stop_counts = stop_table_exploded["mapped_stop_ids"].value_counts().reset_index()
     stop_counts.columns = ["stop_id", "count"]
-    
-    ## TO DO : BELOW ##
 
-    # Merge on timestamps and locations
-    # -2 refers to stops detected by the sd alg that don't exist in ground truth
-    prepared_stop_table.loc[:, 'stop_id'] = prepared_stop_table['stop_id'].fillna(-2)
-    joined = prepared_diary.merge(prepared_stop_table, on=['unix_timestamp', 'stop_id'], how='outer', indicator=True)
+    # loop over all (true) stops
+    def compute_overlap(a_start, a_end, b_start, b_end):
+        latest_start = max(a_start, b_start)
+        earliest_end = min(a_end, b_end)
+        overlap = (earliest_end - latest_start).total_seconds() / 60
+        return max(0, overlap)
 
-    # Duplicated indices denotes conflicting stop labels for the timestamp
-    merging_df = joined[joined.index.duplicated(keep=False)]
+    tp_fp_fn = {}
+    merging_dict = {}
+    merged_stop_count_dict = {}
 
-    # Calculate metrics for each class
-    stops = joined['stop_id'].unique()
-    stops = stops[stops != -2]
-    stops.sort()
+    # Efficient lookup
+    diary_indexed = diary.set_index("stop_id")
+
+    # First: true positive / false positive / false negative
+    for stop_id in diary["stop_id"].unique():
+        if stop_id == -1:
+            continue
+
+        diary_start = diary_indexed.loc[stop_id]["start_time"]
+        diary_end = diary_indexed.loc[stop_id]["end_time"]
+        
+        diary_duration = (diary_end - diary_start).total_seconds() / 60
+        
+        if stop_id in stop_table_exploded["stop_id"].values:
+            stop_row = stop_table_exploded[stop_table_exploded["stop_id"] == stop_id].iloc[0]
+            stop_start = stop_row["start_time"]
+            stop_end = stop_row["end_time"]
+            stop_duration = (stop_end - stop_start).total_seconds() / 60
+
+            tp = compute_overlap(stop_start, stop_end, diary_start, diary_end)
+            fp = stop_duration - tp
+            fn = diary_duration - tp
+        else:
+            tp = 0
+            fp = diary_duration
+            fn = 0
+
+        if stop_id not in tp_fp_fn:
+            tp_fp_fn[stop_id] = [0, 0, 0]
+        tp_fp_fn[stop_id][0] += tp
+        tp_fp_fn[stop_id][1] += fp
+        tp_fp_fn[stop_id][2] += fn
+
+    # Second: merging minutes per diary stop
+    for _, d in diary[diary["stop_id"] != -1].iterrows():
+        d_sid = d["stop_id"]
+        d_start = d["start_time"]
+        d_end = d["end_time"]
+
+        overlaps = stop_table_exploded[
+            (stop_table_exploded["end_time"] > d_start) &
+            (stop_table_exploded["start_time"] < d_end)
+        ]
+
+        merging_minutes = 0
+        merged_stop_ids_seen = set()
+
+        for _, s in overlaps.iterrows():
+            s_sid = s["stop_id"]
+            if s_sid != d_sid:
+                overlap_start = max(d_start, s["start_time"])
+                overlap_end = min(d_end, s["end_time"])
+                delta = (overlap_end - overlap_start).total_seconds() / 60
+                minutes = max(0, delta)
+            
+                if minutes > 0:
+                    merging_minutes += minutes
+                    merged_stop_ids_seen.add(s_sid)
+
+        if d_sid not in merging_dict:
+            merging_dict[d_sid] = 0
+        if d_sid not in merged_stop_count_dict:
+            merged_stop_count_dict[d_sid] = 0
+
+        merging_dict[d_sid] += merging_minutes
+        merged_stop_count_dict[d_sid] += len(merged_stop_ids_seen)
+
+    stops_split = stop_counts[stop_counts["count"] > 1]
+
+    # Collect
     metrics_data = []
+    for stop_id in diary["stop_id"].unique():
+        if stop_id == -1:
+            continue
 
-    n_stops = len(stops) - 1
-
-    for s in stops:
-        s_joined = joined[joined['stop_id'] == s]
-        s_tp = s_joined[s_joined['_merge'] == 'both'].shape[0]
-        s_fp = s_joined[s_joined['_merge'] == 'right_only'].shape[0]
-        s_fn = s_joined[s_joined['_merge'] == 'left_only'].shape[0]
-
-        s_merging = merging_df[(merging_df['_merge'] == 'left_only') & (merging_df['stop_id'] == s)]
-        s_m = s_merging.shape[0]
-        s_m_stops = merging_df.loc[s_merging.index]
-        s_m_stops = s_m_stops[(s_m_stops['_merge'] == 'right_only')]
-        s_m_stops = s_m_stops['stop_id'].nunique()
+        tp, fp, fn = tp_fp_fn.get(stop_id)
+        mm = merging_dict.get(stop_id)
+        sm = merged_stop_count_dict.get(stop_id)
 
         metrics_data.append({
-            'stop_id': s,
-            'tp': s_tp,
-            'fp': s_fp,
-            'fn': s_fn,
-            'precision': s_tp / (s_tp + s_fp) if (s_tp + s_fp) != 0 else 0,
-            'recall': s_tp / (s_tp + s_fn) if (s_tp + s_fn) != 0 else 0,
-            'pings_merged': s_m,
-            'stops_merged': s_m_stops,
-            'prop_merged': s_m / (s_tp + s_fn) if (s_tp + s_fn) != 0 else 0
+            "stop_id": stop_id,
+            "tp": tp,
+            "fp": fp,
+            "fn": fn,
+            "precision": tp / (tp + fp) if (tp + fp) != 0 else 0,
+            "recall": tp / (tp + fn) if (tp + fn) != 0 else 0,
+            "pings_merged": mm,
+            "stops_merged": sm,
         })
+
+    # TODO: BELOW
 
     trips = metrics_data[0]
     metrics_df = pd.DataFrame(metrics_data[1:])
