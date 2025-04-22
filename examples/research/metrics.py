@@ -1,7 +1,44 @@
 import pandas as pd
+import geopandas as gpd
 import numpy as np
+from shapely.geometry import Point
 
-def identify_stop(alg_out, sparse_traj, stop_table, city, method='mode'):
+import pdb
+
+
+def poi_map(traj, poi_table, traj_cols=None, **kwargs):
+    """
+    Map pings in the trajectory to the POI table.
+
+    Parameters
+    ----------
+    traj : pd.DataFrame
+        The trajectory DataFrame containing x and y coordinates.
+    poi_table : gpd.GeoDataFrame
+        The POI table containing building geometries and IDs.
+    traj_cols : list
+        The columns in the trajectory DataFrame to be used for mapping.
+    **kwargs : dict
+        Additional keyword arguments.
+    
+    Returns
+    -------
+    pd.Series
+        A Series containing the building IDs corresponding to the pings in the trajectory.
+    """
+
+    # TODO traj_cols support
+
+    pings_df = traj[['x', 'y']].copy()
+    pings_df["pings_geometry"] = pings_df.apply(lambda row: Point(row["x"], row["y"]), axis=1)
+    pings_df = gpd.GeoDataFrame(pings_df, geometry="pings_geometry", crs=poi_table.crs)
+    pings_df = gpd.sjoin(pings_df, poi_table, how="left", predicate="within")
+    pings_df["building_id"] = pings_df["building_id"].where(pings_df["building_id"].notna(), None)
+
+    return pings_df["building_id"]
+
+
+def identify_stop(alg_out, traj, stop_table, poi_table, method='mode'):
     """
     Given the output of a stop detection algorithm, maps each cluster to a location
     by the method specified.
@@ -11,12 +48,12 @@ def identify_stop(alg_out, sparse_traj, stop_table, city, method='mode'):
     alg_out : pd.DataFrame
         DataFrame containing cluster assignments (one row per ping), indexed by ping ID.
         Must have a column 'cluster' indicating each ping's cluster.
-    sparse_traj : pd.DataFrame
+    traj : pd.DataFrame
         DataFrame containing ping coordinates (x, y) by ping ID.
     stop_table : pd.DataFrame
         DataFrame containing stop clusters (one row per cluster), with a 'cluster_id' column.
-    city : City
-        An object providing the `get_block((x, y))` method returning a building or location with an `id`.
+    poi_table : gpd.GeoDataFrame
+        The POI table containing building geometries and IDs.
     method : str, optional
         The method to use for mapping clusters to locations. Options are:
         - 'mode': Assigns the most frequent location ID associated with each cluster.
@@ -33,124 +70,25 @@ def identify_stop(alg_out, sparse_traj, stop_table, city, method='mode'):
         stop_table['location'] = pd.Series(dtype='object')
         return stop_table
 
-    # Merge the cluster assignments with coordinates
-    alg_out.index = alg_out.index.map(lambda x: int(x.timestamp()))  # use unix timestamps as index
-    merged_df = alg_out.merge(sparse_traj, left_index=True, right_index=True)
+    merged_df = traj.copy()
+    merged_df['cluster'] = alg_out
 
     # Compute the location for each cluster
     if method == 'centroid':
-        centroids = merged_df.groupby('cluster')[['x', 'y']].mean()
-        locations = centroids.apply(lambda row: city.get_block((row['x'], row['y'])).id, axis=1)
-    else:  # method == 'mode'
-        # Extract location IDs for each ping
-        merged_df['location'] = [
-            city.get_block((x, y)).id 
-            for x, y in zip(merged_df['x'], merged_df['y'])
-        ]
-        locations = merged_df.groupby('cluster')['location'].agg(lambda x: x.mode().iat[0])
+        pings_df = merged_df.groupby('cluster')[['x', 'y']].mean()
+        locations = poi_map(pings_df, poi_table)
+
+    elif method == 'mode':
+        pings_df = merged_df[['x', 'y']].copy()
+        merged_df["building_id"] = poi_map(pings_df, poi_table)
+        locations = merged_df.groupby('cluster')['building_id'].agg(
+            lambda x: x.mode().iloc[0] if not x.mode().empty else None
+        )
+    else:
+        raise ValueError(f"Unknown method: {method}. Use 'mode' or 'centroid'.")
 
     # Map the mode location back to the stop_table
-    stop_table['location'] = stop_table.index.map(locations)
-
-    return stop_table
-
-
-def mode(alg_out, sparse_traj, stop_table, city, method='mode'):
-    """
-    Given the output of a stop detection algorithm, maps each cluster to a location
-    by the method specified.
-   
-    Parameters
-    ----------
-    alg_out : pd.DataFrame
-        DataFrame containing cluster assignments (one row per ping), indexed by ping ID.
-        Must have a column 'cluster' indicating each ping's cluster.
-    sparse_traj : pd.DataFrame
-        DataFrame containing ping coordinates (x, y) by ping ID.
-    stop_table : pd.DataFrame
-        DataFrame containing stop clusters (one row per cluster), with a 'cluster_id' column.
-    city : City
-        An object providing the `get_block((x, y))` method returning a building or location with an `id`.
-    method : str, optional
-        The method to use for mapping clusters to locations. Options are:
-        - 'mode': Assigns the most frequent location ID associated with each cluster.
-        - 'centroid': Assigns the centroid of the cluster to the location.
-    
-    Returns
-    -------
-    pd.DataFrame
-        Updated stop_table with a 'location' column indicating location associated with each cluster.
-    """
-
-    # If either alg_out or stop_table is empty, there's nothing to do
-    if alg_out.empty or stop_table.empty:
-        stop_table['location'] = pd.Series(dtype='object')
-        return stop_table
-
-    # Merge the cluster assignments with coordinates
-    alg_out.index = alg_out.index.map(lambda x: int(x.timestamp()))  # use unix timestamps as index
-    merged_df = alg_out.merge(sparse_traj, left_index=True, right_index=True)
-
-    # Compute the location for each cluster
-    if method == 'centroid':
-        centroids = merged_df.groupby('cluster')[['x', 'y']].mean()
-        locations = centroids.apply(lambda row: city.get_block((row['x'], row['y'])).id, axis=1)
-    else:  # method == 'mode'
-        # Extract location IDs for each ping
-        merged_df['location'] = [
-            city.get_block((x, y)).id 
-            for x, y in zip(merged_df['x'], merged_df['y'])
-        ]
-        locations = merged_df.groupby('cluster')['location'].agg(lambda x: x.mode().iat[0])
-
-    # Map the mode location back to the stop_table
-    stop_table['location'] = stop_table.index.map(locations)
-
-    return stop_table
-
-def nearest(df, poi_table, traj_cols, **kwargs):
-    """
-    Given the output of a stop detection algorithm, maps each cluster to a location
-    by the method specified.
-   
-    Parameters
-    ----------
-    alg_out : pd.DataFrame
-        DataFrame containing cluster assignments (one row per ping), indexed by ping ID.
-        Must have a column 'cluster' indicating each ping's cluster.
-    sparse_traj : pd.DataFrame
-        DataFrame containing ping coordinates (x, y) by ping ID.
-    stop_table : pd.DataFrame
-        DataFrame containing stop clusters (one row per cluster), with a 'cluster_id' column.
-    city : City
-        An object providing the `get_block((x, y))` method returning a building or location with an `id`.
-    method : str, optional
-        The method to use for mapping clusters to locations. Options are:
-        - 'mode': Assigns the most frequent location ID associated with each cluster.
-        - 'centroid': Assigns the centroid of the cluster to the location.
-    
-    Returns
-    -------
-    pd.DataFrame
-        Updated stop_table with a 'location' column indicating location associated with each cluster.
-    """
-
-    # If either alg_out or stop_table is empty, there's nothing to do
-    if df.empty or stop_table.empty:
-        stop_table['location'] = pd.Series(dtype='object')
-        return stop_table
-
-    # Merge the cluster assignments with coordinates
-    alg_out.index = alg_out.index.map(lambda x: int(x.timestamp()))  # use unix timestamps as index
-    merged_df = alg_out.merge(sparse_traj, left_index=True, right_index=True)
-
-    # Compute the location for each cluster
-    if method == 'centroid':
-        centroids = merged_df.groupby('cluster')[['x', 'y']].mean()
-        locations = centroids.apply(lambda row: city.get_block((row['x'], row['y'])).id, axis=1)
-
-    # Map the mode location back to the stop_table
-    stop_table['location'] = stop_table.index.map(locations)
+    stop_table['location'] = locations
 
     return stop_table
 
@@ -216,7 +154,7 @@ def prepare_diary(agent, dt, city, keep_all_stops=True):
     return diary
 
 
-def prepare_stop_table(stop_table, diary, dt):
+def prepare_stop_table(stop_table, diary, traj_cols, dt):
     """
     Map detected stops in `stop_table` to a list of true diary stops by overlapping location and timeframe.
 
@@ -236,7 +174,7 @@ def prepare_stop_table(stop_table, diary, dt):
     """
 
     # Compute end times of stops
-    stop_table['end_time'] = stop_table['start_time'] + pd.to_timedelta(stop_table['duration'], unit='m')
+    stop_table['end_time'] = stop_table[traj_cols['start_datetime']] + pd.to_timedelta(stop_table['duration'], unit='m')
 
     temp_df = stop_table.merge(diary, on="location", suffixes=("_st", "_d"))
 
@@ -280,11 +218,11 @@ def cluster_metrics(stop_table, agent, city):
     stop_table = prepare_stop_table(stop_table, diary, dt)
 
     # Count number of rows in stop_table for each stop_id in diary
-    stop_table_exploded = stop_table.explode("mapped_stop_ids")
-    stop_counts = stop_table_exploded["mapped_stop_ids"].value_counts().reset_index()
+    stop_table_exploded = stop_table.explode("mapped_stop_ids").rename(columns={"mapped_stop_ids": "stop_id"})
+    stop_counts = stop_table_exploded["stop_id"].value_counts().reset_index()
     stop_counts.columns = ["stop_id", "count"]
 
-    # loop over all (true) stops
+    # Compute the overlap in minutes between two time intervals.
     def compute_overlap(a_start, a_end, b_start, b_end):
         latest_start = max(a_start, b_start)
         earliest_end = min(a_end, b_end)
@@ -322,11 +260,7 @@ def cluster_metrics(stop_table, agent, city):
             fp = diary_duration
             fn = 0
 
-        if stop_id not in tp_fp_fn:
-            tp_fp_fn[stop_id] = [0, 0, 0]
-        tp_fp_fn[stop_id][0] += tp
-        tp_fp_fn[stop_id][1] += fp
-        tp_fp_fn[stop_id][2] += fn
+        tp_fp_fn[stop_id] = [tp, fp, fn]
 
     # Second: merging minutes per diary stop
     for _, d in diary[diary["stop_id"] != -1].iterrows():
@@ -362,8 +296,6 @@ def cluster_metrics(stop_table, agent, city):
         merging_dict[d_sid] += merging_minutes
         merged_stop_count_dict[d_sid] += len(merged_stop_ids_seen)
 
-    stops_split = stop_counts[stop_counts["count"] > 1]
-
     # Collect
     metrics_data = []
     for stop_id in diary["stop_id"].unique():
@@ -383,21 +315,24 @@ def cluster_metrics(stop_table, agent, city):
             "recall": tp / (tp + fn) if (tp + fn) != 0 else 0,
             "pings_merged": mm,
             "stops_merged": sm,
+            "prop_merged": mm / (tp + fn) if (tp + fn) != 0 else 0,
         })
 
-    # TODO: BELOW
+    # TODO: compute trip-related metrics
+    # trips = metrics_data[0]
+    # metrics_df = pd.DataFrame(metrics_data[1:])
 
-    trips = metrics_data[0]
-    metrics_df = pd.DataFrame(metrics_data[1:])
+    metrics_df = pd.DataFrame(metrics_data)
     metrics_df = diary.merge(metrics_df, on=['stop_id'], how='right')
     metrics_df = metrics_df.merge(stop_counts, on=['stop_id'], how='left')
+    metrics_df['count'] = metrics_df['count'].fillna(0).astype(int)
     metrics_df = metrics_df.set_index('stop_id')
-    metrics_df['stop_count'] = metrics_df['stop_count'].fillna(0).astype(int)
 
     tp = metrics_df['tp'].sum()
     fp = metrics_df['fp'].sum()
     fn = metrics_df['fn'].sum()
     stops_merged = metrics_df['stops_merged'].sum()
+    n_stops = metrics_df.index.nunique()
     prop_stops_merged = stops_merged / (n_stops - 1)
 
     # Calculate micro-averaged precision and recall
@@ -410,20 +345,19 @@ def cluster_metrics(stop_table, agent, city):
     weighted_merging = (metrics_df['prop_merged'] * metrics_df['duration']).sum() / total_duration
 
     # Count number of missed and split stops
-    num_missed = metrics_df[metrics_df['stop_count'] == 0].shape[0]
-    num_split = metrics_df[metrics_df['stop_count'] > 1].shape[0]
+    num_missed = metrics_df[metrics_df['count'] == 0].shape[0]
+    num_split = metrics_df[metrics_df['count'] > 1].shape[0]
 
     metrics = {
-        "Recall": recall,
-        "Precision": precision,
-        "Weighted Precision": weighted_precision,
-        "Missed": num_missed,
-        "Stops Merged": stops_merged,
-        "Prop Stops Merged": prop_stops_merged,
-        "Weighted Stop Merging": weighted_merging,
-        "Trip Merging": trips['prop_merged'],
-        "Split": num_split,
-        "Stop Count": n_stops
+        "Recall": float(recall),
+        "Precision": float(precision),
+        "Weighted Precision": float(weighted_precision),
+        "Missed": int(num_missed),
+        "Stops Merged": int(stops_merged),
+        "Prop Stops Merged": float(prop_stops_merged),
+        "Weighted Stop Merging": float(weighted_merging),
+        "Split": int(num_split),
+        "Stop Count": int(n_stops)
     }
 
     return metrics_df, metrics
