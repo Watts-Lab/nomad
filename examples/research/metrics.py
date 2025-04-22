@@ -154,7 +154,7 @@ def prepare_diary(agent, dt, city, keep_all_stops=True):
     return diary
 
 
-def prepare_stop_table(stop_table, diary, traj_cols, dt):
+def prepare_stop_table(stop_table, diary, dt):
     """
     Map detected stops in `stop_table` to a list of true diary stops by overlapping location and timeframe.
 
@@ -174,7 +174,7 @@ def prepare_stop_table(stop_table, diary, traj_cols, dt):
     """
 
     # Compute end times of stops
-    stop_table['end_time'] = stop_table[traj_cols['start_datetime']] + pd.to_timedelta(stop_table['duration'], unit='m')
+    stop_table['end_time'] = stop_table['start_time'] + pd.to_timedelta(stop_table['duration'], unit='m')
 
     temp_df = stop_table.merge(diary, on="location", suffixes=("_st", "_d"))
 
