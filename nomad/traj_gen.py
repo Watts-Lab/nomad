@@ -222,6 +222,7 @@ class Agent:
             
         if start_time.tz is None:
             self.tz = 'UTC'
+            start_time = start_time.tz_localize('UTC')
             warnings.warn(
                 f"The start_time input is timezone-naive. UTC will be assumed."
                 "Consider localizing to a timezone.")
@@ -265,6 +266,66 @@ class Agent:
         self.trajectory = trajectory
         self.sparse_traj = None
         self.diary = diary
+
+
+    def reset_agent(self,
+                    start_time=None):
+        """
+        Resets the agent's trajectories and diaries to the initial state. 
+        Keeps the agent's identifier, home, and workplace.
+        This method is useful for reinitializing the agent after a simulation run.
+
+        Parameters
+        ----------
+        start_time : pd.Timestamp
+            The time at which to reset the agent's trajectory and diary.
+            This should be a timezone-aware timestamp.
+        """
+
+        if start_time is None:
+            start_time = pd.Timestamp('2024-01-01 08:00', tz='UTC')
+            warnings.warn("start_time is None. Using default value of 2024-01-01 08:00 UTC.")
+        
+        if start_time.tz is None:
+            self.tz = 'UTC'
+            start_time = start_time.tz_localize('UTC')
+            warnings.warn(
+                f"The start_time input is timezone-naive. UTC will be assumed."
+                "Consider localizing to a timezone.")
+        else:
+            self.tz = start_time.tz
+        self.tz_offset = loader._offset_seconds_from_ts(start_time)
+
+        home_centroid = self.city.buildings[self.home].geometry.centroid
+        x_coord, y_coord = home_centroid.x, home_centroid.y
+        local_timestamp = start_time
+        unix_timestamp = int(local_timestamp.timestamp())
+        trajectory = pd.DataFrame([{
+            'x': x_coord,
+            'y': y_coord,
+            'local_timestamp': local_timestamp,
+            'unix_timestamp': unix_timestamp,
+            'tz_offset': self.tz_offset,
+            'identifier': self.identifier
+            }])
+
+        diary = pd.DataFrame([{
+            'local_timestamp': local_timestamp,
+            'unix_timestamp': unix_timestamp,
+            'tz_offset': self.tz_offset,
+            'duration': self.dt,
+            'location': self.home,
+            'identifier': self.identifier
+            }])
+
+        self.trajectory = trajectory
+        self.diary = diary
+        self.last_ping = self.trajectory.iloc[-1]
+        
+        self.sparse_traj = None
+
+        self.destination_diary = pd.DataFrame(columns=self.destination_diary.columns)
+
 
     def plot_traj(self,
                   ax,
