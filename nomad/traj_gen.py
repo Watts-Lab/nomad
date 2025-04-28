@@ -18,9 +18,24 @@ from nomad.constants import FAST_STILL_PROBS, SLOW_STILL_PROBS, ALLOWED_BUILDING
 import pdb
 
 
-# =============================================================================
-# NHPP SAMPLER
-# =============================================================================
+def _xy_or_loc_col(col_names):
+    if ('x' in col_names and 'y' in col_names):
+        return "xy"
+    elif 'location' in col_names:
+        return "location"
+    else:
+        warnings.warn("No trajectory data was found or spatial columns ('x','y', 'location') in keyword arguments.  Agent's home will be used as trajectory starting point.")
+        return "missing"
+
+def _datetime_or_ts_col(col_names):
+    if 'local_timestamp' in col_names:
+        return "local_timestamp"
+    elif "unix_timestamp" in col_names:
+        return "unix_timestamp"
+    else:
+        warnings.warn("No trajectory data was found or time columns ('local_timestamp', 'unix_timestamp')\
+        in keyword arguments. '2025-01-01 00:00Z' will be used for starting trajectory time.")
+        return "missing"
 
 def sample_hier_nhpp(traj,
                      beta_start,
@@ -165,8 +180,7 @@ class Agent:
                  destination_diary: pd.DataFrame = None,
                  trajectory: pd.DataFrame = None,
                  diary: pd.DataFrame = None,
-                 start_time: pd.Timestamp = None,
-                 dt: float = 1,
+                 dt: float = 1, #should be population-level
                  seed: int = 0):
         """
         Initializes an agent in the city simulation with a trajectory and diary.
@@ -192,9 +206,6 @@ class Agent:
             DataFrame containing the following columns: 'x', 'y', 'local_timestamp', 'unix_timestamp', 'identifier'.
         diary : pandas.DataFrame,  optional (default=None)
             DataFrame containing the following columns: 'unix_timestamp', 'local_timestamp', 'duration', 'location'.
-        start_time : pd.Timestamp, optional (default=pd.Timestamp('2024-01-01 08:00', tz='UTC')
-            If `trajectory` is None, the first ping will occur at `start_time`. 
-            Remember to include the desired timezone.
         dt : float, optional (default=1)
             Time step duration.
         """
@@ -242,43 +253,6 @@ class Agent:
         self.sparse_traj = None
         self.destination_diary = pd.DataFrame(columns=self.destination_diary.columns)
     
-
-    def _find_last_ping(self):
-        """
-        TODO
-        """
-        if self.trajectory is not None:
-            return self.trajectory.iloc[-1]
-        
-        if self.destination_diary is not None:
-            loc = self.destination_diary.iloc[0]['location']
-            start_time = self.destination_diary.iloc[0]['local_timestamp']
-        else:
-            loc = self.home
-            start_time = self.start_time
-        
-        loc_centroid = self.city.buildings[loc].geometry.centroid
-        x_coord, y_coord = home_centroid.x, home_centroid.y
-        local_timestamp = start_time
-        unix_timestamp = int(local_timestamp.timestamp())
-        trajectory = pd.DataFrame([{
-            'x': x_coord,
-            'y': y_coord,
-            'local_timestamp': local_timestamp,
-            'unix_timestamp': unix_timestamp,
-            'tz_offset': self.tz_offset,
-            'identifier': self.identifier
-            }])
-
-        diary = pd.DataFrame([{
-            'local_timestamp': local_timestamp,
-            'unix_timestamp': unix_timestamp,
-            'tz_offset': self.tz_offset,
-            'duration': self.dt,
-            'location': home,
-            'identifier': self.identifier
-            }])
-
 
     def plot_traj(self,
                   ax,
@@ -697,7 +671,7 @@ class Population:
 
         return coord, location
 
-    def traj_from_dest_diary(self, agent):
+    def traj_from_dest_diary(self, agent, destination_diary=None):
         """
         Simulate a trajectory and give agent true travel diary attribute.
 
@@ -714,7 +688,8 @@ class Population:
         city = self.city
         dt = agent.dt
 
-        destination_diary = agent.destination_diary
+        if not destination_diary:
+            destination_diary = agent.destination_diary
 
         trajectory_update = []
 
@@ -736,11 +711,6 @@ class Population:
                 local_timestamp = loader.naive_datetime_from_unix_and_offset(unix_timestamp, agent.tz_offset)
                 local_timestamp = local_timestamp.tz_localize(agent.tz)
 
-                # You should be asleep between 0:00 and 5:59!
-                # if local_timestamp.hour <= 5:
-                #     coord = start_point  # stay in place
-                #     location = building_id
-                # else:
                 coord, location = self.sample_step(agent, start_point, dest_building, dt)
                 ping = {'x': coord[0], 
                         'y': coord[1],
@@ -762,8 +732,11 @@ class Population:
                 else:
                     current_entry['duration'] += 1*dt
 
-        agent.trajectory = pd.concat([agent.trajectory, pd.DataFrame(trajectory_update)],
-                                ignore_index=True)
+        if agent.trajectory is None:
+            agent.trajectory = pd.DataFrame(trajectory_update)
+        else:
+            agent.trajectory = pd.concat([agent.trajectory, pd.DataFrame(trajectory_update)],
+                                    ignore_index=True)
 
         entry_update.append(current_entry)
         if(agent.diary.empty):
@@ -775,7 +748,7 @@ class Population:
     def generate_dest_diary(self, 
                             agent: Agent, 
                             T: pd.Timestamp, 
-                            duration: int = 15,
+                            epr_time_res: int = 15,
                             stay_probs: dict = DEFAULT_STAY_PROBS,
                             rho: float = 0.6, 
                             gamma: float = 0.2, 
@@ -789,8 +762,8 @@ class Population:
             The agent for whom to generate the destination diary.
         T : pd.Timestamp
             The end time to generate the destination diary until.
-        duration : int
-            The duration of each destination entry in minutes.
+        epr_time_res : int
+            The granularity of destination durations in epr generation.
         stay_probs : dict
             Dictionary containing the probability of staying in the same building.
             This is modeled as a geometric distribution with `p = 1 - ((1/avg_duration_hrs)/timesteps_in_1_hr)`.
@@ -884,7 +857,7 @@ class Population:
             entry = {'local_timestamp': start_time_local,
                      'unix_timestamp': start_time,
                      'tz_offset': agent.tz_offset,
-                     'duration': duration,
+                     'duration': epr_time_res,
                      'location': curr}
             dest_update.append(entry)
             # entry = pd.DataFrame([entry])
@@ -893,8 +866,8 @@ class Population:
             # else:
             #     agent.destination_diary = pd.concat([agent.destination_diary, entry], ignore_index=True)
 
-            start_time_local = start_time_local + timedelta(minutes=int(duration))
-            start_time = start_time + duration*60
+            start_time_local = start_time_local + timedelta(minutes=int(epr_time_res))
+            start_time = start_time + epr_time_res*60 #because start_time in seconds
 
         if agent.destination_diary.empty:
             agent.destination_diary = pd.DataFrame(dest_update)
@@ -907,11 +880,12 @@ class Population:
         return None
 
     def generate_trajectory(self,
-                            agent: Agent, 
-                            start_time: pd.Timestamp=None,
+                            agent: Agent,
+                            destination_diary: pd.DataFrame = None,
                             end_time: pd.Timestamp=None, 
-                            duration: int=15,
-                            seed: int=0):
+                            epr_time_res: int=15,
+                            seed: int=0,
+                            **kwargs):
         """
         Generate a trajectory for an agent.
 
@@ -919,10 +893,12 @@ class Population:
         ----------
         agent : Agent
             The agent for whom to generate a trajectory.
+        destination_diary : pandas.DataFrame, optional (default=None)
+            DataFrame containing the following columns: 'unix_timestamp', 'local_timestamp', 'duration', 'location'.
         end_time : pd.Timestamp, optional
             The end time to generate the trajectory until.
-        duration : int, optional
-            The duration of each destination entry in minutes.
+        epr_time_res : int, optional
+            The granularity of destination durations in epr generation.
         seed : int, optional
             Random seed for reproducibility.
         
@@ -934,56 +910,56 @@ class Population:
         npr.seed(seed)
         dt = agent.dt
 
-        if self.trajectory is not None:
-            start_time_traj = self.trajectory.iloc[-1]['local_timestamp']
-            if start_time is not None and start_time_traj >= start_time:
-                raise ValueError(
-                    "The trajectory already exists and starts after the provided start_time."
-                )
-            else:
-                
-
-        else:  # self.trajectory is None
-            # If no trajectory is provided, initialize with a ping at destination_diary
-            if self.destination_diary is not None:
-                loc = self.destination_diary.iloc[0]['location']
-                start_time_diary = self.destination_diary.iloc[0]['local_timestamp']
-                if start_time is not None and start_time_diary <= start_time:
-                    raise ValueError(
-                        "The destination diary already exists and starts after the provided start_time."
-                    )
-            else:  # self.destination_diary is None
-                loc = self.home
-                start_time = start_time if start_time is not None else pd.Timestamp.now().normalize()
-        
-            loc_centroid = self.city.buildings[loc].geometry.centroid
-            x_coord, y_coord = loc_centroid.x, loc_centroid.y
-            local_timestamp = start_time
-            unix_timestamp = int(local_timestamp.timestamp())
-            trajectory = pd.DataFrame([{
-                'x': x_coord,
-                'y': y_coord,
-                'local_timestamp': local_timestamp,
-                'unix_timestamp': unix_timestamp,
-                'tz_offset': self.tz_offset,
-                'identifier': self.identifier
-                }])
-
-            diary = pd.DataFrame([{
-                'local_timestamp': local_timestamp,
-                'unix_timestamp': unix_timestamp,
-                'tz_offset': self.tz_offset,
-                'duration': self.dt,
-                'location': loc,
-                'identifier': self.identifier
-                }])
-
-        if agent.destination_diary.empty:
+        # handle destination diary
+        if destination_diary is not None:
+            d_diary = destination_diary
+        elif not agent.destination_diary.empty:
+            d_diary = agent.destination_diary
+        else: # agent.destination_diary is empty
             if end_time is None:
                 raise ValueError(
                     "Destination diary is empty. Provide an end_time to generate a trajectory."
                 )
-            self.generate_dest_diary(agent, T, duration=duration, seed=seed)
+            d_diary = self.generate_dest_diary(agent, end_time, epr_time_res=epr_time_res, seed=seed)
+
+        # ensure last ping
+        if agent.trajectory is None:
+            if _xy_or_loc_col == "location":
+                loc_centroid = self.city.buildings[kwargs['location']].geometry.centroid
+                x_coord, y_coord = loc_centroid.x, loc_centroid.y
+                
+            elif _xy_or_loc_col == "xy":
+                x_coord = kwargs['x']
+                y_coord = kwargs['y']
+            else:
+                loc_centroid = self.city.buildings[agent.home].geometry.centroid
+                x_coord, y_coord = loc_centroid.x, loc_centroid.y
+                
+            if _datetime_or_ts_col == "local_timestamp":
+                local_timestamp = kwargs['local_timestamp']
+                unix_timestamp = int(local_timestamp.timestamp())
+            elif _datetime_or_ts_col == "unix_timetsamp":
+                unix_timestamp = kwargs['unix_timestamp']
+                local_timestamp = pd.to_datetime(unix_timestamp, unit='s')
+            else:
+                local_timestamp = pd.to_datetime('2025-01-01 00:00Z')
+                unix_timestamp = int(local_timestamp.timestamp())
+                
+            agent.last_ping = pd.Series({
+                'x': x_coord,
+                'y': y_coord,
+                'local_timestamp': local_timestamp,
+                'unix_timestamp': unix_timestamp,
+                'tz_offset': 0,
+                'identifier': agent.identifier
+                })
+        
+        else:
+            if ('x' in kwargs)or('y' in kwargs)or('local_timestamp'in kwargs)or('unix_timestamp' in kwargs):
+                raise ValueError(
+                    "Keywords arguments conflict with existing trajectory,\
+                    use Agent.reset_trajectory() or do not provide keyword arguments"
+                )
 
         self.traj_from_dest_diary(agent)
 
