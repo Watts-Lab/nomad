@@ -635,7 +635,6 @@ def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_f
                 parse_dates,
                 mixed_timezone_behavior,
                 fixed_format,
-                traj_cols.get('tz_offset'),
                 traj_cols
             )
 

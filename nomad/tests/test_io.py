@@ -7,6 +7,7 @@ import geopandas as gpd
 import pygeohash as gh
 import pdb
 from nomad.io import base as loader
+from nomad.filters import to_timestamp
 from nomad import constants
 
 # Define the keys explicitly for parametrization
@@ -159,7 +160,7 @@ def test_from_df_name_handling(base_df, col_variations, variation):
 
     traj_cols = dict(zip(keys, names)) if keys else None
 
-    result = loader.from_df(df, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior='naive')
+    result = loader.from_df(df_subset, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior='naive')
 
     assert loader._is_traj_df(result, traj_cols=traj_cols, parse_dates=True), "from_df() output is not a valid trajectory DataFrame"
 
@@ -186,7 +187,7 @@ def test_date_parsing_from_df(base_df):
     expected_tz_offset = base_df.tz_offset
     expected_ts = base_df.timestamp
 
-    result = loader.from_df(df, parse_dates=True, mixed_timezone_behavior="naive")
+    result = loader.from_df(df_subset, parse_dates=True, mixed_timezone_behavior="naive")
     result['timestamp'] = to_timestamp(result.datetime, result.tz_offset)
 
     assert (result.timestamp.values == expected_ts.values).all() and (result.tz_offset.values == expected_tz_offset.values).all()
