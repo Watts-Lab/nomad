@@ -182,8 +182,8 @@ def test_from_df_stop_table(stop_df, stop_col_variations, variation_name):
 
 # date parsing works correctly
 def test_date_parsing_from_df(base_df):
-    df = base_df.iloc[:, [0, 5, 6, 7]].copy()
-    df.columns = ["user_id", "datetime", "x", "y"]
+    df_subset = base_df.iloc[:, [0, 5, 6, 7]].copy()
+    df_subset.columns = ["user_id", "datetime", "x", "y"]
     expected_tz_offset = base_df.tz_offset
     expected_ts = base_df.timestamp
 

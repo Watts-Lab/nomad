@@ -601,7 +601,7 @@ def _process_datetime_column(df, col, parse_dates, mixed_timezone_behavior, fixe
 
         has_tz = ('tz_offset' in traj_cols) and (traj_cols['tz_offset'] in df.columns)
        
-        if parse_dates and mixed_timezone_behavior == 'naive' and has_tz:
+        if parse_dates and mixed_timezone_behavior == 'naive' and not has_tz:
             if offset is not None and not offset.isna().all():
                 df[traj_cols['tz_offset']] = offset.astype("Int64") #overwrite offset?
 
