@@ -13,6 +13,7 @@ from nomad.constants import DEFAULT_SCHEMA
 import numpy as np
 import geopandas as gpd
 import warnings
+import inspect
 import pdb
 
 import pandas as pd
@@ -25,8 +26,6 @@ from pandas.api.types import (
     is_extension_array_dtype 
 )
 from pandas import Int64Dtype, Float64Dtype, StringDtype # For isinstance if needed later
-
-
 
 # utils
 def _update_schema(original, new_labels):
@@ -583,7 +582,7 @@ def _cast_traj_cols_spark(df, traj_cols):
 
     return df
     
-def _process_datetime_column(df, col, parse_dates, mixed_timezone_behavior, fixed_format, tz_offset_key, traj_cols):
+def _process_datetime_column(df, col, parse_dates, mixed_timezone_behavior, fixed_format, traj_cols):
     """Processes a datetime column: parses strings, handles timezones, adds offset."""
     dtype = df[col].dtype
 
@@ -600,37 +599,28 @@ def _process_datetime_column(df, col, parse_dates, mixed_timezone_behavior, fixe
         )
         df[col] = parsed
 
-        actual_offset_col = traj_cols.get(tz_offset_key) if tz_offset_key else None
-        if parse_dates and mixed_timezone_behavior == 'naive' and actual_offset_col and actual_offset_col not in df.columns:
-            if offset is not None and len(offset) == len(df):
-                df[actual_offset_col] = offset.astype("Int64") # Use string alias "Int64"
+        has_tz = ('tz_offset' in traj_cols) and (traj_cols['tz_offset'] in df.columns)
+       
+        if parse_dates and mixed_timezone_behavior == 'naive' and has_tz:
+            if offset is not None and not offset.isna().all():
+                df[traj_cols['tz_offset']] = offset.astype("Int64") #overwrite offset?
 
-        if _is_series_of_timestamps(df[col]) and _has_mixed_timezones(df[col]):
-            warnings.warn(
-                f"The '{col}' column has mixed timezones. "
-                "Consider localizing to a single timezone or using a unix timestamp to avoid inconsistencies."
-            )
-        elif is_datetime64_any_dtype(df[col]) and df[col].dt.tz is None and offset is None:
-            warnings.warn(
-                f"The '{col}' column is timezone-naive. "
-                "Consider localizing to a timezone or using a unix timestamp to avoid inconsistencies."
-            )
+        if is_object_dtype(df[col].dtype) and _has_mixed_timezones(df[col]):
+             warnings.warn(f"The '{col}' column has mixed timezones after processing.")
+        elif is_datetime64_any_dtype(df[col].dtype) and df[col].dt.tz is None:
+             if offset is None or offset.isna().any():
+                 warnings.warn(f"The '{col}' column has timezone-naive records consider localizing or using unix timestamps.")
 
-    elif _is_series_of_timestamps(df[col]):
+    elif is_object_dtype(dtype) and _is_series_of_timestamps(df[col]):
         if _has_mixed_timezones(df[col]):
-            warnings.warn(
-                f"The '{col}' column has mixed timezones. "
-                "Consider localizing to a single timezone or using a unix timestamp to avoid inconsistencies."
-            )
+            warnings.warn(f"The '{col}' column (object of Timestamps) has mixed timezones.")
         else:
-            df[col] = pd.to_datetime(df[col], format=fixed_format)
-            if df[col].dt.tz is None:
-                warnings.warn(
-                    f"The '{col}' column is timezone-naive. "
-                    "Consider localizing to a timezone or using a unix timestamp to avoid inconsistencies."
-                )
-    else:
-        raise ValueError(f"dtype {df[col].dtype} for '{col}' is not supported for datetime handling.")
+            try:
+                 converted = pd.to_datetime(df[col], errors='coerce', format=fixed_format)
+                 if is_datetime64_any_dtype(converted.dtype):
+                      df[col] = converted
+                      if df[col].dt.tz is None: warnings.warn(f"The '{col}' column (object of Timestamps) is timezone-naive.")
+            except Exception: pass
 
 
 def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_format=None):
