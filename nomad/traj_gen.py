@@ -710,6 +710,7 @@ class Population:
                         'y': coord[1],
                         'local_timestamp': local_timestamp,
                         'unix_timestamp': unix_timestamp,
+                        'tz_offset': agent.tz_offset,
                         'identifier': agent.identifier}
 
                 trajectory_update.append(ping)
