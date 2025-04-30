@@ -462,6 +462,24 @@ def _stop_metrics(grouped_data, long_lat, datetime, traj_cols, complete_output):
                             
     # Number of pings in stop
     n_pings = len(grouped_data)
+    
+    # Compute max_gap between consecutive pings (in minutes)
+    if datetime:
+        times = pd.to_datetime(grouped_data[traj_cols['datetime']]).sort_values()
+        time_diffs = times.diff().dropna()
+        max_gap = int(time_diffs.max().total_seconds() / 60) if not time_diffs.empty else 0
+    else:
+        times = grouped_data[traj_cols['timestamp']].sort_values()
+        timestamp_length = len(str(times.iloc[0]))
+        
+        if timestamp_length == 13:
+            time_diffs = np.diff(times.values) // 1000
+        elif timestamp_length == 19:  # nanoseconds
+            time_diffs = np.diff(times.values) // 10**9
+        else:
+            time_diffs = np.diff(times.values)
+        
+        max_gap = int(np.max(time_diffs) / 60) if len(time_diffs) > 0 else 0
 
     # Prepare data for the Series
     if long_lat:
@@ -473,7 +491,8 @@ def _stop_metrics(grouped_data, long_lat, datetime, traj_cols, complete_output):
                 traj_cols['latitude']: stop_medoid[1],
                 'diameter': diameter_m,
                 'n_pings': n_pings,
-                'duration': duration
+                'duration': duration,
+                'max_gap': max_gap
             }
         else:
             stop_attr = {
@@ -491,7 +510,8 @@ def _stop_metrics(grouped_data, long_lat, datetime, traj_cols, complete_output):
                 traj_cols['y']: stop_medoid[1],
                 'diameter': diameter_m,
                 'n_pings': n_pings,
-                'duration': duration
+                'duration': duration,
+                'max_gap': max_gap
             }
         else:
             stop_attr = {

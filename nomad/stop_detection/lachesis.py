@@ -168,7 +168,14 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
                 end_val = time_series.iloc[j_final]
 
             medoid = utils._medoid(coords[i:j_final + 1])
+
+           
+            
             if complete_output:
+                cluster_times = time_series.iloc[i:j_final + 1].sort_values()
+                cluster_diffs = np.diff(cluster_times.values)
+                max_gap = int(np.max(cluster_diffs) // 60)
+                
                 row = [
                     start_val,
                     end_val,
@@ -176,7 +183,8 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
                     medoid[0],
                     medoid[1],
                     d_start,
-                    j_final - i + 1
+                    j_final - i + 1,
+                    max_gap
                 ]
             else:
                 row = [
@@ -199,7 +207,7 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
     end_col = constants.DEFAULT_SCHEMA['end_datetime'] if use_datetime else constants.DEFAULT_SCHEMA['end_timestamp']
 
     if complete_output:
-        columns = [start_col, end_col, 'duration'] + coord_cols + ['diameter', 'n_pings']
+        columns = [start_col, end_col, 'duration'] + coord_cols + ['diameter', 'n_pings', 'max_gap']
     else:
         columns = [start_col, 'duration'] + coord_cols
 
