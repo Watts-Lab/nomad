@@ -197,6 +197,7 @@ class City:
         self.streets = {}
         self.buildings_outline = Polygon()
         self.address_book = {}
+        self.building_types = pd.DataFrame(columns=["id", "type"])
 
         if not (isinstance(dimensions, tuple) and len(dimensions) == 2
                 and all(isinstance(d, int) for d in dimensions)):
@@ -251,6 +252,10 @@ class City:
         # add building
         self.buildings[building.id] = building
         self.buildings_outline = unary_union([self.buildings_outline, building.geometry])
+        self.building_types = pd.concat(
+            [self.building_types, pd.DataFrame([{"id": building.id, "type": building_type}])],
+            ignore_index=True
+        )
 
         # blocks are no longer streets
         for block in building.blocks:
@@ -291,7 +296,8 @@ class City:
         bx, by = self.dimensions
 
         if (x < 0 or x >= bx or y < 0 or y >= bx):
-            return None
+            x = max(0, min(x, bx-1))
+            y = max(0, min(y, by-1))
 
         new_coords = (int(x), int(y))
         if new_coords in self.address_book:

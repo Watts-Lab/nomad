@@ -14,6 +14,49 @@ from nomad.constants import DEFAULT_SCHEMA
 import warnings
 import numpy as np
 
+
+def _timestamp_handling(
+    ts,
+    output_type,
+    timezone=None
+):
+    """
+    Convert timestamp to either pandas Timestamp or UNIX timestamp, with optional timezone handling.
+
+    Parameters
+    ----------
+    ts : str, int, float, pd.Timestamp, or np.datetime64
+    The input timestamp to be converted.
+    output_type : str
+    Desired output type: "pd.timestamp" or "unix".
+    timezone : str, optional
+    Timezone to localize or convert the timestamp to. If None, no timezone conversion is applied.
+
+    Returns
+    -------
+    pd.Timestamp or int
+    Converted timestamp in the desired format.
+    """
+    if isinstance(ts, str):
+        ts = pd.to_datetime(ts, errors="coerce")
+    elif isinstance(ts, (pd.Timestamp, np.datetime64)):
+        ts = pd.to_datetime(ts)
+    elif isinstance(ts, (int, float)):
+        ts = pd.to_datetime(ts, unit='s', errors="coerce")
+    else:
+        raise TypeError("Unsupported input type for timestamp conversion.")
+
+    if timezone:
+        ts = ts.tz_localize(timezone)
+
+    if output_type == "pd.timestamp":
+        return ts
+    elif output_type == "unix":
+        return int(ts.timestamp())
+    else:
+        raise ValueError("Invalid ts_output value. Use 'pd.timestamp' or 'unix'.")
+
+
 def to_timestamp(
     datetime: pd.Series,
     tz_offset: pd.Series = None
@@ -125,6 +168,7 @@ def to_projection(
         If expected coordinate columns are missing.
     """
     # Check whether traj contains spatial columns
+    # Uncomment exclusive=True when the function is committed.
     loader._has_spatial_cols(traj.columns, kwargs)#, exclusive=True)
 
     # Check if user wants to project from x and y
@@ -195,8 +239,9 @@ def _to_projection_spark(
 
 def filter_users(
     traj: pd.DataFrame,
-    start_time: pd.Timestamp,
-    end_time: pd.Timestamp,
+    start_time,
+    end_time,
+    timezone: str = None,
     polygon: Polygon = None,
     min_active_days: int = 1,
     min_pings_per_day: int = 1,
@@ -213,9 +258,9 @@ def filter_users(
     ----------
     traj : pd.DataFrame
         Trajectory DataFrame with latitude and longitude columns.
-    start_time : pd.Timestamp
+    start_time
         Start of the timeframe for filtering.
-    end_time : pd.Timestamp
+    end_time
         End of the timeframe for filtering.
     polygon : shapely.geometry.Polygon
         Polygon defining the area to retain points within.
@@ -253,10 +298,12 @@ def filter_users(
     # Check which time column to use from
     if ('datetime' in kwargs):
         time_col = traj_cols['datetime']
+        start_time = _timestamp_handling(start_time, "pd.timestamp", timezone)
+        end_time = _timestamp_handling(end_time, "pd.timestamp", timezone)
     else:  # defaults to unix timestamps
         time_col = traj_cols['timestamp']
-        start_time = int(start_time.timestamp())
-        end_time = int(end_time.timestamp())
+        start_time = _timestamp_handling(start_time, "unix", timezone)
+        end_time = _timestamp_handling(end_time, "unix", timezone)
 
     # Check if polygon is a valid Shapely Polygon object
     if (polygon is not None) and (not isinstance(polygon, Polygon)):

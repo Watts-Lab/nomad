@@ -192,6 +192,7 @@ def test_filter_users_outside_bounds(simple_df_one_user):
                           min_active_days=1,
                           crs='EPSG:4326')
     assert len(result) == 0
+    assert _is_traj_df(result)
 
 def test_filter_users_within_bounds_multi_user(simple_df_multi_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
@@ -252,6 +253,7 @@ def test_filter_users_k2(simple_df_multi_user):
                           min_active_days=2,
                           crs='EPSG:4326')
     assert len(result) == 7  # Users 1, 2, and 4 have points within the polygon on at least 2 distinct days
+    assert _is_traj_df(result)
 
 def test_filter_users_k4(simple_df_multi_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
@@ -262,6 +264,7 @@ def test_filter_users_k4(simple_df_multi_user):
                           min_active_days=4,
                           crs='EPSG:4326')
     assert len(result) == 0  # No users have points within the polygon on at least 3 distinct days
+    assert _is_traj_df(result)
 
 def test_projection_and_filter_users(simple_df_one_user):
     projected_x, projected_y = to_projection(traj=simple_df_one_user,
@@ -282,6 +285,7 @@ def test_projection_and_filter_users(simple_df_one_user):
                           x='x',
                           y='y')
     assert len(result) == 4
+    assert _is_traj_df(result)
 
 def test_projection_and_filter_users_wrong_cols(simple_df_one_user):
     projected_x, projected_y = to_projection(traj=simple_df_one_user,
@@ -300,16 +304,32 @@ def test_projection_and_filter_users_wrong_cols(simple_df_one_user):
                           end_time=pd.Timestamp('2008-10-24 00:00:00', tz='America/New_York'),
                           min_active_days=1)
     assert len(result) == 0
+    assert _is_traj_df(result)
 
 def test_filter_users_within_time_frame(simple_df_one_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
     result = filter_users(simple_df_one_user,
                           polygon=polygon,
-                          start_time=pd.Timestamp('2008-10-23 13:53:00', tz='America/New_York'),
-                          end_time=pd.Timestamp('2008-10-23 13:53:10', tz='America/New_York'),
+                          start_time='2008-10-23 13:53:00',
+                          end_time='2008-10-23 13:53:10',
+                          timezone='America/New_York',
                           min_active_days=1,
                           crs='EPSG:4326')
     assert len(result) == 2
+    assert _is_traj_df(result)
+
+def test_filter_users_within_time_frame_datetime(simple_df_one_user):
+    polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
+    result = filter_users(simple_df_one_user,
+                          polygon=polygon,
+                          start_time='2008-10-23 13:53:00',
+                          end_time='2008-10-23 13:53:10',
+                          timezone='America/New_York',
+                          min_active_days=1,
+                          crs='EPSG:4326',
+                          datetime='datetime')
+    assert len(result) == 2
+    assert _is_traj_df(result)
 
 def test_filter_users_outside_time_frame(simple_df_one_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
@@ -320,16 +340,18 @@ def test_filter_users_outside_time_frame(simple_df_one_user):
                           min_active_days=1,
                           crs='EPSG:4326')
     assert len(result) == 0
+    assert _is_traj_df(result)
 
 def test_filter_users_within_time_frame_multi_user(simple_df_multi_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
     result = filter_users(simple_df_multi_user,
                           polygon=polygon,
-                          start_time=pd.Timestamp('2023-01-01 00:00:00', tz='America/New_York'),
-                          end_time=pd.Timestamp('2023-01-03 00:00:00', tz='America/New_York'),
+                          start_time='2023-01-01 05:00:00',
+                          end_time='2023-01-03 05:00:00',
                           min_active_days=1,
                           crs='EPSG:4326')
     assert len(result) == 6
+    assert _is_traj_df(result)
 
 def test_filter_users_outside_time_frame_multi_user(simple_df_multi_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
@@ -340,6 +362,7 @@ def test_filter_users_outside_time_frame_multi_user(simple_df_multi_user):
                           min_active_days=1,
                           crs='EPSG:4326')
     assert len(result) == 1
+    assert _is_traj_df(result)
 
 def test_filter_users_with_empty_df():
     empty_df = pd.DataFrame(columns=['user_id', 'latitude', 'longitude', 'datetime', 'timestamp', 'tz_offset'])
