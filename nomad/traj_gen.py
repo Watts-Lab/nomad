@@ -929,16 +929,16 @@ class Population:
 
         # ensure last ping
         if agent.trajectory is None:
-            if _xy_or_loc_col == "location":
+            if _xy_or_loc_col(kwargs.keys()) == "location":
                 loc_centroid = self.city.buildings[kwargs['location']].geometry.centroid
                 x_coord, y_coord = loc_centroid.x, loc_centroid.y
-            elif _xy_or_loc_col == "xy":
+            elif _xy_or_loc_col(kwargs.keys()) == "xy":
                 x_coord, y_coord = kwargs['x'], kwargs['y']
             else:
                 loc_centroid = self.city.buildings[agent.home].geometry.centroid
                 x_coord, y_coord = loc_centroid.x, loc_centroid.y
                 
-            if _datetime_or_ts_col == "local_timestamp":
+            if _datetime_or_ts_col(kwargs.keys()) == "local_timestamp":
                 local_timestamp = kwargs['local_timestamp']
                 if not isinstance(local_timestamp, pd.Timestamp):
                     try:
@@ -948,7 +948,7 @@ class Population:
                 if local_timestamp.tz is None and 'tz' in kwargs:
                     local_timestamp = local_timestamp.tz_localize(kwargs['tz'])
                 unix_timestamp = int(local_timestamp.timestamp())
-            elif _datetime_or_ts_col == "unix_timestamp":
+            elif _datetime_or_ts_col(kwargs.keys()) == "unix_timestamp":
                 unix_timestamp = kwargs['unix_timestamp']
                 if 'tz' in kwargs:
                     local_timestamp = pd.to_datetime(unix_timestamp, unit='s', utc=True).tz_convert(kwargs['tz'])
