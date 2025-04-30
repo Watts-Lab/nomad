@@ -54,6 +54,6 @@ def test_reset_agent(base_city_pop, base_dest_diary):
     assert loader._is_traj_df(df=Charlie.trajectory, traj_cols=traj_cols)
     
     Charlie.reset_trajectory()
-    assert Charlie.trajectory = None
-    assert Charlie.sparse_traj = None
-    assert Charlie.diary = None
+    assert Charlie.trajectory == None
+    assert Charlie.sparse_traj == None
+    assert Charlie.diary == None
