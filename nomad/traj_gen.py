@@ -484,7 +484,6 @@ class Population:
 
     def generate_agents(self,
                         N: int,
-                        start_time: pd.Timestamp=pd.Timestamp('2024-01-01 08:00', tz='UTC'),
                         seed: int = 0,
                         name_count: int = 2):
         """
@@ -496,8 +495,6 @@ class Population:
             identifier = generator[i]
             agent = Agent(identifier=identifier,
                           city=self.city,
-                          start_time=start_time,
-                          dt=self.dt,
                           seed=seed+i)
             self.add_agent(agent)
 
@@ -695,6 +692,7 @@ class Population:
         else:
             current_entry = agent.diary.iloc[-1].to_dict()
             agent.diary = agent.diary.iloc[:-1]
+
         entry_update = []
         for i in range(destination_diary.shape[0]):
             destination_info = destination_diary.iloc[i]
@@ -716,7 +714,13 @@ class Population:
 
                 trajectory_update.append(ping)
                 agent.last_ping = ping
-                if(current_entry == None or current_entry['location'] != location):
+                if current_entry == None:
+                    current_entry = {'local_timestamp': local_timestamp,
+                                     'unix_timestamp': unix_timestamp,
+                                     'duration': dt,
+                                     'location': location,
+                                     'identifier': agent.identifier}
+                elif (current_entry['location'] != location):
                     entry_update.append(current_entry)
                     current_entry = {'local_timestamp': local_timestamp,
                                      'unix_timestamp': unix_timestamp,
@@ -733,10 +737,10 @@ class Population:
                                     ignore_index=True)
 
         entry_update.append(current_entry)
-        if(agent.diary.empty):
+        if (agent.diary.empty):
             agent.diary = pd.DataFrame(entry_update)
         else:
-            pd.concat([agent.diary, pd.DataFrame(entry_update)], ignore_index=True)
+            agent.diary = pd.concat([agent.diary, pd.DataFrame(entry_update)], ignore_index=True)
         agent.destination_diary = destination_diary.drop(destination_diary.index)
 
     def generate_dest_diary(self, 
@@ -806,9 +810,9 @@ class Population:
             visit_freqs.loc[initial_locs, 'freq'] += 1
 
         if agent.destination_diary.empty:
-            start_time_local = agent.last_ping.local_timestamp
-            start_time = agent.last_ping.unix_timestamp
-            curr = self.city.get_block((agent.last_ping.x, agent.last_ping.y)).id  # Always a building?? Could be street
+            start_time_local = agent.last_ping['local_timestamp']
+            start_time = agent.last_ping['unix_timestamp']
+            curr = self.city.get_block((agent.last_ping['x'], agent.last_ping['y'])).id  # Always a building?? Could be street
         else:
             last_entry = agent.destination_diary.iloc[-1]
             start_time_local = last_entry.local_timestamp + timedelta(minutes=int(last_entry.duration))
@@ -855,11 +859,6 @@ class Population:
                      'duration': epr_time_res,
                      'location': curr}
             dest_update.append(entry)
-            # entry = pd.DataFrame([entry])
-            # if agent.destination_diary.empty:
-            #     agent.destination_diary = entry
-            # else:
-            #     agent.destination_diary = pd.concat([agent.destination_diary, entry], ignore_index=True)
 
             start_time_local = start_time_local + timedelta(minutes=int(epr_time_res))
             start_time = start_time + epr_time_res*60 #because start_time in seconds
@@ -867,7 +866,8 @@ class Population:
         if agent.destination_diary.empty:
             agent.destination_diary = pd.DataFrame(dest_update)
         else:
-            pd.concat([agent.destination_diary, pd.DataFrame(dest_update)], ignore_index=True)
+            agent.destination_diary = pd.concat(
+                [agent.destination_diary, pd.DataFrame(dest_update)], ignore_index=True)
         agent.destination_diary = condense_destinations(agent.destination_diary)
 
         agent.visit_freqs = visit_freqs
@@ -910,20 +910,22 @@ class Population:
 
         # handle destination diary
         if destination_diary is not None:
-            d_diary = destination_diary
+            agent.destination_diary = destination_diary
             # warning for overwriting agent's destination diary if it exists?
-        elif not agent.destination_diary.empty:
-            d_diary = agent.destination_diary
-        else: # agent.destination_diary is empty
-            if end_time is None:
-                raise ValueError(
-                    "Destination diary is empty. Provide an end_time to generate a trajectory."
-                )
-            d_diary = self.generate_dest_diary(agent, 
-                                               end_time=end_time,
-                                               epr_time_res=epr_time_res,
-                                               seed=seed)
-        agent.destination_diary = d_diary
+
+            loc = destination_diary.iloc[0]['location']
+            loc_centroid = self.city.buildings[loc].geometry.centroid
+            x_coord, y_coord = loc_centroid.x, loc_centroid.y
+            local_timestamp = destination_diary.iloc[0]['local_timestamp']
+            unix_timestamp = int(local_timestamp.timestamp())
+            agent.last_ping = pd.Series({
+                'x': x_coord,
+                'y': y_coord,
+                'local_timestamp': local_timestamp,
+                'unix_timestamp': unix_timestamp,
+                'identifier': agent.identifier
+                })
+            agent.trajectory = pd.DataFrame([agent.last_ping])
 
         # ensure last ping
         if agent.trajectory is None:
@@ -966,10 +968,20 @@ class Population:
         else:
             if ('x' in kwargs)or('y' in kwargs)or('local_timestamp'in kwargs)or('unix_timestamp' in kwargs):
                 raise ValueError(
-                    "Keywords arguments conflict with existing trajectory,\
+                    "Keywords arguments conflict with existing trajectory or destination diary,\
                     use Agent.reset_trajectory() or do not provide keyword arguments"
                 )
             agent.last_ping = agent.trajectory.iloc[-1]
+
+        if agent.destination_diary.empty:
+            if end_time is None:
+                raise ValueError(
+                    "Destination diary is empty. Provide an end_time to generate a trajectory."
+                )
+            self.generate_dest_diary(agent,
+                                     end_time=end_time,
+                                     epr_time_res=epr_time_res,
+                                     seed=seed)
 
         self.traj_from_dest_diary(agent)
 
