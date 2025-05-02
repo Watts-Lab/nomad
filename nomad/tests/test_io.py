@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 import geopandas as gpd
 import pygeohash as gh
-# import pdb # Removed unused import
+import pdb
 from nomad.io import base as loader
 # Assuming constants.DEFAULT_SCHEMA is available via import
 from nomad import constants
@@ -120,7 +120,7 @@ def value_na_input_df():
         'timestamp': [1672560000.0, 1672578000.0, np.nan, 1672617600.0, 1672531200.0],
         'latitude': [40.7128, 34.0522, np.nan, 36.1699, 40.7128],
         'longitude': [-74.0060, -118.2437, np.nan, -115.1398, -74.0060],
-        'datetime': ["2023-01-01T10:00:00Z", "2023-01-01T09:00:00Z", pd.NA, "2023-01-01T18:00:00Z", "2023-01-01T00:00:00Z"]
+        'datetime': ["2023-01-01T09:00:00-01:00", "2023-01-01T09:00:00Z", pd.NA, "2023-01-01T18:00:00Z", "2023-01-01T00:00:00Z"]
     }
     df = pd.DataFrame(data)
     df['user_id'] = df['user_id'].astype('string')
@@ -138,8 +138,8 @@ def expected_value_na_output_df():
         'timestamp': [1672560000, 1672578000, pd.NA, 1672617600, 1672531200],
         'latitude': [40.7128, 34.0522, np.nan, 36.1699, 40.7128],
         'longitude': [-74.0060, -118.2437, np.nan, -115.1398, -74.0060],
-        'datetime': [pd.Timestamp('2023-01-01 10:00:00'), pd.Timestamp('2023-01-01 09:00:00'), pd.NaT, pd.Timestamp('2023-01-01 18:00:00'), pd.Timestamp('2023-01-01 00:00:00')],
-        'tz_offset': [0, 0, pd.NA, 0, 0],
+        'datetime': [pd.Timestamp('2023-01-01 09:00:00'), pd.Timestamp('2023-01-01 09:00:00'), pd.NaT, pd.Timestamp('2023-01-01 18:00:00'), pd.Timestamp('2023-01-01 00:00:00')],
+        'tz_offset': [-3600, 0, pd.NA, 0, 0],
     }
     dtypes = {
         'user_id': 'string', 'timestamp': 'Int64', 'latitude': 'Float64',
