@@ -2,6 +2,7 @@ import pandas as pd
 import geopandas as gpd
 import numpy as np
 from shapely.geometry import Point
+from zoneinfo import ZoneInfo
 
 import pdb
 
@@ -67,7 +68,15 @@ def identify_stop(alg_out, traj, stop_table, poi_table, method='mode'):
 
     # If either alg_out or stop_table is empty, there's nothing to do
     if alg_out.empty or stop_table.empty:
-        stop_table['location'] = pd.Series(dtype='object')
+        tz = ZoneInfo("America/New_York")
+        stop_table = pd.DataFrame({
+            'start_time': pd.Series(dtype='datetime64[ns, America/New_York]'),
+            'duration': pd.Series(dtype='float'),
+            'x': pd.Series(dtype='float'),
+            'y': pd.Series(dtype='float'),
+            'location': pd.Series(dtype='object'),
+            'end_time': pd.Series(dtype='datetime64[ns, America/New_York]')
+        })
         return stop_table
 
     merged_df = traj.copy()

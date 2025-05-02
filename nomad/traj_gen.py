@@ -57,8 +57,10 @@ def sample_hier_nhpp(traj,
     beta_start: float
         scale parameter (mean) of Exponential distribution modeling burst inter-arrival times
         where 1/beta_start is the rate of events (bursts) per minute.
+        Can be set to float('inf') to disable burst sampling (i.e., all pings are contained in one burst).
     beta_durations: float
         scale parameter (mean) of Exponential distribution modeling burst durations
+        Can be set to float('inf') to disable burst sampling (i.e., all pings are contained in one burst).
     beta_ping: float
         scale parameter (mean) of Exponential distribution modeling ping inter-arrival times
         within a burst, where 1/beta_ping is the rate of events (pings) per minute.
@@ -84,21 +86,26 @@ def sample_hier_nhpp(traj,
     # Sample starting points of bursts using at most max_burst_samples times
     max_burst_samples = len(traj)
     
-    inter_arrival_times = npr.exponential(scale=beta_start, size=max_burst_samples)
-    burst_start_points = np.cumsum(inter_arrival_times).astype(int)
-    burst_start_points = burst_start_points[burst_start_points < len(traj)]
+    if beta_start == float('inf') or beta_durations == float('inf'):
+        # If beta_start is infinite, we only sample one burst
+        burst_start_points = np.array([0])
+        burst_end_points = np.array([len(traj) - 1])
+    else:
+        inter_arrival_times = npr.exponential(scale=beta_start, size=max_burst_samples)
+        burst_start_points = np.cumsum(inter_arrival_times).astype(int)
+        burst_start_points = burst_start_points[burst_start_points < len(traj)]
 
-    # Sample durations of each burst
-    burst_durations = np.random.exponential(scale=beta_durations, size=len(burst_start_points)).astype(int)
+        # Sample durations of each burst
+        burst_durations = np.random.exponential(scale=beta_durations, size=len(burst_start_points)).astype(int)
 
-    # Create start_points and end_points
-    burst_end_points = burst_start_points + burst_durations
-    burst_end_points = np.minimum(burst_end_points, len(traj) - 1)
+        # Create start_points and end_points
+        burst_end_points = burst_start_points + burst_durations
+        burst_end_points = np.minimum(burst_end_points, len(traj) - 1)
 
-    # Adjust end_points to handle overlaps
-    for i in range(len(burst_start_points) - 1):
-        if burst_end_points[i] > burst_start_points[i + 1]:
-            burst_end_points[i] = burst_start_points[i + 1]
+        # Adjust end_points to handle overlaps
+        for i in range(len(burst_start_points) - 1):
+            if burst_end_points[i] > burst_start_points[i + 1]:
+                burst_end_points[i] = burst_start_points[i + 1]
 
     # Sample pings within each burst
     sampled_trajectories = []
