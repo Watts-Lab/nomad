@@ -17,182 +17,264 @@ from nomad.stop_detection import utils
 ##########################################
 ########        HDBSCAN           ########
 ##########################################
-def _find_neighbors_hdbscan(data, time_thresh, dist_thresh, long_lat, datetime, traj_cols, alpha=0.5):
-    """
-    - Computes pairwise distances between points based on space & time.
-    - If two points are connected, the matrix stores the weighted distance.
-    - Returns a weighted adjacency matrix, where edges represent spatiotemporal proximity.
-    """
-    if long_lat:
-        coords = np.radians(data[[traj_cols['latitude'], traj_cols['longitude']]].values)
-    else:
-        coords = data[[traj_cols['x'], traj_cols['y']]].values
-
-    if datetime:
-        times = data[traj_cols['datetime']].astype('datetime64[s]').astype(int).values
-    else:
-        # if timestamps, we change the values to seconds
-        first_timestamp = data[traj_cols['timestamp']].iloc[0]
-        timestamp_length = len(str(first_timestamp))
-
-        if timestamp_length > 10:
-            if timestamp_length == 13:
-                times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 3
-            elif timestamp_length == 19:
-                times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 9   
-        else:
-            times = data[traj_cols['timestamp']].values
-
-    n = len(data)
-
-    adjacency_matrix = {t: {} for t in times}
+# class UnionFind:
+#     def __init__(self, size):
+#         self.parent = list(range(size))
     
-    # Pairwise time differences (convert seconds to minutes)
-    time_diffs = np.abs(times[:, np.newaxis] - times) / 60.0
-
-    # Compute spatial distances
-    if long_lat:
-        distances = np.array([[_haversine_distance(coords[i], coords[j]) for j in range(n)] for i in range(n)])
-    else:
-        distances = np.sqrt((coords[:, 0][:, np.newaxis] - coords[:, 0])**2 + 
-                            (coords[:, 1][:, np.newaxis] - coords[:, 1])**2)
-
-    # Normalize distances
-    max_dist = np.max(distances) if np.max(distances) > 0 else 1
-    max_time = np.max(time_diffs) if np.max(time_diffs) > 0 else 1
-
-    distances /= max_dist
-    time_diffs /= max_time
-
-    # compute weighted combination
-    weighted_distances = alpha * distances + (1 - alpha) * time_diffs
-
-    # apply a threshold to keep only valid neighbors
-    threshold = alpha * dist_thresh / max_dist + (1 - alpha) * time_thresh / max_time
+#     def find(self, x):
+#         if self.parent[x] != x:
+#             self.parent[x] = self.find(self.parent[x])  # path compression
+#         return self.parent[x]
     
-    for i, t1 in enumerate(times):
-        for j, t2 in enumerate(times):
-            if weighted_distances[i, j] < threshold and i != j:
-                adjacency_matrix[t1][t2] = weighted_distances[i, j]
-    
-    return adjacency_matrix
+#     def union(self, x, y):
+#         self.parent[self.find(x)] = self.find(y)
 
-def _construct_mst(adjacency_matrix):
+# def _find_bursts(times, time_thresh, burst_col=False):
+#     '''
+#     TC: O(n^2)
+#     '''
+#     if isinstance(times, pd.Series):
+#         times = times.values
+#     elif not isinstance(times, np.ndarray):
+#         times = np.array(times)
+    
+#     n = len(times)
+    
+#     #TC: O(n^2)
+#     # Pairwise time differences
+#     time_diffs = np.abs(times[:, np.newaxis] - times).astype(int)
+    
+#     # Identify (i, j) pairs within the threshold
+#     within_time_thresh = np.triu(time_diffs <= (time_thresh * 60), k=1)
+#     i_idx, j_idx = np.where(within_time_thresh)
+    
+#     # Union-find to group connected timestamps
+#     uf = UnionFind(n)
+#     for i, j in zip(i_idx, j_idx):
+#         uf.union(i, j)
+
+#     # Assign unique burst labels to roots
+#     root_to_label = {}
+#     labels = []
+#     label_counter = 0
+
+#     # TC: O(log n)
+#     for i in range(n):
+#         root = uf.find(i)
+#         if root not in root_to_label:
+#             root_to_label[root] = label_counter
+#             label_counter += 1
+#         labels.append(root_to_label[root])
+
+#     if burst_col:
+#         return pd.DataFrame({"timestamp": times, "burst_label": labels})
+#     else:
+#         bursts = {}
+#         for ts, label in zip(times, labels):
+#             if label not in bursts:
+#                 bursts[label] = []
+#             bursts[label].append(ts)
+#         return bursts
+
+#     return labeled_bursts
+
+def _find_bursts(times, time_thresh, burst_col = False):
+    #TC: O(n^2)
+    times = np.array(times)
+    
+    # Pairwise time differences
+    # times[:, np.newaxis]: from shape (n,) -> to shape (n, 1) – a column vector
+    time_diffs = np.abs(times[:, np.newaxis] - times)
+    time_diffs = time_diffs.astype(int)
+    
+    # Filter by time threshold
+    within_time_thresh = np.triu(time_diffs <= (time_thresh * 60), k=1) # keep upper triangle
+    i_idx, j_idx = np.where(within_time_thresh)
+    
+    # Return a list of (timestamp1, timestamp2) tuples
+    time_pairs = [(times[i], times[j]) for i, j in zip(i_idx, j_idx)]
+
+    return time_pairs
+
+def _compute_core_distance(traj, time_pairs, min_samples = 2):
     """
-    - Uses Prim’s algorithm to construct a Minimum Spanning Tree (MST).
-    - Works with a dictionary-based adjacency matrix indexed by timestamps.
-    - The edges retain spatiotemporal weights computed earlier.
-    - Ensures that every point remains part of the same structure.
+    Calculate the core distance for each ping in traj.
 
     Parameters
     ----------
-    adjacency_matrix : dict of dict
-        A dictionary where keys are timestamps and values are dictionaries of {neighbor_timestamp: weight}.
+    traj : dataframe
+
+    time_pairs : tuples of timestamps that are close in time given time_thresh
+    
+    min_samples : int
+        used to calculate the core distance of a point p, where core distance of a point p 
+        is defined as the distance from p to its min_samples-th smallest nearest neighbor
+        (including itself).
 
     Returns
     -------
-    list of tuples
-        A list of MST edges in the format: (weight, timestamp1, timestamp2).
+    core_distances : dictionary of timestamps
+        {timestamp_1: core_distance_1, ..., timestamp_n: core_distance_n}
     """
-    timestamps = list(adjacency_matrix.keys())
-    mst_edges = []
-    visited = {t: False for t in timestamps}
-    pq = []
+    # it gives local density estimate: small core distance → high local density.
+    coords = traj[['x', 'y']].to_numpy() # TC: O(n)
+    timestamps = traj['timestamp'].to_numpy() # TC: O(n)
+    n = len(coords)
+    # get the index of timestamp in the arrays (for accessing their value later)
+    timestamp_indices = {ts: idx for idx, ts in enumerate(timestamps)} # TC: O(n)
 
-    def find_next_start():
-        for t in timestamps:
-            if not visited[t] and adjacency_matrix[t]:
-                return t
-        return None
+    # Build neighbor map from time_pairs
+    neighbors = {ts: set() for ts in timestamps}  # TC: O(n)
+    for t1, t2 in time_pairs:
+        neighbors[t1].add(t2)
+        neighbors[t2].add(t1)
+    
+    core_distances = {}
+    
+    for i in range(n): # TC: O(n^2 log n)
+        u = timestamps[i]
+        allowed_neighbors = neighbors[u]
+        dists = np.full(n, np.inf)
+        dists[i] = 0  # distance to itself
+        
+        for v in allowed_neighbors:
+            j = timestamp_indices.get(v)
+            if j is not None:
+                dists[j] = np.sqrt(np.sum((coords[i] - coords[j]) ** 2))
+        
+        sorted_dists = np.sort(dists) # TC: O(nlogn)
+        core_distances[u] = sorted_dists[min_samples - 1]
 
-    start_node = find_next_start()
+    return core_distances
 
-    while start_node is not None:
-        visited[start_node] = True
-        for neighbor, weight in adjacency_matrix[start_node].items():
-            heappush(pq, (weight, start_node, neighbor))
+# Basic compute_core_distance
+# def compute_core_distance(traj, min_samples = 2):
+#     """
+#     Calculate the core distance for each ping in traj.
 
-        while pq:
-            weight, u, v = heappop(pq)
+#     Parameters
+#     ----------
+#     traj : dataframe
+    
+#     min_samples : int
+#         used to calculate the core distance of a point p, where core distance of a point p 
+#         is defined as the distance from p to its min_samples-th smallest nearest neighbor
+#         (including itself).
 
-            # only skip edges where both nodes are visited
-            if visited[u] and visited[v]:
-                continue
+#     Returns
+#     -------
+#     core_distances : dictionary of timestamps
+#         {timestamp_1: core_distance_1, ..., timestamp_n: core_distance_n}
+#     """
+#     # it gives local density estimate: small core distance → high local density.
+#     coords = traj[['x', 'y']].to_numpy()
+#     timestamps = traj['timestamp'].to_numpy()
+#     n = len(coords)
+#     core_distances = {}
 
-            mst_edges.append((weight, u, v))
+#     # TC: 0(n^2)
+#     for i in range(n):
+#         # pairwise euclidean distances
+#         dists = np.sqrt(np.sum((coords - coords[i]) ** 2, axis=1))
+#         # sort distances and get min_samples-th smallest
+#         sorted_dists = np.sort(dists)
+#         core_distance = sorted_dists[min_samples - 1]
+#         core_distances[timestamps[i]] = core_distance
 
-            # visit the unvisited node
-            next_node = v if not visited[v] else u
-            visited[next_node] = True
+#     return core_distances
 
-            for neighbor, edge_weight in adjacency_matrix[next_node].items():
-                if not visited[neighbor]:
-                    heappush(pq, (edge_weight, next_node, neighbor))
-
-        start_node = find_next_start()
-
-    return mst_edges
-
-def _extract_hierarchy(mst_edges, all_timestamps):
+def _compute_mrd(traj, core_distances):
     """
-    - Sorts MST edges by decreasing weight (weakest connections are removed first).
-    - Start with individual points as their own clusters.
-    - Iteratively merges clusters, creating a tree-like structure (dendrogram).
-    - Assigns `-1` to completely isolated timestamps (i.e., those missing from MST).
+    Mutual Reachability Distance (MRD) of point p and point q is the maximum of: 
+        cordistance of p, core distance of q, and the distance between p and q.
+    MRD graph will have O(n^2) edges, one between every pair of points.
+
+    Parameters
+    ----------
+    traj : dataframe
+    
+    core_distances : dict
+        Keys are (timestamp1, timestamp2), values are mutual reachability distances.
+
+    Returns
+    -------
+    mrd_graph : dictionary of timestamp pairs
+        {(timestamp1, timestamp2): mrd_value}.
+    """
+    # edges between dense regions are favored, and sparse regions have larger edge weights
+    # MRD will inflate distances so that sparse areas are less likely to form clusters
+    # Even if two points are physically close, we shouldn’t treat them as equally “reachable”
+    # because they live in very different local densities
+    coords = traj[['x', 'y']].to_numpy()
+    timestamps = traj['timestamp'].to_numpy()
+    n = len(coords)
+    mrd_graph = {}
+
+    # TC: 0(n^2)
+    for i in range(n):
+        for j in range(i + 1, n):
+            # euclidean distance between point i and j
+            dist = np.sqrt(np.sum((coords[j] - coords[i]) ** 2))
+            core_i = core_distances[timestamps[i]]
+            core_j = core_distances[timestamps[j]]
+
+            mrd_graph[(timestamps[i], timestamps[j])] = max(core_i, core_j, dist)
+
+    return mrd_graph
+
+
+def mst(mrd_graph):
+    """
+    Compute the MST using Prim's algorithm from mutual reachability distances.
+    The MST retains the minimum set of edges that connect all points with the lowest maximum distances.
+    The MST contains only (n - 1) edges.
     
     Parameters
     ----------
-    mst_edges : list of tuples
-        A list of edges in the format: (weight, timestamp1, timestamp2).
-    all_timestamps : set
-        The full set of timestamps that should be included in the clustering process.
-    
+    mrd : dict
+        Keys are (timestamp1, timestamp2), values are mutual reachability distances.
+
     Returns
     -------
-    np.ndarray
-        A hierarchical linkage matrix representing the clustering process.
-    dict
-        A dictionary mapping timestamps to their cluster labels (including `-1` for noise).
+    mst : list of tuples
+        (t1, t2, mrd_value) for the MST.
     """
+    # {t1: (t2, mrd(t1,t2)),
+    #  t2: (t1, mrd(t1,t2)), ...}
+    graph = defaultdict(list)
+    for (t1, t2), mrd in mrd_graph.items():
+        graph[t1].append((t2, mrd))
+        graph[t2].append((t1, mrd))
 
-    # sort edges by descending weight (removing weak connections first)
-    sorted_edges = sorted(mst_edges, reverse=True, key=lambda x: x[0])
+    visited = set()
+    mst = []
+    start_node = next(iter(graph)) # gets the first key from the graph (starting node)
+    min_heap = [(0, start_node, start_node)]  # (mrd, from, to)
 
-    # initialize all timestamps as their own cluster
-    clusters = {t: t for t in all_timestamps}
-    cluster_tree = []
-    cluster_count = max(all_timestamps) + 1
+    while min_heap and len(visited) < len(graph):
+        mrd, u, v = heapq.heappop(min_heap)
+        
+        if v in visited:
+            continue
+        
+        visited.add(v)
+        
+        if u != v:
+            mst.append((u, v, mrd))
+        
+        for neighbor, next_weight in graph[v]:
+            if neighbor not in visited:
+                heapq.heappush(min_heap, (next_weight, v, neighbor))
 
-    for weight, u, v in sorted_edges:
-        root_u, root_v = clusters[u], clusters[v]
+    return mst
 
-        # only merge if they belong to different clusters
-        if root_u != root_v:
-            new_cluster = cluster_count
-            cluster_count += 1
+def mst_ext(mst, core_distances):
+    """
+    Add self-edges to MST with weights equal to each point's core distance.
+    """
+    self_edges = [(ts, ts, core_distances[ts]) for ts in core_distances]
+    return mst + self_edges
 
-            # update all points in both clusters to the new cluster ID
-            for key in clusters.keys():
-                if clusters[key] in (root_u, root_v):
-                    clusters[key] = new_cluster
-
-            # compute cluster size
-            cluster_size = sum(1 for x in clusters.values() if x == new_cluster)
-
-            # append to the cluster tree
-            cluster_tree.append((root_u, root_v, weight, cluster_size))
-
-    # identify timestamps that were never merged (completely isolated)
-    timestamps_in_mst = set()
-    for _, u, v in mst_edges:
-        timestamps_in_mst.update([u, v])
-
-    isolated_timestamps = all_timestamps - timestamps_in_mst
-
-    for t in isolated_timestamps:
-        clusters[t] = -1
-
-    return np.array(cluster_tree), clusters
 
 def hierarchical_temporal_dbscan(traj, time_thresh, dist_thresh, min_cluster_size = 10, traj_cols=None, complete_output=False, **kwargs):
     data = traj.copy()
