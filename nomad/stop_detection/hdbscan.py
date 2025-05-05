@@ -17,6 +17,21 @@ from nomad.stop_detection import utils
 ##########################################
 ########        HDBSCAN           ########
 ##########################################
+
+def find_bursts(times, time_thresh, burst_col = False):
+    # Pairwise time differences
+    time_diffs = np.abs(times[:, np.newaxis] - times)
+    time_diffs = time_diffs.astype(int)
+    
+    # Filter by time threshold
+    within_time_thresh = np.triu(time_diffs <= (time_thresh * 60), k=1)
+    i_idx, j_idx = np.where(within_time_thresh)
+    
+    # Return a list of (timestamp1, timestamp2) tuples
+    time_pairs = [(times[i], times[j]) for i, j in zip(i_idx, j_idx)]
+    
+    return time_pairs
+    
 def _find_neighbors_hdbscan(data, time_thresh, dist_thresh, long_lat, datetime, traj_cols, alpha=0.5):
     """
     - Computes pairwise distances between points based on space & time.
