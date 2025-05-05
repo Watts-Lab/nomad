@@ -375,6 +375,7 @@ def cluster_metrics(stop_table, agent, city):
     # Count number of missed and split stops
     num_missed = metrics_df[metrics_df['count'] == 0].shape[0]
     num_split = metrics_df[metrics_df['count'] > 1].shape[0]
+    prop_split = num_split / (n_stops - num_missed)
 
     metrics = {
         "Recall": float(recall),
@@ -385,6 +386,7 @@ def cluster_metrics(stop_table, agent, city):
         "Prop Stops Merged": float(prop_stops_merged),
         "Weighted Stop Merging": float(weighted_merging),
         "Split": int(num_split),
+        "Prop Split": float(prop_split),
         "Stop Count": int(n_stops)
     }
 
