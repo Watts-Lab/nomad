@@ -3,11 +3,12 @@ import geopandas as gpd
 import numpy as np
 from shapely.geometry import Point
 from zoneinfo import ZoneInfo
+import warnings
 
 import pdb
 
 
-def poi_map(traj, poi_table, traj_cols=None, **kwargs):
+def poi_map(traj, poi_table, traj_cols=None, max_distance=1, **kwargs):
     """
     Map pings in the trajectory to the POI table.
 
@@ -30,11 +31,29 @@ def poi_map(traj, poi_table, traj_cols=None, **kwargs):
 
     # TODO traj_cols support
 
+    # Build pings GeoDataFrame
     pings_df = traj[['x', 'y']].copy()
     pings_df["pings_geometry"] = pings_df.apply(lambda row: Point(row["x"], row["y"]), axis=1)
     pings_df = gpd.GeoDataFrame(pings_df, geometry="pings_geometry", crs=poi_table.crs)
+    
+    # First spatial join (within)
     pings_df = gpd.sjoin(pings_df, poi_table, how="left", predicate="within")
-    pings_df["building_id"] = pings_df["building_id"].where(pings_df["building_id"].notna(), None)
+    
+    # Identify unmatched pings
+    unmatched_mask = pings_df["building_id"].isna()
+    unmatched_pings = pings_df[unmatched_mask].drop(columns=["building_id", "index_right"])
+    
+    if not unmatched_pings.empty:
+        # Nearest spatial join for unmatched pings
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="Geometry is in a geographic CRS.*")
+            nearest = gpd.sjoin_nearest(unmatched_pings, poi_table, how="left", max_distance=max_distance)
+
+        # Keep only the first match for each original ping
+        nearest = nearest.groupby(nearest.index).first()
+
+        # Update original DataFrame with nearest matches
+        pings_df.loc[unmatched_mask, "building_id"] = nearest["building_id"].values
 
     return pings_df["building_id"]
 
