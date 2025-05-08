@@ -346,10 +346,6 @@ def cluster_metrics(stop_table, agent, city):
             "prop_merged": mm / (tp + fn) if (tp + fn) != 0 else 0,
         })
 
-    # TODO: compute trip-related metrics
-    # trips = metrics_data[0]
-    # metrics_df = pd.DataFrame(metrics_data[1:])
-
     metrics_df = pd.DataFrame(metrics_data)
     metrics_df = diary.merge(metrics_df, on=['stop_id'], how='right')
     metrics_df = metrics_df.merge(stop_counts, on=['stop_id'], how='left')
@@ -375,7 +371,7 @@ def cluster_metrics(stop_table, agent, city):
     # Count number of missed and split stops
     num_missed = metrics_df[metrics_df['count'] == 0].shape[0]
     num_split = metrics_df[metrics_df['count'] > 1].shape[0]
-    prop_split = num_split / (n_stops) #if (n_stops - num_missed > 0) else np.nan
+    prop_split = num_split / n_stops # (n_stops - num_missed) if (n_stops - num_missed > 0) else np.nan
 
     metrics = {
         "Recall": float(recall),
