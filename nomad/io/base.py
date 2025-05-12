@@ -9,6 +9,7 @@ import sys
 import os
 import pyarrow.compute as pc
 import pyarrow.dataset as ds
+import pyarrow as pa
 from nomad.constants import DEFAULT_SCHEMA
 import numpy as np
 import geopandas as gpd
@@ -605,7 +606,7 @@ def _process_datetime_column(df, col, parse_dates, mixed_timezone_behavior, fixe
             if offset is not None and not offset.isna().all():
                 df[traj_cols['tz_offset']] = offset.astype("Int64") #overwrite offset?
 
-        if is_object_dtype(df[col].dtype) and _has_mixed_timezones(df[col]):
+        if parse_dates and is_object_dtype(df[col].dtype) and _has_mixed_timezones(df[col]):
              warnings.warn(f"The '{col}' column has mixed timezones after processing.")
         elif is_datetime64_any_dtype(df[col].dtype) and df[col].dt.tz is None:
              if offset is None or offset.isna().any():
@@ -673,6 +674,23 @@ def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_f
                 df[col] = df[col].astype("str")
 
     return df
+
+def table_columns(filepath, format="csv", include_schema=False):
+    """
+    Return column names (default) or the full schema of a CSV/parquet source.
+    """
+    assert format in {"csv", "parquet"}
+
+    if isinstance(filepath, list):
+        datasets = [ds.dataset(p, format=format, partitioning="hive") for p in filepath]
+        schema = ds.UnionDataset(schema=datasets[0].schema, children=datasets).schema
+    elif format == "parquet" or os.path.isdir(filepath):
+        schema = ds.dataset(filepath, format=format, partitioning="hive").schema
+    else:
+        header = pd.read_csv(filepath, nrows=0)
+        return header.dtypes if include_schema else header.columns
+
+    return schema if include_schema else pd.Index(schema.names)
 
 def from_df(df, traj_cols=None, parse_dates=True, mixed_timezone_behavior="naive", fixed_format=None, **kwargs):
     """
@@ -750,129 +768,173 @@ def from_file(filepath, format="csv", traj_cols=None, parse_dates=True,
     """
     assert format in ["csv", "parquet"]
 
-    if isinstance(filepath, list):
-        datasets = [ds.dataset(path, format=format, partitioning="hive") for path in filepath]
-        dataset = ds.UnionDataset(schema=datasets[0].schema, children=datasets)
-        column_names = dataset.schema.names
-    elif format == 'parquet' or os.path.isdir(filepath):
-        dataset = ds.dataset(filepath, format=format, partitioning="hive")
-        column_names = dataset.schema.names
-    else:
-        column_names = pd.read_csv(filepath, nrows=0).columns
-
+    column_names = table_columns(filepath, format)
     traj_cols = _parse_traj_cols(column_names, traj_cols, kwargs)
 
     _has_spatial_cols(column_names, traj_cols)
     _has_time_cols(column_names, traj_cols)
-
-    if format == "csv" and not os.path.isdir(filepath):
-        read_csv_kwargs = {k: v for k, v in kwargs.items() if k in inspect.signature(pd.read_csv).parameters}
+    
+    if format == "csv" and isinstance(filepath, str) and not os.path.isdir(filepath):
+        read_csv_kwargs = {
+            k: v
+            for k, v in kwargs.items()
+            if k in inspect.signature(pd.read_csv).parameters
+        }
         df = pd.read_csv(filepath, **read_csv_kwargs)
     else:
-        df = dataset.to_table().to_pandas()
+        df = (
+            ds.dataset(filepath, format=format, partitioning="hive")
+            .to_table(columns=list(column_names))
+            .to_pandas()
+        )
 
-    return _cast_traj_cols(df, traj_cols, parse_dates=parse_dates,
-                           mixed_timezone_behavior=mixed_timezone_behavior,
-                           fixed_format=fixed_format)
+    return _cast_traj_cols(
+        df,
+        traj_cols=traj_cols,
+        parse_dates=parse_dates,
+        mixed_timezone_behavior=mixed_timezone_behavior,
+        fixed_format=fixed_format,
+    )
 
-        
+def sample_users(
+    filepath,
+    format: str = "csv",
+    size: float | int = 1.0,
+    traj_cols: dict | None = None,
+    seed: int | None = None,
+    **kwargs,
+):
+    assert format in {"csv", "parquet"}
 
-def sample_users(filepath, format="csv", frac_users=1.0, traj_cols=None, **kwargs):
-    """
-    Samples unique user IDs from a specified file path or list of paths.
-
-    Parameters
-    ----------
-    filepath : str or list of str
-        Path or list of paths to the file(s) or directories containing the data.
-    format : str, optional
-        The format of the data files, either 'csv' or 'parquet'.
-    frac_users : float, optional
-        Fraction of users to sample, by default 1.0 (all users).
-    traj_cols : dict, optional
-        Mapping of trajectory column names, including 'user_id'.
-    **kwargs :
-        Additional arguments for reading CSV files, passed to pandas read_csv.
-
-    Returns
-    -------
-    pd.Series
-        A Series of sampled user IDs.
-    """
-    assert format in ["csv", "parquet"]
-
-    # Resolve trajectory column mapping
-    traj_cols = _parse_traj_cols(_get_columns_from_source(filepath, format), traj_cols, kwargs)
-    uid_col = traj_cols['user_id']
-
-    if isinstance(filepath, list):
-        datasets = [ds.dataset(path, format=format, partitioning="hive") for path in filepath]
-        dataset = ds.UnionDataset(schema=datasets[0].schema, children=datasets)
-    elif format == 'parquet' or os.path.isdir(filepath):
-        dataset = ds.dataset(filepath, format=format, partitioning="hive")
-    else:
-        df = pd.read_csv(filepath, usecols=[uid_col])
-        user_ids = df[uid_col].unique()
-        return user_ids.sample(frac=frac_users) if frac_users < 1.0 else user_ids
-
-    _has_user_cols(dataset.schema.names, traj_cols)
-
-    user_ids = pc.unique(dataset.to_table(columns=[uid_col])[uid_col]).to_pandas()
-    return user_ids.sample(frac=frac_users) if frac_users < 1.0 else user_ids
-
-def sample_from_file(filepath, users, format="csv", traj_cols=None,
-                     parse_dates=True, mixed_timezone_behavior="naive",
-                     fixed_format=None, **kwargs):
-    """
-    Loads data for specified users from a file path or list of paths.
-
-    Parameters
-    ----------
-    filepath : str or list of str
-        Path or list of paths to the file(s) or directories containing the data.
-    users : list
-        List of user IDs to filter for in the dataset.
-    format : str, optional
-        The format of the data files, either 'csv' or 'parquet'.
-    traj_cols : dict, optional
-        Mapping of trajectory column names, including 'user_id'.
-    **kwargs :
-        Additional arguments for reading CSV files, passed to pandas read_csv.
-
-    Returns
-    -------
-    pd.DataFrame
-        A DataFrame with data filtered to specified users and cast trajectory columns.
-    """
-    assert format in ["csv", "parquet"]
-
-    if isinstance(filepath, list):
-        datasets = [ds.dataset(path, format=format, partitioning="hive") for path in filepath]
-        dataset = ds.UnionDataset(schema=datasets[0].schema, children=datasets)
-        column_names = dataset.schema.names
-    elif format == 'parquet' or os.path.isdir(filepath):
-        dataset = ds.dataset(filepath, format=format, partitioning="hive")
-        column_names = dataset.schema.names
-    else:
-        column_names = pd.read_csv(filepath, nrows=0).columns
-
+    column_names = table_columns(filepath, format)
     traj_cols = _parse_traj_cols(column_names, traj_cols, kwargs)
-    uid_col = traj_cols['user_id']
-
     _has_user_cols(column_names, traj_cols)
+    uid_col = traj_cols["user_id"]
+
+    if format == "csv" and isinstance(filepath, str) and not os.path.isdir(filepath):
+        user_ids = (
+            pd.read_csv(filepath, usecols=[uid_col])[uid_col]
+            .drop_duplicates()
+        )
+    else:
+        ds_obj   = ds.dataset(filepath, format=format, partitioning="hive")
+        user_ids = pc.unique(ds_obj.to_table(columns=[uid_col])[uid_col]).to_pandas()
+
+    if isinstance(size, int):
+        return user_ids.sample(n=min(size, len(user_ids)), random_state=seed, replace=False)
+    if 0.0 < size <= 1.0:
+        return user_ids.sample(frac=size, random_state=seed, replace=False)
+    raise ValueError("size must be an int ≥ 1 or a float in (0, 1].")
+
+
+def sample_from_file(
+    filepath,
+    users: list | None = None,
+    *,
+    format: str = "csv",
+    traj_cols: dict | None = None,
+    frac_users: float = 1.0,
+    frac_records: float = 1.0,
+    seed: int | None = None,
+    parse_dates: bool = True,
+    mixed_timezone_behavior: str = "naive",
+    fixed_format: str | None = None,
+    **kwargs,
+):
+    assert format in {"csv", "parquet"}
+
+    column_names = table_columns(filepath, format)
+    traj_cols = _parse_traj_cols(column_names, traj_cols, kwargs)
+
+    need_user_col = (users is not None) or (frac_users < 1.0)
+    if need_user_col:
+        _has_user_cols(column_names, traj_cols)
+        uid_col = traj_cols["user_id"]
+
     _has_spatial_cols(column_names, traj_cols)
     _has_time_cols(column_names, traj_cols)
 
-    if format == "csv" and not os.path.isdir(filepath):
-        df = pd.read_csv(filepath)
-        df = df[df[uid_col].isin(users)]
-    else:
-        df = dataset.to_table(
-            filter=ds.field(uid_col).isin(users),
-            columns=None
-        ).to_pandas()
+    if users is None and frac_users < 1.0:
+        users = sample_users(
+            filepath,
+            format=format,
+            size=frac_users,
+            traj_cols=traj_cols,
+            seed=seed,
+            **kwargs,
+        )
 
-    return _cast_traj_cols(df, traj_cols=traj_cols,
-                           parse_dates=parse_dates,
-                           mixed_timezone_behavior=mixed_timezone_behavior,
-                           fixed_format=fixed_format)
+    if format == "csv" and isinstance(filepath, str) and not os.path.isdir(filepath):
+        df = pd.read_csv(filepath)
+        if users is not None:
+            df = df[df[uid_col].isin(users)]
+    else:
+        dataset = ds.dataset(filepath, format=format, partitioning="hive")
+        if users is None:
+            df = dataset.to_table().to_pandas()
+        else:
+            df = dataset.to_table(
+                filter=ds.field(uid_col).isin(users), columns=list(column_names)
+            ).to_pandas()
+
+    if 0.0 < frac_records < 1.0:
+        df = df.sample(frac=frac_records, random_state=seed)
+
+    return _cast_traj_cols(
+        df,
+        traj_cols=traj_cols,
+        parse_dates=parse_dates,
+        mixed_timezone_behavior=mixed_timezone_behavior,
+        fixed_format=fixed_format,
+    )
+
+def to_file(df, path, format="csv",
+            traj_cols=None, output_traj_cols=None,
+            partition_by=None, filesystem=None,
+            use_offset=False,
+            **kwargs):
+    assert format in {"csv", "parquet"}
+
+    traj_cols = _parse_traj_cols(df.columns, traj_cols, kwargs)
+    _has_spatial_cols(df.columns, traj_cols)
+    _has_time_cols(df.columns, traj_cols)
+
+    if output_traj_cols == "default":
+        output_traj_cols = DEFAULT_SCHEMA
+    if output_traj_cols is None:
+        output_traj_cols = traj_cols
+
+    if use_offset and traj_cols["tz_offset"] not in df.columns:
+        raise ValueError(f"use_offset=True but tz_offset column '{traj_cols['tz_offset']}' not found in df")
+
+    for k in ["datetime", "start_datetime", "end_datetime"]:
+        if k in traj_cols and traj_cols[k] in df.columns:
+            col = df[traj_cols[k]]
+            if is_string_dtype(col) or isinstance(col.dtype, StringDtype):
+                continue
+            if is_datetime64_any_dtype(col):
+                if use_offset and col.dt.tz is None:
+                    df[traj_cols[k]] = _naive_to_localized_str(col, df[traj_cols["tz_offset"]])
+                else:
+                    df[traj_cols[k]] = col.astype(str)
+            elif is_object_dtype(col) and _is_series_of_timestamps(col):
+                if use_offset and all(ts.tz is None for ts in col.dropna()):
+                    df[traj_cols[k]] = _naive_to_localized_str(col, df[traj_cols["tz_offset"]])
+                else:
+                    df[traj_cols[k]] = col.astype(str)
+
+    df = df.rename(columns={traj_cols[k]: output_traj_cols[k]
+                            for k in traj_cols
+                            if k in output_traj_cols and traj_cols[k] in df.columns})
+
+    other_kwargs = {k: v for k, v in kwargs.items() if k not in traj_cols}
+    if format == "csv":
+        df.to_csv(path, index=False, **other_kwargs)
+    else:
+        table = pa.Table.from_pandas(df, preserve_index=False)
+        ds.write_dataset(table, base_dir=str(path),
+                         format="parquet",
+                         partitioning=partition_by,
+                         partitioning_flavor='hive',
+                         filesystem=filesystem,
+                         **other_kwargs)

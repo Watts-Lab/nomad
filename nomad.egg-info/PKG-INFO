@@ -8,7 +8,7 @@ Author-email: fbarrer@sas.upenn.edu, thomli@sas.upenn.edu, fedde@dtu.dk, amt00@s
 Classifier: Programming Language :: Python :: 3
 Classifier: License :: OSI Approved :: MIT License
 Classifier: Operating System :: OS Independent
-Requires-Python: >=3.10
+Requires-Python: >=3.9
 Requires-Dist: pandas
 Requires-Dist: geopandas
 Requires-Dist: numpy

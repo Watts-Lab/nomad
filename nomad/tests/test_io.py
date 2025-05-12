@@ -2,9 +2,11 @@ import pytest
 import warnings
 from pathlib import Path
 import pandas as pd
+from pandas.testing import assert_series_equal, assert_frame_equal
 import numpy as np
 import geopandas as gpd
 import pygeohash as gh
+import pyarrow.dataset as ds
 import pdb
 from nomad.io import base as loader
 from nomad.filters import to_timestamp
@@ -22,6 +24,17 @@ _stop_col_variation_keys = [
     "alt_dt_start_end", "alt_dt_start_duration",
     "alt_ts_start_end", "alt_ts_start_duration"
 ]
+
+
+@pytest.fixture
+def io_sources():
+    root = Path(__file__).resolve().parent.parent / "data"
+    return [
+        (root / "gc_sample.csv",           "csv"),     # single CSV
+        (root / "single_parquet",          "parquet"), # single‐file Parquet dir
+        (root / "partitioned_csv",         "csv"),     # hive-partitioned CSV dir
+        (root / "partitioned_parquet",     "parquet"), # hive-partitioned Parquet dir
+    ]
 
 
 @pytest.fixture
@@ -212,8 +225,101 @@ def test_from_df_values_types_na(value_na_input_df, expected_value_na_output_df)
     assert loader._is_traj_df(result, traj_cols=final_traj_cols_for_check, parse_dates=True), \
         "Resulting DataFrame failed _is_traj_df validation in NA test"
 
-# from object fails if no spatial or temporal columns are provided (and no defaults)
 
-# from_file works on data samples, i.e. _is_traj_df for pandas/pyarrow reads
+@pytest.mark.parametrize("idx", range(4), ids=["csv-file", "parquet-file",
+                                               "csv-hive", "parquet-hive"])
+def test_table_columns(idx, io_sources):
+    path, fmt = io_sources[idx]
 
-# from_file works with pyspark/pyarrow (without instantiating) until _is_traj_df on data sample 3 
+    if fmt == "csv":
+        csv_file = next(path.rglob("*.csv")) if path.is_dir() else path
+        expected_cols = list(pd.read_csv(csv_file, nrows=0).columns)
+    else:  # parquet
+        expected_cols = list(ds.dataset(path, format="parquet",
+                                        partitioning="hive").schema.names)
+
+    cols = loader.table_columns(path, format=fmt)
+    assert list(cols) == expected_cols
+
+
+@pytest.mark.parametrize("bad_mapping", [False, True])
+def test_sampling_pipeline(io_sources, bad_mapping):
+    csv_path, _ = io_sources[0]  
+
+    traj_cols = dict(
+        user_id   = "uid",
+        timestamp = "timestamp",
+        latitude  = "latitude",
+        longitude = "longitude",
+    )
+
+    if bad_mapping:
+        with pytest.raises(Exception):
+            loader.sample_users(csv_path, format="csv", user_id="no_such_column")
+        return
+
+    ids = loader.sample_users(csv_path, format="csv",
+                              user_id="uid", sample=0.20)
+
+    df = loader.sample_from_file(csv_path, users=ids,
+                                 format="csv", traj_cols=traj_cols)
+
+    assert loader._is_traj_df(df, traj_cols=traj_cols, parse_dates=True)
+
+    # compare sampled IDs with IDs present in result dataframe
+    result_ids = pd.Series(df["uid"].unique()).sort_values(ignore_index=True)
+    expected_ids = ids.sort_values(ignore_index=True)
+    assert_series_equal(result_ids, expected_ids, check_names=False)
+
+@pytest.mark.parametrize("bad_alias", [False, True])
+def test_sampling_pipeline(io_sources, bad_alias):
+    csv_path, _ = io_sources[0]
+
+    if bad_alias:
+        with pytest.raises(Exception):
+            loader.sample_users(csv_path, format="csv", user_id="not_there")
+        return
+
+    ids = loader.sample_users(csv_path, format="csv",
+                              user_id="uid", size=0.25, seed=123)
+
+    df = loader.sample_from_file(csv_path,
+                                 users=None,          # let it sample again
+                                 format="csv",
+                                 user_id="uid",
+                                 frac_users=0.25,
+                                 seed=123)
+
+    assert loader._is_traj_df(df, traj_cols={"user_id": "uid"}, parse_dates=True)
+    assert_series_equal(
+        pd.Series(sorted(df["uid"].unique())),
+        pd.Series(sorted(ids)),
+        check_names=False,
+    )
+
+def test_from_file_alias_equivalence_csv(io_sources):
+    path, fmt = io_sources[0]                 # gc_sample.csv
+
+    # supply ONLY keyword aliases (no traj_cols)
+    alias_kwargs = dict(
+        user_id="uid",
+        timestamp="timestamp",
+        latitude="latitude",
+        longitude="longitude",
+        parse_dates=True,
+    )
+
+    df_via_file = loader.from_file(path, format=fmt, **alias_kwargs)
+
+    raw = pd.read_csv(path)                   # plain pandas load
+    df_via_df   = loader.from_df(raw, **alias_kwargs)
+
+    assert_frame_equal(df_via_file, df_via_df, check_dtype=True)
+    assert loader._is_traj_df(df_via_file,
+                              traj_cols={k: v for k, v in alias_kwargs.items()
+                                                   if k in {"user_id",
+                                                            "timestamp",
+                                                            "latitude",
+                                                            "longitude"}},
+                              parse_dates=True)
+
