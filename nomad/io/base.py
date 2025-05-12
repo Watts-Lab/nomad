@@ -587,11 +587,11 @@ def _process_datetime_column(df, col, parse_dates, mixed_timezone_behavior, fixe
     """Processes a datetime column: parses strings, handles timezones, adds offset."""
     dtype = df[col].dtype
 
-    if is_datetime64_any_dtype(dtype):
+    if is_datetime64_any_dtype(df[col]):
         if df[col].dt.tz is None:
             warnings.warn(f"The '{col}' column is timezone-naive. Consider localizing or using unix timestamps.")
 
-    elif is_string_dtype(dtype) or isinstance(dtype, StringDtype):
+    elif is_string_dtype(df[col]) or isinstance(df[col], StringDtype):
         parsed, offset = _custom_parse_date(
             df[col], parse_dates=parse_dates,
             mixed_timezone_behavior=mixed_timezone_behavior,
@@ -672,7 +672,6 @@ def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_f
             col = traj_cols[key]
             if not is_string_dtype(df[col].dtype):
                 df[col] = df[col].astype("str")
-
     return df
 
 def table_columns(filepath, format="csv", include_schema=False):
@@ -773,8 +772,8 @@ def from_file(filepath, format="csv", traj_cols=None, parse_dates=True,
 
     _has_spatial_cols(column_names, traj_cols)
     _has_time_cols(column_names, traj_cols)
-    
-    if format == "csv" and isinstance(filepath, str) and not os.path.isdir(filepath):
+
+    if format == "csv" and not isinstance(filepath, (list, tuple)) and not os.path.isdir(filepath):
         read_csv_kwargs = {
             k: v
             for k, v in kwargs.items()
@@ -787,7 +786,6 @@ def from_file(filepath, format="csv", traj_cols=None, parse_dates=True,
             .to_table(columns=list(column_names))
             .to_pandas()
         )
-
     return _cast_traj_cols(
         df,
         traj_cols=traj_cols,
@@ -811,7 +809,7 @@ def sample_users(
     _has_user_cols(column_names, traj_cols)
     uid_col = traj_cols["user_id"]
 
-    if format == "csv" and isinstance(filepath, str) and not os.path.isdir(filepath):
+    if format == "csv" and not isinstance(filepath, (list, tuple)) and not os.path.isdir(filepath):
         user_ids = (
             pd.read_csv(filepath, usecols=[uid_col])[uid_col]
             .drop_duplicates()
@@ -830,7 +828,6 @@ def sample_users(
 def sample_from_file(
     filepath,
     users: list | None = None,
-    *,
     format: str = "csv",
     traj_cols: dict | None = None,
     frac_users: float = 1.0,
@@ -864,7 +861,7 @@ def sample_from_file(
             **kwargs,
         )
 
-    if format == "csv" and isinstance(filepath, str) and not os.path.isdir(filepath):
+    if format == "csv" and not isinstance(filepath, (list, tuple)) and not os.path.isdir(filepath):
         df = pd.read_csv(filepath)
         if users is not None:
             df = df[df[uid_col].isin(users)]
@@ -893,6 +890,7 @@ def to_file(df, path, format="csv",
             partition_by=None, filesystem=None,
             use_offset=False,
             **kwargs):
+    df = df.copy()
     assert format in {"csv", "parquet"}
 
     traj_cols = _parse_traj_cols(df.columns, traj_cols, kwargs)
@@ -910,7 +908,7 @@ def to_file(df, path, format="csv",
     for k in ["datetime", "start_datetime", "end_datetime"]:
         if k in traj_cols and traj_cols[k] in df.columns:
             col = df[traj_cols[k]]
-            if is_string_dtype(col) or isinstance(col.dtype, StringDtype):
+            if is_string_dtype(col) or isinstance(col, StringDtype):
                 continue
             if is_datetime64_any_dtype(col):
                 if use_offset and col.dt.tz is None:

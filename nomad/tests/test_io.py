@@ -323,3 +323,62 @@ def test_from_file_alias_equivalence_csv(io_sources):
                                                             "longitude"}},
                               parse_dates=True)
 
+
+# ---------------------------------------------------------------------------
+# Round-trip test for the writer/reader pipeline
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("fmt", ["csv", "parquet"], ids=["writer-csv", "writer-parquet"])
+def test_to_file_roundtrip(tmp_path, fmt):
+    """
+    Build a minimal trajectory DataFrame, write it with nomad.io.base.to_file,
+    read it back with nomad.io.base.from_file, and verify that values & dtypes
+    survive the round-trip.  For Parquet we partition by 'date' to check Hive
+    partition writing; CSV is a single file.
+    """
+
+    # ------------------------------------------------------------------ build
+    df = pd.DataFrame({
+        "user_id":   pd.Series(["A", "B", "A", "B"]),
+        "timestamp": pd.Series([1_609_459_200, 1_609_459_260,
+                                1_609_459_320, 1_609_459_380]),
+        "latitude":  pd.Series([40.0, 41.0, 40.1, 41.1]),
+        "longitude": pd.Series([-75.0, -75.1, -75.2, -75.3]),
+        "tz_offset": pd.Series([0, 0, 0, 0]),
+    })
+    # derive a date partition column (string, not categorical) ----------------
+    dt = pd.to_datetime(df["timestamp"], unit="s").dt.tz_localize("UTC")
+    df["date"] = dt.dt.strftime("%Y-%m-%d").astype(str)
+    df["datetime"] = dt.astype(str)
+    df = loader.from_df(df, parse_dates=True)
+
+    # ------------------------------------------------------------------ write
+    if fmt == "csv":
+        out_path = tmp_path / "trip.csv"
+        loader.to_file(df, out_path, format="csv")
+    else:                                           # parquet (hive-partition)
+        out_path = tmp_path / "trip_parquet"
+        loader.to_file(df, out_path, format="parquet",
+                       partition_by=["date"])
+
+    # ------------------------------------------------------------------ read
+    df_round = loader.from_file(out_path, format=fmt, parse_dates=True)
+
+    # sanity: validate as traj DF (date is extra, not required) --------------
+    assert loader._is_traj_df(
+        df_round,
+        traj_cols={"user_id": "user_id",
+                   "timestamp": "timestamp",
+                   "latitude": "latitude",
+                   "longitude": "longitude",
+                   "tz_offset": "tz_offset"},
+        parse_dates=True,
+    ), "Round-trip result failed _is_traj_df validation"
+
+    # ------------------------------------------------------------------ compare
+    # reorder columns like original; ignore row ordering differences
+    order = df.columns
+    df_exp  = df.sort_values(["user_id", "timestamp"]).reset_index(drop=True)[order]
+    df_out  = df_round.sort_values(["user_id", "timestamp"]).reset_index(drop=True)[order]
+
+    assert_frame_equal(df_out, df_exp, check_dtype=True)
