@@ -598,8 +598,9 @@ def _process_datetime_column(df, col, parse_dates, mixed_timezone_behavior, fixe
             fixed_format=fixed_format,
             check_valid_datetime_str=False
         )
-        df[col] = parsed
 
+        df[col] = parsed
+        # do not compute offset column if already exists
         has_tz = ('tz_offset' in traj_cols) and (traj_cols['tz_offset'] in df.columns)
        
         if parse_dates and mixed_timezone_behavior == 'naive' and not has_tz:
@@ -643,7 +644,7 @@ def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_f
     for key in ['tz_offset', 'duration', 'timestamp']:
         if key in traj_cols and traj_cols[key] in df:
             col = traj_cols[key]
-            if not is_integer_dtype(df[col].dtype):
+            if df[col].dtype != "Int64":
                 df[col] = df[col].astype("Int64")
 
             if key == 'timestamp':
@@ -841,15 +842,15 @@ def sample_from_file(
     assert format in {"csv", "parquet"}
 
     column_names = table_columns(filepath, format)
-    traj_cols = _parse_traj_cols(column_names, traj_cols, kwargs)
+    traj_cols_ = _parse_traj_cols(column_names, traj_cols, kwargs)
 
     need_user_col = (users is not None) or (frac_users < 1.0)
     if need_user_col:
-        _has_user_cols(column_names, traj_cols)
-        uid_col = traj_cols["user_id"]
+        _has_user_cols(column_names, traj_cols_)
+        uid_col = traj_cols_["user_id"]
 
-    _has_spatial_cols(column_names, traj_cols)
-    _has_time_cols(column_names, traj_cols)
+    _has_spatial_cols(column_names, traj_cols_)
+    _has_time_cols(column_names, traj_cols_)
 
     if users is None and frac_users < 1.0:
         users = sample_users(
@@ -879,7 +880,7 @@ def sample_from_file(
 
     return _cast_traj_cols(
         df,
-        traj_cols=traj_cols,
+        traj_cols=traj_cols_,
         parse_dates=parse_dates,
         mixed_timezone_behavior=mixed_timezone_behavior,
         fixed_format=fixed_format,

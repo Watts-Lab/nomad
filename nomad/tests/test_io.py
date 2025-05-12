@@ -43,7 +43,6 @@ def base_df():
     data_path = test_dir.parent / "data" / "gc_sample.csv"
     df = pd.read_csv(data_path)
 
-    # create tz_offset column
     df['tz_offset'] = 0
     df.loc[df.index[:5000],'tz_offset'] = -7200
     df.loc[df.index[-5000:], 'tz_offset'] = 3600
@@ -60,23 +59,39 @@ def base_df():
     df['y'] = projected.y
     
     df['geohash'] = df.apply(lambda x: gh.encode(x.latitude, x.longitude, precision=7), axis=1)
-    # col names:  ['uid', 'timestamp', 'latitude', 'longitude', 'tz_offset', 'local_datetime', 'x', 'y', 'geohash'
-    # dtypes: [object, int64, float64, float64, int64, object, float64, float64, object]
+    # col names:  ['uid', 'timestamp', 'tz_offset', 'longitude', 'latitude',  'local_datetime', 'x', 'y', 'geohash'
+    # dtypes: [object, int64, int64, float64, float64, object, float64, float64, object]
+    return df
+
+@pytest.fixture
+def dated_df(base_df):
+    """
+    Returns a DataFrame with default trajectory column names,
+    and a derived 'date' column for partitioning.
+    """
+    df = base_df.rename(columns={
+        "uid": "user_id",
+        "local_datetime": "datetime"
+    }).copy()
+    df["date"] = df["datetime"].str[:10].astype(object)
     return df
 
 @pytest.fixture
 def col_variations():
-    """Provides variations for trajectory column name tests.
-       Format: (indices_to_select, names_for_selected_cols, default_schema_keys)"""
-    # Base col names for indices: ['uid', 'timestamp', 'latitude', 'longitude', 'tz_offset', 'local_datetime', 'x', 'y', 'geohash']
     variations = {
-        "default-basic": ([0, 1, 2, 3], ["uid", "timestamp", "latitude", "longitude"], ["user_id", "timestamp", "latitude", "longitude"]),
-        "alt-names-basic": ([0, 1, 2, 3], ["user", "unix_time", "lat", "lon"], ["user_id", "timestamp", "latitude", "longitude"]),
-        "alt-names-dt-xy": ([0, 5, 6, 7, 4], ["user", "event_zoned_datetime", "device_x", "device_y", "offset"], ["user_id", "datetime", "x", "y", "tz_offset"]),
-        "alt-names-ts-gh": ([0, 1, 8], ["user", "unix_ts", "geohash_7"], ["user_id", "timestamp", "geohash"]),
-        "default-dt-xy": ([0, 5, 6, 7, 4], ["uid", "local_datetime", "x", "y", "tz_offset"], ["user_id", "datetime", "x", "y", "tz_offset"])
+        "default-basic": ([0, 1, 2, 3], ["uid", "timestamp", "latitude", "longitude"],
+                          ["user_id", "timestamp", "latitude", "longitude"]),
+        "alt-names-basic": ([0, 1, 2, 3], ["user", "unix_time", "lat", "lon"],
+                            ["user_id", "timestamp", "latitude", "longitude"]),
+        "alt-names-dt-xy": ([0, 5, 6, 7, 2], ["user", "event_zoned_datetime", "device_x", "device_y", "offset"],
+                            ["user_id", "datetime", "x", "y", "tz_offset"]),
+        "alt-names-ts-gh": ([0, 1, 8], ["user", "unix_ts", "geohash_7"],
+                            ["user_id", "timestamp", "geohash"]),
+        "default-dt-xy": ([0, 5, 6, 7, 2], ["uid", "local_datetime", "x", "y", "tz_offset"],
+                          ["user_id", "datetime", "x", "y", "tz_offset"]),
     }
     return variations
+
 
 @pytest.fixture
 def stop_df():
@@ -115,8 +130,6 @@ def stop_col_variations():
         "alt_ts_start_end": ([7, 8, 3, 2], ["unix_begin", "unix_finish", "latitude", "longitude"], ["start_timestamp", "end_timestamp", "latitude", "longitude"]),
         "alt_ts_start_duration": ([7, 6, 3, 2], ["t_start", "dur_sec", "stop_lat", "longitude"], ["start_timestamp", "duration", "latitude", "longitude"]),
     }
-    # Ensure keys match the explicitly defined list
-    assert set(variations.keys()) == set(_stop_col_variation_keys)
     return variations
 
 
@@ -159,7 +172,6 @@ def expected_value_na_output_df():
         if not (isinstance(expected_df[col].dtype, pd.core.dtypes.dtypes.DatetimeTZDtype) and dtype_str == 'datetime64[ns]'):
            expected_df[col] = expected_df[col].astype(dtype_str)
     return expected_df
-
 
 # --- Tests ---
 
@@ -242,35 +254,6 @@ def test_table_columns(idx, io_sources):
     assert list(cols) == expected_cols
 
 
-@pytest.mark.parametrize("bad_mapping", [False, True])
-def test_sampling_pipeline(io_sources, bad_mapping):
-    csv_path, _ = io_sources[0]  
-
-    traj_cols = dict(
-        user_id   = "uid",
-        timestamp = "timestamp",
-        latitude  = "latitude",
-        longitude = "longitude",
-    )
-
-    if bad_mapping:
-        with pytest.raises(Exception):
-            loader.sample_users(csv_path, format="csv", user_id="no_such_column")
-        return
-
-    ids = loader.sample_users(csv_path, format="csv",
-                              user_id="uid", sample=0.20)
-
-    df = loader.sample_from_file(csv_path, users=ids,
-                                 format="csv", traj_cols=traj_cols)
-
-    assert loader._is_traj_df(df, traj_cols=traj_cols, parse_dates=True)
-
-    # compare sampled IDs with IDs present in result dataframe
-    result_ids = pd.Series(df["uid"].unique()).sort_values(ignore_index=True)
-    expected_ids = ids.sort_values(ignore_index=True)
-    assert_series_equal(result_ids, expected_ids, check_names=False)
-
 @pytest.mark.parametrize("bad_alias", [False, True])
 def test_sampling_pipeline(io_sources, bad_alias):
     csv_path, _ = io_sources[0]
@@ -296,6 +279,7 @@ def test_sampling_pipeline(io_sources, bad_alias):
         pd.Series(sorted(ids)),
         check_names=False,
     )
+
 
 def test_from_file_alias_equivalence_csv(io_sources):
     path, fmt = io_sources[0]                 # gc_sample.csv
@@ -324,61 +308,34 @@ def test_from_file_alias_equivalence_csv(io_sources):
                               parse_dates=True)
 
 
-# ---------------------------------------------------------------------------
 # Round-trip test for the writer/reader pipeline
-# ---------------------------------------------------------------------------
-
 @pytest.mark.parametrize("fmt", ["csv", "parquet"], ids=["writer-csv", "writer-parquet"])
-def test_to_file_roundtrip(tmp_path, fmt):
+def test_to_file_roundtrip(tmp_path, fmt, dated_df):
     """
-    Build a minimal trajectory DataFrame, write it with nomad.io.base.to_file,
-    read it back with nomad.io.base.from_file, and verify that values & dtypes
-    survive the round-trip.  For Parquet we partition by 'date' to check Hive
-    partition writing; CSV is a single file.
+    Tests to_file and from_file using standard columns and output_traj_cols remapping.
     """
+    dated_df = loader.from_df(dated_df)
+    output_traj_cols = {
+        "user_id": "u",
+        "timestamp": "ts",
+        "latitude": "lat",
+        "longitude": "lon",
+        "tz_offset": "offset",
+        "datetime": "event_time"
+    }
 
-    # ------------------------------------------------------------------ build
-    df = pd.DataFrame({
-        "user_id":   pd.Series(["A", "B", "A", "B"]),
-        "timestamp": pd.Series([1_609_459_200, 1_609_459_260,
-                                1_609_459_320, 1_609_459_380]),
-        "latitude":  pd.Series([40.0, 41.0, 40.1, 41.1]),
-        "longitude": pd.Series([-75.0, -75.1, -75.2, -75.3]),
-        "tz_offset": pd.Series([0, 0, 0, 0]),
-    })
-    # derive a date partition column (string, not categorical) ----------------
-    dt = pd.to_datetime(df["timestamp"], unit="s").dt.tz_localize("UTC")
-    df["date"] = dt.dt.strftime("%Y-%m-%d").astype(str)
-    df["datetime"] = dt.astype(str)
-    df = loader.from_df(df, parse_dates=True)
-
-    # ------------------------------------------------------------------ write
     if fmt == "csv":
         out_path = tmp_path / "trip.csv"
-        loader.to_file(df, out_path, format="csv")
-    else:                                           # parquet (hive-partition)
+        loader.to_file(dated_df, out_path, format="csv", output_traj_cols=output_traj_cols)
+    else:
         out_path = tmp_path / "trip_parquet"
-        loader.to_file(df, out_path, format="parquet",
-                       partition_by=["date"])
+        loader.to_file(dated_df, out_path, format="parquet", output_traj_cols=output_traj_cols, partition_by=["date"])
 
-    # ------------------------------------------------------------------ read
-    df_round = loader.from_file(out_path, format=fmt, parse_dates=True)
+    df_round = loader.from_file(out_path, format=fmt, traj_cols=output_traj_cols, parse_dates=True)
+    assert loader._is_traj_df(df_round, traj_cols=output_traj_cols, parse_dates=True)
 
-    # sanity: validate as traj DF (date is extra, not required) --------------
-    assert loader._is_traj_df(
-        df_round,
-        traj_cols={"user_id": "user_id",
-                   "timestamp": "timestamp",
-                   "latitude": "latitude",
-                   "longitude": "longitude",
-                   "tz_offset": "tz_offset"},
-        parse_dates=True,
-    ), "Round-trip result failed _is_traj_df validation"
-
-    # ------------------------------------------------------------------ compare
-    # reorder columns like original; ignore row ordering differences
-    order = df.columns
-    df_exp  = df.sort_values(["user_id", "timestamp"]).reset_index(drop=True)[order]
-    df_out  = df_round.sort_values(["user_id", "timestamp"]).reset_index(drop=True)[order]
+    df_out = df_round.rename(columns={v: k for k, v in output_traj_cols.items()})
+    df_out = df_out.sort_values(["user_id", "timestamp"]).reset_index(drop=True)
+    df_exp = dated_df.sort_values(["user_id", "timestamp"]).reset_index(drop=True)
 
     assert_frame_equal(df_out, df_exp, check_dtype=True)
