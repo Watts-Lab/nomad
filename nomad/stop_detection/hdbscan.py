@@ -125,6 +125,7 @@ def _compute_mrd_graph(traj, core_distances):
     mrd_graph = {}
 
     # TC: 0(n^2)
+    # perhaps use time_pairs to reduce time complexity to O(n+m)
     for i in range(n):
         for j in range(i + 1, n):
             # euclidean distance between point i and j
@@ -190,6 +191,7 @@ def mst_ext(mst, core_distances):
 
 def hdbscan(mst_ext, min_cluster_size):
     hierarchy = []
+    cluster_memberships = defaultdict(set)
     
     # 4.1 For the root of the tree assign all objects the same label (single “cluster”).
     all_pings = set()
@@ -200,6 +202,7 @@ def hdbscan(mst_ext, min_cluster_size):
         
     label_map = {ts: 0 for ts in all_pings} # {'t1':0, 't2':0, 't3':0}
     active_clusters = {0: set(all_pings)} # e.g. { 0: {'t1', 't2', 't3'} }
+    cluster_memberships[0] = set(all_pings)
     
     # sort edges in decreasing order of weight
     mst_ext_sorted = sorted(mst_ext, key=lambda x: -x[2]) 
@@ -208,7 +211,7 @@ def hdbscan(mst_ext, min_cluster_size):
     dendrogram_scales = defaultdict(list)
     for u, v, w in mst_ext_sorted:
         dendrogram_scales[w].append((u, v))
-
+    
     current_label_id = max(label_map.values()) + 1
 
     # Iteratively remove all edges from MSText in decreasing order of weights
@@ -223,7 +226,7 @@ def hdbscan(mst_ext, min_cluster_size):
             cluster_id = label_map[u]
             affected_clusters.add(cluster_id)
             edges_to_remove.append((u, v))
-
+            
         # 4.2.2: For each affected cluster, reassign components
         for cluster_id in affected_clusters:
             if cluster_id == -1 or cluster_id not in active_clusters:
@@ -234,7 +237,7 @@ def hdbscan(mst_ext, min_cluster_size):
             # build connectivity graph (excluding removed edges)
             G = _build_graph(members, mst_ext, edges_to_remove)
             components = _connected_components(G)
-            non_spurious = [c for c in components if len(c) >= min_cluster_size]
+            non_spurious = [c for c in components if len(c) >= min_cluster_size] # duration < 5 mins
 
             # cluster has disappeared
             if not non_spurious:
@@ -247,6 +250,7 @@ def hdbscan(mst_ext, min_cluster_size):
                 for ts in members:
                     label_map[ts] = cluster_id if ts in remaining else -1
                 active_clusters[cluster_id] = remaining
+                cluster_memberships[cluster_id] = set(remaining)
             # true cluster split: multiple valid subclusters
             elif len(non_spurious) > 1:
                 new_ids = []
@@ -255,12 +259,13 @@ def hdbscan(mst_ext, min_cluster_size):
                     for ts in component:
                         label_map[ts] = current_label_id
                     active_clusters[current_label_id] = set(component)
+                    cluster_memberships[current_label_id] = set(component)
                     new_ids.append(current_label_id)
                     current_label_id += 1
                 
                 hierarchy.append((scale, cluster_id, new_ids))
 
-    return label_map, hierarchy
+    return label_map, hierarchy, dict(cluster_memberships)
 
 def _build_graph(nodes, mst_edges, removed_edges):
     '''
@@ -297,12 +302,12 @@ def _connected_components(graph):
         if node in seen:
             continue
         stack = [node]
-        comp = set()
+        comp = []
         while stack:
             n = stack.pop()
             if n not in seen:
                 seen.add(n)
-                comp.add(n)
+                comp.append(n)
                 stack.extend(graph[n] - seen)
         components.append(comp)
 
