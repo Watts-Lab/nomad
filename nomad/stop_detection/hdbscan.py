@@ -184,28 +184,55 @@ def _mst(mrd_graph):
 
 def mst_ext(mst, core_distances):
     """
-    Add self-edges to MST with weights equal to each point's core distance.
+    Add self-edges to MST with weights equal to each point's core distance,
+    and return as a sorted DataFrame.
+
+    Parameters
+    ----------
+    mst : list of (from, to, weight)
+    core_distances : dict {timestamp: core_distance}
+
+    Returns
+    -------
+    pd.DataFrame with columns ['from', 'to', 'weight'], sorted descending
     """
     self_edges = [(ts, ts, core_distances[ts]) for ts in core_distances]
-    return mst + self_edges
 
-def hdbscan(mst_ext, min_cluster_size):
+    mst_ext_edges = mst + self_edges
+
+    return pd.DataFrame(mst_ext_edges, columns=["from", "to", "weight"])
+
+def hdbscan(mst_ext_df, min_cluster_size):
+    """
+    Extracts HDBSCAN hierarchy from the extended MST DataFrame.
+
+    Parameters
+    ----------
+    mst_ext_df : pd.DataFrame
+        DataFrame with columns ['from', 'to', 'weight'], including MST + self-edges.
+    min_cluster_size : int
+        Minimum number of points required for a valid cluster.
+
+    Returns
+    -------
+    label_map : dict
+        Final flat cluster labels {timestamp: label}.
+    hierarchy : list
+        List of (scale, parent_cluster_id, [child_cluster_ids]) for dendrogram.
+    cluster_memberships : dict
+        {cluster_id: set of member timestamps}.
+    """
     hierarchy = []
     cluster_memberships = defaultdict(set)
     
     # 4.1 For the root of the tree assign all objects the same label (single “cluster”).
-    all_pings = set()
-    
-    for u, v, _ in mst_ext:
-        all_pings.add(u)
-        all_pings.add(v)
-        
+    all_pings = set(mst_ext_df["from"]).union(set(mst_ext_df["to"]))
     label_map = {ts: 0 for ts in all_pings} # {'t1':0, 't2':0, 't3':0}
     active_clusters = {0: set(all_pings)} # e.g. { 0: {'t1', 't2', 't3'} }
     cluster_memberships[0] = set(all_pings)
     
     # sort edges in decreasing order of weight
-    mst_ext_sorted = sorted(mst_ext, key=lambda x: -x[2]) 
+    mst_ext_df = mst_ext_df.sort_values("weight", ascending=False)
     
     # group edges by weight
     dendrogram_scales = defaultdict(list)
