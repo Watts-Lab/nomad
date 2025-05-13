@@ -844,11 +844,6 @@ def sample_from_file(
     column_names = table_columns(filepath, format)
     traj_cols_ = _parse_traj_cols(column_names, traj_cols, kwargs)
 
-    need_user_col = (users is not None) or (frac_users < 1.0)
-    if need_user_col:
-        _has_user_cols(column_names, traj_cols_)
-        uid_col = traj_cols_["user_id"]
-
     _has_spatial_cols(column_names, traj_cols_)
     _has_time_cols(column_names, traj_cols_)
 
@@ -865,7 +860,7 @@ def sample_from_file(
     if format == "csv" and not isinstance(filepath, (list, tuple)) and not os.path.isdir(filepath):
         df = pd.read_csv(filepath)
         if users is not None:
-            df = df[df[uid_col].isin(users)]
+            df = df[df[traj_cols_['user_id']].isin(users)]
     else:
         dataset = ds.dataset(filepath, format=format, partitioning="hive")
         if users is None:
