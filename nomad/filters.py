@@ -90,7 +90,6 @@ def to_timestamp(
         if not pd.api.types.is_integer_dtype(tz_offset):
             tz_offset = tz_offset.astype('int64')
 
-    # datetime with timezone
     if isinstance(datetime.dtype, pd.DatetimeTZDtype):
         return datetime.astype("int64") // 10**9
     
@@ -120,13 +119,11 @@ def to_timestamp(
                     "Consider localizing to a timezone or passing a timezone offset column.")
                 return result.astype('int64') // 10**9
                 
-    # datetime is pandas.Timestamp object
+    # datetime is a series of pandas.Timestamp object. Always has unix timestamp in value
     else:
-        if tz_offset is not None and not tz_offset.empty:
-            f = np.frompyfunc(lambda x: x.timestamp(), 1, 1)
-            return pd.Series(f(datetime).astype("float64"), index=datetime.index)
-        else:
-            return datetime.astype('int64') // 10**9
+        f = np.frompyfunc(lambda x: x.timestamp(), 1, 1)
+        return pd.Series(f(datetime).astype("int64"), index=datetime.index)
+
 
 def to_projection(
     traj: pd.DataFrame,
