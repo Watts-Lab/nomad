@@ -43,7 +43,7 @@ def test_reset_agent(base_city_pop, base_dest_diary):
               destination_diary=base_dest_diary)
     
     population.add_agent(agent=Charlie)
-    population.generate_trajectory(agent=Charlie, seed=100)
+    Charlie.generate_trajectory(agent=Charlie, seed=100)
     traj_cols = {"datetime":"local_timestamp",
          "timestamp":"unix_timestamp",
          "x":"x",
