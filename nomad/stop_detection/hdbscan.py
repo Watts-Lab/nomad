@@ -83,7 +83,7 @@ def _compute_core_distance(traj, time_pairs, min_samples = 2):
     for i in range(n): # TC: O(n^2 log n)
         u = timestamps[i]
         allowed_neighbors = neighbors[u]
-        dists = np.full(n, np.inf)
+        dists = np.full(n, 1e9) # use a very large number e.g. 1e9 (not infinity) for edges between points not temporally close
         dists[i] = 0  # distance to itself
         
         for v in allowed_neighbors:
