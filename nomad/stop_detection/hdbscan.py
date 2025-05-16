@@ -528,12 +528,12 @@ def hdbscan_labels(label_history_df, selected_clusters):
         # Get the timestamps assigned to this cluster at that scale
         members = set(cluster_rows[cluster_rows['dendrogram_scale'] == min_scale]['timestamp'])
         for ts in members:
-            rows.append({"timestamp": ts, "label": cid})
+            rows.append({"timestamp": ts, "cluster": cid})
         assigned_timestamps.update(members)
     
     # Add noise cluster (-1) for unassigned timestamps
     for ts in all_timestamps - assigned_timestamps:
-        rows.append({"timestamp": ts, "label": -1})
+        rows.append({"timestamp": ts, "cluster": -1})
     
     hdbscan_labels_df = pd.DataFrame(rows).sort_values("timestamp").reset_index(drop=True)
 
