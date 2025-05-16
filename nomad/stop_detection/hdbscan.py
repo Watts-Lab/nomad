@@ -218,7 +218,7 @@ def hdbscan(mst_ext_df, min_cluster_size):
     cluster_memberships[0] = set(all_pings)
 
     # Log initial labels
-    label_history.append(pd.DataFrame({"timestamp": list(label_map.keys()), "cluster_id": list(label_map.values()), "dendrogram scale": np.nan}))
+    label_history.append(pd.DataFrame({"timestamp": list(label_map.keys()), "cluster_id": list(label_map.values()), "dendrogram_scale": np.nan}))
 
     # group edges by weight
     dendrogram_scales = {
@@ -302,12 +302,28 @@ def hdbscan(mst_ext_df, min_cluster_size):
             # print("active clusters:", active_clusters)
         
         # log label map after this scale
-        label_history.append(pd.DataFrame({"timestamp": list(label_map.keys()), "cluster_id": list(label_map.values()), "dendrogram scale": scale}))
+        label_history.append(pd.DataFrame({"timestamp": list(label_map.keys()), "cluster_id": list(label_map.values()), "dendrogram_scale": scale}))
 
     # combine label history into one DataFrame
     label_history_df = pd.concat(label_history, ignore_index=True)
+    # build cluster lineage for all clusters
+    hierarchy_df = _build_cluster_lineage(hierarchy)
 
-    return label_history_df
+    return label_history_df, hierarchy_df
+
+def _build_cluster_lineage(hierarchy):
+    """
+    Returns a DataFrame with columns: child, parent, scale
+    """
+    lineage = []
+    for scale, parent, children in hierarchy:
+        for child in children:
+            lineage.append({
+                "child": child,
+                "parent": parent,
+                "scale": scale
+            })
+    return pd.DataFrame(lineage)
 
 def _build_graph(nodes, mst_df, removed_edges):
     """
@@ -365,3 +381,160 @@ def _connected_components(graph):
         components.append(comp)
 
     return components
+
+
+def _get_eps(label_history_df, target_cluster_id):
+    eps_df = []
+    
+    # ε_max(Ci): maximum ε value at which Ci exisits
+    eps_max = label_history_df[label_history_df['cluster_id']== target_cluster_id]['dendrogram_scale'].max()
+    timestamps = label_history_df[label_history_df['cluster_id'] == target_cluster_id]['timestamp'].unique()
+
+    for ts in timestamps:
+        # print(ts)
+        history = label_history_df[label_history_df['timestamp'] == ts].copy()
+        # print(history)
+        history = history[~history['dendrogram_scale'].isna()]
+        history = history.sort_values('dendrogram_scale', ascending=False)
+        # print(history)
+
+        in_cluster = history[history['cluster_id'] == target_cluster_id]
+        # print("in cluster:")
+        # print(in_cluster)
+        out_cluster = history[history['cluster_id'] != target_cluster_id]
+        # print("out cluster:")
+        # print(out_cluster)
+
+        if not in_cluster.empty:
+            last_in_cluster_scale = in_cluster['dendrogram_scale'].min()  # since descending
+            # print("scale last in cluster", last_in_cluster_scale)
+            exited_after = out_cluster[out_cluster['dendrogram_scale'] < last_in_cluster_scale]
+
+            if not exited_after.empty:
+                # ε_min(xj , Ci): ε value (scale) beyond which object xj no longer belongs to cluster Ci
+                eps_min = exited_after['dendrogram_scale'].max()  # highest scale after exit
+            else:
+                eps_min = np.inf  # never exited
+        else:
+            eps_min = np.nan  # never entered
+
+        eps_df.append({
+            "timestamp": ts,
+            "eps_min": eps_min,
+            "eps_max": eps_max
+        })
+
+        # print("-----")
+
+    return pd.DataFrame(eps_df)
+
+
+def compute_cluster_stability(label_history_df):
+    # Get clusters that are not root (0) or noise (-1)
+    clusters = label_history_df.loc[~label_history_df['cluster_id'].isin([0, -1]), 'cluster_id'].unique()
+
+    cluster_stability_df = []
+
+    for cluster in clusters:
+        eps_df = _get_eps(label_history_df, target_cluster_id=cluster)
+        
+        # Avoid division by zero or NaNs
+        eps_df = eps_df.replace({'eps_min': {0: np.nan}, 'eps_max': {0: np.nan}})
+        eps_df['stability_term'] = 1 / eps_df['eps_min'] - 1 / eps_df['eps_max']
+        
+        total_stability = eps_df['stability_term'].sum(skipna=True)
+        
+        cluster_stability_df.append({
+            "cluster_id": cluster,
+            "cluster_stability": total_stability
+        })
+
+    return pd.DataFrame(cluster_stability_df)
+
+def select_most_stable_clusters(hierarchy_df, cluster_stability_df):
+    hierarchy = [
+        (group['scale'].iloc[0], parent, list(group['child']))
+        for parent, group in hierarchy_df.groupby('parent')
+    ]
+    
+    # Build tree of clusters
+    children = defaultdict(list)
+    parent = {}
+    for _, parent_id, child_ids in hierarchy:
+        for child_id in child_ids:
+            children[parent_id].append(child_id)
+            parent[child_id] = parent_id
+
+    # Stability lookup
+    stability_map = dict(zip(cluster_stability_df['cluster_id'], cluster_stability_df['cluster_stability']))
+    
+    selected_clusters = set()
+    best_stability = {}
+
+    # Get descendants of cluster
+    def get_descendants(cid):
+        descendants = set()
+        stack = [cid]
+        while stack:
+            node = stack.pop()
+            for child in children.get(node, []):
+                descendants.add(child)
+                stack.append(child)
+        return descendants
+
+    # DFS
+    def dfs(cid):
+        if cid not in children:
+            best_stability[cid] = stability_map.get(cid, 0.0)
+            selected_clusters.add(cid)
+            return best_stability[cid]
+
+        sum_children = sum(dfs(child) for child in children[cid])
+        own_stab = stability_map.get(cid, 0.0)
+
+        if own_stab >= sum_children:
+            best_stability[cid] = own_stab
+            # removes elements from the current set that are also present in another iterable
+            selected_clusters.difference_update(get_descendants(cid)) 
+            selected_clusters.add(cid)
+        else:
+            best_stability[cid] = sum_children
+
+        return best_stability[cid]
+
+    # Start from root children
+    for cid in children.get(0, []):
+        dfs(cid)
+
+    return selected_clusters
+
+def hdbscan_labels(label_history_df, selected_clusters):
+    """
+    """
+    all_timestamps = set(label_history_df['timestamp'])
+    assigned_timestamps = set()
+    rows = []
+
+    for cid in selected_clusters:
+        # Filter to rows where cluster_id == cid
+        cluster_rows = label_history_df[label_history_df['cluster_id'] == cid]
+
+        if cluster_rows.empty:
+            continue  # skip if no rows (just in case)
+        
+        # Find the smallest scale before this cluster disappears/splits into subclusters
+        min_scale = cluster_rows['dendrogram_scale'].min()
+        
+        # Get the timestamps assigned to this cluster at that scale
+        members = set(cluster_rows[cluster_rows['dendrogram_scale'] == min_scale]['timestamp'])
+        for ts in members:
+            rows.append({"timestamp": ts, "label": cid})
+        assigned_timestamps.update(members)
+    
+    # Add noise cluster (-1) for unassigned timestamps
+    for ts in all_timestamps - assigned_timestamps:
+        rows.append({"timestamp": ts, "label": -1})
+    
+    hdbscan_labels_df = pd.DataFrame(rows).sort_values("timestamp").reset_index(drop=True)
+
+    return hdbscan_labels_df
