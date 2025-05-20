@@ -341,7 +341,7 @@ def temporal_dbscan(data, time_thresh, dist_thresh, min_pts, traj_cols=None, com
                 time_col_name = traj_cols['timestamp']
             elif timestamp_length == 19:
                 warnings.warn(
-                    f"The '{timestamp_col_name}' column appears to be in nanoseconds. "
+                    f"The '{data[traj_cols['timestamp']]}' column appears to be in nanoseconds. "
                     "This may lead to inconsistencies."
                 )
                 time_col_name = traj_cols['timestamp']
