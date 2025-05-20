@@ -305,70 +305,62 @@ class Agent:
             The building ID if the step is a stay, or `None` if the step is a move.
         """
         city = self.city
-
-        # Find current geometry
-        start_block = np.floor(start_point)  # blocks are indexed by bottom left
+    
+        start_block = np.floor(start_point)
         start_geometry = city.get_block(tuple(start_block))
-
+    
         curr = np.array(start_point)
-
-        # Agent moves within the building
+    
         if start_geometry == dest_building or start_point == dest_building.door_centroid:
             location = dest_building.id
             p = self.still_probs[dest_building.building_type]
             sigma = self.speeds[dest_building.building_type]
-
+    
             if npr.uniform() < p:
                 coord = curr
             else:
-                # Draw until coord falls inside building
                 while True:
                     coord = np.random.normal(loc=curr, scale=sigma*np.sqrt(dt), size=2)
                     if dest_building.geometry.contains(Point(coord)):
                         break
-
-        # Agent travels to building along the streets
         else:
             location = None
             dest_point = dest_building.door
-
+    
             if start_geometry in city.buildings.values():
                 start_segment = [start_point, start_geometry.door_centroid]
                 start = start_geometry.door
             else:
                 start_segment = []
                 start = tuple(start_block.astype(int))
-
+    
             street_path = city.shortest_paths[start][dest_point]
-            path = [(x+0.5, y+0.5) for x, y in street_path]
-            path = start_segment + path + [dest_building.geometry.centroid]
+            path = [(x + 0.5, y + 0.5) for (x, y) in street_path]
+            path = start_segment + path + [dest_building.door_centroid]
             path_ml = MultiLineString([path])
-
-            # Bounding polygon
+            path_length = path_ml.length
+    
             street_poly = unary_union([city.get_block(block).geometry for block in street_path])
-
             bound_poly = unary_union([start_geometry.geometry, street_poly])
-            # Snap to path
+    
             snap_point_dist = path_ml.project(Point(start_point))
-
-            #TODO: SHOULD THESE ALSO BE CONSTANT?
-            delta = 3.33*dt      # 50m/min; blocks are 15m x 15m
-            sigma = 0.5*dt/1.96  # 95% prob of moving 0.5
-
-            # Draw until coord falls inside bound_poly
+    
+            delta = 3.33 * dt
+            sigma = 0.5 * dt / 1.96
+    
             while True:
-                # consider a "path" coordinate and "orthogonal coordinate"
                 transformed_step = np.random.normal(loc=[delta, 0], scale=sigma*np.sqrt(dt), size=2)
-
-                if snap_point_dist + transformed_step[0] > path_ml.length:
+                distance = snap_point_dist + transformed_step[0]
+    
+                if distance > path_length:
                     coord = np.array(dest_building.geometry.centroid.coords[0])
                     break
-                else:
-                    coord = _ortho_coord(path_ml, snap_point_dist+transformed_step[0], transformed_step[1])
-                    if bound_poly.contains(Point(coord)):
-                        break
-
+                coord = _ortho_coord(path_ml, distance, transformed_step[1])
+                if bound_poly.contains(Point(coord)):
+                    break
+                    
         return coord, location
+
 
     def _traj_from_dest_diary(self, dt):
         """
@@ -400,13 +392,13 @@ class Agent:
             destination_info = destination_diary.iloc[i]
             duration = int(destination_info['duration'] * 1/dt)
             building_id = destination_info['location']
+
             for t in range(int(duration//dt)):
                 prev_ping = self.last_ping
                 start_point = (prev_ping['x'], prev_ping['y'])
                 dest_building = city.buildings[building_id]
                 unix_timestamp = prev_ping['unix_timestamp'] + 60*dt
-                local_timestamp = prev_ping['local_timestamp'] + timedelta(minutes=dt)
-
+                local_timestamp = prev_ping['local_timestamp'] + timedelta(minutes=dt)               
                 coord, location = self._sample_step(start_point, dest_building, dt)
                 ping = {'x': coord[0], 
                         'y': coord[1],
@@ -765,39 +757,39 @@ class Agent:
             return burst_info
 
 
-def _ortho_coord(multilines,
-                 distance,
-                 offset,
-                 eps=0.001):  # Calculus approach. Probably super slow.
+def _ortho_coord(multilines, distance, offset, eps=0.001):
     """
-    Given a MultiLineString, a distance along it, an offset distance, and a small epsilon,
-    returns the coordinates of a point that is distance along the MultiLineString and offset
-    from it.
+    Given a MultiLineString, a distance along it, and an orthogonal offset,
+    returns the coordinates of a point offset from the path at that distance.
 
     Parameters
     ----------
-    multilines : shapely.geometry.multilinestring.MultiLineString
-        MultiLineString object representing the path.
+    multilines : shapely.geometry.MultiLineString
+        MultiLineString representing the street path.
     distance : float
-        Distance along the MultiLineString.
+        Distance along the path to project from.
     offset : float
-        Offset distance from the MultiLineString.
+        Perpendicular offset from the path (positive to the left, negative to the right).
     eps : float, optional
-        Small epsilon for numerical stability.
+        Small delta used to estimate the path's tangent direction.
 
     Returns
     -------
     tuple
-        A tuple with the (x, y) coordinates of the point.
+        Coordinates of the offset point (x, y).
     """
-
     point = multilines.interpolate(distance)
     offset_point = multilines.interpolate(distance - eps)
-    p = np.array([point.x, point.y])
-    x = p - np.array([offset_point.x, offset_point.y])
-    x = np.flip(x/np.linalg.norm(x))*np.array([-1,1])*offset
-    return tuple(x+p)
 
+    p = np.array([point.x, point.y])
+    q = np.array([offset_point.x, offset_point.y])
+    direction = p - q
+    unit_direction = direction / np.linalg.norm(direction)
+
+    # Rotate 90° counter-clockwise to get the normal vector
+    normal = np.flip(unit_direction) * np.array([-1, 1])
+
+    return tuple(p + offset * normal)
 
 def condense_destinations(destination_diary):
     """
