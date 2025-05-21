@@ -10,8 +10,12 @@ import warnings
 import funkybob
 import s3fs
 
+import pyarrow as pa
+import pyarrow.dataset as ds
+
+from nomad.io.base import from_df, to_file
+
 from nomad.city_gen import *
-import nomad.io.base as loader 
 from nomad.constants import DEFAULT_SPEEDS, FAST_SPEEDS, SLOW_SPEEDS, DEFAULT_STILL_PROBS
 from nomad.constants import FAST_STILL_PROBS, SLOW_STILL_PROBS, ALLOWED_BUILDINGS, DEFAULT_STAY_PROBS
 
@@ -305,70 +309,62 @@ class Agent:
             The building ID if the step is a stay, or `None` if the step is a move.
         """
         city = self.city
-
-        # Find current geometry
-        start_block = np.floor(start_point)  # blocks are indexed by bottom left
+    
+        start_block = np.floor(start_point)
         start_geometry = city.get_block(tuple(start_block))
-
+    
         curr = np.array(start_point)
-
-        # Agent moves within the building
+    
         if start_geometry == dest_building or start_point == dest_building.door_centroid:
             location = dest_building.id
             p = self.still_probs[dest_building.building_type]
             sigma = self.speeds[dest_building.building_type]
-
+    
             if npr.uniform() < p:
                 coord = curr
             else:
-                # Draw until coord falls inside building
                 while True:
                     coord = np.random.normal(loc=curr, scale=sigma*np.sqrt(dt), size=2)
                     if dest_building.geometry.contains(Point(coord)):
                         break
-
-        # Agent travels to building along the streets
         else:
             location = None
             dest_point = dest_building.door
-
+    
             if start_geometry in city.buildings.values():
                 start_segment = [start_point, start_geometry.door_centroid]
                 start = start_geometry.door
             else:
                 start_segment = []
                 start = tuple(start_block.astype(int))
-
+    
             street_path = city.shortest_paths[start][dest_point]
-            path = [(x+0.5, y+0.5) for x, y in street_path]
-            path = start_segment + path + [dest_building.geometry.centroid]
+            path = [(x + 0.5, y + 0.5) for (x, y) in street_path]
+            path = start_segment + path + [dest_building.door_centroid]
             path_ml = MultiLineString([path])
-
-            # Bounding polygon
+            path_length = path_ml.length
+    
             street_poly = unary_union([city.get_block(block).geometry for block in street_path])
-
             bound_poly = unary_union([start_geometry.geometry, street_poly])
-            # Snap to path
+    
             snap_point_dist = path_ml.project(Point(start_point))
-
-            #TODO: SHOULD THESE ALSO BE CONSTANT?
-            delta = 3.33*dt      # 50m/min; blocks are 15m x 15m
-            sigma = 0.5*dt/1.96  # 95% prob of moving 0.5
-
-            # Draw until coord falls inside bound_poly
+    
+            delta = 3.33 * dt
+            sigma = 0.5 * dt / 1.96
+    
             while True:
-                # consider a "path" coordinate and "orthogonal coordinate"
                 transformed_step = np.random.normal(loc=[delta, 0], scale=sigma*np.sqrt(dt), size=2)
-
-                if snap_point_dist + transformed_step[0] > path_ml.length:
+                distance = snap_point_dist + transformed_step[0]
+    
+                if distance > path_length:
                     coord = np.array(dest_building.geometry.centroid.coords[0])
                     break
-                else:
-                    coord = _ortho_coord(path_ml, snap_point_dist+transformed_step[0], transformed_step[1])
-                    if bound_poly.contains(Point(coord)):
-                        break
-
+                coord = _ortho_coord(path_ml, distance, transformed_step[1])
+                if bound_poly.contains(Point(coord)):
+                    break
+                    
         return coord, location
+
 
     def _traj_from_dest_diary(self, dt):
         """
@@ -400,13 +396,13 @@ class Agent:
             destination_info = destination_diary.iloc[i]
             duration = int(destination_info['duration'] * 1/dt)
             building_id = destination_info['location']
+
             for t in range(int(duration//dt)):
                 prev_ping = self.last_ping
                 start_point = (prev_ping['x'], prev_ping['y'])
                 dest_building = city.buildings[building_id]
                 unix_timestamp = prev_ping['unix_timestamp'] + 60*dt
-                local_timestamp = prev_ping['local_timestamp'] + timedelta(minutes=dt)
-
+                local_timestamp = prev_ping['local_timestamp'] + timedelta(minutes=dt)               
                 coord, location = self._sample_step(start_point, dest_building, dt)
                 ping = {'x': coord[0], 
                         'y': coord[1],
@@ -765,39 +761,39 @@ class Agent:
             return burst_info
 
 
-def _ortho_coord(multilines,
-                 distance,
-                 offset,
-                 eps=0.001):  # Calculus approach. Probably super slow.
+def _ortho_coord(multilines, distance, offset, eps=0.001):
     """
-    Given a MultiLineString, a distance along it, an offset distance, and a small epsilon,
-    returns the coordinates of a point that is distance along the MultiLineString and offset
-    from it.
+    Given a MultiLineString, a distance along it, and an orthogonal offset,
+    returns the coordinates of a point offset from the path at that distance.
 
     Parameters
     ----------
-    multilines : shapely.geometry.multilinestring.MultiLineString
-        MultiLineString object representing the path.
+    multilines : shapely.geometry.MultiLineString
+        MultiLineString representing the street path.
     distance : float
-        Distance along the MultiLineString.
+        Distance along the path to project from.
     offset : float
-        Offset distance from the MultiLineString.
+        Perpendicular offset from the path (positive to the left, negative to the right).
     eps : float, optional
-        Small epsilon for numerical stability.
+        Small delta used to estimate the path's tangent direction.
 
     Returns
     -------
     tuple
-        A tuple with the (x, y) coordinates of the point.
+        Coordinates of the offset point (x, y).
     """
-
     point = multilines.interpolate(distance)
     offset_point = multilines.interpolate(distance - eps)
-    p = np.array([point.x, point.y])
-    x = p - np.array([offset_point.x, offset_point.y])
-    x = np.flip(x/np.linalg.norm(x))*np.array([-1,1])*offset
-    return tuple(x+p)
 
+    p = np.array([point.x, point.y])
+    q = np.array([offset_point.x, offset_point.y])
+    direction = p - q
+    unit_direction = direction / np.linalg.norm(direction)
+
+    # Rotate 90° counter-clockwise to get the normal vector
+    normal = np.flip(unit_direction) * np.array([-1, 1])
+
+    return tuple(p + offset * normal)
 
 def condense_destinations(destination_diary):
     """
@@ -914,91 +910,78 @@ class Population:
             self.add_agent(agent)
 
     def save_pop(self,
-                 bucket,
-                 prefix,
-                 save_full_traj=True,
-                 save_sparse_traj=True,
-                 save_homes=True,
-                 save_diaries=True,
+                 traj_cols=None,
+                 sparse_path=None,
+                 full_path=None,
+                 homes_path=None,
+                 diaries_path=None,
                  partition_cols=None,
-                 roster=None):
+                 mixed_timezone_behavior="naive",
+                 filesystem=None,
+                 **kwargs):
         """
-        Save trajectories, homes, and diaries as Parquet files to S3.
-
+        Save trajectories, homes, and diaries to local or S3 destinations.
+    
         Parameters
         ----------
-        bucket : str
-            The name of the S3 bucket.
-        prefix : str
-            The path prefix within the bucket (e.g., 'folder/subfolder/').
-        save_full_traj : bool
-            If True, save the full (ground truth) trajectories.
-        save_sparse_traj : bool
-            If True, save the sparse trajectories.
-        save_homes : bool
-            If True, save a table mapping Agents to their homes.
-        save_diaries : bool
-            If True, save the diaries.
-        partition_cols : dict
-            A dictionary specifying partition columns for each dataset. Keys should match dataset names
-            ('full_traj', 'sparse_traj', 'diaries') and values should be lists of column names to partition on.
-            Example: {'full_traj': ['date'], 'diaries': ['user_id']}
+        sparse_path : str or Path, optional
+            Destination path for sparse trajectories.
+        full_path : str or Path, optional
+            Destination path for full (ground truth) trajectories.
+        homes_path : str or Path, optional
+            Destination path for the homes table.
+        diaries_path : str or Path, optional
+            Destination path for diaries.
+        partition_cols : dict, optional
+            Dict with keys in {'full_traj', 'sparse_traj', 'diaries'} and values as lists of partition column names.
+        filesystem : pyarrow.fs.FileSystem or None
+            Optional filesystem object (e.g., s3fs.S3FileSystem). If None, inferred automatically.
         """
-
-        if roster is None:
-            roster = self.roster
-
-        fs = s3fs.S3FileSystem()
-
-        # full trajectories
-        if save_full_traj:
-            trajs = pd.concat([agent.trajectory for agent_id, agent in roster.items()]).reset_index(drop=True)
-            partition = partition_cols.get('full_traj', []) if partition_cols else []
-            trajs.to_parquet(
-                f's3://{bucket}/{prefix}trajectories.parquet',
-                engine='pyarrow',
-                filesystem=fs,
-                partition_cols=partition
-            )
-
-        # sparse trajectories
-        if save_sparse_traj:
-            sparse_trajs = pd.concat([agent.sparse_traj for agent_id, agent in roster.items()]).reset_index(drop=True)
-            partition = partition_cols.get('sparse_traj', []) if partition_cols else []
-            sparse_trajs.to_parquet(
-                f's3://{bucket}/{prefix}sparse_trajectories.parquet',
-                engine='pyarrow',
-                filesystem=fs,
-                partition_cols=partition
-            )
-
-        # home table
-        if save_homes:
-            homes = pd.DataFrame([(agent_id, agent.home, agent.workplace) for agent_id, agent in roster.items()],
-                                 columns=['id', 'home', 'workplace'])
-            homes.to_parquet(
-                f's3://{bucket}/{prefix}homes.parquet',
-                engine='pyarrow',
-                filesystem=fs
-            )
-
-        # diary
-        if save_diaries:
-            diaries = pd.concat([agent.diary for agent_id, agent in roster.items()]).reset_index(drop=True)
-            partition = partition_cols.get('diaries', []) if partition_cols else []
-            diaries.to_parquet(
-                f's3://{bucket}/{prefix}diaries.parquet',
-                engine='pyarrow',
-                filesystem=fs,
-                partition_cols=partition
-            )
-
-    def plot_population(self, ax, doors=True, address=True):
-        for i, agent_id in enumerate(self.roster):
-            agent = self.roster[agent_id]
-            col = cm.tab20c(i/len(self.roster))
-            ax.scatter(agent.trajectory.x, agent.trajectory.y, s=6, color=col, alpha=1, zorder=2)
-        self.city.plot_city(ax, doors=doors, address=address, zorder=1)
+        if full_path:
+            full_df = pd.concat([agent.trajectory for agent in self.roster.values()], ignore_index=True)
+            full_df = from_df(full_df, traj_cols=traj_cols, mixed_timezone_behavior=mixed_timezone_behavior)
+            to_file(full_df,
+                    path=full_path,
+                    format="parquet",
+                    partition_by=partition_cols.get('full_traj') if partition_cols else None,
+                    filesystem=filesystem, 
+                    existing_data_behavior='delete_matching')
+    
+        if sparse_path:
+            sparse_df = pd.concat([agent.sparse_traj for agent in self.roster.values()], ignore_index=True)
+            sparse_df = from_df(sparse_df, traj_cols=traj_cols, mixed_timezone_behavior=mixed_timezone_behavior)
+            to_file(sparse_df,
+                    path=sparse_path,
+                    format="parquet",
+                    partition_by=partition_cols.get('sparse_traj') if partition_cols else None,
+                    filesystem=filesystem, 
+                    existing_data_behavior='delete_matching')
+    
+        if diaries_path:
+            diaries_df = pd.concat([agent.diary for agent in self.roster.values()], ignore_index=True)
+            diaries_df = from_df(diaries_df, traj_cols=traj_cols, mixed_timezone_behavior=mixed_timezone_behavior)
+            to_file(diaries_df,
+                    path=diaries_path,
+                    format="parquet",
+                    partition_by=partition_cols.get('diaries') if partition_cols else None,
+                    filesystem=filesystem, 
+                    existing_data_behavior='delete_matching')
+    
+        if homes_path:
+            homes_data = []
+            for agent_id, agent in self.roster.items():
+                ts = agent.last_ping['local_timestamp']
+                iso_date = ts.date().isoformat()
+                homes_data.append((agent_id, agent.home, agent.workplace, iso_date))
+            homes_df = pd.DataFrame(homes_data, columns=["uid", "home", "workplace", "date"])
+    
+            table = pa.Table.from_pandas(homes_df, preserve_index=False)
+            ds.write_dataset(table,
+                             base_dir=str(homes_path),
+                             format="parquet",
+                             partitioning_flavor='hive',
+                             filesystem=filesystem,
+                             existing_data_behavior='delete_matching')
 
 
 # =============================================================================
