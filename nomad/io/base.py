@@ -797,12 +797,34 @@ def from_file(filepath, format="csv", traj_cols=None, parse_dates=True,
 
 def sample_users(
     filepath,
-    format: str = "csv",
-    size: float | int = 1.0,
-    traj_cols: dict | None = None,
-    seed: int | None = None,
-    **kwargs,
+    format="csv",
+    size=1.0,
+    traj_cols=None,
+    seed=None,
+    **kwargs
 ):
+    """
+    Sample users from a dataset.
+
+    Parameters
+    ----------
+    filepath : str or Path
+        Path to the data file.
+    format : str, default "csv"
+        Input format (“csv” or “parquet”).
+    size : float or int, default 1.0
+        Fraction (0–1) or absolute number of users to sample.
+    traj_cols : dict or None, default None
+        Mapping of trajectory column names, or None to use defaults.
+    seed : int or None
+        Random seed for reproducibility.
+    **kwargs
+        Passed through to the underlying reader.
+
+    Returns
+    -------
+    pandas.DataFrame with user ids. 
+    """
     assert format in {"csv", "parquet"}
 
     column_names = table_columns(filepath, format)
@@ -828,17 +850,50 @@ def sample_users(
 
 def sample_from_file(
     filepath,
-    users: list | None = None,
-    format: str = "csv",
-    traj_cols: dict | None = None,
-    frac_users: float = 1.0,
-    frac_records: float = 1.0,
-    seed: int | None = None,
-    parse_dates: bool = True,
-    mixed_timezone_behavior: str = "naive",
-    fixed_format: str | None = None,
-    **kwargs,
+    users=None,
+    format="csv",
+    traj_cols=None,
+    frac_users=1.0,
+    frac_records=1.0,
+    seed=None,
+    parse_dates=True,
+    mixed_timezone_behavior="naive",
+    fixed_format=None,
+    **kwargs
 ):
+    """
+    Read and sample trajectory data from a file.
+
+    Parameters
+    ----------
+    filepath : str or Path
+        Path to the input file.
+    users : list of hashable or None, default None
+        If provided, only include these user IDs; if None, include all users.
+    format : str, default "csv"
+        Data format, e.g. "csv" or "parquet".
+    traj_cols : dict or None, default None
+        Mapping of trajectory column names (e.g. {"uid": "user_id"}), or None to use defaults.
+    frac_users : float, default 1.0
+        Fraction of users to sample (0 < frac_users ≤ 1).
+    frac_records : float, default 1.0
+        Fraction of each user’s records to sample (0 < frac_records ≤ 1).
+    seed : int or None, default None
+        Random seed for reproducibility.
+    parse_dates : bool, default True
+        Whether to parse date/time columns as datetime objects.
+    mixed_timezone_behavior : str, default "naive"
+        How to handle mixed‐timezone timestamps; options might include "naive", "utc", etc.
+    fixed_format : str or None, default None
+        If specified, enforce this input format (overrides autodetection).
+    **kwargs
+        Passed through to the underlying reader (e.g. `pandas.read_csv`).
+
+    Returns
+    -------
+    pandas.DataFrame
+        Sampled trajectory data.
+    """
     assert format in {"csv", "parquet"}
 
     column_names = table_columns(filepath, format)
