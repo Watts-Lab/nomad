@@ -1,13 +1,9 @@
 import pandas as pd
 import numpy as np
 import heapq
-import datetime as dt
-from datetime import timedelta
-import itertools
 from collections import defaultdict
-import sys
-import os
-import pdb
+import matplotlib.pyplot as plt
+import networkx as nx
 import nomad.io.base as loader
 import nomad.constants as constants
 from nomad.stop_detection import utils
@@ -15,7 +11,7 @@ from nomad.stop_detection import utils
 ##########################################
 ########        HDBSCAN           ########
 ##########################################
-def _find_bursts(times, time_thresh, is_datetime):
+def _find_temp_neighbors(times, time_thresh, is_datetime):
     """
     Find timestamp pairs that are within time threshold.
 
@@ -39,7 +35,7 @@ def _find_bursts(times, time_thresh, is_datetime):
         times = times.values
     else:
         # if timestamps, we change the values to seconds
-        first_timestamp = times[0]
+        first_timestamp = times.iloc[0]
         timestamp_length = len(str(first_timestamp))
     
         if timestamp_length > 10:
@@ -63,6 +59,15 @@ def _find_bursts(times, time_thresh, is_datetime):
     time_pairs = [(times[i], times[j]) for i, j in zip(i_idx, j_idx)]
     
     return time_pairs, times
+
+def _build_neighbor_graph(time_pairs, times):
+    # Build neighbor map from time_pairs
+    neighbors = {ts: set() for ts in times}  # TC: O(n)
+    for t1, t2 in time_pairs:
+        neighbors[t1].add(t2)
+        neighbors[t2].add(t1)
+    
+    return neighbors
 
 def _compute_core_distance(traj, time_pairs, times, is_long_lat, traj_cols, min_pts = 2):
     """
@@ -96,10 +101,7 @@ def _compute_core_distance(traj, time_pairs, times, is_long_lat, traj_cols, min_
     ts_indices = {ts: idx for idx, ts in enumerate(times)} # TC: O(n)
 
     # Build neighbor map from time_pairs
-    neighbors = {ts: set() for ts in times}  # TC: O(n)
-    for t1, t2 in time_pairs:
-        neighbors[t1].add(t2)
-        neighbors[t2].add(t1)
+    neighbors = _build_neighbor_graph(time_pairs, times)
     
     core_distances = {}
 
@@ -127,7 +129,7 @@ def _compute_core_distance(traj, time_pairs, times, is_long_lat, traj_cols, min_
 
     return core_distances, coords
 
-def _compute_mrd_graph(coords, times, core_distances, is_long_lat):
+def _compute_mrd_graph(coords, times, time_pairs, core_distances, is_long_lat):
     """
     Mutual Reachability Distance (MRD) of point p and point q is the maximum of: 
         cordistance of p, core distance of q, and the distance between p and q.
@@ -151,24 +153,45 @@ def _compute_mrd_graph(coords, times, core_distances, is_long_lat):
         {(timestamp1, timestamp2): mrd_value}.
     """
     n = len(coords)
+    neighbors = _build_neighbor_graph(time_pairs, times)
     mrd_graph = {}
 
-    # TC: 0(n^2)
-    # perhaps use time_pairs to reduce time complexity to O(n+m)
+    # TC: O(n+m)
     for i in range(n):
         for j in range(i + 1, n):
-            if is_long_lat:
-                # haversine distance between point i and j
-                dist = utils._haversine_distance(coords[i], coords[j])
-                core_i = core_distances[times[i]]
-                core_j = core_distances[times[j]]
+            u = times[i]
+            v = times[j]
+            if v not in neighbors[u]:
+                mrd_graph[(u, v)] = np.inf
             else:
-                # euclidean distance between point i and j
-                dist = np.sqrt(np.sum((coords[j] - coords[i]) ** 2))
-                core_i = core_distances[times[i]]
-                core_j = core_distances[times[j]]
+                if is_long_lat:
+                    # haversine distance between point i and j
+                    dist = utils._haversine_distance(coords[i], coords[j])
+                    core_i = core_distances[u]
+                    core_j = core_distances[v]
+                else:
+                    # euclidean distance between point i and j
+                    dist = np.sqrt(np.sum((coords[j] - coords[i]) ** 2))
+                    core_i = core_distances[u]
+                    core_j = core_distances[v]
 
-            mrd_graph[(times[i], times[j])] = max(core_i, core_j, dist)
+                mrd_graph[(u, v)] = max(core_i, core_j, dist)
+
+    # TC: 0(n^2)
+    # for i in range(n):
+    #     for j in range(i + 1, n):
+    #         if is_long_lat:
+    #             # haversine distance between point i and j
+    #             dist = utils._haversine_distance(coords[i], coords[j])
+    #             core_i = core_distances[times[i]]
+    #             core_j = core_distances[times[j]]
+    #         else:
+    #             # euclidean distance between point i and j
+    #             dist = np.sqrt(np.sum((coords[j] - coords[i]) ** 2))
+    #             core_i = core_distances[times[i]]
+    #             core_j = core_distances[times[j]]
+
+    #         mrd_graph[(times[i], times[j])] = max(core_i, core_j, dist)
 
     return mrd_graph
 
@@ -292,6 +315,8 @@ def hdbscan(mst_ext_df, min_cluster_size):
 
             members = active_clusters[cluster_id]
             G = _build_graph(members, mst_ext_df, edges_to_remove)
+            # visualize_adjacency_dict(G)
+
             components = _connected_components(G)
             # print("number of components: ", len(components))
             # print("components: ", components)
@@ -348,7 +373,6 @@ def compute_cluster_duration(cluster):
     max_time = max(cluster)
     min_time = min(cluster)
     return (max_time - min_time) * 60
-
 
 def _build_cluster_lineage(hierarchy):
     """
@@ -533,7 +557,7 @@ def select_most_stable_clusters(hierarchy_df, cluster_stability_df):
         if own_stab >= sum_children:
             best_stability[cid] = own_stab
             # removes elements from the current set that are also present in another iterable
-            selected_clusters.difference_update(get_descendants(cid)) 
+            selected_clusters.difference_update(get_descendants(cid))
             selected_clusters.add(cid)
         else:
             best_stability[cid] = sum_children
@@ -626,9 +650,9 @@ def st_hdbscan(traj, is_long_lat, is_datetime, traj_cols, complete_output, time_
         
         time_col_name = traj_cols['timestamp']
 
-    time_pairs, times = _find_bursts(traj[time_col_name], time_thresh, is_datetime)
+    time_pairs, times = _find_temp_neighbors(traj[time_col_name], time_thresh, is_datetime)
     core_distances, coords = _compute_core_distance(traj, time_pairs, times, is_long_lat, traj_cols, min_pts)
-    mrd = _compute_mrd_graph(coords, times, core_distances, is_long_lat)
+    mrd = _compute_mrd_graph(coords, times, time_pairs, core_distances, is_long_lat)
     mst_edges = _mst(mrd)
     mstext_edges = mst_ext(mst_edges, core_distances)
     label_history_df, hierarchy_df = hdbscan(mstext_edges, min_cluster_size)
@@ -734,3 +758,57 @@ def _stop_metrics(grouped_data, is_long_lat, is_datetime, traj_cols, complete_ou
             }
 
     return pd.Series(stop_attr)
+
+
+# def visualize_mst(mst_df):
+#     G = nx.Graph()
+
+#     for u, v, w in mst_df.itertuples(index=False):
+#         w_val = 1e6 if np.isinf(w) else w
+#         inv_w = 1.0 / w_val if w_val > 0 else 0.001
+#         label = "∞" if np.isinf(w) else f"{w:.2f}"
+#         G.add_edge(u, v, weight=w_val, inv_weight=inv_w, label=label)
+
+#     # Use inverse weights for layout
+#     pos = nx.spring_layout(G, weight='inv_weight')
+
+#     # Retrieve edge labels from edge attributes
+#     edge_labels = nx.get_edge_attributes(G, 'label')
+
+#     # Plot
+#     plt.figure(figsize=(6, 6))
+#     nx.draw(G, pos, with_labels=True, node_color='skyblue', node_size=200, edge_color='gray')
+#     nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
+#     plt.title("MST Extended Graph with Edge Weights")
+#     plt.axis('off')
+#     plt.show()
+
+# def visualize_adjacency_dict(G_dict):
+#     """
+#     Visualize an adjacency dictionary as a NetworkX graph.
+
+#     Parameters
+#     ----------
+#     G_dict : dict
+#         Output of _build_graph() — {node: set(neighbors)}
+#     """
+#     # Convert dict-of-sets into a networkx Graph
+#     G = nx.Graph()
+#     for u, neighbors in G_dict.items():
+#         for v in neighbors:
+#             G.add_edge(u, v)
+
+#     pos = nx.spring_layout(G, seed=42)
+
+#     # Draw graph
+#     nx.draw(
+#         G, pos,
+#         with_labels=True,
+#         node_color='lightgreen',
+#         edge_color='gray',
+#         node_size=200,
+#         font_size=10
+#     )
+#     plt.title("Connected Component After Edge Removal")
+#     plt.tight_layout()
+#     plt.show()
