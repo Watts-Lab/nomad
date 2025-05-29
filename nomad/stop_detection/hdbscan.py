@@ -570,36 +570,7 @@ def select_most_stable_clusters(hierarchy_df, cluster_stability_df):
 
     return selected_clusters
 
-def hdbscan_labels(label_history_df, selected_clusters):
-    all_timestamps = set(label_history_df['time'])
-    assigned_timestamps = set()
-    rows = []
-
-    for cid in selected_clusters:
-        # Filter to rows where cluster_id == cid
-        cluster_rows = label_history_df[label_history_df['cluster_id'] == cid]
-
-        if cluster_rows.empty:
-            continue  # skip if no rows (just in case)
-        
-        # Find the smallest scale before this cluster disappears/splits into subclusters
-        min_scale = cluster_rows['dendrogram_scale'].min()
-        
-        # Get the timestamps assigned to this cluster at that scale
-        members = set(cluster_rows[cluster_rows['dendrogram_scale'] == min_scale]['time'])
-        for ts in members:
-            rows.append({"time": ts, "cluster": cid})
-        assigned_timestamps.update(members)
-    
-    # Add noise cluster (-1) for unassigned timestamps
-    for ts in all_timestamps - assigned_timestamps:
-        rows.append({"time": ts, "cluster": -1})
-    
-    hdbscan_labels_df = pd.DataFrame(rows).sort_values("time").reset_index(drop=True)
-
-    return hdbscan_labels_df
-
-def st_hdbscan(traj, is_long_lat, is_datetime, traj_cols, complete_output, time_thresh, min_pts = 2, min_cluster_size = 10, **kwargs):
+def hdbscan_labels(traj, traj_cols, time_thresh, min_pts = 2, min_cluster_size = 10, **kwargs):
     # Check if user wants long and lat
     is_long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs['latitude'] in traj.columns and kwargs['longitude'] in traj.columns
 
@@ -658,8 +629,87 @@ def st_hdbscan(traj, is_long_lat, is_datetime, traj_cols, complete_output, time_
     label_history_df, hierarchy_df = hdbscan(mstext_edges, min_cluster_size)
     cluster_stability_df = compute_cluster_stability(label_history_df)
     selected_clusters = select_most_stable_clusters(hierarchy_df, cluster_stability_df)
-    sample_labels_hdbscan = hdbscan_labels(label_history_df, selected_clusters)
-    merged_data_hdbscan = traj.merge(sample_labels_hdbscan, left_on=time_col_name, right_on='time')
+
+    all_timestamps = set(label_history_df['time'])
+    assigned_timestamps = set()
+    rows = []
+
+    for cid in selected_clusters:
+        # Filter to rows where cluster_id == cid
+        cluster_rows = label_history_df[label_history_df['cluster_id'] == cid]
+
+        if cluster_rows.empty:
+            continue  # skip if no rows (just in case)
+        
+        # Find the smallest scale before this cluster disappears/splits into subclusters
+        min_scale = cluster_rows['dendrogram_scale'].min()
+        
+        # Get the timestamps assigned to this cluster at that scale
+        members = set(cluster_rows[cluster_rows['dendrogram_scale'] == min_scale]['time'])
+        for ts in members:
+            rows.append({"time": ts, "cluster": cid})
+        assigned_timestamps.update(members)
+    
+    # Add noise cluster (-1) for unassigned timestamps
+    for ts in all_timestamps - assigned_timestamps:
+        rows.append({"time": ts, "cluster": -1})
+    
+    hdbscan_labels_df = pd.DataFrame(rows).sort_values("time").reset_index(drop=True)
+
+    return hdbscan_labels_df
+
+def st_hdbscan(traj, traj_cols, time_thresh, min_pts = 2, min_cluster_size = 10, complete_output = False, **kwargs):
+    # Check if user wants long and lat
+    is_long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs['latitude'] in traj.columns and kwargs['longitude'] in traj.columns
+
+    # Check if user wants datetime
+    is_datetime = 'datetime' in kwargs and kwargs['datetime'] in traj.columns
+
+    # Set initial schema
+    if not traj_cols:
+        traj_cols = {}
+
+    traj_cols = loader._update_schema(traj_cols, kwargs)
+    traj_cols = loader._update_schema(constants.DEFAULT_SCHEMA, traj_cols)
+
+    # Tests to check for spatial and temporal columns
+    loader._has_spatial_cols(traj.columns, traj_cols)
+    loader._has_time_cols(traj.columns, traj_cols)
+
+    # Setting x and y as defaults if not specified by user in either traj_cols or kwargs
+    if traj_cols['x'] in traj.columns and traj_cols['y'] in traj.columns and not is_long_lat:
+        is_long_lat = False
+    else:
+        is_long_lat = True
+
+    # Setting timestamp as default if not specified by user in either traj_cols or kwargs
+    if traj_cols['timestamp'] in traj.columns and not is_datetime:
+        is_datetime = False
+    else:
+        is_datetime = True
+
+    if is_datetime:
+        time_col_name = traj_cols['datetime']
+    else:
+        first_timestamp = traj[traj_cols['timestamp']].iloc[0]
+        timestamp_length = len(str(first_timestamp))
+        
+        if timestamp_length > 10:
+            if timestamp_length == 13:
+                warnings.warn(
+                    f"The '{traj[traj_cols['timestamp']]}' column appears to be in milliseconds. "
+                    "This may lead to inconsistencies."
+                )
+                
+            elif timestamp_length == 19:
+                warnings.warn(
+                    f"The '{traj[traj_cols['timestamp']]}' column appears to be in nanoseconds. "
+                    "This may lead to inconsistencies."
+                )
+        
+        time_col_name = traj_cols['timestamp']
+    labels_hdbscan = hdbscan_labels(traj=traj, traj_cols=traj_cols, time_thresh=time_thresh, min_pts = min_pts, min_cluster_size = min_cluster_size)
+    merged_data_hdbscan = traj.merge(labels_hdbscan, left_on=time_col_name, right_on='time')
     stop_table = merged_data_hdbscan.groupby('cluster').apply(lambda group: _stop_metrics(group, is_long_lat, is_datetime, traj_cols, complete_output), include_groups=False)
     # remove noise pings from stop table
     stop_table = stop_table[stop_table.index != -1]
