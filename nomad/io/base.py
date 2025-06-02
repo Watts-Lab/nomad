@@ -641,7 +641,7 @@ def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_f
             )
 
     # Handle integer columns
-    for key in ['tz_offset', 'duration', 'timestamp']:
+    for key in ['tz_offset', 'duration', 'timestamp', 'start_timestamp', 'end_timestamp']:
         if key in traj_cols and traj_cols[key] in df:
             col = traj_cols[key]
             if df[col].dtype != "Int64":

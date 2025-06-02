@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import nomad.io.base as loader
 import nomad.constants as constants
+import pdb
 from nomad.stop_detection import utils
 
 ##########################################
@@ -655,8 +656,9 @@ def hdbscan_labels(traj, traj_cols, time_thresh, min_pts = 2, min_cluster_size =
         rows.append({"time": ts, "cluster": -1})
     
     hdbscan_labels_df = pd.DataFrame(rows).sort_values("time").reset_index(drop=True)
+    hdbscan_labels_series = hdbscan_labels_df.set_index("time")["cluster"]
 
-    return hdbscan_labels_df
+    return hdbscan_labels_series
 
 def st_hdbscan(traj, traj_cols, time_thresh, min_pts = 2, min_cluster_size = 10, complete_output = False, **kwargs):
     # Check if user wants long and lat
@@ -666,13 +668,7 @@ def st_hdbscan(traj, traj_cols, time_thresh, min_pts = 2, min_cluster_size = 10,
     is_datetime = 'datetime' in kwargs and kwargs['datetime'] in traj.columns
 
     # Set initial schema
-    if not traj_cols:
-        traj_cols = {}
-
-    traj_cols = loader._update_schema(traj_cols, kwargs)
-    traj_cols = loader._update_schema(constants.DEFAULT_SCHEMA, traj_cols)
-
-    # Tests to check for spatial and temporal columns
+    traj_cols = loader._parse_traj_cols(traj.columns, traj_cols, kwargs)
     loader._has_spatial_cols(traj.columns, traj_cols)
     loader._has_time_cols(traj.columns, traj_cols)
 
@@ -708,11 +704,21 @@ def st_hdbscan(traj, traj_cols, time_thresh, min_pts = 2, min_cluster_size = 10,
                 )
         
         time_col_name = traj_cols['timestamp']
-    labels_hdbscan = hdbscan_labels(traj=traj, traj_cols=traj_cols, time_thresh=time_thresh, min_pts = min_pts, min_cluster_size = min_cluster_size)
-    merged_data_hdbscan = traj.merge(labels_hdbscan, left_on=time_col_name, right_on='time')
-    stop_table = merged_data_hdbscan.groupby('cluster').apply(lambda group: _stop_metrics(group, is_long_lat, is_datetime, traj_cols, complete_output), include_groups=False)
+        labels_hdbscan = hdbscan_labels(traj=traj, traj_cols=traj_cols, time_thresh=time_thresh, min_pts = min_pts,
+                                        min_cluster_size = min_cluster_size)
+    merged_data_hdbscan = traj.merge(labels_hdbscan, left_on=time_col_name, right_index = True)
+    
     # remove noise pings from stop table
-    stop_table = stop_table[stop_table.index != -1]
+    merged_data_hdbscan = merged_data_hdbscan[merged_data_hdbscan.cluster != -1]
+    stop_table = merged_data_hdbscan.groupby('cluster').apply(
+        lambda group: _stop_metrics(group, is_long_lat, is_datetime, traj_cols, complete_output), include_groups=False)
+
+    for key in ['start_timestamp', 'end_timestamp', 'n_pings', 'duration']:
+        if key in stop_table:
+            col = traj_cols[key]
+            if stop_table[col].dtype != "Int64":
+                stop_table[col] = stop_table[col].astype("Int64")
+                
     return stop_table
 
 def _stop_metrics(grouped_data, is_long_lat, is_datetime, traj_cols, complete_output):
@@ -727,10 +733,17 @@ def _stop_metrics(grouped_data, is_long_lat, is_datetime, traj_cols, complete_ou
         diameter_m = utils._diameter(coords, metric='euclidean')
 
     # Compute duration and start and end time of stop
+    start_time_key = 'start_timestamp'
+    end_time_key = 'end_timestamp'
+
     if is_datetime:
         start_time = grouped_data[traj_cols['datetime']].min()
         end_time = grouped_data[traj_cols['datetime']].max()
-        duration = (end_time - start_time).total_seconds() / 60.0
+        duration = (end_time - start_time).total_seconds() // 60.0
+
+        start_time_key = 'start_datetime'
+        end_time_key = 'end_datetime'
+        
     else:
         start_time = grouped_data[traj_cols['timestamp']].min()
         # print("start time:", start_time)
@@ -740,11 +753,11 @@ def _stop_metrics(grouped_data, is_long_lat, is_datetime, traj_cols, complete_ou
 
         if timestamp_length > 10:
             if timestamp_length == 13:
-                duration = ((end_time // 10 ** 3) - (start_time // 10 ** 3)) / 60.0
+                duration = int(((end_time // 10 ** 3) - (start_time // 10 ** 3)) / 60.0)
             elif timestamp_length == 19:
-                duration = ((end_time // 10 ** 9) - (start_time // 10 ** 9)) / 60.0
+                duration = int(((end_time // 10 ** 9) - (start_time // 10 ** 9)) / 60.0)
         else:
-            duration = (end_time - start_time) / 60.0
+            duration = int((end_time - start_time) / 60.0)
                             
     # Number of pings in stop
     n_pings = len(grouped_data)
@@ -768,11 +781,12 @@ def _stop_metrics(grouped_data, is_long_lat, is_datetime, traj_cols, complete_ou
         max_gap = int(np.max(time_diffs) / 60) if len(time_diffs) > 0 else 0
 
     # Prepare data for the Series
+    
     if is_long_lat:
         if complete_output:
             stop_attr = {
-                'start_time': start_time,
-                'end_time': end_time,
+                start_time_key: start_time,
+                end_time_key: end_time,
                 traj_cols['longitude']: stop_medoid[0],
                 traj_cols['latitude']: stop_medoid[1],
                 'diameter': diameter_m,
@@ -782,7 +796,7 @@ def _stop_metrics(grouped_data, is_long_lat, is_datetime, traj_cols, complete_ou
             }
         else:
             stop_attr = {
-                'start_time': start_time,
+                start_time_key: start_time,
                 'duration': duration,
                 traj_cols['longitude']: stop_medoid[0],
                 traj_cols['latitude']: stop_medoid[1]
@@ -790,8 +804,8 @@ def _stop_metrics(grouped_data, is_long_lat, is_datetime, traj_cols, complete_ou
     else:
         if complete_output:
             stop_attr = {
-                'start_time': start_time,
-                'end_time': end_time,
+                start_time_key: start_time,
+                end_time_key: end_time,
                 traj_cols['x']: stop_medoid[0],
                 traj_cols['y']: stop_medoid[1],
                 'diameter': diameter_m,
@@ -801,12 +815,11 @@ def _stop_metrics(grouped_data, is_long_lat, is_datetime, traj_cols, complete_ou
             }
         else:
             stop_attr = {
-                'start_time': start_time,
+                start_time_key: start_time,
                 'duration': duration,
                 traj_cols['x']: stop_medoid[0],
                 traj_cols['y']: stop_medoid[1]
             }
-
     return pd.Series(stop_attr)
 
 

@@ -27,7 +27,6 @@ def prepare_stop_table(stop_table, diary):
     """
 
     # Compute end times of stops
-    pdb.set_trace()
     stop_table['end_time'] = stop_table['start_time'] + pd.to_timedelta(stop_table['duration'], unit='m')
 
     temp_df = stop_table.merge(diary, on="location", suffixes=("_st", "_d"))
@@ -218,8 +217,7 @@ def cluster_metrics(stop_table, agent, city):
 if __name__ == '__main__':
     traj_cols = {'uid':'uid',
                  'x':'x',
-                 'y':'y',
-                 "start_timestamp":"start_time"}
+                 'y':'y'}
     
     sparse_df = loader.from_file("data/sparse_traj/", format="parquet", traj_cols=traj_cols,
                           parse_dates=True)
@@ -237,6 +235,5 @@ if __name__ == '__main__':
     diaries_df = loader.from_file("data/diaries/", format="parquet", traj_cols=traj_cols,
                            parse_dates=True)
     diaries_df = diaries_df.loc[diaries_df.uid == user]
-
-    output = prepare_stop_table(stop_table, diaries_df)
     pdb.set_trace()
+    output = prepare_stop_table(stop_table, diaries_df)
