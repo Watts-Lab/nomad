@@ -56,6 +56,165 @@ def prepare_stop_table(stop_table, diary):
 
     return stop_table
 
+def cluster_metrics(stop_table, agent, city):
+    """
+    Multiclass classification: compute precision, recall for each class separately,
+    then use microaveraging to get the overall precision and recall.
+    We could also try duration-weighted macroaveraging.
+    """
+
+    # Prepare diary: create stop IDs
+    dt = agent.dt
+    diary = prepare_diary(agent, dt, city)
+
+    # Prepare stop table: map detected stops to diary stops
+    stop_table = prepare_stop_table(stop_table, diary, dt)
+
+    # Count number of rows in stop_table for each stop_id in diary
+    stop_table_exploded = stop_table.explode("mapped_stop_ids").rename(columns={"mapped_stop_ids": "stop_id"})
+    stop_counts = stop_table_exploded["stop_id"].value_counts().reset_index()
+    stop_counts.columns = ["stop_id", "count"]
+
+    # Compute the overlap in minutes between two time intervals.
+    def compute_overlap(a_start, a_end, b_start, b_end):
+        latest_start = max(a_start, b_start)
+        earliest_end = min(a_end, b_end)
+        overlap = (earliest_end - latest_start).total_seconds() / 60
+        return max(0, overlap)
+
+    tp_fp_fn = {}
+    merging_dict = {}
+    merged_stop_count_dict = {}
+
+    # Efficient lookup
+    diary_indexed = diary.set_index("stop_id")
+
+    # First: true positive / false positive / false negative
+    for stop_id in diary["stop_id"].unique():
+        if stop_id == -1:
+            continue
+
+        diary_start = diary_indexed.loc[stop_id]["start_time"]
+        diary_end = diary_indexed.loc[stop_id]["end_time"]
+        
+        diary_duration = (diary_end - diary_start).total_seconds() / 60
+        
+        if stop_id in stop_table_exploded["stop_id"].values:
+            stop_row = stop_table_exploded[stop_table_exploded["stop_id"] == stop_id].iloc[0]
+            stop_start = stop_row["start_time"]
+            stop_end = stop_row["end_time"]
+            stop_duration = (stop_end - stop_start).total_seconds() / 60
+
+            tp = compute_overlap(stop_start, stop_end, diary_start, diary_end)
+            fp = stop_duration - tp
+            fn = diary_duration - tp
+        else:
+            tp = 0
+            fp = diary_duration
+            fn = 0
+
+        tp_fp_fn[stop_id] = [tp, fp, fn]
+
+    # Second: merging minutes per diary stop
+    for _, d in diary[diary["stop_id"] != -1].iterrows():
+        d_sid = d["stop_id"]
+        d_start = d["start_time"]
+        d_end = d["end_time"]
+
+        overlaps = stop_table_exploded[
+            (stop_table_exploded["end_time"] > d_start) &
+            (stop_table_exploded["start_time"] < d_end)
+        ]
+
+        merging_minutes = 0
+        merged_stop_ids_seen = set()
+
+        for _, s in overlaps.iterrows():
+            s_sid = s["stop_id"]
+            if s_sid != d_sid:
+                overlap_start = max(d_start, s["start_time"])
+                overlap_end = min(d_end, s["end_time"])
+                delta = (overlap_end - overlap_start).total_seconds() / 60
+                minutes = max(0, delta)
+            
+                if minutes > 0:
+                    merging_minutes += minutes
+                    merged_stop_ids_seen.add(s_sid)
+
+        if d_sid not in merging_dict:
+            merging_dict[d_sid] = 0
+        if d_sid not in merged_stop_count_dict:
+            merged_stop_count_dict[d_sid] = 0
+
+        merging_dict[d_sid] += merging_minutes
+        merged_stop_count_dict[d_sid] += len(merged_stop_ids_seen)
+
+    # Collect
+    metrics_data = []
+    for stop_id in diary["stop_id"].unique():
+        if stop_id == -1:
+            continue
+
+        tp, fp, fn = tp_fp_fn.get(stop_id)
+        mm = merging_dict.get(stop_id)
+        sm = merged_stop_count_dict.get(stop_id)
+
+        metrics_data.append({
+            "stop_id": stop_id,
+            "tp": tp,
+            "fp": fp,
+            "fn": fn,
+            "precision": tp / (tp + fp) if (tp + fp) != 0 else 0,
+            "recall": tp / (tp + fn) if (tp + fn) != 0 else 0,
+            "pings_merged": mm,
+            "stops_merged": sm,
+            "prop_merged": mm / (tp + fn) if (tp + fn) != 0 else 0,
+        })
+
+    # TODO: compute trip-related metrics
+    # trips = metrics_data[0]
+    # metrics_df = pd.DataFrame(metrics_data[1:])
+
+    metrics_df = pd.DataFrame(metrics_data)
+    metrics_df = diary.merge(metrics_df, on=['stop_id'], how='right')
+    metrics_df = metrics_df.merge(stop_counts, on=['stop_id'], how='left')
+    metrics_df['count'] = metrics_df['count'].fillna(0).astype(int)
+    metrics_df = metrics_df.set_index('stop_id')
+
+    tp = metrics_df['tp'].sum()
+    fp = metrics_df['fp'].sum()
+    fn = metrics_df['fn'].sum()
+    stops_merged = metrics_df['stops_merged'].sum()
+    n_stops = metrics_df.index.nunique()
+    prop_stops_merged = stops_merged / (n_stops - 1)
+
+    # Calculate micro-averaged precision and recall
+    precision = tp / (tp + fp) if (tp + fp) != 0 else 0
+    recall = tp / (tp + fn) if (tp + fn) != 0 else 0
+
+    # Calculate macro-averaged precision and merging, weighted by duration of stop
+    total_duration = metrics_df['duration'].sum()  # total duration = tp + fn
+    weighted_precision = (metrics_df['precision'] * metrics_df['duration']).sum() / total_duration
+    weighted_merging = (metrics_df['prop_merged'] * metrics_df['duration']).sum() / total_duration
+
+    # Count number of missed and split stops
+    num_missed = metrics_df[metrics_df['count'] == 0].shape[0]
+    num_split = metrics_df[metrics_df['count'] > 1].shape[0]
+
+    metrics = {
+        "Recall": float(recall),
+        "Precision": float(precision),
+        "Weighted Precision": float(weighted_precision),
+        "Missed": int(num_missed),
+        "Stops Merged": int(stops_merged),
+        "Prop Stops Merged": float(prop_stops_merged),
+        "Weighted Stop Merging": float(weighted_merging),
+        "Split": int(num_split),
+        "Stop Count": int(n_stops)
+    }
+
+    return metrics_df, metrics
+
 if __name__ == '__main__':
     traj_cols = {'uid':'uid',
                  'x':'x',
