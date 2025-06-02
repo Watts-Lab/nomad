@@ -655,8 +655,9 @@ def hdbscan_labels(traj, traj_cols, time_thresh, min_pts = 2, min_cluster_size =
         rows.append({"time": ts, "cluster": -1})
     
     hdbscan_labels_df = pd.DataFrame(rows).sort_values("time").reset_index(drop=True)
+    hdbscan_labels_series = hdbscan_labels_df.set_index("time")["cluster"]
 
-    return hdbscan_labels_df
+    return hdbscan_labels_series
 
 def st_hdbscan(traj, traj_cols, time_thresh, min_pts = 2, min_cluster_size = 10, complete_output = False, **kwargs):
     # Check if user wants long and lat
@@ -709,7 +710,7 @@ def st_hdbscan(traj, traj_cols, time_thresh, min_pts = 2, min_cluster_size = 10,
         
         time_col_name = traj_cols['timestamp']
     labels_hdbscan = hdbscan_labels(traj=traj, traj_cols=traj_cols, time_thresh=time_thresh, min_pts = min_pts, min_cluster_size = min_cluster_size)
-    merged_data_hdbscan = traj.merge(labels_hdbscan, left_on=time_col_name, right_on='time')
+    merged_data_hdbscan = traj.merge(labels_hdbscan, left_on=time_col_name, right_index = True)
     stop_table = merged_data_hdbscan.groupby('cluster').apply(lambda group: _stop_metrics(group, is_long_lat, is_datetime, traj_cols, complete_output), include_groups=False)
     # remove noise pings from stop table
     stop_table = stop_table[stop_table.index != -1]
@@ -730,7 +731,7 @@ def _stop_metrics(grouped_data, is_long_lat, is_datetime, traj_cols, complete_ou
     if is_datetime:
         start_time = grouped_data[traj_cols['datetime']].min()
         end_time = grouped_data[traj_cols['datetime']].max()
-        duration = (end_time - start_time).total_seconds() / 60.0
+        duration = int((end_time - start_time).total_seconds() / 60.0)
     else:
         start_time = grouped_data[traj_cols['timestamp']].min()
         # print("start time:", start_time)
@@ -740,11 +741,11 @@ def _stop_metrics(grouped_data, is_long_lat, is_datetime, traj_cols, complete_ou
 
         if timestamp_length > 10:
             if timestamp_length == 13:
-                duration = ((end_time // 10 ** 3) - (start_time // 10 ** 3)) / 60.0
+                duration = int(((end_time // 10 ** 3) - (start_time // 10 ** 3)) / 60.0)
             elif timestamp_length == 19:
-                duration = ((end_time // 10 ** 9) - (start_time // 10 ** 9)) / 60.0
+                duration = int(((end_time // 10 ** 9) - (start_time // 10 ** 9)) / 60.0)
         else:
-            duration = (end_time - start_time) / 60.0
+            duration = int((end_time - start_time) / 60.0)
                             
     # Number of pings in stop
     n_pings = len(grouped_data)
