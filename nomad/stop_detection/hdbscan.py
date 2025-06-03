@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import heapq
+import warnings
 from collections import defaultdict
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -8,6 +9,7 @@ import nomad.io.base as loader
 import nomad.constants as constants
 import pdb
 from nomad.stop_detection import utils
+
 
 ##########################################
 ########        HDBSCAN           ########
@@ -668,7 +670,13 @@ def st_hdbscan(traj, traj_cols, time_thresh, min_pts = 2, min_cluster_size = 10,
     is_datetime = 'datetime' in kwargs and kwargs['datetime'] in traj.columns
 
     # Set initial schema
-    traj_cols = loader._parse_traj_cols(traj.columns, traj_cols, kwargs)
+    if not traj_cols:
+        traj_cols = {}
+
+    traj_cols = loader._update_schema(traj_cols, kwargs)
+    traj_cols = loader._update_schema(constants.DEFAULT_SCHEMA, traj_cols)
+
+    # Tests to check for spatial and temporal columns
     loader._has_spatial_cols(traj.columns, traj_cols)
     loader._has_time_cols(traj.columns, traj_cols)
 
@@ -704,20 +712,23 @@ def st_hdbscan(traj, traj_cols, time_thresh, min_pts = 2, min_cluster_size = 10,
                 )
         
         time_col_name = traj_cols['timestamp']
-        labels_hdbscan = hdbscan_labels(traj=traj, traj_cols=traj_cols, time_thresh=time_thresh, min_pts = min_pts,
+
+    start_time_key = 'start_datetime' if is_datetime else 'start_timestamp'
+    end_time_key = 'end_datetime' if is_datetime else 'end_timestamp' 
+    
+    labels_hdbscan = hdbscan_labels(traj=traj, traj_cols=traj_cols, time_thresh=time_thresh, min_pts = min_pts,
                                         min_cluster_size = min_cluster_size)
     merged_data_hdbscan = traj.merge(labels_hdbscan, left_on=time_col_name, right_index = True)
     
     # remove noise pings from stop table
     merged_data_hdbscan = merged_data_hdbscan[merged_data_hdbscan.cluster != -1]
-    stop_table = merged_data_hdbscan.groupby('cluster').apply(
-        lambda group: _stop_metrics(group, is_long_lat, is_datetime, traj_cols, complete_output), include_groups=False)
+    
+    stop_table = merged_data_hdbscan.groupby('cluster').apply(lambda group: _stop_metrics(group, is_long_lat, is_datetime, traj_cols, complete_output), include_groups=False)
 
-    for key in ['start_timestamp', 'end_timestamp', 'n_pings', 'duration']:
+    for key in [start_time_key, end_time_key, 'n_pings', 'duration']:
         if key in stop_table:
-            col = traj_cols[key]
-            if stop_table[col].dtype != "Int64":
-                stop_table[col] = stop_table[col].astype("Int64")
+            if stop_table[key].dtype != "Int64":
+                stop_table[key] = stop_table[key].astype("Int64")
                 
     return stop_table
 
@@ -733,17 +744,13 @@ def _stop_metrics(grouped_data, is_long_lat, is_datetime, traj_cols, complete_ou
         diameter_m = utils._diameter(coords, metric='euclidean')
 
     # Compute duration and start and end time of stop
-    start_time_key = 'start_timestamp'
-    end_time_key = 'end_timestamp'
+    start_time_key = 'start_datetime' if is_datetime else 'start_timestamp'
+    end_time_key = 'end_datetime' if is_datetime else 'end_timestamp' 
 
     if is_datetime:
         start_time = grouped_data[traj_cols['datetime']].min()
         end_time = grouped_data[traj_cols['datetime']].max()
         duration = (end_time - start_time).total_seconds() // 60.0
-
-        start_time_key = 'start_datetime'
-        end_time_key = 'end_datetime'
-        
     else:
         start_time = grouped_data[traj_cols['timestamp']].min()
         # print("start time:", start_time)
