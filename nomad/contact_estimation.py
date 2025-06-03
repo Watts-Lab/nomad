@@ -7,7 +7,125 @@ import nomad.stop_detection.hdbscan as HDBSCAN
 import pandas as pd
 import pdb
 
-def prepare_stop_table(stop_table, diary):
+def overlapping_visits(df1, df2, match_location=False):
+    df1 = df1.loc[~df1.location.isna()].copy()
+    df2 = df2.loc[~df2.location.isna()].copy()
+    # Raise error if either df has more than one distinct uid
+    for df in (df1, df2):
+        if 'uid' in df.columns and df['uid'].nunique() > 1:
+            raise ValueError("Each dataframe must have at most one unique uid")
+    keep_uid = ('uid' in df1.columns and 'uid' in df2.columns 
+                and df1['uid'].iloc[0] != df2['uid'].iloc[0])
+
+    df1['end_timestamp'] = df1['timestamp'] + df1['duration'] * 60
+    df2['end_timestamp'] = df2['timestamp'] + df2['duration'] * 60
+
+    if match_location:
+        df1 = df1[df1['location'].notna()]
+        df2 = df2[df2['location'].notna()]
+        merged = df1.merge(df2, on='location', suffixes=('_left','_right'))
+    else:
+        merged = df1.merge(df2, how='cross', suffixes=('_left','_right'))
+
+    cond = (
+        (merged['timestamp_left'] < merged['end_timestamp_right']) &
+        (merged['timestamp_right'] < merged['end_timestamp_left'])
+    )
+    merged = merged.loc[cond]
+
+    start_max = merged[['timestamp_left','timestamp_right']].max(axis=1)
+    end_min   = merged[['end_timestamp_left','end_timestamp_right']].min(axis=1)
+    merged['overlap_duration'] = ((end_min - start_max) // 60).astype(int)
+
+    if match_location:
+        cols = ['timestamp_left','timestamp_right','location','overlap_duration']
+    else:
+        cols = ['timestamp_left','timestamp_right','location_left','location_right','overlap_duration']
+    if keep_uid:
+        cols += ['uid_left','uid_right']
+
+    return merged[cols].reset_index(drop=True)
+
+def compute_visitation_errors(overlaps, truth_df):
+    n_truth = truth_df['timestamp'].nunique()
+    gt_overlapped = set(overlaps['timestamp_right'].unique())
+    missed = (n_truth - len(gt_overlapped)) / n_truth
+
+    merged_ids = set()
+    for pred_ts, group in overlaps.groupby('timestamp_left'):
+        if group['location_right'].nunique() > 1:
+            merged_ids.update(group['timestamp_right'].unique())
+    merged = len(merged_ids) / n_truth
+
+    split_ids = set()
+    same_loc = overlaps[overlaps['location_left'] == overlaps['location_right']]
+    for gt_ts, group in same_loc.groupby('timestamp_right'):
+        if group['timestamp_left'].nunique() > 1:
+            split_ids.add(gt_ts)
+    split = len(split_ids) / n_truth
+
+    return {'missed_fraction': missed,
+            'merged_fraction': merged,
+            'split_fraction': split}
+
+    def overlapping_visits(df1, df2, match_location=False):
+    df1 = df1.loc[~df1.location.isna()].copy()
+    df2 = df2.loc[~df2.location.isna()].copy()
+    # Raise error if either df has more than one distinct uid
+    for df in (df1, df2):
+        if 'uid' in df.columns and df['uid'].nunique() > 1:
+            raise ValueError("Each dataframe must have at most one unique uid")
+    keep_uid = ('uid' in df1.columns and 'uid' in df2.columns 
+                and df1['uid'].iloc[0] != df2['uid'].iloc[0])
+
+    df1['end_timestamp'] = df1['timestamp'] + df1['duration'] * 60
+    df2['end_timestamp'] = df2['timestamp'] + df2['duration'] * 60
+
+    if match_location:
+        df1 = df1[df1['location'].notna()]
+        df2 = df2[df2['location'].notna()]
+        merged = df1.merge(df2, on='location', suffixes=('_left','_right'))
+    else:
+        merged = df1.merge(df2, how='cross', suffixes=('_left','_right'))
+
+    cond = (
+        (merged['timestamp_left'] < merged['end_timestamp_right']) &
+        (merged['timestamp_right'] < merged['end_timestamp_left'])
+    )
+    merged = merged.loc[cond]
+
+    start_max = merged[['timestamp_left','timestamp_right']].max(axis=1)
+    end_min   = merged[['end_timestamp_left','end_timestamp_right']].min(axis=1)
+    merged['overlap_duration'] = ((end_min - start_max) // 60).astype(int)
+
+    if match_location:
+        cols = ['timestamp_left','timestamp_right','location','overlap_duration']
+    else:
+        cols = ['timestamp_left','timestamp_right','location_left','location_right','overlap_duration']
+    if keep_uid:
+        cols += ['uid_left','uid_right']
+
+    return merged[cols].reset_index(drop=True)
+
+
+def compute_precision_recall_f1(overlaps, pred_df, truth_df):
+    total_pred = pred_df['duration'].sum()
+    total_truth = truth_df['duration'].sum()
+
+    tp = overlaps.loc[
+        overlaps['location_left'] == overlaps['location_right'],
+        'overlap_duration'
+    ].sum()
+
+    precision = tp / total_pred if total_pred > 0 else 0.0
+    recall = tp / total_truth if total_truth > 0 else 0.0
+    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
+
+    return {'precision': precision,
+            'recall': recall,
+            'f1': f1}
+
+def prepare_stop_table(stop_table, diary, end_timestamp = None):
     """
     Map detected stops in `stop_table` to a list of true diary stops by overlapping location and timeframe.
 
@@ -44,6 +162,8 @@ def prepare_stop_table(stop_table, diary):
         .reset_index()
         .rename(columns={'stop_id': 'mapped_stop_ids'})
     )
+
+    return temp_df
 
     # Merge back with original stop_table
     stop_table = stop_table.merge(
