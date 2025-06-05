@@ -4,7 +4,7 @@ import nomad.constants as constants
 from shapely.geometry import Point
 import warnings
 import pandas as pd
-import pdb
+import nomad.io.base as loader
 
 def point_in_polygon(traj, labels, stop_table, traj_cols, is_datetime, is_long_lat):
     poi_table = gpd.read_file('../garden_city.geojson')
@@ -63,7 +63,7 @@ def majority_poi(traj, labels, stop_table, traj_cols, is_datetime, is_long_lat):
     
 def poi_map(traj, poi_table, traj_cols=None, max_distance=4, **kwargs):
     """
-    Map pings in the trajectory to the POI table.
+    Map elements in traj to closest polygon in poi_table with an allowed distance buffer.
 
     Parameters
     ----------
@@ -126,51 +126,52 @@ def poi_map(traj, poi_table, traj_cols=None, max_distance=4, **kwargs):
 
     return pings_df["building_id"]
 
-# def poi_map(traj, poi_table, traj_cols=None, crs=None, **kwargs):
-#     """
-#     Map pings in the trajectory to the POI table.
+def oracle_map(traj, true_visits, traj_cols, **kwargs):
+    """
+    Map elements in traj to ground truth location based solely on the record's time.
 
-#     Parameters
-#     ----------
-#     traj : pd.DataFrame
-#         The trajectory DataFrame containing x and y coordinates.
-#     poi_table : gpd.GeoDataFrame
-#         The POI table containing building geometries and IDs.
-#     traj_cols : list
-#         The columns in the trajectory DataFrame to be used for mapping.
-#     **kwargs : dict
-#         Additional keyword arguments.
+    Parameters
+    ----------
+    traj : pd.DataFrame
+        The trajectory DataFrame containing x and y coordinates.
+    true_visits : pd.DataFrame
+        A visitation table containing location IDs, start times, and durations/end times.
+    traj_cols : list
+        The columns in the trajectory DataFrame to be used for mapping.
+    **kwargs : dict
+        Additional keyword arguments.
     
-#     Returns
-#     -------
-#     pd.Series
-#         A Series containing the building IDs corresponding to the pings in the trajectory.
-#     """
-#     # TO DO: warning if CRS is None. If is_long_lat inform that EPSG:4326 will be used.
-#     # TO DO: if not is_long_lat and CRS is None, Raise Error and inform of CRS of poi_table. 
-#     # TO DO: if POI_table has no CRS Raise Error. If poi_table has different CRS? ValueError suggest reprojection
+    Returns
+    -------
+    pd.Series
+        A Series containing the location IDs corresponding to the pings in the trajectory.
+    """ 
+    traj_cols = loader._parse_traj_cols(traj.columns, traj_cols, kwargs)
+
+    loader._has_time_cols(traj.columns, traj_cols)
+    loader._has_time_cols(true_visits.columns, traj_cols)
+
+    end_col_present = _has_end_cols(true_visits.columns, traj_cols)
+    duration_col_present = _has_duration_cols(true_visits.columns, traj_cols)
+    if not (end_col_present or duration_col_present):
+        print("Missing required (end or duration) temporal columns for true_visits dataframe.")
+        return False
     
-#     # Check if user wants long and lat
-#     is_long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs['latitude'] in traj.columns and kwargs['longitude'] in traj.columns
+    use_datetime = False
+    if traj_cols['timestamp'] in traj.columns:
+        time_col_in = traj_cols['timestamp']
+        time_key = 'timestamp'
+    elif traj_cols['start_timestamp'] in traj.columns:
+        time_col_in = traj_cols['start_timestamp']
+        time_key = 'start_timestamp'
+    else:
+        use_datetime = True 
 
-#     # Set initial schema
-#     traj_cols = loader._parse_traj_cols(traj.columns, traj_cols, kwargs)
-#     loader._has_spatial_cols(traj.columns, traj_cols)
-
-#     # Setting x and y as defaults if not specified by user in either traj_cols or kwargs
-#     if traj_cols['x'] in traj.columns and traj_cols['y'] in traj.columns and not is_long_lat:
-#         is_long_lat = False
-#         pings_df = traj[[traj_cols['x'], traj_cols['y']]].copy()
-#     else:
-#         is_long_lat = True
-#         pings_df = traj[[traj_cols['longitude'],  traj_cols['latitide']]].copy()
-
-#     pings_df["pings_geometry"] = pings_df.apply(lambda row: Point(row[traj_cols['longitude']], row[traj_cols['latitude']]) if is_long_lat else Point(row[traj_cols['x']], row[traj_cols['y']]), axis=1)
-#     pings_df = gpd.GeoDataFrame(pings_df, geometry="pings_geometry", crs=poi_table.crs)
+    # TO DO: Check the same thing for true_visits start, and duration/end
+    # TO DO: Conversion of everything to UTC
+    # Loop through ground truth and numpy timestamps diff
     
-#     pings_df = gpd.sjoin(pings_df, poi_table, how="left", predicate="within")
-
-#     # Is this necessary at this stage? we lose information silently...
-#     pings_df["building_id"] = pings_df["building_id"].where(pings_df["building_id"].notna(), None)
-
-#     return pings_df["building_id"]
+    # Check whether to use timestamp or datetime columns
+    is_long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs['latitude'] in traj.columns and kwargs['longitude'] in traj.columns
+    
+    return location_ids
