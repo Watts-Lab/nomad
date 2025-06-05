@@ -4,6 +4,7 @@ import nomad.constants as constants
 from shapely.geometry import Point
 import warnings
 import pandas as pd
+import pdb
 
 def point_in_polygon(traj, labels, stop_table, traj_cols, is_datetime, is_long_lat):
     poi_table = gpd.read_file('../garden_city.geojson')
@@ -13,18 +14,14 @@ def point_in_polygon(traj, labels, stop_table, traj_cols, is_datetime, is_long_l
         stop_table['location'] = pd.Series(dtype='object')
         return stop_table
 
+    # merge labels with data
     traj_with_labels = traj.copy()
+    time_col = traj_cols['datetime'] if is_datetime else traj_cols['timestamp']
+    traj_with_labels = traj_with_labels.merge(labels, left_on=time_col, right_index=True, how='left')
 
-    if is_datetime:
-        traj_with_labels = traj_with_labels.merge(labels, left_on=traj_cols['datetime'], right_index=True)
-    else:
-        traj_with_labels = traj_with_labels.merge(labels, left_on=traj_cols['timestamp'], right_index=True)
-
-    # Compute the location for each cluster
-    if is_long_lat:
-        pings_df = traj_with_labels.groupby('cluster')[[traj_cols['longitude'], traj_cols['latitude']]].mean()
-    else:
-        pings_df = traj_with_labels.groupby('cluster')[[traj_cols['x'], traj_cols['y']]].mean()
+    # compute the location for each cluster
+    space_cols = [traj_cols['longitude'], traj_cols['latitude']] if is_long_lat else [traj_cols['x'], traj_cols['y']]
+    pings_df = traj_with_labels.groupby('cluster')[space_cols].mean()
     
     locations = poi_map(traj=pings_df,
                         poi_table=poi_table,
@@ -33,7 +30,6 @@ def point_in_polygon(traj, labels, stop_table, traj_cols, is_datetime, is_long_l
     # Map the mode location back to the stop_table
     stop_table['location'] = locations
 
-    # Let's return locations instead?
     return stop_table
     
 def majority_poi(traj, labels, stop_table, traj_cols, is_datetime, is_long_lat):
@@ -43,34 +39,29 @@ def majority_poi(traj, labels, stop_table, traj_cols, is_datetime, is_long_lat):
     if labels.empty or stop_table.empty:
         stop_table['location'] = pd.Series(dtype='object')
         return stop_table
-
-    traj_with_labels = traj.copy()
-
-    key_col = traj_cols['datetime'] if is_datetime else traj_cols['timestamp']
-    traj_with_labels = traj_with_labels.merge(labels, left_on=key_col, right_index=True, how='left')
     
-    # Compute the location for each cluster
-    if is_long_lat:
-        pings_df = traj_with_labels[[traj_cols['longitude'], traj_cols['latitude']]].copy()
-    else:
-        pings_df = traj_with_labels[[traj_cols['x'], traj_cols['y']]].copy()
+    # merge labels with data
+    traj_with_labels = traj.copy()
+    time_col = traj_cols['datetime'] if is_datetime else traj_cols['timestamp']
+    traj_with_labels = traj_with_labels.merge(labels, left_on=time_col, right_index=True, how='left')
+
+    # compute the location for each cluster
+    space_cols = [traj_cols['longitude'], traj_cols['latitude']] if is_long_lat else [traj_cols['x'], traj_cols['y']]
+    pings_df = traj_with_labels[space_cols].copy()
     
     traj_with_labels["building_id"] = poi_map(traj=pings_df,
                                               poi_table=poi_table,
                                               traj_cols=traj_cols)
 
-    locations = traj_with_labels.groupby('cluster')['building_id'].agg(
-        lambda x: x.mode().iloc[0] if not x.mode().empty else None
-    )
+    locations = traj_with_labels.groupby('cluster')['building_id'].agg(lambda x: x.mode().iloc[0] if not x.mode().empty else None)
 
     # Map the mode location back to the stop_table
     stop_table['location'] = locations
 
-    # Let's return locations instead?
     return stop_table
 
     
-def poi_map(traj, poi_table, traj_cols=None, max_distance=1, **kwargs):
+def poi_map(traj, poi_table, traj_cols=None, max_distance=4, **kwargs):
     """
     Map pings in the trajectory to the POI table.
 
@@ -110,16 +101,17 @@ def poi_map(traj, poi_table, traj_cols=None, max_distance=1, **kwargs):
         pings_df = traj[[traj_cols['longitude'],  traj_cols['latitide']]].copy()
 
     # Build pings GeoDataFrame
+    # use gpd.points_from_xy
     pings_df["pings_geometry"] = pings_df.apply(lambda row: Point(row[traj_cols['longitude']], row[traj_cols['latitude']]) if is_long_lat else Point(row[traj_cols['x']], row[traj_cols['y']]), axis=1)
     pings_df = gpd.GeoDataFrame(pings_df, geometry="pings_geometry", crs=poi_table.crs)
     
     # First spatial join (within)
     pings_df = gpd.sjoin(pings_df, poi_table, how="left", predicate="within")
-    
+   
     # Identify unmatched pings
     unmatched_mask = pings_df["building_id"].isna()
     unmatched_pings = pings_df[unmatched_mask].drop(columns=["building_id", "index_right"])
-    
+
     if not unmatched_pings.empty:
         # Nearest spatial join for unmatched pings
         with warnings.catch_warnings():

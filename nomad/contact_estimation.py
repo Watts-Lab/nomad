@@ -68,7 +68,7 @@ def compute_visitation_errors(overlaps, truth_df):
             'merged_fraction': merged,
             'split_fraction': split}
 
-    def overlapping_visits(df1, df2, match_location=False):
+def overlapping_visits(df1, df2, match_location=False):
     df1 = df1.loc[~df1.location.isna()].copy()
     df2 = df2.loc[~df2.location.isna()].copy()
     # Raise error if either df has more than one distinct uid

@@ -10,6 +10,7 @@ from collections import defaultdict
 import sys
 import os
 import pdb
+import warnings
 import geopandas as gpd
 import nomad.io.base as loader
 import nomad.constants as constants
@@ -20,7 +21,7 @@ from nomad.filters import to_timestamp
 ########        Lachesis          ########
 ##########################################
 
-def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=False, keep_col_names = True, **kwargs):
+def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=False, keep_col_names = False, **kwargs):
     """
     Detects stops in trajectory data by analyzing spatial and temporal patterns.
 

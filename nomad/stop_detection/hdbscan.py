@@ -645,10 +645,13 @@ def hdbscan_labels(traj, traj_cols, time_thresh, min_pts = 2, min_cluster_size =
             continue  # skip if no rows (just in case)
         
         # Find the smallest scale before this cluster disappears/splits into subclusters
-        min_scale = cluster_rows['dendrogram_scale'].min()
+        # min_scale = cluster_rows['dendrogram_scale'].min()
+        max_scale = cluster_rows['dendrogram_scale'].max()
         
         # Get the timestamps assigned to this cluster at that scale
-        members = set(cluster_rows[cluster_rows['dendrogram_scale'] == min_scale]['time'])
+        # members = set(cluster_rows[cluster_rows['dendrogram_scale'] == min_scale]['time'])
+        members = set(cluster_rows[cluster_rows['dendrogram_scale'] == max_scale]['time'])
+
         for ts in members:
             rows.append({"time": ts, "cluster": cid})
         assigned_timestamps.update(members)

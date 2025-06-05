@@ -442,6 +442,9 @@ def _stop_metrics(grouped_data, long_lat, datetime, traj_cols, complete_output):
         diameter_m = utils._diameter(coords, metric='euclidean')
 
     # Compute duration and start and end time of stop
+    start_time_key = 'start_datetime' if datetime else 'start_timestamp'
+    end_time_key = 'end_datetime' if datetime else 'end_timestamp' 
+    
     if datetime:
         start_time = grouped_data[traj_cols['datetime']].min()
         end_time = grouped_data[traj_cols['datetime']].max()
@@ -485,8 +488,8 @@ def _stop_metrics(grouped_data, long_lat, datetime, traj_cols, complete_output):
     if long_lat:
         if complete_output:
             stop_attr = {
-                'start_time': start_time,
-                'end_time': end_time,
+                start_time_key: start_time,
+                end_time_key: end_time,
                 traj_cols['longitude']: stop_medoid[0],
                 traj_cols['latitude']: stop_medoid[1],
                 'diameter': diameter_m,
@@ -496,7 +499,7 @@ def _stop_metrics(grouped_data, long_lat, datetime, traj_cols, complete_output):
             }
         else:
             stop_attr = {
-                'start_time': start_time,
+                start_time_key: start_time,
                 'duration': duration,
                 traj_cols['longitude']: stop_medoid[0],
                 traj_cols['latitude']: stop_medoid[1]
@@ -504,8 +507,8 @@ def _stop_metrics(grouped_data, long_lat, datetime, traj_cols, complete_output):
     else:
         if complete_output:
             stop_attr = {
-                'start_time': start_time,
-                'end_time': end_time,
+                start_time_key: start_time,
+                end_time_key: end_time,
                 traj_cols['x']: stop_medoid[0],
                 traj_cols['y']: stop_medoid[1],
                 'diameter': diameter_m,
@@ -515,7 +518,7 @@ def _stop_metrics(grouped_data, long_lat, datetime, traj_cols, complete_output):
             }
         else:
             stop_attr = {
-                'start_time': start_time,
+                start_time_key: start_time,
                 'duration': duration,
                 traj_cols['x']: stop_medoid[0],
                 traj_cols['y']: stop_medoid[1]
