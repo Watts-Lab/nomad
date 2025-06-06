@@ -490,6 +490,31 @@ def _get_eps(label_history_df, target_cluster_id):
 
     return pd.DataFrame(eps_df)
 
+def custom_cluster_stability(label_history_df):
+    from scipy.stats import norm
+    mu = 100
+    sigma = 2
+
+    # Get clusters that are not root (0) or noise (-1)
+    clusters = label_history_df.loc[~label_history_df['cluster_id'].isin([0, -1]), 'cluster_id'].unique()
+
+    cluster_stability_df = []
+
+    for cluster in clusters:
+        eps_df = _get_eps(label_history_df, target_cluster_id=cluster)
+        
+        # Avoid division by zero or NaNs
+        eps_df = eps_df.replace({'eps_min': {0: np.nan}, 'eps_max': {0: np.nan}})
+        eps_df['stability_term'] = norm.pdf(eps_df['eps_min'], loc=mu, scale=sigma)
+        total_stability = eps_df['stability_term'].sum(skipna=True)
+
+        cluster_stability_df.append({
+            "cluster_id": cluster,
+            "cluster_stability": total_stability
+        })
+
+    return pd.DataFrame(cluster_stability_df)
+
 
 def compute_cluster_stability(label_history_df):
     # Get clusters that are not root (0) or noise (-1)
@@ -608,13 +633,13 @@ def hdbscan_labels(traj, traj_cols, time_thresh, min_pts = 2, min_cluster_size =
         if timestamp_length > 10:
             if timestamp_length == 13:
                 warnings.warn(
-                    f"The '{traj[traj_cols['timestamp']]}' column appears to be in milliseconds. "
+                    f"The '{traj_cols['timestamp']}' column appears to be in milliseconds. "
                     "This may lead to inconsistencies."
                 )
                 
             elif timestamp_length == 19:
                 warnings.warn(
-                    f"The '{traj[traj_cols['timestamp']]}' column appears to be in nanoseconds. "
+                    f"The '{traj_cols['timestamp']}' column appears to be in nanoseconds. "
                     "This may lead to inconsistencies."
                 )
         
@@ -626,7 +651,8 @@ def hdbscan_labels(traj, traj_cols, time_thresh, min_pts = 2, min_cluster_size =
     mst_edges = _mst(mrd)
     mstext_edges = mst_ext(mst_edges, core_distances)
     label_history_df, hierarchy_df = hdbscan(mstext_edges, min_cluster_size)
-    cluster_stability_df = compute_cluster_stability(label_history_df)
+    # cluster_stability_df = compute_cluster_stability(label_history_df)
+    cluster_stability_df = custom_cluster_stability(label_history_df)
     selected_clusters = select_most_stable_clusters(hierarchy_df, cluster_stability_df)
 
     all_timestamps = set(label_history_df['time'])
@@ -700,13 +726,13 @@ def st_hdbscan(traj, traj_cols, time_thresh, min_pts = 2, min_cluster_size = 10,
         if timestamp_length > 10:
             if timestamp_length == 13:
                 warnings.warn(
-                    f"The '{traj[traj_cols['timestamp']]}' column appears to be in milliseconds. "
+                    f"The '{traj_cols['timestamp']}' column appears to be in milliseconds. "
                     "This may lead to inconsistencies."
                 )
                 
             elif timestamp_length == 19:
                 warnings.warn(
-                    f"The '{traj[traj_cols['timestamp']]}' column appears to be in nanoseconds. "
+                    f"The '{traj_cols['timestamp']}' column appears to be in nanoseconds. "
                     "This may lead to inconsistencies."
                 )
         
