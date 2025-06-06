@@ -460,7 +460,7 @@ def _has_user_cols(col_names, traj_cols):
 
     if not user_exists:
         raise ValueError(
-            "Could not find required user identifier column in {}. The dataset must contain or map to 'user_id'.".format(col_names)
+            "Could not find required user_id column in {}. The dataset must contain or map to 'user_id'.".format(col_names)
         )
     
     return user_exists
