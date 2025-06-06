@@ -7,42 +7,75 @@ import nomad.stop_detection.hdbscan as HDBSCAN
 import pandas as pd
 import pdb
 
-def overlapping_visits(left, right, match_location=False):
+def overlapping_visits(left, right, match_location=False, traj_cols=None, **kwargs):
+    # Handle column names
+    _ = loader._parse_traj_cols(right.columns, traj_cols, kwargs) # for warning
+    traj_cols = loader._parse_traj_cols(left.columns, traj_cols, kwargs)
+
+    # Has required columns
+    uid_key = traj_cols['user_id']
+    loc_key = traj_cols['location']
+    e_t_key = traj_cols['end_timestamp']
+    # time key defaults to timestamp, only searched on left visits table
+    if traj_cols['timestamp'] in left.columns:
+        t_key = traj_cols['timestamp']
+    elif traj_cols['start_timestamp'] in left.columns:
+        t_key = traj_cols['start_timestamp']
+    else:
+        # TO DO: implement to timestamp conversion of datetime
+        raise ValueError('Overlap of visits with datetime64 objects not yet implemented')
+    
+    #check for keys
+    for df_name, df in {'left':left, 'right':right}.items():
+        loader._has_time_cols(df.columns, traj_cols)
+        
+        end_col_present = loader._has_end_cols(df.columns, traj_cols)
+        duration_col_present = loader._has_duration_cols(df.columns, traj_cols)
+        if not (end_col_present or duration_col_present):
+            print(f"Missing required (end or duration) temporal columns for {df_name} visits dataframe in columns {df.columns}.")
+            
+        if uid_key in df.columns and not (df[uid_key].nunique() == 1):
+            raise ValueError("Each visits dataframe must have at most one unique user_id")
+            
+        if traj_cols['location'] not in df:
+            raise ValueError(
+                "Could not find required location column in {}. The dataset must contain or map to "
+                "a location column'.".format(list(df.columns)))
+            
+    keep_uid = (uid_key in left.columns and uid_key in right.columns )
+    if keep_uid:
+        same_id = (left[uid_key].iloc[0] == right[uid_key].iloc[0])
+        uid = left[uid_key].iloc[0]
+   
+    # Non-na locations and end_timestamp on copy
     left = left.loc[~left.location.isna()].copy()
     right = right.loc[~right.location.isna()].copy()
-    # Raise error if either df has more than one distinct uid
-    for df in (left, right):
-        if 'uid' in df.columns and df['uid'].nunique() > 1:
-            raise ValueError("Each dataframe must have at most one unique uid")
-    keep_uid = ('uid' in left.columns and 'uid' in right.columns 
-                and left['uid'].iloc[0] != right['uid'].iloc[0])
 
-    left['end_timestamp'] = left['timestamp'] + left['duration'] * 60
-    right['end_timestamp'] = right['timestamp'] + right['duration'] * 60
+    for df in [left, right]:
+        if e_t_key not in df.columns:
+            df[e_t_key] = df[t_key] + df[traj_cols['duration']]*60 # will fail if t_key is datetime!!
+    
+    cols = [t_key, e_t_key, loc_key]
+    if keep_uid and not same_id:
+        cols = [uid_key] + cols
 
     if match_location:
-        left = left[left['location'].notna()]
-        right = right[right['location'].notna()]
         merged = left.merge(right, on='location', suffixes=('_left','_right'))
     else:
         merged = left.merge(right, how='cross', suffixes=('_left','_right'))
 
-    cond = (
-        (merged['timestamp_left'] < merged['end_timestamp_right']) &
-        (merged['timestamp_right'] < merged['end_timestamp_left'])
-    )
+    cond = ((merged[t_key+'_left'] < merged[e_t_key+'_right']) &
+            (merged[t_key+'_right'] < merged[e_t_key+'_left']))
     merged = merged.loc[cond]
 
-    start_max = merged[['timestamp_left','timestamp_right']].max(axis=1)
-    end_min   = merged[['end_timestamp_left','end_timestamp_right']].min(axis=1)
-    merged['overlap_duration'] = ((end_min - start_max) // 60).astype(int)
+    start_max = merged[[t_key+'left',t_key+'_right']].max(axis=1)
+    end_min   = merged[[e_t_key+'_left',e_t_key+'_right']].min(axis=1)
 
-    if match_location:
-        cols = ['timestamp_left','timestamp_right','location','overlap_duration']
-    else:
-        cols = ['timestamp_left','timestamp_right','location_left','location_right','overlap_duration']
-    if keep_uid:
-        cols += ['uid_left','uid_right']
+    merged.drop([e_t_key+'_left', e_t_key+'_right'], axis=1)
+    merged['overlap_duration'] = ((end_min - start_max) // 60).astype(int)
+    
+    if keep_uid and same_id:
+        merged[uid_key] = uid
 
     return merged[cols].reset_index(drop=True)
 

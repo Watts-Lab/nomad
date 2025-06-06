@@ -1,3 +1,6 @@
+# TO DO: Add other schemas
+# TO DO: Add tesselation cell default
+
 DEFAULT_SCHEMA = {
     "user_id": "user_id",
     "latitude": "latitude",
@@ -12,7 +15,8 @@ DEFAULT_SCHEMA = {
     "y": "y",
     "geohash": "geohash",
     "tz_offset": "tz_offset",
-    "duration" : "duration"}
+    "duration" : "duration",
+    "location" : "location"}
 
 ALLOWED_BUILDINGS = {
     0: ['home'], 1: ['home'], 2: ['home'], 3: ['home'], 4: ['home'],

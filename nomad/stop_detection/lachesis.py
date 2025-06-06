@@ -170,8 +170,6 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
 
             medoid = utils._medoid(coords[i:j_final + 1])
 
-           
-            
             if complete_output:
                 cluster_times = time_series.iloc[i:j_final + 1].sort_values()
                 cluster_diffs = np.diff(cluster_times.values)
