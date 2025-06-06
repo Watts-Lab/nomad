@@ -328,13 +328,13 @@ def temporal_dbscan(data, time_thresh, dist_thresh, min_pts, traj_cols=None, com
         if timestamp_length > 10:
             if timestamp_length == 13:
                 warnings.warn(
-                    f"The '{data[traj_cols['timestamp']]}' column appears to be in milliseconds. "
+                    f"The '{traj_cols['timestamp']}' column appears to be in milliseconds. "
                     "This may lead to inconsistencies."
                 )
                 time_col_name = traj_cols['timestamp']
             elif timestamp_length == 19:
                 warnings.warn(
-                    f"The '{data[traj_cols['timestamp']]}' column appears to be in nanoseconds. "
+                    f"The '{traj_cols['timestamp']}' column appears to be in nanoseconds. "
                     "This may lead to inconsistencies."
                 )
                 time_col_name = traj_cols['timestamp']
@@ -396,14 +396,14 @@ def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, traj_cols=N
         if timestamp_length > 10:
             if timestamp_length == 13:
                 warnings.warn(
-                    f"The '{data[traj_cols['timestamp']]}' column appears to be in milliseconds. "
+                    f"The '{traj_cols['timestamp']}' column appears to be in milliseconds. "
                     "This may lead to inconsistencies."
                 )
                 valid_times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 3
                 time_col_name = traj_cols['timestamp']
             elif timestamp_length == 19:
                 warnings.warn(
-                    f"The '{data[traj_cols['timestamp']]}' column appears to be in nanoseconds. "
+                    f"The '{traj_cols['timestamp']}' column appears to be in nanoseconds. "
                     "This may lead to inconsistencies."
                 )
                 valid_times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 9
