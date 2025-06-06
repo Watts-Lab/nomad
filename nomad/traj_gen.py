@@ -252,7 +252,6 @@ class Agent:
         self.diary = pd.DataFrame(columns=self.diary.columns)
         self.last_ping = None
         self.sparse_traj = None
-    
 
     def plot_traj(self,
                   ax,
@@ -320,31 +319,32 @@ class Agent:
     
             if npr.uniform() < p:
                 coord = curr
-            else:
+            else: # Draw until coord falls inside building
                 while True:
                     coord = np.random.normal(loc=curr, scale=sigma*np.sqrt(dt), size=2)
                     if dest_building.geometry.contains(Point(coord)):
                         break
-        else:
+        else: # Agent travels to building along the streets
             location = None
             dest_point = dest_building.door
-    
+
             if start_geometry in city.buildings.values():
                 start_segment = [start_point, start_geometry.door_centroid]
                 start = start_geometry.door
             else:
                 start_segment = []
                 start = tuple(start_block.astype(int))
-    
+
             street_path = city.shortest_paths[start][dest_point]
             path = [(x + 0.5, y + 0.5) for (x, y) in street_path]
             path = start_segment + path + [dest_building.door_centroid]
             path_ml = MultiLineString([path])
             path_length = path_ml.length
-    
+
+            # Bounding polygon
             street_poly = unary_union([city.get_block(block).geometry for block in street_path])
             bound_poly = unary_union([start_geometry.geometry, street_poly])
-    
+            # Snap to path
             snap_point_dist = path_ml.project(Point(start_point))
     
             delta = 3.33 * dt
@@ -491,16 +491,15 @@ class Agent:
             }).set_index('id')
 
             # Initializes past counts randomly
-            visit_freqs.loc[self.home, 'freq'] = 25
-            visit_freqs.loc[self.workplace, 'freq'] = 25
+            visit_freqs.loc[self.home, 'freq'] = 35
+            visit_freqs.loc[self.workplace, 'freq'] = 35
             visit_freqs.loc[visit_freqs.type == 'park', 'freq'] = 3  # Agents love to comeback to park
-            # ALTERNATIVELY: start with 1 at home and 1 at work, and do a burnout period of 2 weeks. 
 
             initial_locs = []
-            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'retail'].index, size=npr.poisson(8)))
-            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'work'].index, size=npr.poisson(4)))
-            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'home'].index, size=npr.poisson(4)))
-            visit_freqs.loc[initial_locs, 'freq'] += 1
+            initial_locs += [npr.choice(visit_freqs.loc[visit_freqs.type == 'retail'].index, size=npr.poisson(6))]
+            initial_locs += [npr.choice(visit_freqs.loc[visit_freqs.type == 'work'].index, size=npr.poisson(3))]
+            initial_locs += [npr.choice(visit_freqs.loc[visit_freqs.type == 'home'].index, size=npr.poisson(3))]
+            visit_freqs.loc[initial_locs, 'freq'] += 2
 
         if self.destination_diary.empty:
             start_time_local = self.last_ping['local_timestamp']

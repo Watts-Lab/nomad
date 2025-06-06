@@ -5,9 +5,6 @@ from shapely.geometry import Point
 from zoneinfo import ZoneInfo
 import warnings
 
-import pdb
-
-
 def poi_map(traj, poi_table, traj_cols=None, max_distance=1, **kwargs):
     """
     Map pings in the trajectory to the POI table.

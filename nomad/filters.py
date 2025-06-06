@@ -90,7 +90,6 @@ def to_timestamp(
         if not pd.api.types.is_integer_dtype(tz_offset):
             tz_offset = tz_offset.astype('int64')
 
-    # datetime with timezone
     if isinstance(datetime.dtype, pd.DatetimeTZDtype):
         return datetime.astype("int64") // 10**9
     
@@ -120,13 +119,11 @@ def to_timestamp(
                     "Consider localizing to a timezone or passing a timezone offset column.")
                 return result.astype('int64') // 10**9
                 
-    # datetime is pandas.Timestamp object
+    # datetime is a series of pandas.Timestamp object. Always has unix timestamp in value
     else:
-        if tz_offset is not None and not tz_offset.empty:
-            f = np.frompyfunc(lambda x: x.timestamp(), 1, 1)
-            return pd.Series(f(datetime).astype("float64"), index=datetime.index)
-        else:
-            return datetime.astype('int64') // 10**9
+        f = np.frompyfunc(lambda x: x.timestamp(), 1, 1)
+        return pd.Series(f(datetime).astype("int64"), index=datetime.index)
+
 
 def to_projection(
     traj: pd.DataFrame,
@@ -509,10 +506,10 @@ def q_filter(df: pd.DataFrame,
         A Series containing the user IDs for users whose q_stat > qbar.
     """
     user_col = traj_cols.get("user_id", user_id) if traj_cols else user_id
-    timestamp_col = traj_cols.get("timestamp", timestamp) if traj_cols else timestamp
+    datetime_col = traj_cols.get("timestamp", timestamp) if traj_cols else timestamp
 
     user_q_stats = df.groupby(user_col).apply(
-        lambda group: _compute_q_stat(group, timestamp_col)
+        lambda group: _compute_q_stat(group, datetime_col)
     ).reset_index(name='q_stat')
 
     # Filter users where q > qbar
@@ -521,9 +518,8 @@ def q_filter(df: pd.DataFrame,
     return filtered_users
 
 
-# the user can pass **kwargs with timestamp or datetime, then if you absolutely need datetime then 
-# create a variable, not a column in the dataframe
-def q_stats(df: pd.DataFrame, user_id: str, timestamp: str):
+# the user can pass **kwargs with timestamp or datetime, then datetime can be created if needed
+def q_stats(df, traj_cols=None, **kwargs):
     
     """
     Computes the q statistic for each user as the proportion of unique hours with pings 
@@ -533,33 +529,49 @@ def q_stats(df: pd.DataFrame, user_id: str, timestamp: str):
     ----------
     df : pd.DataFrame
         A DataFrame containing user IDs and timestamps.
-    user_id : str
-        The name of the column containing user IDs.
-    timestamp_col : str
-        The name of the column containing timestamps.
-
+    traj_cols : dict
+        ...
     Returns
     -------
     pd.DataFrame
         A DataFrame containing each user and their respective q_stat.
     """
-    # only create a DATETIME column if it doesn't already exist (but what if the user knows datetime is wrong?)
-    df[timestamp] = pd.to_datetime(df[timestamp], unit='s')
+    traj_cols = loader._parse_traj_cols(df.columns, traj_cols, kwargs)
+    
+    loader._has_time_cols(df.columns, traj_cols)
+    loader._has_user_cols(df.columns, traj_cols)
 
-    q_stats = df.groupby(user_id).apply(
-        lambda group: _compute_q_stat(group, timestamp)
+    u_key = traj_cols['user_id']
+
+    datetime_col = None
+    if traj_cols['datetime'] in df.columns:
+        datetime_col = traj_cols['datetime']
+    elif traj_cols['start_datetime'] in df.columns:
+        datetime_col = traj_cols['start_datetime']
+    elif traj_cols['timestamp'] in df.columns:
+        t_key = traj_cols['timestamp']
+    else:
+        t_key = traj_cols['start_timestamp']
+
+    if not datetime_col:
+        df = df.copy()
+        datetime_col = traj_cols['datetime']
+        df[datetime_col] = pd.to_datetime(df[t_key], unit='s')          
+
+    q_stats = df.groupby(u_key).apply(
+        lambda group: _compute_q_stat(group, datetime_col)
     ).reset_index(name='q_stat')
 
     return q_stats
 
 
-def _compute_q_stat(user, timestamp_col):
-    user['hour_period'] = user[timestamp_col].dt.to_period('h')
+def _compute_q_stat(user, datetime_col):
+    user['hour_period'] = user[datetime_col].dt.to_period('h')
     unique_hours = user['hour_period'].nunique()
 
     # Calculate total observed hours (difference between last and first hour)
-    first_hour = user[timestamp_col].min()
-    last_hour = user[timestamp_col].max()
+    first_hour = user[datetime_col].min()
+    last_hour = user[datetime_col].max()
     total_hours = (last_hour - first_hour).total_seconds() / 3600
 
     # Compute q as the proportion of unique hours to total hours
