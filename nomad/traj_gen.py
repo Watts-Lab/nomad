@@ -493,16 +493,16 @@ class Agent:
             }).set_index('id')
 
             # Initializes past counts randomly
-            visit_freqs.loc[self.home, 'freq'] = 25
-            visit_freqs.loc[self.workplace, 'freq'] = 25
-            visit_freqs.loc[visit_freqs.type == 'park', 'freq'] = 3  # Agents love to comeback to park
+            visit_freqs.loc[self.home, 'freq'] = 35
+            visit_freqs.loc[self.workplace, 'freq'] = 35
+            visit_freqs.loc[visit_freqs.type == 'park', 'freq'] = 4  # Agents love to comeback to park
             # ALTERNATIVELY: start with 1 at home and 1 at work, and do a burnout period of 2 weeks. 
 
             initial_locs = []
-            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'retail'].index, size=npr.poisson(8)))
-            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'work'].index, size=npr.poisson(4)))
-            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'home'].index, size=npr.poisson(4)))
-            visit_freqs.loc[initial_locs, 'freq'] += 1
+            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'retail'].index, size=npr.poisson(6)))
+            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'work'].index, size=npr.poisson(3)))
+            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'home'].index, size=npr.poisson(3)))
+            visit_freqs.loc[initial_locs, 'freq'] += 2
 
         if self.destination_diary.empty:
             start_time_local = self.last_ping['local_timestamp']
@@ -944,7 +944,7 @@ class Population:
                     path=full_path,
                     format="parquet",
                     partition_by=partition_cols.get('full_traj') if partition_cols else None,
-                    filesystem=filesystem, 
+                    filesystem=filesystem,
                     existing_data_behavior='delete_matching')
     
         if sparse_path:
@@ -954,7 +954,7 @@ class Population:
                     path=sparse_path,
                     format="parquet",
                     partition_by=partition_cols.get('sparse_traj') if partition_cols else None,
-                    filesystem=filesystem, 
+                    filesystem=filesystem,
                     existing_data_behavior='delete_matching')
     
         if diaries_path:
@@ -964,7 +964,7 @@ class Population:
                     path=diaries_path,
                     format="parquet",
                     partition_by=partition_cols.get('diaries') if partition_cols else None,
-                    filesystem=filesystem, 
+                    filesystem=filesystem,
                     existing_data_behavior='delete_matching')
     
         if homes_path:
@@ -980,8 +980,7 @@ class Population:
                              base_dir=str(homes_path),
                              format="parquet",
                              partitioning_flavor='hive',
-                             filesystem=filesystem,
-                             existing_data_behavior='delete_matching')
+                             filesystem=filesystem)
 
 
 # =============================================================================
