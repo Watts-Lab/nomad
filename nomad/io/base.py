@@ -868,3 +868,55 @@ def sample_from_file(filepath, users, format="csv", traj_cols=None,
                            parse_dates=parse_dates,
                            mixed_timezone_behavior=mixed_timezone_behavior,
                            fixed_format=fixed_format)
+
+def to_file(df, path, format="csv",
+            traj_cols=None, output_traj_cols=None,
+            partition_by=None, filesystem=None,
+            use_offset=False,
+            **kwargs):
+    df = df.copy()
+    assert format in {"csv", "parquet"}
+
+    traj_cols = _parse_traj_cols(df.columns, traj_cols, kwargs)
+    _has_spatial_cols(df.columns, traj_cols)
+    _has_time_cols(df.columns, traj_cols)
+
+    if output_traj_cols == "default":
+        output_traj_cols = DEFAULT_SCHEMA
+    if output_traj_cols is None:
+        output_traj_cols = traj_cols
+
+    if use_offset and traj_cols["tz_offset"] not in df.columns:
+        raise ValueError(f"use_offset=True but tz_offset column '{traj_cols['tz_offset']}' not found in df")
+
+    for k in ["datetime", "start_datetime", "end_datetime"]:
+        if k in traj_cols and traj_cols[k] in df.columns:
+            col = df[traj_cols[k]]
+            if is_string_dtype(col) or isinstance(col, StringDtype):
+                continue
+            if is_datetime64_any_dtype(col):
+                if use_offset and col.dt.tz is None:
+                    df[traj_cols[k]] = _naive_to_localized_str(col, df[traj_cols["tz_offset"]])
+                else:
+                    df[traj_cols[k]] = col.astype(str)
+            elif is_object_dtype(col) and _is_series_of_timestamps(col):
+                if use_offset and all(ts.tz is None for ts in col.dropna()):
+                    df[traj_cols[k]] = _naive_to_localized_str(col, df[traj_cols["tz_offset"]])
+                else:
+                    df[traj_cols[k]] = col.astype(str)
+
+    df = df.rename(columns={traj_cols[k]: output_traj_cols[k]
+                            for k in traj_cols
+                            if k in output_traj_cols and traj_cols[k] in df.columns})
+
+    other_kwargs = {k: v for k, v in kwargs.items() if k not in traj_cols}
+    if format == "csv":
+        df.to_csv(path, index=False, **other_kwargs)
+    else:
+        table = pa.Table.from_pandas(df, preserve_index=False)
+        ds.write_dataset(table, base_dir=str(path),
+                         format="parquet",
+                         partitioning=partition_by,
+                         partitioning_flavor='hive',
+                         filesystem=filesystem,
+                         **other_kwargs)
