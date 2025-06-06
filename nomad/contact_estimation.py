@@ -99,7 +99,7 @@ def compute_visitation_errors(overlaps, true_visits, traj_cols=None, **kwargs):
     stripped_col_names = [s.removesuffix('_left').removesuffix('_right') for s in overlaps.columns]
     
     _ = loader._parse_traj_cols(stripped_col_names, traj_cols, kwargs)
-    traj_cols = loader._parse_traj_cols(true_visits, traj_cols, kwargs)
+    traj_cols = loader._parse_traj_cols(true_visits.columns, traj_cols, kwargs)
 
     loader._has_time_cols(true_visits.columns, traj_cols)
     if traj_cols['timestamp'] in true_visits.columns:
