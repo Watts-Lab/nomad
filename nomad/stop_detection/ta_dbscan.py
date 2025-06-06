@@ -1,15 +1,8 @@
 import pandas as pd
-from scipy.spatial.distance import pdist, cdist
 import numpy as np
-import math
-import datetime as dt
-from datetime import timedelta
-import matplotlib.pyplot as plt
-import itertools
 from collections import defaultdict
-import sys
-import os
 import pdb
+import warnings
 import nomad.io.base as loader
 import nomad.constants as constants
 from nomad.stop_detection import utils
@@ -410,7 +403,7 @@ def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, traj_cols=N
                 time_col_name = traj_cols['timestamp']
             elif timestamp_length == 19:
                 warnings.warn(
-                    f"The '{timestamp_col_name}' column appears to be in nanoseconds. "
+                    f"The '{data[traj_cols['timestamp']]}' column appears to be in nanoseconds. "
                     "This may lead to inconsistencies."
                 )
                 valid_times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 9

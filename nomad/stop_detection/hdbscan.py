@@ -10,10 +10,6 @@ import nomad.constants as constants
 import pdb
 from nomad.stop_detection import utils
 
-
-##########################################
-########        HDBSCAN           ########
-##########################################
 def _find_temp_neighbors(times, time_thresh, is_datetime):
     """
     Find timestamp pairs that are within time threshold.
