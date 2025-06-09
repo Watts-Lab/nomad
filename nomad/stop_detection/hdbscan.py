@@ -505,7 +505,8 @@ def custom_cluster_stability(label_history_df):
         
         # Avoid division by zero or NaNs
         eps_df = eps_df.replace({'eps_min': {0: np.nan}, 'eps_max': {0: np.nan}})
-        eps_df['stability_term'] = norm.pdf(eps_df['eps_min'], loc=mu, scale=sigma)
+        # eps_df['stability_term'] = norm.pdf(eps_df['eps_min'], loc=mu, scale=sigma)
+        eps_df['stability_term'] = 1 - norm.cdf(eps_df['eps_min'], loc=mu, scale=sigma)
         total_stability = eps_df['stability_term'].sum(skipna=True)
 
         cluster_stability_df.append({
@@ -652,7 +653,7 @@ def hdbscan_labels(traj, traj_cols, time_thresh, min_pts = 2, min_cluster_size =
     mstext_edges = mst_ext(mst_edges, core_distances)
     label_history_df, hierarchy_df = hdbscan(mstext_edges, min_cluster_size)
     # cluster_stability_df = compute_cluster_stability(label_history_df)
-    cluster_stability_df = custom_cluster_stability(label_history_df)
+    cluster_stability_df = compute_cluster_stability(label_history_df)
     selected_clusters = select_most_stable_clusters(hierarchy_df, cluster_stability_df)
 
     all_timestamps = set(label_history_df['time'])

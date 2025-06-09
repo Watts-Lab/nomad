@@ -7,9 +7,7 @@ import warnings
 import pandas as pd
 import nomad.io.base as loader
 
-def point_in_polygon(traj, labels, stop_table, traj_cols, is_datetime, is_long_lat):
-    poi_table = gpd.read_file('../garden_city.geojson')
-    
+def point_in_polygon(traj, labels, stop_table, poi_table, traj_cols, is_datetime, is_long_lat):
     # If either labels or stop_table is empty, there's nothing to do
     if labels.empty or stop_table.empty:
         stop_table['location'] = pd.Series(dtype='object')
@@ -33,9 +31,7 @@ def point_in_polygon(traj, labels, stop_table, traj_cols, is_datetime, is_long_l
 
     return stop_table
     
-def majority_poi(traj, labels, stop_table, traj_cols, is_datetime, is_long_lat):
-    poi_table = gpd.read_file('../garden_city.geojson')
-
+def majority_poi(traj, labels, stop_table, poi_table, traj_cols, is_datetime, is_long_lat):
     # If either labels or stop_table is empty, there's nothing to do
     if labels.empty or stop_table.empty:
         stop_table['location'] = pd.Series(dtype='object')
