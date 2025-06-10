@@ -10,6 +10,7 @@ from collections import defaultdict
 import sys
 import os
 import pdb
+import warnings
 import geopandas as gpd
 import nomad.io.base as loader
 import nomad.constants as constants
@@ -92,10 +93,8 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
     use_datetime = False
     if traj_cols['timestamp'] in traj.columns:
         time_col_in = traj_cols['timestamp']
-        time_key = 'timestamp'
     elif traj_cols['start_timestamp'] in traj.columns:
         time_col_in = traj_cols['start_timestamp']
-        time_key = 'start_timestamp'
     else:
         use_datetime = True
         
@@ -108,10 +107,8 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
     # set final parameters based on use_datetime flag
     if use_datetime and traj_cols['datetime'] in traj.columns:
         time_col_in = traj_cols['datetime']
-        time_key = 'datetime'
     elif use_datetime and traj_cols['start_datetime'] in traj.columns:
         time_col_in = traj_cols['start_datetime']
-        time_key = 'start_datetime'
     
     # Parse if necessary
     if use_datetime:
@@ -159,6 +156,7 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
             j_final = n - 1
 
         duration = (time_series.iloc[j_final] - time_series.iloc[i]) // 60
+
         if duration >= dur_min:
             if use_datetime:
                 start_val = traj[time_col_in].iloc[i]
@@ -169,8 +167,6 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
 
             medoid = utils._medoid(coords[i:j_final + 1])
 
-           
-            
             if complete_output:
                 cluster_times = time_series.iloc[i:j_final + 1].sort_values()
                 cluster_diffs = np.diff(cluster_times.values)
@@ -282,4 +278,6 @@ def _lachesis_labels(traj, dur_min, dt_max, delta_roam, traj_cols=None, **kwargs
         mask = (traj[time_col_in] >= stop_start) & (traj[time_col_in] <= stop_end)
         stop_labels.loc[traj[time_col_in][mask]] = stop_idx
     
+    stop_labels.index = traj.index
+
     return stop_labels
