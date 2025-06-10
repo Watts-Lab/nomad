@@ -7,9 +7,10 @@ import warnings
 import pandas as pd
 import nomad.io.base as loader
 import pyproj
+import pdb
 
 # TO DO: change to stops_to_poi
-def point_in_polygon(data, poi_table, method='centroid', max_distance = 0, data_crs = None,
+def point_in_polygon(data, poi_table, method='centroid', max_distance = 1, data_crs = None,
                      cluster_label = None, traj_cols = None, **kwargs):
     ''' 
         cluster label can also be passed on traj_cols or on kwargs
@@ -53,7 +54,7 @@ def point_in_polygon(data, poi_table, method='centroid', max_distance = 0, data_
 
         pings_df = data.loc[data[cluster_label] != -1].copy()
         stop_table = pings_df.groupby(cluster_label, as_index=False).apply(
-            lambda group: _stop_metrics(group, True, True, traj_cols, False), include_groups=False)
+            lambda group: _stop_metrics(group, False, True, traj_cols, False), include_groups=False)
         if method=='majority': 
             pings_df['location'] = poi_map(
                 data=pings_df,
@@ -63,6 +64,7 @@ def point_in_polygon(data, poi_table, method='centroid', max_distance = 0, data_
                 traj_cols=traj_cols,
                 **kwargs                
             )
+            pdb.set_trace()
             pings_df.groupby(cluster_label, as_index=False)['location'].agg(
                 lambda x: x.mode().iloc[0] if not x.mode().empty else None)
             stop_table['location'] = pings_df.location.values # Do we need Values?
@@ -130,6 +132,10 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, traj_cols=None, **kw
     pd.Series
         A Series, indexed like `traj`, containing the building IDs for each point.
     """
+    # TO DO: data_crs should only be "EPSG:4326 if latitude and longitude are passed
+    # TO DO: No ambiguity with latitutde, longitude, x or y, _has_spatial_cols(exclusive=True)
+    # TO DO: except if latitude and longitude, poi_table.crs must equal data_crs
+    
     # Column name handling
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
     loader._has_spatial_cols(data.columns, traj_cols)
@@ -144,7 +150,8 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, traj_cols=None, **kw
             raise ValueError(f"Provided CRS {data_crs} conflicts with traj CRS {data.crs}.")
 
     elif isinstance(data, pd.DataFrame):
-        use_lon_lat = (traj_cols['latitude'] in data.columns and traj_cols['longitude'] in data.columns)
+        use_lon_lat = ('latitude' in kwargs and kwargs['latitude'] in data.columns and
+                       'longitude' in kwargs and kwargs['longitude'] in data.columns)
         if data_crs and not pyproj.CRS(data_crs).equals(pyproj.CRS("EPSG:4326")):
             use_lon_lat = False
             if not (traj_cols['x'] in data.columns and traj_cols['y'] in data.columns):
