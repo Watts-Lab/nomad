@@ -1,28 +1,46 @@
-
 import geopandas as gpd
 import nomad.io.base as loader
 import nomad.constants as constants
+from nomad.stop_detection.ta_dbscan import _stop_metrics
 from shapely.geometry import Point
 import warnings
 import pandas as pd
 import nomad.io.base as loader
+import pyproj
 
 # TO DO: change to stops_to_poi
-def point_in_polygon(data, poi_table, cluster_label = None, traj_cols = None, **kwargs):
-''' 
-    cluster label can also be passed on traj_cols or on kwargs
-'''
+def point_in_polygon(data, poi_table, method='centroid', max_distance = 0, data_crs = None,
+                     cluster_label = None, traj_cols = None, **kwargs):
+    ''' 
+        cluster label can also be passed on traj_cols or on kwargs
+    '''
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     loader._has_spatial_cols(data.columns, traj_cols)
 
-    end_col_present = _has_end_cols(data.columns, traj_cols)
-    duration_col_present = _has_duration_cols(data.columns, traj_cols)
+    end_col_present = loader._has_end_cols(data.columns, traj_cols)
+    duration_col_present = loader._has_duration_cols(data.columns, traj_cols)
 
     if end_col_present or duration_col_present:
         # is stop table
-        pass
+        if method=='majority':
+            raise TypeError("Method `majority' requires ping data with cluster labels\
+                            a stop table was provided")
+        elif method=='centroid':
+            stop_table = data.copy()
+            stop_table['location'] = poi_map(
+                data=stop_table,
+                poi_table=poi_table,
+                max_distance=max_distance,
+                data_crs=data_crs,
+                traj_cols=traj_cols,
+                **kwargs)
+            return stop_table
+            
+        else:
+            raise ValueError(f"Method {method} not among implemented methods: `centroid' and `majority'")
+
     else:
-        # is traj table
+        # is labeled pings
         if not cluster_label:
             if 'cluster_label' in traj_cols:
                 cluster_label = traj_cols['cluster_label']
@@ -33,23 +51,36 @@ def point_in_polygon(data, poi_table, cluster_label = None, traj_cols = None, **
             else:
                 raise ValueError(f"Argument `cluster_label` must be provided for visit attribution of labeled pings.")
 
-    # merge labels with data
-    traj_with_labels = traj.copy()
-    time_col = traj_cols['datetime'] if is_datetime else traj_cols['timestamp']
-    traj_with_labels = traj_with_labels.merge(labels, left_on=time_col, right_index=True, how='left')
+        pings_df = data.loc[data[cluster_label] != -1].copy()
+        stop_table = pings_df.groupby(cluster_label, as_index=False).apply(
+            lambda group: _stop_metrics(group, True, True, traj_cols, False), include_groups=False)
+        if method=='majority': 
+            pings_df['location'] = poi_map(
+                data=pings_df,
+                poi_table=poi_table,
+                max_distance=max_distance,
+                data_crs=data_crs,
+                traj_cols=traj_cols,
+                **kwargs                
+            )
+            pings_df.groupby(cluster_label, as_index=False)['location'].agg(
+                lambda x: x.mode().iloc[0] if not x.mode().empty else None)
+            stop_table['location'] = pings_df.location.values # Do we need Values?
+            return stop_table
+            
+        elif method=='centroid': # NEEDS TO BE PATCHED TO ACCOMMODATE OPTIONS
+            stop_table['location'] = poi_map(
+                data=stop_table,
+                poi_table=poi_table,
+                max_distance=max_distance,
+                data_crs=data_crs,
+                traj_cols=traj_cols,
+                **kwargs)
+            return stop_table
+        else:
+            raise ValueError(f"Method {method} not among implemented methods: `centroid' and `majority'")
 
-    # compute the location for each cluster
-    space_cols = [traj_cols['longitude'], traj_cols['latitude']] if is_long_lat else [traj_cols['x'], traj_cols['y']]
-    pings_df = traj_with_labels.groupby('cluster')[space_cols].mean()
-    
-    locations = poi_map(data=pings_df,
-                        poi_table=poi_table,
-                        traj_cols=traj_cols)
-
-    # Map the mode location back to the stop_table
-    stop_table['location'] = locations
-
-    return stop_table
+    return None
     
 def majority_poi(traj, labels, poi_table, traj_cols, is_datetime, is_long_lat):
     if labels.empty:
@@ -104,17 +135,17 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, traj_cols=None, **kw
     loader._has_spatial_cols(data.columns, traj_cols)
 
     # use_lat_lon and CRS handling
-    if not (traj_crs is None or isinstance(traj_crs, (str, pyproj.CRS))):
+    if not (data_crs is None or isinstance(data_crs, (str, pyproj.CRS))):
         raise TypeError(f"CRS {data_crs} must be a string, a pyproj.CRS object, or None.")
         
     if isinstance(data, gpd.GeoDataFrame):
         pings_gdf = data
-        if traj_crs and not pyproj.CRS(pings_gdf.crs).equals(pyproj.CRS(data_crs)):
+        if data_crs and not pyproj.CRS(pings_gdf.crs).equals(pyproj.CRS(data_crs)):
             raise ValueError(f"Provided CRS {data_crs} conflicts with traj CRS {data.crs}.")
 
     elif isinstance(data, pd.DataFrame):
         use_lon_lat = (traj_cols['latitude'] in data.columns and traj_cols['longitude'] in data.columns)
-        if traj_crs and not pyproj.CRS(data_crs).equals(pyproj.CRS("EPSG:4326")):
+        if data_crs and not pyproj.CRS(data_crs).equals(pyproj.CRS("EPSG:4326")):
             use_lon_lat = False
             if not (traj_cols['x'] in data.columns and traj_cols['y'] in data.columns):
                 raise ValueError(f"Provided CRS {data_crs} is incompatible with spherical coordinates: 'longitude' and 'latitude'"
@@ -122,7 +153,7 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, traj_cols=None, **kw
                                 )
         if use_lon_lat:
             x_col, y_col = traj_cols['longitude'], traj_cols['latitude']
-            if traj_crs is None:
+            if data_crs is None:
                 warnings.warn("Argument `data_crs` not provided, assuming EPSG:4326")
                 assigned_crs = pyproj.CRS("EPSG:4326")
             else:

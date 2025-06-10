@@ -431,6 +431,7 @@ def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, traj_cols=N
     return output
 
 def _stop_metrics(grouped_data, long_lat, datetime, traj_cols, complete_output):
+    # medoids, start times, end times, 
     # Coordinates array and distance metrics
     if long_lat:
         coords = grouped_data[[traj_cols['longitude'], traj_cols['latitude']]].to_numpy()
