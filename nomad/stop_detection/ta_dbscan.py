@@ -11,6 +11,7 @@ import sys
 import os
 import pdb
 import nomad.io.base as loader
+import warnings
 import nomad.constants as constants
 from nomad.stop_detection import utils
 
@@ -326,38 +327,15 @@ def temporal_dbscan(data, time_thresh, dist_thresh, min_pts, traj_cols=None, com
     else:
         datetime = True
 
-    if datetime:
-        time_col_name = traj_cols['datetime']
-    else:
-        first_timestamp = data[traj_cols['timestamp']].iloc[0]
-        timestamp_length = len(str(first_timestamp))
-        
-        if timestamp_length > 10:
-            if timestamp_length == 13:
-                warnings.warn(
-                    f"The '{data[traj_cols['timestamp']]}' column appears to be in milliseconds. "
-                    "This may lead to inconsistencies."
-                )
-                time_col_name = traj_cols['timestamp']
-            elif timestamp_length == 19:
-                warnings.warn(
-                    f"The '{timestamp_col_name}' column appears to be in nanoseconds. "
-                    "This may lead to inconsistencies."
-                )
-                time_col_name = traj_cols['timestamp']
-        else:
-            time_col_name = traj_cols['timestamp']
-
     output = _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, traj_cols, **kwargs)
-    
-    output = output[output['cluster'] != -1]
-    
-    complete_data = pd.merge(output, data, left_index=True, right_on=time_col_name, how='inner')
-    
-    stop_table = complete_data.groupby('cluster').apply(lambda group: _stop_metrics(group, long_lat, datetime, traj_cols, complete_output), include_groups=False)
+
+    data_labels = data.copy()
+    data_labels['cluster'] = output['cluster']
+    data_labels = data_labels[data_labels['cluster'] != -1]
+    # data_labels = pd.merge(output, data, left_index=True, right_on=time_col_name, how='inner')
+    stop_table = data_labels.groupby('cluster').apply(lambda group: _stop_metrics(group, long_lat, datetime, traj_cols, complete_output), include_groups=False)
     
     return stop_table
-
 
 def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, traj_cols=None, **kwargs):
     # Check if user wants long and lat
@@ -390,8 +368,6 @@ def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, traj_cols=N
         datetime = True
 
     if datetime:
-        time_col_name = traj_cols['datetime']
-
         valid_times = pd.to_datetime(data[traj_cols['datetime']])
         valid_times = valid_times.dt.tz_convert('UTC').dt.tz_localize(None)
         valid_times = valid_times.astype('int64') // 10**9
@@ -403,21 +379,18 @@ def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, traj_cols=N
         if timestamp_length > 10:
             if timestamp_length == 13:
                 warnings.warn(
-                    f"The '{data[traj_cols['timestamp']]}' column appears to be in milliseconds. "
+                    f"The '{traj_cols['timestamp']}' column appears to be in milliseconds. "
                     "This may lead to inconsistencies."
                 )
                 valid_times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 3
-                time_col_name = traj_cols['timestamp']
             elif timestamp_length == 19:
                 warnings.warn(
-                    f"The '{timestamp_col_name}' column appears to be in nanoseconds. "
+                    f"The '{traj_cols['timestamp']}' column appears to be in nanoseconds. "
                     "This may lead to inconsistencies."
                 )
                 valid_times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 9
-                time_col_name = traj_cols['timestamp']
         else:
             valid_times = data[traj_cols['timestamp']].values
-            time_col_name = traj_cols['timestamp']
 
     data_temp = data.copy()
     data_temp.index = valid_times        
@@ -426,7 +399,7 @@ def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, traj_cols=N
 
     _process_clusters(data_temp, time_thresh, dist_thresh, min_pts, output, long_lat, datetime, traj_cols, min_duration=4)
 
-    output.index = list(data[time_col_name])
+    output.index = data.index
 
     return output
 
