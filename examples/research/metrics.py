@@ -150,7 +150,7 @@ def prepare_diary(agent, dt, city, keep_all_stops=True):
     diary = agent.diary.copy()
 
     # Compute end times of stops
-    diary.rename(columns={'local_timestamp': 'start_time'}, inplace=True)
+    diary.rename(columns={'datetime': 'start_time'}, inplace=True)
     diary['end_time'] = diary['start_time'] + pd.to_timedelta(diary['duration'], unit='m')
 
     # Add columns for x, y coordinates for each location
@@ -169,7 +169,7 @@ def prepare_diary(agent, dt, city, keep_all_stops=True):
     if not keep_all_stops:
         sparse_traj = agent.sparse_traj
         stops_with_pings = diary[
-            diary.apply(lambda row: sparse_traj['local_timestamp']
+            diary.apply(lambda row: sparse_traj['datetime']
                         .between(row['start_time'], row['end_time']).any(), axis=1)
         ]["stop_id"].tolist()
         # Include -1 to ensure trips are also kept
@@ -186,9 +186,9 @@ def prepare_stop_table(stop_table, diary, dt):
     Parameters
     ----------
     stop_table : pd.DataFrame
-        DataFrame of detected stops with at least 'local_timestamp', 'duration', and 'location' columns.
+        DataFrame of detected stops with at least 'datetime', 'duration', and 'location' columns.
     diary : pd.DataFrame
-        DataFrame of diary entries with at least 'local_timestamp', 'duration', and 'location' columns.
+        DataFrame of diary entries with at least 'datetime', 'duration', and 'location' columns.
     
     Returns
     -------
