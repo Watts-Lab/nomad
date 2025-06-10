@@ -7,11 +7,31 @@ import warnings
 import pandas as pd
 import nomad.io.base as loader
 
-def point_in_polygon(traj, labels, stop_table, poi_table, traj_cols, is_datetime, is_long_lat):
-    # If either labels or stop_table is empty, there's nothing to do
-    if labels.empty or stop_table.empty:
-        stop_table['location'] = pd.Series(dtype='object')
-        return stop_table
+# TO DO: change to stops_to_poi
+def point_in_polygon(data, poi_table, cluster_label = None, traj_cols = None, **kwargs):
+''' 
+    cluster label can also be passed on traj_cols or on kwargs
+'''
+    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    loader._has_spatial_cols(data.columns, traj_cols)
+
+    end_col_present = _has_end_cols(data.columns, traj_cols)
+    duration_col_present = _has_duration_cols(data.columns, traj_cols)
+
+    if end_col_present or duration_col_present:
+        # is stop table
+        pass
+    else:
+        # is traj table
+        if not cluster_label:
+            if 'cluster_label' in traj_cols:
+                cluster_label = traj_cols['cluster_label']
+            elif 'cluster' in traj_cols:
+                cluster_label = traj_cols['cluster']
+            elif 'cluster' in data.columns:
+                cluster_label = 'cluster'
+            else:
+                raise ValueError(f"Argument `cluster_label` must be provided for visit attribution of labeled pings.")
 
     # merge labels with data
     traj_with_labels = traj.copy()
@@ -22,7 +42,7 @@ def point_in_polygon(traj, labels, stop_table, poi_table, traj_cols, is_datetime
     space_cols = [traj_cols['longitude'], traj_cols['latitude']] if is_long_lat else [traj_cols['x'], traj_cols['y']]
     pings_df = traj_with_labels.groupby('cluster')[space_cols].mean()
     
-    locations = poi_map(traj=pings_df,
+    locations = poi_map(data=pings_df,
                         poi_table=poi_table,
                         traj_cols=traj_cols)
 
@@ -52,40 +72,7 @@ def majority_poi(traj, labels, poi_table, traj_cols, is_datetime, is_long_lat):
 
     return locations
 
-
-def poi_map(traj, poi_table, traj_cols=None, max_distance=4, traj_crs=None, **kwargs):
-    """
-    Map elements in traj to closest polygon in poi_table with an allowed distance buffer.
-
-    Parameters
-    ----------
-    traj : pd.DataFrame
-        The trajectory DataFrame containing x and y or longitude and latitude coordinates.
-    poi_table : gpd.GeoDataFrame
-        The POI table containing building geometries and IDs.
-    traj_cols : list
-        The columns in the trajectory DataFrame to be used for mapping.
-    max_distance : float
-        The maximum distance to search for a nearest POI.
-    traj_crs : str, optional
-        The Coordinate Reference System of the trajectory coordinates.
-        If None, it will be inferred.
-    **kwargs : dict
-        Additional keyword arguments, potentially including 'latitude' and 'longitude' keys.
-
-    Returns
-    -------
-    pd.Series
-        A Series, indexed like `traj`, containing the building IDs for each point.
-    """
-    traj_cols = loader._parse_traj_cols(traj.columns, traj_cols, kwargs)
-    loader._has_spatial_cols(traj.columns, traj_cols)
-
-    use_long_lat = 'latitude' in kwargs and 'longitude' in kwargs and \
-                   kwargs['latitude'] in traj.columns and kwargs['longitude'] in traj.columns
-
-    
-
+# change to point_in_polygon, move to filters.py
 def poi_map(data, poi_table, max_distance=0, data_crs=None, traj_cols=None, **kwargs):
     """
     Map elements in traj to closest polygon in poi_table with an allowed distance buffer.
@@ -113,7 +100,7 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, traj_cols=None, **kw
         A Series, indexed like `traj`, containing the building IDs for each point.
     """
     # Column name handling
-    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
     loader._has_spatial_cols(data.columns, traj_cols)
 
     # use_lat_lon and CRS handling
@@ -141,7 +128,7 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, traj_cols=None, **kw
             else:
                 assigned_crs = pyproj.CRS(data_crs)
         else:
-            x_col, y_col = traj_cols['x'], traj_cols['y']}
+            x_col, y_col = traj_cols['x'], traj_cols['y']
             if data_crs is None:
                 warnings.warn(f"Argument `data_crs` not provided, assuming CRS {poi_table.crs} from `poi_table`")
                 assigned_crs = poi_table.crs

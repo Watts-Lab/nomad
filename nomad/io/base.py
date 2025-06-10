@@ -36,23 +36,24 @@ def _update_schema(original, new_labels):
             updated_schema[label] = new_labels[label]
     return updated_schema
 
-def _parse_traj_cols(columns, traj_cols, optional_args):
+def _parse_traj_cols(columns, traj_cols, kwargs, warn=True):
     """
     Internal helper to finalize trajectory column names using user input and defaults.
     """
     if traj_cols:
-        for k in optional_args:
-            if k in traj_cols and optional_args[k] != traj_cols[k]:
+        for k in kwargs:
+            if k in traj_cols and kwargs[k] != traj_cols[k]:
                 raise ValueError(
-                    f"Conflicting column name for '{k}': '{traj_cols[k]}' (from traj_cols) vs '{optional_args[k]}' (from keyword arguments)."
+                    f"Conflicting column name for '{k}': '{traj_cols[k]}' (from traj_cols) vs '{kwargs[k]}' (from keyword arguments)."
                 )
-        traj_cols = _update_schema(traj_cols, optional_args)
+        traj_cols = _update_schema(traj_cols, kwargs)
     else:
-        traj_cols = _update_schema({}, optional_args)
+        traj_cols = _update_schema({}, kwargs)
 
-    for key, value in traj_cols.items():
-        if value not in columns:
-            warnings.warn(f"Trajectory column '{value}' specified for '{key}' not found in DataFrame.")
+    if warn:
+        for key, value in traj_cols.items():
+            if value not in columns:
+                warnings.warn(f"Trajectory column '{value}' specified for '{key}' not found in DataFrame.")
 
     return _update_schema(DEFAULT_SCHEMA, traj_cols)
     
