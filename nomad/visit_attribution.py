@@ -193,15 +193,13 @@ def slice_datetimes_interval_fast(start, end):
         day_parts = [(start.time(), end.time()), (start.time(), start.time())]
     return full_days, day_parts
 
-def duration_at_night_fast(start, end):
-    dawn_hour = 6
-    dusk_hour = 19
+def duration_at_night_fast(start, end, dawn_hour = 6, dusk_hour = 19):
     full_days, (part1, part2) = slice_datetimes_interval_fast(start, end)
     total_dawn_time = dawn_time(part1, dawn_hour)+dawn_time(part2, dawn_hour)
     total_dusk_time = dusk_time(part1, dusk_hour)+dusk_time(part2, dusk_hour)
     return int(total_dawn_time + total_dusk_time + full_days*(dawn_hour + (24-dusk_hour))*60)
 
-def clip_stays_date(traj, dates):
+def clip_stays_date(traj, dates, dawn_hour = 6, dusk_hour = 19):
     start = pd.to_datetime(traj['start_datetime'])
     duration = traj['duration']
 
@@ -218,7 +216,7 @@ def clip_stays_date(traj, dates):
 
     # Recompute durations
     duration_clipped = ((end_clipped - start_clipped).dt.total_seconds() // 60).astype(int)
-    duration_night = [duration_at_night_fast(s, e) for s, e in zip(start_clipped, end_clipped)]
+    duration_night = [duration_at_night_fast(s, e, dawn_hour, dusk_hour) for s, e in zip(start_clipped, end_clipped)]
 
     return pd.DataFrame({
         'id': traj['id'].values,
@@ -228,10 +226,7 @@ def clip_stays_date(traj, dates):
         'location': traj['location']
     })
 
-def count_nights(usr_polygon):   
-    min_dwell = 10
-    dawn_hour = 6
-    dusk_hour = 19
+def count_nights(usr_polygon, dawn_hour = 6, dusk_hour = 19, min_dwell = 10):   
     nights = set()
     weeks = set()
 
@@ -286,7 +281,8 @@ def count_nights(usr_polygon):
         'week_count': len(weeks)
     }])
 
-def night_stops(stop_table, user):
+
+def night_stops(stop_table, user='user', dawn_hour = 6, dusk_hour = 19, min_dwell = 10):
     # Date range
     start_date = str(stop_table['start_datetime'].min().date())
     weeks = stop_table['start_datetime'].dt.strftime('%Y-%U')
@@ -300,7 +296,7 @@ def night_stops(stop_table, user):
 
     end_date = (parse(start_date) + timedelta(weeks=num_weeks)).date().isoformat()
     dates = (start_date, end_date)
-    df_clipped = clip_stays_date(stop_table, dates)
+    df_clipped = clip_stays_date(stop_table, dates, dawn_hour, dusk_hour)
     df_clipped = df_clipped[(df_clipped['duration'] > 0) & (df_clipped['duration_night'] >= 15)]
     
-    return df_clipped.groupby(['id', 'location'], group_keys=False).apply(count_nights).reset_index(drop=True)
+    return df_clipped.groupby(['id', 'location'], group_keys=False).apply(count_nights(dawn_hour, dusk_hour, min_dwell)).reset_index(drop=True)
