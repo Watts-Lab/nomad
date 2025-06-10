@@ -922,7 +922,7 @@ def sample_from_file(
             df = dataset.to_table().to_pandas()
         else:
             df = dataset.to_table(
-                filter=ds.field(uid_col).isin(users), columns=list(column_names)
+                filter=ds.field(traj_cols_['user_id']).isin(users), columns=list(column_names)
             ).to_pandas()
 
     if 0.0 < frac_records < 1.0:
