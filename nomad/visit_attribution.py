@@ -1,11 +1,13 @@
 
 import geopandas as gpd
 import nomad.io.base as loader
-import nomad.constants as constants
 from shapely.geometry import Point
 import warnings
 import pandas as pd
 import nomad.io.base as loader
+import numpy as np
+from datetime import date, time, datetime, timedelta
+from dateutil.parser import parse
 
 def point_in_polygon(traj, labels, stop_table, poi_table, traj_cols, is_datetime, is_long_lat):
     # If either labels or stop_table is empty, there's nothing to do
@@ -172,3 +174,133 @@ def oracle_map(traj, true_visits, traj_cols, **kwargs):
     is_long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs['latitude'] in traj.columns and kwargs['longitude'] in traj.columns
     
     return location_ids
+
+
+def dawn_time(day_part, dawn_hour=6):
+    s,e = day_part
+    return np.min([(e.hour*60 + e.minute),dawn_hour*60]) - np.min([(s.hour*60 + s.minute),dawn_hour*60]) 
+
+def dusk_time(day_part, dusk_hour=19):
+    s,e = day_part
+    return np.max([(e.hour*60 + e.minute)-dusk_hour*60,0]) - np.max([(s.hour*60 + s.minute)-dusk_hour*60, 0])
+
+def slice_datetimes_interval_fast(start, end):
+    full_days = (datetime.combine(end, time.min) - datetime.combine(start, time.max)).days
+    if full_days >= 0:
+        day_parts = [(start.time(), time.max), (time.min, end.time())]
+    else:
+        full_days = 0
+        day_parts = [(start.time(), end.time()), (start.time(), start.time())]
+    return full_days, day_parts
+
+def duration_at_night_fast(start, end):
+    dawn_hour = 6
+    dusk_hour = 19
+    full_days, (part1, part2) = slice_datetimes_interval_fast(start, end)
+    total_dawn_time = dawn_time(part1, dawn_hour)+dawn_time(part2, dawn_hour)
+    total_dusk_time = dusk_time(part1, dusk_hour)+dusk_time(part2, dusk_hour)
+    return int(total_dawn_time + total_dusk_time + full_days*(dawn_hour + (24-dusk_hour))*60)
+
+def clip_stays_date(traj, dates):
+    start = pd.to_datetime(traj['start_datetime'])
+    duration = traj['duration']
+
+    # Ensure timezone-aware clipping bounds
+    tz = start.dt.tz
+    date_0 = pd.Timestamp(parse(dates[0]), tz=tz)
+    date_1 = pd.Timestamp(parse(dates[1]), tz=tz)
+
+    end = start + pd.to_timedelta(duration, unit='m')
+
+    # Clip to date range
+    start_clipped = start.clip(lower=date_0, upper=date_1)
+    end_clipped = end.clip(lower=date_0, upper=date_1)
+
+    # Recompute durations
+    duration_clipped = ((end_clipped - start_clipped).dt.total_seconds() // 60).astype(int)
+    duration_night = [duration_at_night_fast(s, e) for s, e in zip(start_clipped, end_clipped)]
+
+    return pd.DataFrame({
+        'id': traj['id'].values,
+        'start': start_clipped,
+        'duration': duration_clipped,
+        'duration_night': duration_night,
+        'location': traj['location']
+    })
+
+def count_nights(usr_polygon):   
+    min_dwell = 10
+    dawn_hour = 6
+    dusk_hour = 19
+    nights = set()
+    weeks = set()
+
+    for _, row in usr_polygon.iterrows():
+        d = row['start']
+        d = pd.to_datetime(d)
+        full_days, (part1, part2) = slice_datetimes_interval_fast(d, d + pd.to_timedelta(row['duration'], unit='m'))
+
+        dawn1 = dawn_time(part1, dawn_hour)
+        dusk1 = dusk_time(part1, dusk_hour)
+        dawn2 = dawn_time(part2, dawn_hour)
+        dusk2 = dusk_time(part2, dusk_hour)
+
+        if full_days == 0:
+            if dawn1 >= min_dwell:
+                night = d - timedelta(days=1)
+                nights.add(night.date())
+                weeks.add((night - timedelta(days=night.weekday())).date())
+
+            if (dusk1 + dawn2) >= min_dwell:
+                night = d
+                nights.add(night.date())
+                weeks.add((night - timedelta(days=night.weekday())).date())
+
+            if dusk2 >= min_dwell:
+                night = d + timedelta(days=1)
+                nights.add(night.date())
+                weeks.add((night - timedelta(days=night.weekday())).date())
+        else:
+            if dawn1 >= min_dwell:
+                night = d - timedelta(days=1)
+                nights.add(night.date())
+                weeks.add((night - timedelta(days=night.weekday())).date())
+
+            for t in range(full_days + 1):
+                night = d + timedelta(days=t)
+                nights.add(night.date())
+                weeks.add((night - timedelta(days=night.weekday())).date())
+
+            if dusk2 >= min_dwell:
+                night = d + timedelta(days=full_days + 1)
+                nights.add(night.date())
+                weeks.add((night - timedelta(days=night.weekday())).date())
+
+    identifier = usr_polygon['id'].iloc[0]
+    location = usr_polygon['location'].iloc[0]
+
+    return pd.DataFrame([{
+        'id': identifier,
+        'location': location,
+        'night_count': len(nights),
+        'week_count': len(weeks)
+    }])
+
+def night_stops(stop_table, user):
+    # Date range
+    start_date = str(stop_table['start_datetime'].min().date())
+    weeks = stop_table['start_datetime'].dt.strftime('%Y-%U')
+    num_weeks = weeks.nunique()
+
+    # turn dates to datetime
+    stop_table['start_datetime'] = pd.to_datetime(stop_table['start_datetime'])
+
+    if 'id' not in stop_table.columns:
+        stop_table['id'] = user
+
+    end_date = (parse(start_date) + timedelta(weeks=num_weeks)).date().isoformat()
+    dates = (start_date, end_date)
+    df_clipped = clip_stays_date(stop_table, dates)
+    df_clipped = df_clipped[(df_clipped['duration'] > 0) & (df_clipped['duration_night'] >= 15)]
+    
+    return df_clipped.groupby(['id', 'location'], group_keys=False).apply(count_nights).reset_index(drop=True)
