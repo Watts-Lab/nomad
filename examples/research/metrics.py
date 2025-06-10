@@ -2,11 +2,10 @@ import pandas as pd
 import geopandas as gpd
 import numpy as np
 from shapely.geometry import Point
+from zoneinfo import ZoneInfo
+import warnings
 
-import pdb
-
-
-def poi_map(traj, poi_table, traj_cols=None, **kwargs):
+def poi_map(traj, poi_table, traj_cols=None, max_distance=1, **kwargs):
     """
     Map pings in the trajectory to the POI table.
 
@@ -29,11 +28,29 @@ def poi_map(traj, poi_table, traj_cols=None, **kwargs):
 
     # TODO traj_cols support
 
+    # Build pings GeoDataFrame
     pings_df = traj[['x', 'y']].copy()
     pings_df["pings_geometry"] = pings_df.apply(lambda row: Point(row["x"], row["y"]), axis=1)
     pings_df = gpd.GeoDataFrame(pings_df, geometry="pings_geometry", crs=poi_table.crs)
+    
+    # First spatial join (within)
     pings_df = gpd.sjoin(pings_df, poi_table, how="left", predicate="within")
-    pings_df["building_id"] = pings_df["building_id"].where(pings_df["building_id"].notna(), None)
+    
+    # Identify unmatched pings
+    unmatched_mask = pings_df["building_id"].isna()
+    unmatched_pings = pings_df[unmatched_mask].drop(columns=["building_id", "index_right"])
+    
+    if not unmatched_pings.empty:
+        # Nearest spatial join for unmatched pings
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="Geometry is in a geographic CRS.*")
+            nearest = gpd.sjoin_nearest(unmatched_pings, poi_table, how="left", max_distance=max_distance)
+
+        # Keep only the first match for each original ping
+        nearest = nearest.groupby(nearest.index).first()
+
+        # Update original DataFrame with nearest matches
+        pings_df.loc[unmatched_mask, "building_id"] = nearest["building_id"].values
 
     return pings_df["building_id"]
 
@@ -67,7 +84,15 @@ def identify_stop(alg_out, traj, stop_table, poi_table, method='mode'):
 
     # If either alg_out or stop_table is empty, there's nothing to do
     if alg_out.empty or stop_table.empty:
-        stop_table['location'] = pd.Series(dtype='object')
+        tz = ZoneInfo("America/New_York")
+        stop_table = pd.DataFrame({
+            'start_time': pd.Series(dtype='datetime64[ns, America/New_York]'),
+            'duration': pd.Series(dtype='float'),
+            'x': pd.Series(dtype='float'),
+            'y': pd.Series(dtype='float'),
+            'location': pd.Series(dtype='object'),
+            'end_time': pd.Series(dtype='datetime64[ns, America/New_York]')
+        })
         return stop_table
 
     merged_df = traj.copy()
@@ -125,7 +150,7 @@ def prepare_diary(agent, dt, city, keep_all_stops=True):
     diary = agent.diary.copy()
 
     # Compute end times of stops
-    diary.rename(columns={'local_timestamp': 'start_time'}, inplace=True)
+    diary.rename(columns={'datetime': 'start_time'}, inplace=True)
     diary['end_time'] = diary['start_time'] + pd.to_timedelta(diary['duration'], unit='m')
 
     # Add columns for x, y coordinates for each location
@@ -144,7 +169,7 @@ def prepare_diary(agent, dt, city, keep_all_stops=True):
     if not keep_all_stops:
         sparse_traj = agent.sparse_traj
         stops_with_pings = diary[
-            diary.apply(lambda row: sparse_traj['local_timestamp']
+            diary.apply(lambda row: sparse_traj['datetime']
                         .between(row['start_time'], row['end_time']).any(), axis=1)
         ]["stop_id"].tolist()
         # Include -1 to ensure trips are also kept
@@ -161,9 +186,9 @@ def prepare_stop_table(stop_table, diary, dt):
     Parameters
     ----------
     stop_table : pd.DataFrame
-        DataFrame of detected stops with at least 'local_timestamp', 'duration', and 'location' columns.
+        DataFrame of detected stops with at least 'datetime', 'duration', and 'location' columns.
     diary : pd.DataFrame
-        DataFrame of diary entries with at least 'local_timestamp', 'duration', and 'location' columns.
+        DataFrame of diary entries with at least 'datetime', 'duration', and 'location' columns.
     
     Returns
     -------
@@ -318,10 +343,6 @@ def cluster_metrics(stop_table, agent, city):
             "prop_merged": mm / (tp + fn) if (tp + fn) != 0 else 0,
         })
 
-    # TODO: compute trip-related metrics
-    # trips = metrics_data[0]
-    # metrics_df = pd.DataFrame(metrics_data[1:])
-
     metrics_df = pd.DataFrame(metrics_data)
     metrics_df = diary.merge(metrics_df, on=['stop_id'], how='right')
     metrics_df = metrics_df.merge(stop_counts, on=['stop_id'], how='left')
@@ -347,6 +368,7 @@ def cluster_metrics(stop_table, agent, city):
     # Count number of missed and split stops
     num_missed = metrics_df[metrics_df['count'] == 0].shape[0]
     num_split = metrics_df[metrics_df['count'] > 1].shape[0]
+    prop_split = num_split / n_stops # (n_stops - num_missed) if (n_stops - num_missed > 0) else np.nan
 
     metrics = {
         "Recall": float(recall),
@@ -357,6 +379,7 @@ def cluster_metrics(stop_table, agent, city):
         "Prop Stops Merged": float(prop_stops_merged),
         "Weighted Stop Merging": float(weighted_merging),
         "Split": int(num_split),
+        "Prop Split": prop_split,
         "Stop Count": int(n_stops)
     }
 
