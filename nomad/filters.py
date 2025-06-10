@@ -57,8 +57,7 @@ def _timestamp_handling(
         raise ValueError("Invalid ts_output value. Use 'pd.timestamp' or 'unix'.")
 
 
-def to_timestamp(datetime, tz_offset
-):
+def to_timestamp(datetime, tz_offset =None):
     """
     Convert a datetime series into UNIX timestamps (seconds).
     
