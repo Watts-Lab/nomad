@@ -7,17 +7,16 @@ import warnings
 import pandas as pd
 import nomad.io.base as loader
 import pyproj
+import pdb
 
 # TO DO: change to stops_to_poi
-def point_in_polygon(data, poi_table, method='centroid', data_crs = None, max_distance = 10,
-                     cluster_label = None, traj_cols = None, **kwargs):
+def point_in_polygon(data, poi_table, method='centroid', data_crs = None, max_distance = 0,
+                     cluster_label = None, location_id=None, traj_cols = None, **kwargs):
     ''' 
         cluster label can also be passed on traj_cols or on kwargs
     '''
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, defaults={})
-    # check that user specified x,y or lat, lon but not both
-    loader._has_spatial_cols(data.columns, checker_cols, exclusive=True)
-
+        
     # check if it is stop table
     end_col_present = loader._has_end_cols(data.columns, traj_cols)
     duration_col_present = loader._has_duration_cols(data.columns, traj_cols)
@@ -26,60 +25,73 @@ def point_in_polygon(data, poi_table, method='centroid', data_crs = None, max_di
     if is_stop_table:
         # is stop table
         if method=='majority':
-            raise TypeError("Method `majority' requires ping data with cluster labels\
-                            a stop table was provided")
+            raise TypeError("Method `majority' requires ping data with cluster labels,\
+                            but a stop table was provided")
         elif method=='centroid':
             stop_table = data.copy()
-            stop_table['location'] = poi_map(
+            location = poi_map(
                 data=stop_table,
                 poi_table=poi_table,
                 max_distance=max_distance,
                 data_crs=data_crs,
+                location_id=location_id,
                 traj_cols=traj_cols,
                 **kwargs)
-            return stop_table
+            return location
             
         else:
             raise ValueError(f"Method {method} not among implemented methods: `centroid' and `majority'")
 
     else:
         # is labeled pings
-        if not cluster_label:
-            if 'cluster_label' in traj_cols:
-                cluster_label = traj_cols['cluster_label']
-            elif 'cluster' in traj_cols:
-                cluster_label = traj_cols['cluster']
+        if not cluster_label: #try defaults and raise
+            if 'cluster_label' in data.columns:
+                cluster_label = 'cluster_label'
             elif 'cluster' in data.columns:
                 cluster_label = 'cluster'
             else:
-                raise ValueError(f"Argument `cluster_label` must be provided for visit attribution of labeled pings.")
+                raise ValueError(f"Argument `cluster_label` is required for visit attribution of labeled pings.")
 
-        pings_df = data.loc[data[cluster_label] != -1].copy()
-        stop_table = pings_df.groupby(cluster_label, as_index=False).apply(
-            lambda group: _stop_metrics(group, True, True, traj_cols, False), include_groups=False)
+        clustered_pings = data.loc[data[cluster_label] != -1].copy()
         if method=='majority': 
-            pings_df['location'] = poi_map(
-                data=pings_df,
+            location = poi_map(
+                data=clustered_pings,
                 poi_table=poi_table,
                 max_distance=max_distance,
                 data_crs=data_crs,
+                location_id=location_id,
                 traj_cols=traj_cols,
                 **kwargs                
             )
-            pings_df.groupby(cluster_label, as_index=False)['location'].agg(
-                lambda x: x.mode().iloc[0] if not x.mode().empty else None)
-            stop_table['location'] = pings_df.location.values # Do we need Values?
-            return stop_table
+            loc_col = location.name
+            clustered_pings = clustered_pings.join(location)
             
-        elif method=='centroid': # NEEDS TO BE PATCHED TO ACCOMMODATE OPTIONS
-            stop_table['location'] = poi_map(
-                data=stop_table,
+            location = clustered_pings.groupby(cluster_label)[loc_col].agg(
+                lambda x: x.mode().iloc[0] if not x.mode().empty else None)
+            
+            return data[[cluster_label]].join(location, on=cluster_label)[loc_col]
+            
+        elif method=='centroid': # should be medoid?
+            loader._has_spatial_cols(data.columns, traj_cols, exclusive=True)
+            use_lon_lat = ('latitude' in traj_cols and 'longitude' in traj_cols)
+            if use_lon_lat:
+                warnings.warn("Spherical ('longitude', 'latitude') coordinates were passed. Centroids will not agree with geodetic distances")                
+                centr_data = clustered_pings.groupby(cluster_label).agg({traj_cols['longitude']:'mean', traj_cols['latitude']:'mean'})
+            else:
+                centr_data = clustered_pings.groupby(cluster_label).agg({traj_cols['x']:'mean', traj_cols['y']:'mean'})
+
+            location = poi_map(
+                data=centr_data,
                 poi_table=poi_table,
                 max_distance=max_distance,
                 data_crs=data_crs,
+                location_id=location_id,
                 traj_cols=traj_cols,
                 **kwargs)
-            return stop_table
+            loc_col = location.name
+            
+            return data[[cluster_label]].join(location, on=cluster_label)[loc_col]
+
         else:
             raise ValueError(f"Method {method} not among implemented methods: `centroid' and `majority'")
 
@@ -93,7 +105,7 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, location_id=None, tr
     Parameters
     ----------
     data : pd.DataFrame or gpd.GeoDataFrame
-        The trajectory (or stop) data. Can be a DataFrame with coordinate columns or a
+        The spatial data. Can be a DataFrame with coordinate columns or a
         GeoDataFrame with point geometries.
     poi_table : gpd.GeoDataFrame
         The POI table containing building geometries and IDs.
@@ -112,12 +124,10 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, location_id=None, tr
     Returns
     -------
     pd.Series
-        A Series, indexed like `traj`, containing the building IDs for each point.
+        A Series, indexed like `data`, containing the building IDs for each point.
     """
     # column name handling
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, defaults={})
-    if location_id and not location_id in poi_table:
-        raise ValueError(f"{location_id} column not found in {poi_table.columns}.")
         
     if poi_table.crs is None:
         raise ValueError(f"poi_table must have crs attribute for spatial join.")
@@ -131,8 +141,8 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, location_id=None, tr
 
     if isinstance(data, pd.DataFrame):
         # check that user specified x,y or lat, lon but not both
-        loader._has_spatial_cols(data.columns, checker_cols, exclusive=True)
-        use_lon_lat = (traj_cols['latitude'] in data.columns and traj_cols['longitude'] in data.columns)
+        loader._has_spatial_cols(data.columns, traj_cols, exclusive=True)
+        use_lon_lat = ('latitude' in traj_cols and 'longitude' in traj_cols)
 
         if use_lon_lat:
             if data_crs:
@@ -168,19 +178,47 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, location_id=None, tr
     if data_crs != pyproj.CRS(poi_table.crs):
         raise ValueError("CRS for `data` does not match CRS for `poi_table`.")
 
-    if max_distance>0:
-        # wrap sjoin_nearest
-        indices = poi_table.sindex.nearest(pings_gdf, max_distance=max_distance, return_all=False)
+    use_poi_idx = True
+    if location_id is not None:
+        loc_col = location_id
+        if location_id in poi_table:
+            use_poi_idx=False
+        else:
+            warnings.warn(f"{location_id} column not found in {poi_table.columns}, defaulting to poi_table.index for spatial join.")
+    else:
+        loc_col = 'location_id'
+        warnings.warn(f"location_id column not provided, defaulting to poi_table.index for spatial join.")
+
         
-        joined = gpd.sjoin_nearest(
-            pings_gdf,
-            poi_table[['building_id', 'geometry']],
-            how="left",
-            max_distance=max_distance
-        )
-        location = joined[~joined.index.duplicated(keep='first')]['building_id']
-    
-    return building_ids.reindex(data.index)
+    if max_distance>0:
+        if data_crs.is_geographic:
+            warnings.warn(f"Provided CRS {data_crs.name} is a geographic coordinate system. "
+                             "This will lead to errors when computing euclidean distances."
+                             f"Did you mean to use `max_distance=0'?"
+                         )        
+        
+        p_idx, idx = poi_table.sindex.nearest(pings_gdf, max_distance=max_distance, return_all=False)
+        if use_poi_idx:
+            s = pd.Series(poi_table.iloc[idx].index, index=data.index[p_idx])
+            s.name = loc_col
+        else:
+            s = pd.Series(poi_table.iloc[idx][loc_col], index=data.index[p_idx])
+            s.name = loc_col
+            
+        return s.reindex(data.index)
+
+    else: # default max_distance = 0
+        p_idx, idx = poi_table.sindex.query(pings_gdf, predicate="within") # boundary counts; use "contains" to exclude it
+        if use_poi_idx:
+            s = pd.Series(poi_table.iloc[idx].index, index=data.index[p_idx]) # might have duplicates
+            s = s.loc[~s.index.duplicated()]
+            s.name = loc_col
+        else:
+            s = pd.Series(poi_table.iloc[idx][loc_col], index=data.index[p_idx])
+            s = s.loc[~s.index.duplicated()]
+            s.name = loc_col        
+        return s.reindex(data.index)
+
 
 def oracle_map(traj, true_visits, traj_cols, **kwargs):
     """

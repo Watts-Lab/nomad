@@ -449,9 +449,10 @@ def _has_spatial_cols(col_names, traj_cols, exclusive=False):
             ('x' in traj_cols and 'y' in traj_cols and 
              traj_cols['x'] in col_names and traj_cols['y'] in col_names) 
         )
-        raise ValueError(
-            f"Too many user provided spatial columns in arguments {traj_cols}, only one pair of spatial coordinates is required."
-        )
+        if not single_spatial:
+            raise ValueError(
+                f"Too many user provided spatial columns in arguments {traj_cols}, only one pair of spatial coordinates is required."
+            )
     
     return spatial_exists
 
