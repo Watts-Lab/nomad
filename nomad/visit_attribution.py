@@ -10,11 +10,43 @@ import pyproj
 import pdb
 
 # TO DO: change to stops_to_poi
-def point_in_polygon(data, poi_table, method='centroid', data_crs = None, max_distance = 0,
-                     cluster_label = None, location_id=None, traj_cols = None, **kwargs):
-    ''' 
-        cluster label can also be passed on traj_cols or on kwargs
-    '''
+def point_in_polygon(data, poi_table, method='centroid', data_crs=None, max_distance=0,
+                     cluster_label=None, location_id=None, traj_cols=None, **kwargs):
+    """
+    Assign each stop or cluster of pings in `data` to a polygon in `poi_table`, 
+    either by the cluster’s centroid location or by the most frequent polygon hit.
+
+    Parameters
+    ----------
+    data : pd.DataFrame or gpd.GeoDataFrame
+        A table of pings (with optional stop/duration columns) or stops, 
+        indexed by observation or cluster.
+    poi_table : gpd.GeoDataFrame
+        Polygons to match against, with CRS set and optional ID column.
+    method : {'centroid', 'majority'}, default 'centroid'
+        ‘centroid’ uses each cluster’s mean point; ‘majority’ picks the polygon 
+        most often visited within each cluster (only for ping data).
+    data_crs : str or pyproj.CRS, optional
+        CRS for `data` when it is a plain DataFrame; ignored if `data` is a GeoDataFrame.
+    max_distance : float, default 0
+        Search radius for nearest‐neighbor fall-back; zero triggers strict 
+        point-in-polygon matching.
+    cluster_label : str, optional
+        Column name holding cluster IDs in ping data; inferred from `data` if absent.
+    location_id : str, optional
+        Column in `poi_table` containing the output ID; uses the GeoDataFrame index if None.
+    traj_cols : list of str, optional
+        Names of the coordinate columns in `data` when it is a DataFrame.
+    **kwargs
+        Passed through to `poi_map` or the trajectory-column parser.
+
+    Returns
+    -------
+    pd.Series
+        Indexed like `data`, giving the matched polygon ID for each stop or ping.
+        Points or clusters that fall outside every polygon or beyond `max_distance`
+        are set to NaN.
+    """
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, defaults={})
         
     # check if it is stop table
@@ -100,31 +132,32 @@ def point_in_polygon(data, poi_table, method='centroid', data_crs = None, max_di
 # change to point_in_polygon, move to filters.py
 def poi_map(data, poi_table, max_distance=0, data_crs=None, location_id=None, traj_cols=None, **kwargs):
     """
-    Map elements in traj to closest polygon in poi_table with an allowed distance buffer.
+    Assign each point in `data` to a polygon in `poi_table`, using containment when
+    `max_distance==0` or the nearest neighbor within `max_distance` otherwise.
 
     Parameters
     ----------
     data : pd.DataFrame or gpd.GeoDataFrame
-        The spatial data. Can be a DataFrame with coordinate columns or a
-        GeoDataFrame with point geometries.
+        Input points, either as a DataFrame with coordinate columns or a GeoDataFrame.
     poi_table : gpd.GeoDataFrame
-        The POI table containing building geometries and IDs.
-    traj_cols : list, optional
-        Columns in the trajectory DataFrame to be used for mapping.
-    max_distance : float
-        The maximum distance to search for a nearest POI.
+        Polygons to match against, indexed or with `location_id` column.
+    traj_cols : list of str, optional
+        Names of the coordinate columns in `data` when it is a DataFrame.
+    max_distance : float, default 0
+        Maximum search radius for nearest‐neighbor matching; zero invokes a point‐in‐polygon test.
     data_crs : str or pyproj.CRS, optional
-        The Coordinate Reference System of the trajectory coordinates. Ignored if
-        `data` is a GeoDataFrame.
-    location : str
-        The column name of the location_id in poi_table, poi_table.index is used if None
-    **kwargs : dict
-        Additional keyword arguments.
+        CRS for `data` if it is a DataFrame; ignored for GeoDataFrames.
+    location_id : str, optional
+        Name of the ID column in `poi_table`; uses the GeoDataFrame index if not provided.
+    **kwargs
+        Passed to trajectory‐column parsing helper.
 
     Returns
     -------
     pd.Series
-        A Series, indexed like `data`, containing the building IDs for each point.
+        Indexed like `data`, with each entry set to the matching polygon’s ID (from
+        `location_id` or `poi_table.index`). Points not contained or beyond `max_distance`
+        yield NaN. When multiple polygons overlap a point, only the first match is kept.
     """
     # column name handling
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, defaults={})
