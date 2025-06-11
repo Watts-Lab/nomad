@@ -16,12 +16,14 @@ def point_in_polygon(data, poi_table, method='centroid', data_crs = None, max_di
     '''
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, defaults={})
     # check that user specified x,y or lat, lon but not both
-    loader._has_spatial_cols(data.columns, traj_cols, exclusive=True)
+    loader._has_spatial_cols(data.columns, checker_cols, exclusive=True)
 
+    # check if it is stop table
     end_col_present = loader._has_end_cols(data.columns, traj_cols)
     duration_col_present = loader._has_duration_cols(data.columns, traj_cols)
+    is_stop_table = (end_col_present or duration_col_present)
 
-    if end_col_present or duration_col_present:
+    if is_stop_table:
         # is stop table
         if method=='majority':
             raise TypeError("Method `majority' requires ping data with cluster labels\
@@ -83,29 +85,8 @@ def point_in_polygon(data, poi_table, method='centroid', data_crs = None, max_di
 
     return None
     
-def majority_poi(traj, labels, poi_table, traj_cols, is_datetime, is_long_lat):
-    if labels.empty:
-        return pd.Series(dtype='object')
-    
-    # merge labels with data
-    traj_with_labels = traj.copy()
-    time_col = traj_cols['datetime'] if is_datetime else traj_cols['timestamp']
-    traj_with_labels = traj_with_labels.merge(labels, left_on=time_col, right_index=True, how='left')
-
-    # compute the location for each cluster
-    space_cols = [traj_cols['longitude'], traj_cols['latitude']] if is_long_lat else [traj_cols['x'], traj_cols['y']]
-    pings_df = traj_with_labels[space_cols].copy()
-    
-    traj_with_labels["building_id"] = poi_map(traj=pings_df,
-                                              poi_table=poi_table,
-                                              traj_cols=traj_cols)
-
-    locations = traj_with_labels.groupby('cluster')['building_id'].agg(lambda x: x.mode().iloc[0] if not x.mode().empty else None)
-
-    return locations
-
 # change to point_in_polygon, move to filters.py
-def poi_map(data, poi_table, max_distance=0, data_crs=None, traj_cols=None, **kwargs):
+def poi_map(data, poi_table, max_distance=0, data_crs=None, location_id=None, traj_cols=None, **kwargs):
     """
     Map elements in traj to closest polygon in poi_table with an allowed distance buffer.
 
@@ -122,7 +103,9 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, traj_cols=None, **kw
         The maximum distance to search for a nearest POI.
     data_crs : str or pyproj.CRS, optional
         The Coordinate Reference System of the trajectory coordinates. Ignored if
-        `traj` is a GeoDataFrame.
+        `data` is a GeoDataFrame.
+    location : str
+        The column name of the location_id in poi_table, poi_table.index is used if None
     **kwargs : dict
         Additional keyword arguments.
 
@@ -131,64 +114,73 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, traj_cols=None, **kw
     pd.Series
         A Series, indexed like `traj`, containing the building IDs for each point.
     """
-    # Column name handling
-    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
-    loader._has_spatial_cols(data.columns, traj_cols)
-
-    # use_lat_lon and CRS handling
-    if not (data_crs is None or isinstance(data_crs, (str, pyproj.CRS))):
-        raise TypeError(f"CRS {data_crs} must be a string or a pyproj.CRS object.")
+    # column name handling
+    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, defaults={})
+    if location_id and not location_id in poi_table:
+        raise ValueError(f"{location_id} column not found in {poi_table.columns}.")
         
+    if poi_table.crs is None:
+        raise ValueError(f"poi_table must have crs attribute for spatial join.")
+   
+    # Determine which geometry to use
     if isinstance(data, gpd.GeoDataFrame):
-        pings_gdf = data
+        pings_gdf = data.geometry
+        # if geodataframe, data_crs is ignored but we Raise if conflicting crs because it is suspect
         if data_crs and not pyproj.CRS(pings_gdf.crs).equals(pyproj.CRS(data_crs)):
             raise ValueError(f"Provided CRS {data_crs} conflicts with traj CRS {data.crs}.")
 
-    elif isinstance(data, pd.DataFrame):
+    if isinstance(data, pd.DataFrame):
+        # check that user specified x,y or lat, lon but not both
+        loader._has_spatial_cols(data.columns, checker_cols, exclusive=True)
         use_lon_lat = (traj_cols['latitude'] in data.columns and traj_cols['longitude'] in data.columns)
-        if data_crs and not pyproj.CRS(data_crs).equals(pyproj.CRS("EPSG:4326")):
-            use_lon_lat = False
-            if not (traj_cols['x'] in data.columns and traj_cols['y'] in data.columns):
-                raise ValueError(f"Provided CRS {data_crs} is incompatible with spherical coordinates: 'longitude' and 'latitude'"
-                                "if using alternate coordinates, set arguments 'x' and 'y' to coordinate names."
-                                )
+
         if use_lon_lat:
-            x_col, y_col = traj_cols['longitude'], traj_cols['latitude']
-            if data_crs is None:
-                warnings.warn("Argument `data_crs` not provided, assuming EPSG:4326")
-                assigned_crs = pyproj.CRS("EPSG:4326")
-            else:
-                assigned_crs = pyproj.CRS(data_crs)
+            if data_crs:
+                data_crs = pyproj.CRS(data_crs)
+                if data_crs.is_projected:
+                    warnings.warn(f"Provided CRS {data_crs.name} is a projected coordinate system, but "
+                                 "spherical ('longitude', 'latitude') coordinates were passed. Did you mean to pass data_crs='EPSG:4326'?"
+                                 )
+            else: # we assume EPSG:4326
+                warnings.warn("Argument `data_crs` not provided, assuming EPSG:4326 for ('longitude', 'latitude') coordinates")
+                data_crs = pyproj.CRS("EPSG:4326")
+            
+            pings_gdf= gpd.points_from_xy(
+                data[traj_cols['longitude']],
+                data[traj_cols['latitude']],
+                crs=data_crs) # order matters: lon first
         else:
-            x_col, y_col = traj_cols['x'], traj_cols['y']
-            if data_crs is None:
-                warnings.warn(f"Argument `data_crs` not provided, assuming CRS {poi_table.crs} from `poi_table`")
-                assigned_crs = poi_table.crs
-            else:
-                assigned_crs = pyproj.CRS(data_crs)
-
-        if assigned_crs is None:
-            warnings.warn(f"No CRS provided for `data` and `poi_table`, spatial operations may be innacurate.")
-        elif assigned_crs != poi_table.crs:
-            raise ValueError("CRS for `data` does not match CRS for `poi_table`.")
-
-        pings_gdf = gpd.GeoDataFrame(
-            geometry=gpd.points_from_xy(data[x_col], data[y_col]),
-            crs=assigned_crs,
-            index=data.index)
-
+            if not data_crs:
+                raise ValueError(f"data_crs must be provided when using projected coordinates.")
+            data_crs = pyproj.CRS(data_crs)
+            if data_crs.is_geographic:
+                warnings.warn(f"Provided CRS {data_crs.name} is a geographic coordinate system. "
+                             "This will lead to errors if passed coordinates ('x', 'y') are projected."
+                             f"Did you mean to use {poi_table.crs}?"
+                             )
+            pings_gdf= gpd.points_from_xy(
+                data[traj_cols['x']],
+                data[traj_cols['y']],
+                crs=data_crs)
     else:
-        raise TypeError("`traj` must be a pandas DataFrame or a GeoDataFrame.")
+        raise TypeError("`data` must be a pandas DataFrame or a GeoDataFrame.")
 
-    # wrap sjoin_nearest
-    joined = gpd.sjoin_nearest(
-        pings_gdf,
-        poi_table[['building_id', 'geometry']],
-        how="left",
-        max_distance=max_distance
-    )
-    building_ids = joined[~joined.index.duplicated(keep='first')]['building_id']
-    return building_ids.reindex(data.index)
+    if data_crs != pyproj.CRS(poi_table.crs):
+        raise ValueError("CRS for `data` does not match CRS for `poi_table`.")
+
+    if max_distance>0:
+        # wrap sjoin_nearest
+        indices = poi_table.sindex.nearest(pings_gdf, max_distance=max_distance, return_all=False)
+        
+        joined = gpd.sjoin_nearest(
+            pings_gdf,
+            poi_table[['building_id', 'geometry']],
+            how="left",
+            max_distance=max_distance
+        )
+        location = joined[~joined.index.duplicated(keep='first')]['building_id']
+    
+   return building_ids.reindex(data.index)
 
 def oracle_map(traj, true_visits, traj_cols, **kwargs):
     """
