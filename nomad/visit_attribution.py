@@ -180,7 +180,7 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, location_id=None, tr
         )
         location = joined[~joined.index.duplicated(keep='first')]['building_id']
     
-   return building_ids.reindex(data.index)
+    return building_ids.reindex(data.index)
 
 def oracle_map(traj, true_visits, traj_cols, **kwargs):
     """
