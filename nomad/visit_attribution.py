@@ -60,7 +60,7 @@ def majority_poi(traj, labels, stop_table, poi_table, traj_cols, is_datetime, is
     return stop_table
 
     
-def poi_map(traj, poi_table, traj_cols=None, max_distance=4, **kwargs):
+def poi_map(traj, poi_table, traj_cols=None, max_distance=15, **kwargs):
     """
     Map elements in traj to closest polygon in poi_table with an allowed distance buffer.
 

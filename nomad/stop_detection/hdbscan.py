@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import nomad.io.base as loader
 import nomad.constants as constants
+from scipy.stats import norm
 import pdb
 from nomad.stop_detection import utils
 
@@ -490,11 +491,23 @@ def _get_eps(label_history_df, target_cluster_id):
 
     return pd.DataFrame(eps_df)
 
-def custom_cluster_stability(label_history_df):
-    from scipy.stats import norm
-    mu = 100
-    sigma = 2
+def custom_CDF(eps):
+    x = np.asarray(eps)
+    y = np.zeros_like(x, dtype=float)
 
+    m = (x >= 5)  & (x <= 20)
+    y[m] = 2 * (x[m] - 5)
+
+    m = (x > 20) & (x <= 80)
+    y[m] = 30 + 1.5 * (x[m] - 20)
+
+    m = (x > 80) & (x <= 200)
+    y[m] = 120 + (x[m] - 80)
+
+    y[x > 200] = 1
+    return y
+
+def custom_cluster_stability(label_history_df):
     # Get clusters that are not root (0) or noise (-1)
     clusters = label_history_df.loc[~label_history_df['cluster_id'].isin([0, -1]), 'cluster_id'].unique()
 
@@ -505,8 +518,12 @@ def custom_cluster_stability(label_history_df):
         
         # Avoid division by zero or NaNs
         eps_df = eps_df.replace({'eps_min': {0: np.nan}, 'eps_max': {0: np.nan}})
-        # eps_df['stability_term'] = norm.pdf(eps_df['eps_min'], loc=mu, scale=sigma)
-        eps_df['stability_term'] = 1 - norm.cdf(eps_df['eps_min'], loc=mu, scale=sigma)
+
+        # CDF(eps_max) - CDF(eps_min)
+        # eps_df['cdf_eps_min'] = eps_df['eps_min'].apply(custom_CDF)
+        # eps_df['cdf_eps_max'] = eps_df['eps_max'].apply(custom_CDF)
+        # eps_df['stability_term'] = eps_df['cdf_eps_max'] - eps_df['cdf_eps_min']
+        eps_df['stability_term'] = custom_CDF(eps_df['eps_min']) - custom_CDF(eps_df['eps_max'])
         total_stability = eps_df['stability_term'].sum(skipna=True)
 
         cluster_stability_df.append({
@@ -653,7 +670,7 @@ def hdbscan_labels(traj, traj_cols, time_thresh, min_pts = 2, min_cluster_size =
     mstext_edges = mst_ext(mst_edges, core_distances)
     label_history_df, hierarchy_df = hdbscan(mstext_edges, min_cluster_size)
     # cluster_stability_df = compute_cluster_stability(label_history_df)
-    cluster_stability_df = compute_cluster_stability(label_history_df)
+    cluster_stability_df = custom_cluster_stability(label_history_df)
     selected_clusters = select_most_stable_clusters(hierarchy_df, cluster_stability_df)
 
     all_timestamps = set(label_history_df['time'])
@@ -756,7 +773,8 @@ def st_hdbscan(traj, traj_cols, time_thresh, min_pts = 2, min_cluster_size = 10,
             if stop_table[key].dtype != "Int64":
                 stop_table[key] = stop_table[key].astype("Int64")
                 
-    return stop_table
+    # return stop_table
+    return labels_hdbscan, stop_table
 
 def _stop_metrics(grouped_data, is_long_lat, is_datetime, traj_cols, complete_output):
     # Coordinates array and distance metrics

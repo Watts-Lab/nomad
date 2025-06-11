@@ -8,6 +8,103 @@ import os
 import nomad.constants as constants
 import pdb
 
+def summarize_stop(grouped_data, long_lat, datetime, traj_cols, complete_output):
+    # Coordinates array and distance metrics
+    if long_lat:
+        coords = grouped_data[[traj_cols['longitude'], traj_cols['latitude']]].to_numpy()
+        stop_medoid = _medoid(coords, metric='haversine')
+        diameter_m = _diameter(coords, metric='haversine')
+    else:
+        coords = grouped_data[[traj_cols['x'], traj_cols['y']]].to_numpy()
+        stop_medoid = _medoid(coords, metric='euclidean')
+        diameter_m = _diameter(coords, metric='euclidean')
+
+    # Compute duration and start and end time of stop
+    start_time_key = 'start_datetime' if datetime else 'start_timestamp'
+    end_time_key = 'end_datetime' if datetime else 'end_timestamp' 
+    
+    if datetime:
+        start_time = grouped_data[traj_cols['datetime']].min()
+        end_time = grouped_data[traj_cols['datetime']].max()
+        duration = (end_time - start_time).total_seconds() / 60.0
+    else:
+        start_time = grouped_data[traj_cols['timestamp']].min()
+        end_time = grouped_data[traj_cols['timestamp']].max()
+        
+        timestamp_length = len(str(start_time))
+
+        if timestamp_length > 10:
+            if timestamp_length == 13:
+                duration = ((end_time // 10 ** 3) - (start_time // 10 ** 3)) / 60.0
+            elif timestamp_length == 19:
+                duration = ((end_time // 10 ** 9) - (start_time // 10 ** 9)) / 60.0
+        else:
+            duration = (end_time - start_time) / 60.0
+                            
+    # Number of pings in stop
+    n_pings = len(grouped_data)
+    
+    # Compute max_gap between consecutive pings (in minutes)
+    if datetime:
+        times = pd.to_datetime(grouped_data[traj_cols['datetime']]).sort_values()
+        time_diffs = times.diff().dropna()
+        max_gap = int(time_diffs.max().total_seconds() / 60) if not time_diffs.empty else 0
+    else:
+        times = grouped_data[traj_cols['timestamp']].sort_values()
+        timestamp_length = len(str(times.iloc[0]))
+        
+        if timestamp_length == 13:
+            time_diffs = np.diff(times.values) // 1000
+        elif timestamp_length == 19:  # nanoseconds
+            time_diffs = np.diff(times.values) // 10**9
+        else:
+            time_diffs = np.diff(times.values)
+        
+        max_gap = int(np.max(time_diffs) / 60) if len(time_diffs) > 0 else 0
+
+    # Prepare data for the Series
+    if long_lat:
+        if complete_output:
+            stop_attr = {
+                start_time_key: start_time,
+                end_time_key: end_time,
+                traj_cols['longitude']: stop_medoid[0],
+                traj_cols['latitude']: stop_medoid[1],
+                'diameter': diameter_m,
+                'n_pings': n_pings,
+                'duration': duration,
+                'max_gap': max_gap
+            }
+        else:
+            stop_attr = {
+                start_time_key: start_time,
+                'duration': duration,
+                traj_cols['longitude']: stop_medoid[0],
+                traj_cols['latitude']: stop_medoid[1]
+            }
+    else:
+        if complete_output:
+            stop_attr = {
+                start_time_key: start_time,
+                end_time_key: end_time,
+                traj_cols['x']: stop_medoid[0],
+                traj_cols['y']: stop_medoid[1],
+                'diameter': diameter_m,
+                'n_pings': n_pings,
+                'duration': duration,
+                'max_gap': max_gap
+            }
+        else:
+            stop_attr = {
+                start_time_key: start_time,
+                'duration': duration,
+                traj_cols['x']: stop_medoid[0],
+                traj_cols['y']: stop_medoid[1]
+            }
+
+    return pd.Series(stop_attr)
+
+
 def _diameter(coords, metric='euclidean'):
     """
     Calculate the diameter of a set of coordinates, defined as the maximum pairwise distance.
