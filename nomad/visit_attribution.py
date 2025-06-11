@@ -9,13 +9,14 @@ import nomad.io.base as loader
 import pyproj
 
 # TO DO: change to stops_to_poi
-def point_in_polygon(data, poi_table, method='centroid', max_distance = 0, data_crs = None,
+def point_in_polygon(data, poi_table, method='centroid', data_crs = None, max_distance = 10,
                      cluster_label = None, traj_cols = None, **kwargs):
     ''' 
         cluster label can also be passed on traj_cols or on kwargs
     '''
-    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
-    loader._has_spatial_cols(data.columns, traj_cols)
+    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, defaults={})
+    # check that user specified x,y or lat, lon but not both
+    loader._has_spatial_cols(data.columns, traj_cols, exclusive=True)
 
     end_col_present = loader._has_end_cols(data.columns, traj_cols)
     duration_col_present = loader._has_duration_cols(data.columns, traj_cols)
@@ -136,7 +137,7 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, traj_cols=None, **kw
 
     # use_lat_lon and CRS handling
     if not (data_crs is None or isinstance(data_crs, (str, pyproj.CRS))):
-        raise TypeError(f"CRS {data_crs} must be a string, a pyproj.CRS object, or None.")
+        raise TypeError(f"CRS {data_crs} must be a string or a pyproj.CRS object.")
         
     if isinstance(data, gpd.GeoDataFrame):
         pings_gdf = data
