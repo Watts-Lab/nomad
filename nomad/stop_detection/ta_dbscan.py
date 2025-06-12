@@ -341,10 +341,11 @@ def temporal_dbscan(data, time_thresh, dist_thresh, min_pts, traj_cols=None, com
         else:
             time_col_name = traj_cols['timestamp']
 
-    labels_tadbscan = _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, traj_cols, **kwargs)
+    
 
-    complete_data = pd.merge(labels_tadbscan, data, left_index=True, right_on=time_col_name, how='inner')
+    labels_tadbscan = _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, False, traj_cols, **kwargs) # see patch on 424
 
+    complete_data = data.join(labels_tadbscan)
     complete_data = complete_data[complete_data['cluster'] != -1]
     
     stop_table = complete_data.groupby('cluster').apply(lambda group: _stop_metrics(group, long_lat, datetime, traj_cols, complete_output), include_groups=False)
@@ -352,7 +353,7 @@ def temporal_dbscan(data, time_thresh, dist_thresh, min_pts, traj_cols=None, com
     # return stop_table
     return labels_tadbscan, stop_table
 
-def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, traj_cols=None, **kwargs):
+def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, return_cores=False, traj_cols=None, **kwargs):
     # Check if user wants long and lat
     long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs['latitude'] in data.columns and kwargs['longitude'] in data.columns
 
@@ -419,9 +420,12 @@ def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, traj_cols=N
 
     _process_clusters(data_temp, time_thresh, dist_thresh, min_pts, output, long_lat, datetime, traj_cols, min_duration=4)
 
-    output.index = list(data[time_col_name])
-
-    return output
+    if return_cores:
+        output.index = list(data[time_col_name])
+        return output
+    else:
+        labels = output.cluster
+        return labels.set_axis(data.index)
 
 def _stop_metrics(grouped_data, long_lat, datetime, traj_cols, complete_output):
     # Coordinates array and distance metrics

@@ -10,6 +10,7 @@ import nomad.constants as constants
 from scipy.stats import norm
 import pdb
 from nomad.stop_detection import utils
+from nomad.constants import DEFAULT_SCHEMA
 
 def _find_temp_neighbors(times, time_thresh, is_datetime):
     """
@@ -612,21 +613,15 @@ def select_most_stable_clusters(hierarchy_df, cluster_stability_df):
 
     return selected_clusters
 
-def hdbscan_labels(traj, traj_cols, time_thresh, min_pts = 2, min_cluster_size = 10, **kwargs):
+def hdbscan_labels(traj, time_thresh, min_pts = 2, min_cluster_size = 10, traj_cols=None, **kwargs):
     # Check if user wants long and lat
     is_long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs['latitude'] in traj.columns and kwargs['longitude'] in traj.columns
 
     # Check if user wants datetime
     is_datetime = 'datetime' in kwargs and kwargs['datetime'] in traj.columns
 
-    # Set initial schema
-    if not traj_cols:
-        traj_cols = {}
 
-    traj_cols = loader._update_schema(traj_cols, kwargs)
-    traj_cols = loader._update_schema(constants.DEFAULT_SCHEMA, traj_cols)
-
-    # Tests to check for spatial and temporal columns
+    traj_cols = loader._parse_traj_cols(traj.columns, traj_cols, kwargs) #load defaults
     loader._has_spatial_cols(traj.columns, traj_cols)
     loader._has_time_cols(traj.columns, traj_cols)
 
@@ -701,9 +696,8 @@ def hdbscan_labels(traj, traj_cols, time_thresh, min_pts = 2, min_cluster_size =
         rows.append({"time": ts, "cluster": -1})
     
     hdbscan_labels_df = pd.DataFrame(rows).sort_values("time").reset_index(drop=True)
-    hdbscan_labels_series = hdbscan_labels_df.set_index("time")["cluster"]
-
-    return hdbscan_labels_series
+    # hdbscan_labels_series = hdbscan_labels_df.set_index("time")["cluster"] ## why?
+    return hdbscan_labels_df.cluster.set_axis(traj.index)
 
 def st_hdbscan(traj, traj_cols, time_thresh, min_pts = 2, min_cluster_size = 10, complete_output = False, **kwargs):
     # Check if user wants long and lat
@@ -759,14 +753,14 @@ def st_hdbscan(traj, traj_cols, time_thresh, min_pts = 2, min_cluster_size = 10,
     start_time_key = 'start_datetime' if is_datetime else 'start_timestamp'
     end_time_key = 'end_datetime' if is_datetime else 'end_timestamp' 
     
-    labels_hdbscan = hdbscan_labels(traj=traj, traj_cols=traj_cols, time_thresh=time_thresh, min_pts = min_pts,
-                                        min_cluster_size = min_cluster_size)
-    merged_data_hdbscan = traj.merge(labels_hdbscan, left_on=time_col_name, right_index = True)
-    
+    labels_hdbscan = hdbscan_labels(traj=traj, time_thresh=time_thresh, min_pts = min_pts,
+                                        min_cluster_size = min_cluster_size, traj_cols=traj_cols)
+
+    merged_data_hdbscan = traj.join(labels_hdbscan)  
     # remove noise pings from stop table
     merged_data_hdbscan = merged_data_hdbscan[merged_data_hdbscan.cluster != -1]
     
-    stop_table = merged_data_hdbscan.groupby('cluster').apply(lambda group: _stop_metrics(group, is_long_lat, is_datetime, traj_cols, complete_output), include_groups=False)
+    stop_table = merged_data_hdbscan.groupby('cluster', as_index=False).apply(lambda group: _stop_metrics(group, is_long_lat, is_datetime, traj_cols, complete_output), include_groups=False)
 
     for key in [start_time_key, end_time_key, 'n_pings', 'duration']:
         if key in stop_table:
@@ -775,7 +769,7 @@ def st_hdbscan(traj, traj_cols, time_thresh, min_pts = 2, min_cluster_size = 10,
                 
     # return stop_table
     return labels_hdbscan, stop_table
-
+ 
 def _stop_metrics(grouped_data, is_long_lat, is_datetime, traj_cols, complete_output):
     # Coordinates array and distance metrics
     if is_long_lat:

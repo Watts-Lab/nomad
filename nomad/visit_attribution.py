@@ -1,129 +1,258 @@
-
 import geopandas as gpd
 import nomad.io.base as loader
+import nomad.constants as constants
+from nomad.stop_detection.ta_dbscan import _stop_metrics
 from shapely.geometry import Point
 import warnings
 import pandas as pd
 import nomad.io.base as loader
-import numpy as np
-from datetime import date, time, datetime, timedelta
-from dateutil.parser import parse
+import pyproj
+import pdb
 
-def point_in_polygon(traj, labels, stop_table, poi_table, traj_cols, is_datetime, is_long_lat):
-    # If either labels or stop_table is empty, there's nothing to do
-    if labels.empty or stop_table.empty:
-        stop_table['location'] = pd.Series(dtype='object')
-        return stop_table
-
-    # merge labels with data
-    traj_with_labels = traj.copy()
-    time_col = traj_cols['datetime'] if is_datetime else traj_cols['timestamp']
-    traj_with_labels = traj_with_labels.merge(labels, left_on=time_col, right_index=True, how='left')
-
-    # compute the location for each cluster
-    space_cols = [traj_cols['longitude'], traj_cols['latitude']] if is_long_lat else [traj_cols['x'], traj_cols['y']]
-    pings_df = traj_with_labels.groupby('cluster')[space_cols].mean()
-    
-    locations = poi_map(traj=pings_df,
-                        poi_table=poi_table,
-                        traj_cols=traj_cols)
-
-    # Map the mode location back to the stop_table
-    stop_table['location'] = locations
-
-    return stop_table
-    
-def majority_poi(traj, labels, stop_table, poi_table, traj_cols, is_datetime, is_long_lat):
-    # If either labels or stop_table is empty, there's nothing to do
-    if labels.empty or stop_table.empty:
-        stop_table['location'] = pd.Series(dtype='object')
-        return stop_table
-    
-    # merge labels with data
-    traj_with_labels = traj.copy()
-    time_col = traj_cols['datetime'] if is_datetime else traj_cols['timestamp']
-    traj_with_labels = traj_with_labels.merge(labels, left_on=time_col, right_index=True, how='left')
-
-    # compute the location for each cluster
-    space_cols = [traj_cols['longitude'], traj_cols['latitude']] if is_long_lat else [traj_cols['x'], traj_cols['y']]
-    pings_df = traj_with_labels[space_cols].copy()
-    
-    traj_with_labels["building_id"] = poi_map(traj=pings_df,
-                                              poi_table=poi_table,
-                                              traj_cols=traj_cols)
-
-    locations = traj_with_labels.groupby('cluster')['building_id'].agg(lambda x: x.mode().iloc[0] if not x.mode().empty else None)
-
-    # Map the mode location back to the stop_table
-    stop_table['location'] = locations
-
-    return stop_table
-
-    
-def poi_map(traj, poi_table, traj_cols=None, max_distance=15, **kwargs):
+# TO DO: change to stops_to_poi
+def point_in_polygon(data, poi_table, method='centroid', data_crs=None, max_distance=0,
+                     cluster_label=None, location_id=None, traj_cols=None, **kwargs):
     """
-    Map elements in traj to closest polygon in poi_table with an allowed distance buffer.
+    Assign each stop or cluster of pings in `data` to a polygon in `poi_table`, 
+    either by the cluster’s centroid location or by the most frequent polygon hit.
 
     Parameters
     ----------
-    traj : pd.DataFrame
-        The trajectory DataFrame containing x and y coordinates.
+    data : pd.DataFrame or gpd.GeoDataFrame
+        A table of pings (with optional stop/duration columns) or stops, 
+        indexed by observation or cluster.
     poi_table : gpd.GeoDataFrame
-        The POI table containing building geometries and IDs.
-    traj_cols : list
-        The columns in the trajectory DataFrame to be used for mapping.
-    **kwargs : dict
-        Additional keyword arguments.
-    
+        Polygons to match against, with CRS set and optional ID column.
+    method : {'centroid', 'majority'}, default 'centroid'
+        ‘centroid’ uses each cluster’s mean point; ‘majority’ picks the polygon 
+        most often visited within each cluster (only for ping data).
+    data_crs : str or pyproj.CRS, optional
+        CRS for `data` when it is a plain DataFrame; ignored if `data` is a GeoDataFrame.
+    max_distance : float, default 0
+        Search radius for nearest‐neighbor fall-back; zero triggers strict 
+        point-in-polygon matching.
+    cluster_label : str, optional
+        Column name holding cluster IDs in ping data; inferred from `data` if absent.
+    location_id : str, optional
+        Column in `poi_table` containing the output ID; uses the GeoDataFrame index if None.
+    traj_cols : list of str, optional
+        Names of the coordinate columns in `data` when it is a DataFrame.
+    **kwargs
+        Passed through to `poi_map` or the trajectory-column parser.
+
     Returns
     -------
     pd.Series
-        A Series containing the building IDs corresponding to the pings in the trajectory.
+        Indexed like `data`, giving the matched polygon ID for each stop or ping.
+        Points or clusters that fall outside every polygon or beyond `max_distance`
+        are set to NaN.
     """
-    # TO DO: warning if CRS is None. If is_long_lat inform that EPSG:4326 will be used.
-    # TO DO: if not is_long_lat and CRS is None, Raise Error and inform of CRS of poi_table. 
-    # TO DO: if POI_table has no CRS Raise Error. If poi_table has different CRS? ValueError suggest reprojection
+    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, defaults={})
+    traj_cols_w_deflts = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+        
+    # check if it is stop table
+    end_col_present = loader._has_end_cols(data.columns, traj_cols)
+    duration_col_present = loader._has_duration_cols(data.columns, traj_cols_w_deflts)
+    is_stop_table = (end_col_present or duration_col_present)
 
-    # Check if user wants long and lat
-    is_long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs['latitude'] in traj.columns and kwargs['longitude'] in traj.columns
+    if is_stop_table:
+        # is stop table
+        if method=='majority':
+            raise TypeError("Method `majority' requires ping data with cluster labels,\
+                            but a stop table was provided")
+        elif method=='centroid':
+            stop_table = data.copy()
+            location = poi_map(
+                data=stop_table,
+                poi_table=poi_table,
+                max_distance=max_distance,
+                data_crs=data_crs,
+                location_id=location_id,
+                traj_cols=traj_cols,
+                **kwargs)
 
-    # Set initial schema
-    traj_cols = loader._parse_traj_cols(traj.columns, traj_cols, kwargs)
-    loader._has_spatial_cols(traj.columns, traj_cols)
+            return location
+            
+        else:
+            raise ValueError(f"Method {method} not among implemented methods: `centroid' and `majority'")
 
-    # Setting x and y as defaults if not specified by user in either traj_cols or kwargs
-    if traj_cols['x'] in traj.columns and traj_cols['y'] in traj.columns and not is_long_lat:
-        is_long_lat = False
-        pings_df = traj[[traj_cols['x'], traj_cols['y']]].copy()
     else:
-        is_long_lat = True
-        pings_df = traj[[traj_cols['longitude'],  traj_cols['latitide']]].copy()
+        # is labeled pings
+        if not cluster_label: #try defaults and raise
+            if 'cluster_label' in data.columns:
+                cluster_label = 'cluster_label'
+            elif 'cluster' in data.columns:
+                cluster_label = 'cluster'
+            else:
+                raise ValueError(f"Argument `cluster_label` is required for visit attribution of labeled pings.")
 
-    # Build pings GeoDataFrame
-    # use gpd.points_from_xy
-    pings_df["pings_geometry"] = pings_df.apply(lambda row: Point(row[traj_cols['longitude']], row[traj_cols['latitude']]) if is_long_lat else Point(row[traj_cols['x']], row[traj_cols['y']]), axis=1)
-    pings_df = gpd.GeoDataFrame(pings_df, geometry="pings_geometry", crs=poi_table.crs)
+        clustered_pings = data.loc[data[cluster_label] != -1].copy()
+        if method=='majority': 
+            location = poi_map(
+                data=clustered_pings,
+                poi_table=poi_table,
+                max_distance=max_distance,
+                data_crs=data_crs,
+                location_id=location_id,
+                traj_cols=traj_cols,
+                **kwargs                
+            )
+            loc_col = location.name
+            clustered_pings = clustered_pings.join(location)
+            
+            location = clustered_pings.groupby(cluster_label)[loc_col].agg(
+                lambda x: x.mode().iloc[0] if not x.mode().empty else None) 
+            
+            return data[[cluster_label]].join(location, on=cluster_label)[loc_col]
+            
+        elif method=='centroid': # should be medoid?
+            loader._has_spatial_cols(data.columns, traj_cols, exclusive=True)
+            use_lon_lat = ('latitude' in traj_cols and 'longitude' in traj_cols)
+            if use_lon_lat:
+                warnings.warn("Spherical ('longitude', 'latitude') coordinates were passed. Centroids will not agree with geodetic distances")                
+                centr_data = clustered_pings.groupby(cluster_label).agg({traj_cols['longitude']:'mean', traj_cols['latitude']:'mean'})
+            else:
+                centr_data = clustered_pings.groupby(cluster_label).agg({traj_cols['x']:'mean', traj_cols['y']:'mean'})
+
+            location = poi_map(
+                data=centr_data,
+                poi_table=poi_table,
+                max_distance=max_distance,
+                data_crs=data_crs,
+                location_id=location_id,
+                traj_cols=traj_cols,
+                **kwargs)
+            loc_col = location.name
+            
+            return data[[cluster_label]].join(location, on=cluster_label)[loc_col]
+
+        else:
+            raise ValueError(f"Method {method} not among implemented methods: `centroid' and `majority'")
+
+    return None
     
-    # First spatial join (within)
-    pings_df = gpd.sjoin(pings_df, poi_table, how="left", predicate="within")
+# change to point_in_polygon, move to filters.py
+def poi_map(data, poi_table, max_distance=0, data_crs=None, location_id=None, traj_cols=None, **kwargs):
+    """
+    Assign each point in `data` to a polygon in `poi_table`, using containment when
+    `max_distance==0` or the nearest neighbor within `max_distance` otherwise.
+
+    Parameters
+    ----------
+    data : pd.DataFrame or gpd.GeoDataFrame
+        Input points, either as a DataFrame with coordinate columns or a GeoDataFrame.
+    poi_table : gpd.GeoDataFrame
+        Polygons to match against, indexed or with `location_id` column.
+    traj_cols : list of str, optional
+        Names of the coordinate columns in `data` when it is a DataFrame.
+    max_distance : float, default 0
+        Maximum search radius for nearest‐neighbor matching; zero invokes a point‐in‐polygon test.
+    data_crs : str or pyproj.CRS, optional
+        CRS for `data` if it is a DataFrame; ignored for GeoDataFrames.
+    location_id : str, optional
+        Name of the geometry ID column in `poi_table`; uses the GeoDataFrame index if not provided.
+    **kwargs
+        Passed to trajectory‐column parsing helper.
+
+    Returns
+    -------
+    pd.Series
+        Indexed like `data`, with each entry set to the matching polygon’s ID (from
+        `location_id` or `poi_table.index`). Points not contained or beyond `max_distance`
+        yield NaN. When multiple polygons overlap a point, only the first match is kept.
+    """
+    # column name handling
+    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, defaults={})
+        
+    if poi_table.crs is None:
+        raise ValueError(f"poi_table must have crs attribute for spatial join.")
    
-    # Identify unmatched pings
-    unmatched_mask = pings_df["building_id"].isna()
-    unmatched_pings = pings_df[unmatched_mask].drop(columns=["building_id", "index_right"])
+    # Determine which geometry to use
+    if isinstance(data, gpd.GeoDataFrame):
+        pings_gdf = data.geometry
+        # if geodataframe, data_crs is ignored but we Raise if conflicting crs because it is suspect
+        if data_crs and not pyproj.CRS(pings_gdf.crs).equals(pyproj.CRS(data_crs)):
+            raise ValueError(f"Provided CRS {data_crs} conflicts with traj CRS {data.crs}.")
 
-    if not unmatched_pings.empty:
-        # Nearest spatial join for unmatched pings
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message="Geometry is in a geographic CRS.*")
-            nearest = gpd.sjoin_nearest(unmatched_pings, poi_table, how="left", max_distance=max_distance)
+    if isinstance(data, pd.DataFrame):
+        # check that user specified x,y or lat, lon but not both
+        loader._has_spatial_cols(data.columns, traj_cols, exclusive=True)
+        use_lon_lat = ('latitude' in traj_cols and 'longitude' in traj_cols)
 
-        # Keep only the first match for each original ping
-        nearest = nearest.groupby(nearest.index).first()
+        if use_lon_lat:
+            if data_crs:
+                data_crs = pyproj.CRS(data_crs)
+                if data_crs.is_projected:
+                    warnings.warn(f"Provided CRS {data_crs.name} is a projected coordinate system, but "
+                                 "spherical ('longitude', 'latitude') coordinates were passed. Did you mean to pass data_crs='EPSG:4326'?"
+                                 )
+            else: # we assume EPSG:4326
+                warnings.warn("Argument `data_crs` not provided, assuming EPSG:4326 for ('longitude', 'latitude') coordinates")
+                data_crs = pyproj.CRS("EPSG:4326")
+            
+            pings_gdf= gpd.points_from_xy(
+                data[traj_cols['longitude']],
+                data[traj_cols['latitude']],
+                crs=data_crs) # order matters: lon first
+        else:
+            if not data_crs:
+                raise ValueError(f"data_crs must be provided when using projected coordinates.")
+            data_crs = pyproj.CRS(data_crs)
+            if data_crs.is_geographic:
+                warnings.warn(f"Provided CRS {data_crs.name} is a geographic coordinate system. "
+                             "This will lead to errors if passed coordinates ('x', 'y') are projected."
+                             f"Did you mean to use {poi_table.crs}?"
+                             )
+            pings_gdf= gpd.points_from_xy(
+                data[traj_cols['x']],
+                data[traj_cols['y']],
+                crs=data_crs)
+    else:
+        raise TypeError("`data` must be a pandas DataFrame or a GeoDataFrame.")
 
-        # Update original DataFrame with nearest matches
-        pings_df.loc[unmatched_mask, "building_id"] = nearest["building_id"].values
+    if data_crs != pyproj.CRS(poi_table.crs):
+        raise ValueError("CRS for `data` does not match CRS for `poi_table`.")
 
-    return pings_df["building_id"]
+    use_poi_idx = True
+    if location_id is not None:
+        loc_col = location_id
+        if location_id in poi_table:
+            use_poi_idx=False
+        else:
+            warnings.warn(f"{location_id} column not found in {poi_table.columns}, defaulting to poi_table.index for spatial join.")
+    else:
+        loc_col = 'location_id'
+        warnings.warn(f"location_id column not provided, defaulting to poi_table.index for spatial join.")
+
+        
+    if max_distance>0:
+        if data_crs.is_geographic:
+            warnings.warn(f"Provided CRS {data_crs.name} is a geographic coordinate system. "
+                             "This will lead to errors when computing euclidean distances."
+                             f"Did you mean to use `max_distance=0'?"
+                         )        
+        
+        p_idx, idx = poi_table.sindex.nearest(pings_gdf, max_distance=max_distance, return_all=False)
+        if use_poi_idx:
+            s = pd.Series(poi_table.iloc[idx].index, index=data.index[p_idx])
+            s.name = loc_col
+        else:
+            s = pd.Series(poi_table.iloc[idx][loc_col].values, index=data.index[p_idx])
+            s.name = loc_col
+            
+        return s.reindex(data.index)
+
+    else: # default max_distance = 0
+        p_idx, idx = poi_table.sindex.query(pings_gdf, predicate="within") # boundary counts; use "contains" to exclude it
+        if use_poi_idx:
+            s = pd.Series(poi_table.iloc[idx].index, index=data.index[p_idx]) # might have duplicates
+            s = s.loc[~s.index.duplicated()]
+            s.name = loc_col
+        else:
+            s = pd.Series(poi_table.iloc[idx][loc_col].values, index=data.index[p_idx])
+            s = s.loc[~s.index.duplicated()]
+            s.name = loc_col        
+        return s.reindex(data.index)
 
 def oracle_map(traj, true_visits, traj_cols, **kwargs):
     """

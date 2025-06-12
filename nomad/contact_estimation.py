@@ -14,7 +14,7 @@ def overlapping_visits(left, right, match_location=False, traj_cols=None, **kwar
 
     # Has required columns
     uid_key = traj_cols['user_id']
-    loc_key = traj_cols['location']
+    loc_key = traj_cols['location_id']
     e_t_key = traj_cols['end_timestamp']
     
     #check for keys
@@ -29,7 +29,7 @@ def overlapping_visits(left, right, match_location=False, traj_cols=None, **kwar
         if uid_key in df.columns and not (df[uid_key].nunique() == 1):
             raise ValueError("Each visits dataframe must have at most one unique user_id")
             
-        if traj_cols['location'] not in df:
+        if traj_cols['location_id'] not in df:
             raise ValueError(
                 "Could not find required location column in {}. The dataset must contain or map to "
                 "a location column'.".format(list(df.columns)))
@@ -115,9 +115,9 @@ def compute_visitation_errors(overlaps, true_visits, traj_cols=None, **kwargs):
     elif traj_cols['start_timestamp'] in stripped_col_names:
         t_key_l = traj_cols['start_timestamp']+'_left'
         t_key_r = traj_cols['start_timestamp']+'_right'
-    
-    loc_key_r = traj_cols['location']+'_right'
-    loc_key_l = traj_cols['location']+'_right'
+
+    loc_key_l = traj_cols['location_id']+'_left'
+    loc_key_r = traj_cols['location_id']+'_right'
 
     # compute missed
     gt_overlapped = set(overlaps[t_key_r].unique()) # _right is for ground truth
@@ -162,8 +162,8 @@ def compute_precision_recall_f1(overlaps, pred_visits, true_visits, traj_cols=No
     total_pred = pred_visits[d_key].sum()
     total_truth = true_visits[d_key].sum()
 
-    loc_key_r = traj_cols['location']+'_right'
-    loc_key_l = traj_cols['location']+'_right'
+    loc_key_r = traj_cols['location_id']+'_right'
+    loc_key_l = traj_cols['location_id']+'_right'
 
     tp = overlaps.loc[overlaps[loc_key_r] == overlaps[loc_key_l], d_key].sum()
     
