@@ -46,11 +46,9 @@ def point_in_polygon(data, poi_table, method='centroid', data_crs=None, max_dist
         Points or clusters that fall outside every polygon or beyond `max_distance`
         are set to NaN.
     """
-    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, defaults={})
-    traj_cols_w_deflts = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
-        
     # check if it is stop table
-    end_col_present = loader._has_end_cols(data.columns, traj_cols)
+    traj_cols_w_deflts = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    end_col_present = loader._has_end_cols(data.columns, traj_cols_w_deflts)
     duration_col_present = loader._has_duration_cols(data.columns, traj_cols_w_deflts)
     is_stop_table = (end_col_present or duration_col_present)
 

@@ -212,7 +212,7 @@ def _fallback_st_cols(col_names, traj_cols, kwargs):
             
     return t_key, coord_key1, coord_key2, use_datetime, use_lon_lat
 
-def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_col_names = True, passthrough_cols= None, traj_cols=None, **kwargs):
+def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_col_names = True, passthrough_cols= [], traj_cols=None, **kwargs):
            
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = _fallback_st_cols(grouped_data.columns, traj_cols, kwargs)
     
@@ -313,7 +313,6 @@ def pad_short_stops(stop_data, pad=5, dur_min=None, traj_cols = None, **kwargs):
             stop_data[traj_cols[end_t_key]] = np.maximum(stop_data[traj_cols[end_t_key]],
                                                          stop_data[traj_cols[t_key]] + stop_data[traj_cols['duration']]*60)   
     return stop_data
-    
 
 def invalid_stops(stop_data, traj_cols=None, **kwargs):
     """
@@ -339,26 +338,6 @@ def invalid_stops(stop_data, traj_cols=None, **kwargs):
         If at least one pair of stops overlaps.  The message shows the
         first offending pair.
     """
-    stop_data = stop_data.copy()   
-    
-    t_key, use_datetime = _fallback_time_cols(stop_data.columns, traj_cols, kwargs)
-    end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
-
-    # Load default col names
-    traj_cols = loader._parse_traj_cols(stop_data.columns, traj_cols, kwargs)    
-    # check is diary table
-    end_col_present = loader._has_end_cols(stop_data.columns, traj_cols)
-    duration_col_present = loader._has_duration_cols(stop_data.columns, traj_cols)
-    if not (end_col_present or duration_col_present):
-        raise ValueError("Missing required (end or duration) temporal columns for stop_table dataframe.")
-
-def invalid_stops(stop_data, traj_cols=None, **kwargs):
-    """
-    Detect any overlapping stops in a stop-detection table.
-
-    Returns False if no overlaps are found. Raises ValueError on the first
-    overlapping pair, naming their original row indices and time spans.
-    """
     stop_data = stop_data.copy()
 
     # determine start-time key and whether it's datetime
@@ -367,15 +346,15 @@ def invalid_stops(stop_data, traj_cols=None, **kwargs):
 
     # canonical column mapping
     traj_cols = loader._parse_traj_cols(stop_data.columns, traj_cols, kwargs)
-    has_end  = loader._has_end_cols(stop_data.columns, traj_cols)
-    has_dur  = loader._has_duration_cols(stop_data.columns, traj_cols)
-    if not (has_end or has_dur):
-        raise ValueError("Missing required end-time or duration column")
+    end_col_present  = loader._has_end_cols(stop_data.columns, traj_cols)
+    duration_col_present  = loader._has_duration_cols(stop_data.columns, traj_cols)
+    if not (end_col_present or duration_col_present):
+        raise ValueError("Missing required (end or duration) temporal columns for stop_table dataframe.")
 
     start_col = traj_cols[t_key]
 
     # compute a uniform '_end_time' column
-    if has_end:
+    if end_col_present:
         end_col = traj_cols[end_t_key]
         stop_data['_end_time'] = stop_data[end_col]
     else:

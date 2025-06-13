@@ -4,15 +4,14 @@ import heapq
 from collections import defaultdict
 import warnings
 from collections import defaultdict
+from scipy.stats import norm
 import matplotlib.pyplot as plt
-import networkx as nx
+
 import nomad.io.base as loader
 import nomad.constants as constants
-from scipy.stats import norm
-import pdb
 from nomad.stop_detection import utils
+from nomad.filters import to_timestamp
 from nomad.constants import DEFAULT_SCHEMA
-import time
 
 def _find_temp_neighbors(times, time_thresh, use_datetime):
     """
@@ -31,24 +30,8 @@ def _find_temp_neighbors(times, time_thresh, use_datetime):
     TC: O(n^2)
     """
     # getting times based on whether they are datetime values or timestamps, changed to seconds for calculations
-    if use_datetime:
-        times = pd.to_datetime(times)
-        times = times.dt.tz_convert('UTC').dt.tz_localize(None)
-        times = times.astype('int64') // 10**9
-        times = times.values
-    else:
-        # if timestamps, we change the values to seconds
-        first_timestamp = times.iloc[0]
-        timestamp_length = len(str(first_timestamp))
-    
-        if timestamp_length > 10:
-            if timestamp_length == 13:
-                times = times.values.view('int64') // 10 ** 3
-            elif timestamp_length == 19:
-                times = times.values.view('int64') // 10 ** 9   
-        else:
-            times = times.values
-    
+    times = to_timestamp(times).values if use_datetime else times.values
+        
     # Pairwise time differences
     # times[:, np.newaxis]: from shape (n,) -> to shape (n, 1) – a column vector
     time_diffs = np.abs(times[:, np.newaxis] - times)
@@ -590,52 +573,16 @@ def select_most_stable_clusters(hierarchy_df, cluster_stability_df):
     return selected_clusters
 
 def hdbscan_labels(traj, time_thresh, min_pts = 2, min_cluster_size = 10, traj_cols=None, **kwargs):
-    # Check if user wants long and lat
-    use_lon_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs['latitude'] in traj.columns and kwargs['longitude'] in traj.columns
-
-    # Check if user wants datetime
-    use_datetime = 'datetime' in kwargs and kwargs['datetime'] in traj.columns
-
-
-    traj_cols = loader._parse_traj_cols(traj.columns, traj_cols, kwargs, warn=False) #load defaults
+    # Check if user wants long and lat and datetime
+    t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(traj.columns, traj_cols, kwargs)
+    # Load default col names
+    traj_cols = loader._parse_traj_cols(traj.columns, traj_cols, kwargs)
+    
+    # Tests to check for spatial and temporal columns
     loader._has_spatial_cols(traj.columns, traj_cols)
     loader._has_time_cols(traj.columns, traj_cols)
 
-    # Setting x and y as defaults if not specified by user in either traj_cols or kwargs
-    if traj_cols['x'] in traj.columns and traj_cols['y'] in traj.columns and not use_lon_lat:
-        use_lon_lat = False
-    else:
-        use_lon_lat = True
-
-    # Setting timestamp as default if not specified by user in either traj_cols or kwargs
-    if traj_cols['timestamp'] in traj.columns and not use_datetime:
-        use_datetime = False
-    else:
-        use_datetime = True
-
-    if use_datetime:
-        time_col_name = traj_cols['datetime']
-    else:
-        first_timestamp = traj[traj_cols['timestamp']].iloc[0]
-        timestamp_length = len(str(first_timestamp))
-        
-        if timestamp_length > 10:
-            if timestamp_length == 13:
-                warnings.warn(
-                    f"The '{traj_cols['timestamp']}' column appears to be in milliseconds. "
-                    "This may lead to inconsistencies."
-                )
-                
-            elif timestamp_length == 19:
-                warnings.warn(
-                    f"The '{traj_cols['timestamp']}' column appears to be in nanoseconds. "
-                    "This may lead to inconsistencies."
-                )
-        
-        time_col_name = traj_cols['timestamp']
-
-
-    time_pairs, times = _find_temp_neighbors(traj[time_col_name], time_thresh, use_datetime)
+    time_pairs, times = _find_temp_neighbors(traj[traj_cols[t_key]], time_thresh, use_datetime)
 
     core_distances, coords = _compute_core_distance(traj, time_pairs, times, use_lon_lat, traj_cols, min_pts)
 
@@ -679,227 +626,20 @@ def hdbscan_labels(traj, time_thresh, min_pts = 2, min_cluster_size = 10, traj_c
         rows.append({"time": ts, "cluster": -1})
     
     hdbscan_labels_df = pd.DataFrame(rows).sort_values("time").reset_index(drop=True)
-    # hdbscan_labels_series = hdbscan_labels_df.set_index("time")["cluster"] ## why?
-    return hdbscan_labels_df.cluster.set_axis(traj.index)
+    labels_hdbscan = hdbscan_labels_df.cluster.set_axis(traj.index)
+    labels_hdbscan.name = 'cluster'
+    return labels_hdbscan
 
-def st_hdbscan(traj, traj_cols, time_thresh, min_pts = 2, min_cluster_size = 10, complete_output = False, **kwargs):
-    # Check if user wants long and lat
-    use_lon_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs['latitude'] in traj.columns and kwargs['longitude'] in traj.columns
-
-    # Check if user wants datetime
-    use_datetime = 'datetime' in kwargs and kwargs['datetime'] in traj.columns
-
-    # Set initial schema
-    if not traj_cols:
-        traj_cols = {}
-
-    traj_cols = loader._update_schema(traj_cols, kwargs)
-    traj_cols = loader._update_schema(constants.DEFAULT_SCHEMA, traj_cols)
-
-    # Tests to check for spatial and temporal columns
-    loader._has_spatial_cols(traj.columns, traj_cols)
-    loader._has_time_cols(traj.columns, traj_cols)
-
-    # Setting x and y as defaults if not specified by user in either traj_cols or kwargs
-    if traj_cols['x'] in traj.columns and traj_cols['y'] in traj.columns and not use_lon_lat:
-        use_lon_lat = False
-    else:
-        use_lon_lat = True
-
-    # Setting timestamp as default if not specified by user in either traj_cols or kwargs
-    if traj_cols['timestamp'] in traj.columns and not use_datetime:
-        use_datetime = False
-    else:
-        use_datetime = True
-
-    if use_datetime:
-        time_col_name = traj_cols['datetime']
-    else:
-        first_timestamp = traj[traj_cols['timestamp']].iloc[0]
-        timestamp_length = len(str(first_timestamp))
-        
-        if timestamp_length > 10:
-            if timestamp_length == 13:
-                warnings.warn(
-                    f"The '{traj_cols['timestamp']}' column appears to be in milliseconds. "
-                    "This may lead to inconsistencies."
-                )
-                
-            elif timestamp_length == 19:
-                warnings.warn(
-                    f"The '{traj_cols['timestamp']}' column appears to be in nanoseconds. "
-                    "This may lead to inconsistencies."
-                )
-        
-        time_col_name = traj_cols['timestamp']
-
-    start_time_key = 'start_datetime' if use_datetime else 'start_timestamp'
-    end_time_key = 'end_datetime' if use_datetime else 'end_timestamp' 
-    
+def st_hdbscan(traj, time_thresh, min_pts = 2, min_cluster_size = 10, complete_output = False, traj_cols=None, **kwargs):
     labels_hdbscan = hdbscan_labels(traj=traj, time_thresh=time_thresh, min_pts = min_pts,
-                                        min_cluster_size = min_cluster_size, traj_cols=traj_cols)
+                                        min_cluster_size = min_cluster_size, traj_cols=traj_cols, **kwargs)
 
-    merged_data_hdbscan = traj.join(labels_hdbscan)  
-    # remove noise pings from stop table
+    merged_data_hdbscan = traj.join(labels_hdbscan)
     merged_data_hdbscan = merged_data_hdbscan[merged_data_hdbscan.cluster != -1]
-    
-    stop_table = merged_data_hdbscan.groupby('cluster', as_index=False).apply(lambda group: _stop_metrics(group, use_lon_lat, use_datetime, traj_cols, complete_output), include_groups=False)
 
-    for key in [start_time_key, end_time_key, 'n_pings', 'duration']:
-        if key in stop_table:
-            if stop_table[key].dtype != "Int64":
-                stop_table[key] = stop_table[key].astype("Int64")
+    stop_table = merged_data_hdbscan.groupby('cluster', as_index=False).apply(
+                    lambda g: utils.summarize_stop(g, complete_output=complete_output, traj_cols=traj_cols, **kwargs),
+                    include_groups=False)
                 
     # return stop_table
     return labels_hdbscan, stop_table
- 
-def _stop_metrics(grouped_data, use_lon_lat, use_datetime, traj_cols, complete_output):
-    # Coordinates array and distance metrics
-    if use_lon_lat:
-        coords = grouped_data[[traj_cols['longitude'], traj_cols['latitude']]].to_numpy()
-        stop_medoid = utils._medoid(coords, metric='haversine')
-        diameter_m = utils._diameter(coords, metric='haversine')
-    else:
-        coords = grouped_data[[traj_cols['x'], traj_cols['y']]].to_numpy()
-        stop_medoid = utils._medoid(coords, metric='euclidean')
-        diameter_m = utils._diameter(coords, metric='euclidean')
-
-    # Compute duration and start and end time of stop
-    start_time_key = 'start_datetime' if use_datetime else 'start_timestamp'
-    end_time_key = 'end_datetime' if use_datetime else 'end_timestamp' 
-
-    if use_datetime:
-        start_time = grouped_data[traj_cols['datetime']].min()
-        end_time = grouped_data[traj_cols['datetime']].max()
-        duration = (end_time - start_time).total_seconds() // 60.0
-    else:
-        start_time = grouped_data[traj_cols['timestamp']].min()
-        # print("start time:", start_time)
-        end_time = grouped_data[traj_cols['timestamp']].max()
-        # print("end time:", end_time)
-        timestamp_length = len(str(start_time))
-
-        if timestamp_length > 10:
-            if timestamp_length == 13:
-                duration = int(((end_time // 10 ** 3) - (start_time // 10 ** 3)) / 60.0)
-            elif timestamp_length == 19:
-                duration = int(((end_time // 10 ** 9) - (start_time // 10 ** 9)) / 60.0)
-        else:
-            duration = int((end_time - start_time) / 60.0)
-                            
-    # Number of pings in stop
-    n_pings = len(grouped_data)
-    
-    # Compute max_gap between consecutive pings (in minutes)
-    if use_datetime:
-        times = pd.to_datetime(grouped_data[traj_cols['datetime']]).sort_values()
-        time_diffs = times.diff().dropna()
-        max_gap = int(time_diffs.max().total_seconds() / 60) if not time_diffs.empty else 0
-    else:
-        times = grouped_data[traj_cols['timestamp']].sort_values()
-        timestamp_length = len(str(times.iloc[0]))
-        
-        if timestamp_length == 13:
-            time_diffs = np.diff(times.values) // 1000
-        elif timestamp_length == 19:  # nanoseconds
-            time_diffs = np.diff(times.values) // 10**9
-        else:
-            time_diffs = np.diff(times.values)
-        
-        max_gap = int(np.max(time_diffs) / 60) if len(time_diffs) > 0 else 0
-
-    # Prepare data for the Series
-    
-    if use_lon_lat:
-        if complete_output:
-            stop_attr = {
-                start_time_key: start_time,
-                end_time_key: end_time,
-                traj_cols['longitude']: stop_medoid[0],
-                traj_cols['latitude']: stop_medoid[1],
-                'diameter': diameter_m,
-                'n_pings': n_pings,
-                'duration': duration,
-                'max_gap': max_gap
-            }
-        else:
-            stop_attr = {
-                start_time_key: start_time,
-                'duration': duration,
-                traj_cols['longitude']: stop_medoid[0],
-                traj_cols['latitude']: stop_medoid[1]
-            }
-    else:
-        if complete_output:
-            stop_attr = {
-                start_time_key: start_time,
-                end_time_key: end_time,
-                traj_cols['x']: stop_medoid[0],
-                traj_cols['y']: stop_medoid[1],
-                'diameter': diameter_m,
-                'n_pings': n_pings,
-                'duration': duration,
-                'max_gap': max_gap
-            }
-        else:
-            stop_attr = {
-                start_time_key: start_time,
-                'duration': duration,
-                traj_cols['x']: stop_medoid[0],
-                traj_cols['y']: stop_medoid[1]
-            }
-    return pd.Series(stop_attr)
-
-
-# def visualize_mst(mst_df):
-#     G = nx.Graph()
-
-#     for u, v, w in mst_df.itertuples(index=False):
-#         w_val = 1e6 if np.isinf(w) else w
-#         inv_w = 1.0 / w_val if w_val > 0 else 0.001
-#         label = "∞" if np.isinf(w) else f"{w:.2f}"
-#         G.add_edge(u, v, weight=w_val, inv_weight=inv_w, label=label)
-
-#     # Use inverse weights for layout
-#     pos = nx.spring_layout(G, weight='inv_weight')
-
-#     # Retrieve edge labels from edge attributes
-#     edge_labels = nx.get_edge_attributes(G, 'label')
-
-#     # Plot
-#     plt.figure(figsize=(6, 6))
-#     nx.draw(G, pos, with_labels=True, node_color='skyblue', node_size=200, edge_color='gray')
-#     nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
-#     plt.title("MST Extended Graph with Edge Weights")
-#     plt.axis('off')
-#     plt.show()
-
-# def visualize_adjacency_dict(G_dict):
-#     """
-#     Visualize an adjacency dictionary as a NetworkX graph.
-
-#     Parameters
-#     ----------
-#     G_dict : dict
-#         Output of _build_graph() — {node: set(neighbors)}
-#     """
-#     # Convert dict-of-sets into a networkx Graph
-#     G = nx.Graph()
-#     for u, neighbors in G_dict.items():
-#         for v in neighbors:
-#             G.add_edge(u, v)
-
-#     pos = nx.spring_layout(G, seed=42)
-
-#     # Draw graph
-#     nx.draw(
-#         G, pos,
-#         with_labels=True,
-#         node_color='lightgreen',
-#         edge_color='gray',
-#         node_size=200,
-#         font_size=10
-#     )
-#     plt.title("Connected Component After Edge Removal")
-#     plt.tight_layout()
-#     plt.show()
