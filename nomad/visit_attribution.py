@@ -1,11 +1,10 @@
 import geopandas as gpd
 import nomad.io.base as loader
 import nomad.constants as constants
-from nomad.stop_detection.ta_dbscan import _stop_metrics
-from shapely.geometry import Point
 import warnings
 import pandas as pd
 import nomad.io.base as loader
+from nomad.stop_detection.utils import _fallback_time_cols
 import pyproj
 import pdb
 
@@ -254,16 +253,16 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, location_id=None, tr
             s.name = loc_col        
         return s.reindex(data.index)
 
-def oracle_map(traj, true_visits, traj_cols, **kwargs):
+def oracle_map(data, true_visits, traj_cols=None, **kwargs):
     """
-    Map elements in traj to ground truth location based solely on the record's time.
+    Map elements in traj to ground truth location based solely on time.
 
     Parameters
     ----------
-    traj : pd.DataFrame
+    data : pd.DataFrame
         The trajectory DataFrame containing x and y coordinates.
     true_visits : pd.DataFrame
-        A visitation table containing location IDs, start times, and durations/end times.
+        A visitation table containing location IDs, start times, and durations/end times.       
     traj_cols : list
         The columns in the trajectory DataFrame to be used for mapping.
     **kwargs : dict
@@ -273,36 +272,45 @@ def oracle_map(traj, true_visits, traj_cols, **kwargs):
     -------
     pd.Series
         A Series containing the location IDs corresponding to the pings in the trajectory.
-    """ 
-    traj_cols = loader._parse_traj_cols(traj.columns, traj_cols, kwargs)
+    """
+    true_visits = true_visits.copy()
+    data = data.copy()
+       
+    # determine temporal columns to use
+    t_key_l, use_datetime_l = _fallback_time_cols(data.columns, traj_cols, kwargs)
+    t_key_r, use_datetime_r = _fallback_time_cols(true_visits.columns, traj_cols, kwargs)
 
-    loader._has_time_cols(traj.columns, traj_cols)
-    loader._has_time_cols(true_visits.columns, traj_cols)
+    
+    traj_cols = loader._parse_traj_cols(true_visits.columns, traj_cols, kwargs) #load defaults
+    if use_datetime_l != use_datetime_r:
+        raise ValueError(f"Mismatch in temporal columns {traj_cols[t_key_l]} vs {traj_cols[t_key_r]}.")
 
-    end_col_present = _has_end_cols(true_visits.columns, traj_cols)
-    duration_col_present = _has_duration_cols(true_visits.columns, traj_cols)
+    # check is diary table
+    end_col_present = loader._has_end_cols(true_visits.columns, traj_cols)
+    duration_col_present = loader._has_duration_cols(true_visits.columns, traj_cols)
     if not (end_col_present or duration_col_present):
-        print("Missing required (end or duration) temporal columns for true_visits dataframe.")
-        return False
-    
-    use_datetime = False
-    if traj_cols['timestamp'] in traj.columns:
-        time_col_in = traj_cols['timestamp']
-        time_key = 'timestamp'
-    elif traj_cols['start_timestamp'] in traj.columns:
-        time_col_in = traj_cols['start_timestamp']
-        time_key = 'start_timestamp'
-    else:
-        use_datetime = True 
+        raise ValueError("Missing required (end or duration) temporal columns for true_visits dataframe.")
 
-    # TO DO: Check the same thing for true_visits start, and duration/end
-    # TO DO: Conversion of everything to UTC
-    # Loop through ground truth and numpy timestamps diff
+    if traj_cols['location_id'] not in true_visits.columns:
+        raise ValueError(f"Missing {traj_cols[location_id]} column in {true_visits.columns}."
+                        "pass `location_id` as keyword argument or in traj_cols."
+                        )
     
-    # Check whether to use timestamp or datetime columns
-    is_long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs['latitude'] in traj.columns and kwargs['longitude'] in traj.columns
+    end_t_key = 'end_datetime' if use_datetime_r else 'end_timestamp'
+    if not end_col_present:
+        if use_datetime_r:
+            true_visits[end_t_key] = true_visits[traj_cols[t_key_r]] + pd.to_timedelta(true_visits[traj_cols['duration']]*60, unit='s')
+        else:
+            true_visits[end_t_key] = true_visits[traj_cols[t_key_r]] + true_visits[traj_cols['duration']]*60
+
     
-    return location_ids
+    # t_key_l and t_key_r match in type, and end_t_key exists
+    data[traj_cols['location_id']] = pd.NA
+    for idx, row in true_visits.loc[~true_visits[traj_cols['location_id']].isna()].iterrows():
+        start, end, loc = row[traj_cols[t_key_r]], row[traj_cols[end_t_key]], row[traj_cols['location_id']]
+        data.loc[(data[traj_cols[t_key_l]]>=start)&(data[traj_cols[t_key_l]]<end), traj_cols['location_id']] = loc
+        
+    return data[traj_cols['location_id']]
 
 
 def dawn_time(day_part, dawn_hour=6):
