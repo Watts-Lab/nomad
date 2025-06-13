@@ -315,5 +315,97 @@ def pad_short_stops(stop_data, pad=5, dur_min=None, traj_cols = None, **kwargs):
     return stop_data
     
 
+def invalid_stops(stop_data, traj_cols=None, **kwargs):
+    """
+    Detect any overlapping stops in a stop-detection table.
 
-        
+    Parameters
+    ----------
+    stop_data : pd.DataFrame
+        Output of a stop-detection algorithm containing start/end columns.
+    traj_cols : dict, optional
+        Mapping for column names.  Only two keys matter:
+        - 'start_timestamp' or 'start_datetime'
+        - 'end_timestamp'   or 'end_datetime'
+
+    Returns
+    -------
+    False
+        When no overlaps are found.
+
+    Raises
+    ------
+    ValueError
+        If at least one pair of stops overlaps.  The message shows the
+        first offending pair.
+    """
+    stop_data = stop_data.copy()   
+    
+    t_key, use_datetime = _fallback_time_cols(stop_data.columns, traj_cols, kwargs)
+    end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
+
+    # Load default col names
+    traj_cols = loader._parse_traj_cols(stop_data.columns, traj_cols, kwargs)    
+    # check is diary table
+    end_col_present = loader._has_end_cols(stop_data.columns, traj_cols)
+    duration_col_present = loader._has_duration_cols(stop_data.columns, traj_cols)
+    if not (end_col_present or duration_col_present):
+        raise ValueError("Missing required (end or duration) temporal columns for stop_table dataframe.")
+
+def invalid_stops(stop_data, traj_cols=None, **kwargs):
+    """
+    Detect any overlapping stops in a stop-detection table.
+
+    Returns False if no overlaps are found. Raises ValueError on the first
+    overlapping pair, naming their original row indices and time spans.
+    """
+    stop_data = stop_data.copy()
+
+    # determine start-time key and whether it's datetime
+    t_key, use_datetime = _fallback_time_cols(stop_data.columns, traj_cols, kwargs)
+    end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
+
+    # canonical column mapping
+    traj_cols = loader._parse_traj_cols(stop_data.columns, traj_cols, kwargs)
+    has_end  = loader._has_end_cols(stop_data.columns, traj_cols)
+    has_dur  = loader._has_duration_cols(stop_data.columns, traj_cols)
+    if not (has_end or has_dur):
+        raise ValueError("Missing required end-time or duration column")
+
+    start_col = traj_cols[t_key]
+
+    # compute a uniform '_end_time' column
+    if has_end:
+        end_col = traj_cols[end_t_key]
+        stop_data['_end_time'] = stop_data[end_col]
+    else:
+        dur_col = traj_cols['duration']
+        if use_datetime:
+            stop_data['_end_time'] = (
+                stop_data[start_col]
+                + pd.to_timedelta(stop_data[dur_col], unit='m')
+            )
+        else:
+            stop_data['_end_time'] = (
+                stop_data[start_col]
+                + stop_data[dur_col] * 60
+            )
+
+    # alias start, preserve original index
+    stop_data['_start_time'] = stop_data[start_col]
+    df = stop_data.reset_index().rename(columns={'index':'_orig_idx'})
+    df = df[['_orig_idx','_start_time','_end_time']]
+    df = df.sort_values('_start_time').reset_index(drop=True)
+
+    # single scan for overlap
+    for i in range(1, len(df)):
+        prev, curr = df.iloc[i-1], df.iloc[i]
+        if curr['_start_time'] < prev['_end_time']:
+            raise ValueError(
+                f"Overlapping stops between rows {prev['_orig_idx']} "
+                f"({prev['_start_time']}–{prev['_end_time']}) and "
+                f"{curr['_orig_idx']} "
+                f"({curr['_start_time']}–{curr['_end_time']})"
+            )
+
+    return False
