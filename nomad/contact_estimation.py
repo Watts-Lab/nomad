@@ -34,8 +34,7 @@ def overlapping_visits(left, right, match_location=False, traj_cols=None, **kwar
                 "Could not find required location column in {}. The dataset must contain or map to "
                 "a location column'.".format(list(df.columns)))
 
-        # Non-na locations and end_timestamp on copy
-    
+    # Non-na locations and end_timestamp on copy    
     left = left.loc[~left[loc_key].isna()].copy()
     right = right.loc[~right[loc_key].isna()].copy()
             
@@ -96,6 +95,8 @@ def compute_visitation_errors(overlaps, true_visits, traj_cols=None, **kwargs):
     Assumes that the columns with the suffix '_right' in the overlaps dataframe correspond
     to columns from true_visits dataframe.
     ''' 
+    true_visits = true_visits.dropna()
+    
     stripped_col_names = [s.removesuffix('_left').removesuffix('_right') for s in overlaps.columns]
     
     _ = loader._parse_traj_cols(stripped_col_names, traj_cols, kwargs)
