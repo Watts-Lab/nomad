@@ -144,7 +144,7 @@ def compute_visitation_errors(overlaps, true_visits, traj_cols=None, **kwargs):
             'split_fraction': split}
 
 def compute_precision_recall_f1(overlaps, pred_visits, true_visits, traj_cols=None, **kwargs):
-    
+    true_visits = true_visits.dropna()
     stripped_col_names = [s.removesuffix('_left').removesuffix('_right') for s in overlaps.columns]
     
     _ = loader._parse_traj_cols(stripped_col_names, traj_cols, kwargs)    
