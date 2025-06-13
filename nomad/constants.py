@@ -55,7 +55,8 @@ SLOW_STILL_PROBS = {'park': 0.75,
                     'work': 0.95,
                     'retail': 0.75}
 
-DEFAULT_STAY_PROBS = {'park': 1-((1/1)/4),
-                      'retail': 1-((1/0.5)/4),
-                      'work': 1-((1/7)/4),
-                      'home': 1-((1/14)/4)}
+# The 4 is from having 4 15-minute intervals
+DEFAULT_STAY_PROBS = {'park': 1-((1/2)/4),
+                      'retail': 1-((1/1)/4),
+                      'work': 1-((1/9)/4),
+                      'home': 1-((1/15)/4)}
