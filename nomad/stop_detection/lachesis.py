@@ -212,7 +212,7 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
 
     return pd.DataFrame(stops, columns=columns)
 
-def _lachesis_labels(traj, dur_min, dt_max, delta_roam, traj_cols=None, **kwargs):
+def _lachesis_labels(traj, dt_max, delta_roam, dur_min=5, traj_cols=None, **kwargs):
     """
     Assigns a label to every point in the trajectory based on the stop it belongs to.
 

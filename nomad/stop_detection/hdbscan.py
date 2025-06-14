@@ -5,13 +5,20 @@ from collections import defaultdict
 import warnings
 from collections import defaultdict
 from scipy.stats import norm
+
+from sklearn.neighbors import BallTree
+from scipy.spatial import cKDTree as KDTree
+
 import matplotlib.pyplot as plt
+
 
 import nomad.io.base as loader
 import nomad.constants as constants
 from nomad.stop_detection import utils
 from nomad.filters import to_timestamp
 from nomad.constants import DEFAULT_SCHEMA
+
+import pdb
 
 def _find_temp_neighbors(times, time_thresh, use_datetime):
     """
@@ -74,7 +81,7 @@ def _compute_core_distance(traj, time_pairs, times, use_lon_lat, traj_cols, min_
     Returns
     -------
     core_distances : dictionary of timestamps
-        {timestamp_1: core_distance_1, ..., timestamp_n: core_distance_n}
+        {timestamp_1: core_distance_1, ..., timestamp_n: core_distance_n} distances are quantized
     """
     # getting coordinates based on whether they are geographic coordinates (lon, lat) or catesian (x,y)
     if use_lon_lat:
@@ -88,10 +95,11 @@ def _compute_core_distance(traj, time_pairs, times, use_lon_lat, traj_cols, min_
 
     # Build neighbor map from time_pairs
     neighbors = _build_neighbor_graph(time_pairs, times)
-    
+
+    D_INF = np.pi * 6_371_000  # max distance on earth
     core_distances = {}
 
-    for i in range(n): # TC: O(n+m (mlogm)) < O(n^2 log n)
+    for i in range(n): # TC: O(n+m (mlogm)) 
         u = times[i]
         allowed_neighbors = neighbors[u]
         dists = [0.0]  # distance to itself
@@ -101,17 +109,17 @@ def _compute_core_distance(traj, time_pairs, times, use_lon_lat, traj_cols, min_
             if j is not None:
                 if use_lon_lat:
                     dist = utils._haversine_distance(coords[i], coords[j])
-                    dists.append(dist)
                 else:
                     dist = np.sqrt(np.sum((coords[i] - coords[j]) ** 2))
-                    dists.append(dist)
+                
+                dists.append(np.round(dist * 4) / 4)
 
         # pad with large numbers if not enough neighbors
         while len(dists) < min_pts:
-            dists.append(np.inf) # use a very large number e.g. infinity for edges between points not temporally close
+            dists.append(D_INF) # use a very large number e.g. infinity for edges between points not temporally close
 
         sorted_dists = np.sort(dists) # TC: O(nlogn)
-        core_distances[u] = sorted_dists[min_pts - 1]
+        core_distances[u] = np.round(sorted_dists[min_pts - 1] * 4)/4
     return core_distances, coords
 
 def _compute_mrd_graph(coords, times, time_pairs, core_distances, use_lon_lat):
@@ -151,6 +159,8 @@ def _compute_mrd_graph(coords, times, time_pairs, core_distances, use_lon_lat):
             dist = (utils._haversine_distance(coords[i], coords[j])
                     if use_lon_lat
                     else np.linalg.norm(coords[j] - coords[i]))
+
+            dist   = np.round(dist * 4) / 4
             mrd_graph[(u, v)] = max(core_distances[u], core_distances[v], dist)
 
     return mrd_graph
@@ -195,36 +205,43 @@ def _mst(mrd_graph):
         for nbr, wt in graph[v]:
             if nbr not in visited:
                 heapq.heappush(heap, (wt, v, nbr))
+                
+    return np.array(mst,
+                    dtype=[('from', 'int64'),
+                           ('to', 'int64'),
+                           ('weight', 'float64')])
 
-    return mst
 
-def mst_ext(mst, core_distances):
+def mst_ext(mst_arr, core_distances):
     """
     Add self-edges to MST with weights equal to each point's core distance,
-    and return as a sorted DataFrame.
+    and return sorted.
 
     Parameters
     ----------
-    mst : list of (from, to, weight)
+    mst : (n_edges,3) structured array (from, to, weight)
     core_distances : dict {timestamp: core_distance}
-
     Returns
     -------
-    pd.DataFrame with columns ['from', 'to', 'weight']
+    (n_edges,3) structured array sorted by descending weight
     """
-    self_edges = [(ts, ts, core_distances[ts]) for ts in core_distances]
+    dtype = mst_arr.dtype
+    self_edges = np.array(
+        [(ts, ts, w) for ts, w in core_distances.items()],
+        dtype=dtype
+    )
+    edges = np.concatenate((mst_arr, self_edges))
+    order = np.argsort(edges['weight'])[::-1]          # big → small
+    return edges[order]
 
-    mst_ext_edges = mst + self_edges
-
-    return pd.DataFrame(mst_ext_edges, columns=["from", "to", "weight"])
-
-def hdbscan(mst_ext_df, min_cluster_size):
+def hdbscan(edges_sorted, min_cluster_size):
     hierarchy = []
     cluster_memberships = defaultdict(set)
     label_history = []
 
     # 4.1 For the root of the tree assign all objects the same label (single “cluster”), label = 0
-    all_pings = set(mst_ext_df['from']).union(set(mst_ext_df['to']))
+    all_pings = set(edges_sorted['from']).union(edges_sorted['to'])
+   
     label_map = {ts: 0 for ts in all_pings}
     active_clusters = {0: set(all_pings)}
     cluster_memberships[0] = set(all_pings)
@@ -232,14 +249,13 @@ def hdbscan(mst_ext_df, min_cluster_size):
     # Log initial labels
     label_history.append(pd.DataFrame({"time": list(label_map.keys()), "cluster_id": list(label_map.values()), "dendrogram_scale": np.nan}))
 
-    # group edges by weight
-    dendrogram_scales = {
-        w: list(zip(group['from'], group['to']))
-        for w, group in mst_ext_df.groupby('weight', sort=False)
-    }
-
-    # sort edges in decreasing order of weight
-    sorted_scales = sorted(dendrogram_scales.keys(), reverse=True)
+    # edges_sorted is already ordered by descending weight
+    weights = edges_sorted['weight']
+    # find split points where weight changes
+    split_idx = np.flatnonzero(np.diff(weights)) + 1
+    # batch edges of equal weight
+    batches = np.split(edges_sorted, split_idx)
+    sorted_scales = [batch[0]['weight'] for batch in batches]
 
     # next label after label 0
     current_label_id = 1
@@ -247,14 +263,12 @@ def hdbscan(mst_ext_df, min_cluster_size):
     # Iteratively remove all edges from MSText in decreasing order of weights
     # 4.2.1 Before each removal, set the dendrogram scale value of the current hierarchical level as the weight of the edge(s) to be removed.
     for scale in sorted_scales:
-        # print("---------")
-        # print("scale:", scale)
-        
-        edges = dendrogram_scales[scale]
+        # pop next batch of edges sharing this scale
+        edges = batches.pop(0)
         affected_clusters = set()
         edges_to_remove = []
 
-        for u, v in edges:
+        for u, v, _ in edges:
             # if labels between two timestamps are different, continue
             if label_map.get(u) != label_map.get(v):
                 continue
@@ -272,7 +286,7 @@ def hdbscan(mst_ext_df, min_cluster_size):
                 continue # skip noise or already removed clusters
 
             members = active_clusters[cluster_id]
-            G = _build_graph(members, mst_ext_df, edges_to_remove)
+            G = _build_graph(members, edges_sorted, edges_to_remove)
             # visualize_adjacency_dict(G)
 
             components = _connected_components(G)
@@ -346,7 +360,7 @@ def _build_cluster_lineage(hierarchy):
             })
     return pd.DataFrame(lineage)
 
-def _build_graph(nodes, mst_df, removed_edges):
+def _build_graph(nodes, edges_arr, removed_edges):
     """
     Build the adjacency map for the given cluster, skipping any edges
     scheduled for removal.  No DataFrame row objects are created.
@@ -355,7 +369,7 @@ def _build_graph(nodes, mst_df, removed_edges):
     removed_set  = set(map(frozenset, removed_edges))
     graph        = defaultdict(set)
 
-    for u, v, _ in mst_df.itertuples(index=False, name=None):
+    for u, v, _ in edges_arr:
         if u not in nodes_set or v not in nodes_set or u == v:
             continue
         if frozenset((u, v)) in removed_set:
@@ -589,10 +603,11 @@ def hdbscan_labels(traj, time_thresh, min_pts = 2, min_cluster_size = 10, traj_c
     mrd = _compute_mrd_graph(coords, times, time_pairs, core_distances, use_lon_lat)
 
     mst_edges = _mst(mrd)
-    mstext_edges = mst_ext(mst_edges, core_distances)
     
-    label_history_df, hierarchy_df = hdbscan(mstext_edges, min_cluster_size)
+    edges_sorted   = mst_ext(mst_edges, core_distances) # << with self-loops
 
+    label_history_df, hierarchy_df = hdbscan(edges_sorted, min_cluster_size)
+    
     #cluster_stability_df = compute_cluster_stability(label_history_df)
     cluster_stability_df = custom_cluster_stability(label_history_df)
 
