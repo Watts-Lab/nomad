@@ -5,10 +5,6 @@ from collections import defaultdict
 import warnings
 from collections import defaultdict
 from scipy.stats import norm
-
-from sklearn.neighbors import BallTree
-from scipy.spatial import cKDTree as KDTree
-
 import matplotlib.pyplot as plt
 
 
@@ -234,7 +230,8 @@ def mst_ext(mst_arr, core_distances):
     order = np.argsort(edges['weight'])[::-1]          # big → small
     return edges[order]
 
-def hdbscan(edges_sorted, min_cluster_size):
+def hdbscan(edges_sorted, min_cluster_size, neighbors, ts_idx, coords, times,
+            use_lon_lat=False, dur_min=5):
     hierarchy = []
     cluster_memberships = defaultdict(set)
     label_history = []
@@ -276,12 +273,9 @@ def hdbscan(edges_sorted, min_cluster_size):
             affected_clusters.add(cluster_id)
             edges_to_remove.append((u, v))
 
-        # print("# of edges to rmv: ", len(edges_to_remove))
-        # print("edges to rmv: ", edges_to_remove)
-
         # 4.2.2: For each affected cluster, reassign components
+        claimed_border = set()
         for cluster_id in affected_clusters:
-            # print("affected cluster: ", cluster_id)
             if cluster_id == -1 or cluster_id not in active_clusters: 
                 continue # skip noise or already removed clusters
 
@@ -290,33 +284,48 @@ def hdbscan(edges_sorted, min_cluster_size):
             # visualize_adjacency_dict(G)
 
             components = _connected_components(G)
-            # print("number of components: ", len(components))
-            # print("components: ", components)
-            non_spurious = [c for c in components if len(c) >= min_cluster_size]
+            non_spurious = []
+            for comp in components:
+                if len(comp) < min_cluster_size:
+                    continue
+            
+                # --- border points within current scale ----------------------
+                border = set()
+                for ts in comp:
+                    for nb in neighbors[ts]:                 # temporally close
+                        if nb in comp or nb in claimed_border:
+                            continue                         # core or claimed
+                        i, j = ts_idx[ts], ts_idx[nb]
+                        d = (utils._haversine_distance(coords[i], coords[j])
+                             if use_lon_lat
+                             else np.linalg.norm(coords[i] - coords[j]))
+                        if d <= scale:                       # ε at this level
+                            border.add(nb)
 
-            # print("label map: ", label_map)
-            # print("active clusters:", active_clusters)
-                
+                full_cluster = set(comp).union(border)
+
+                # --- spurious test (duration incl. borders) --------------
+                if (max(full_cluster) - min(full_cluster)) >= dur_min * 60:
+                    claimed_border.update(border)            # lock them
+                    for ts in border:                        # label borders
+                        label_map[ts] = cluster_id
+                    non_spurious.append(full_cluster)
+                    
             # cluster has disappeared
             if not non_spurious:
-                # print("cluster has disappeared")
                 for ts in members:
                     label_map[ts] = -1 # noise
                 del active_clusters[cluster_id]
 
             # cluster has just shrunk
             elif len(non_spurious) == 1:
-                # print("cluster has just shrunk")
                 remaining_pings = non_spurious[0]
-                # print("remaining pings:", remaining_pings)
-                # print(len(remaining_pings))
                 for ts in members:
                     label_map[ts] = cluster_id if ts in remaining_pings else -1
-                active_clusters[cluster_id] = remaining_pings
+                active_clusters[cluster_id]   = remaining_pings
                 cluster_memberships[cluster_id] = set(remaining_pings)
             # true cluster split: multiple valid subclusters
             else:
-                # print("true cluster split")
                 new_ids = []
                 del active_clusters[cluster_id]
                 for component in non_spurious:
@@ -328,8 +337,6 @@ def hdbscan(edges_sorted, min_cluster_size):
                     current_label_id += 1
 
                 hierarchy.append((scale, cluster_id, new_ids))
-
-            # print("active clusters:", active_clusters.keys())
         
         # log label map after this scale
         label_history.append(pd.DataFrame({"time": list(label_map.keys()), "cluster_id": list(label_map.values()), "dendrogram_scale": scale}))
@@ -338,7 +345,6 @@ def hdbscan(edges_sorted, min_cluster_size):
     label_history_df = pd.concat(label_history, ignore_index=True)
     # build cluster lineage for all clusters
     hierarchy_df = _build_cluster_lineage(hierarchy)
-
     return label_history_df, hierarchy_df
 
 def compute_cluster_duration(cluster):
@@ -586,7 +592,7 @@ def select_most_stable_clusters(hierarchy_df, cluster_stability_df):
 
     return selected_clusters
 
-def hdbscan_labels(traj, time_thresh, min_pts = 2, min_cluster_size = 10, traj_cols=None, **kwargs):
+def hdbscan_labels(traj, time_thresh, min_pts = 2, min_cluster_size = 1, traj_cols=None, **kwargs):
     # Check if user wants long and lat and datetime
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(traj.columns, traj_cols, kwargs)
     # Load default col names
@@ -600,13 +606,20 @@ def hdbscan_labels(traj, time_thresh, min_pts = 2, min_cluster_size = 10, traj_c
 
     core_distances, coords = _compute_core_distance(traj, time_pairs, times, use_lon_lat, traj_cols, min_pts)
 
+    neighbors = _build_neighbor_graph(time_pairs, times)
+    ts_idx = {ts: i for i, ts in enumerate(times)}
+    
     mrd = _compute_mrd_graph(coords, times, time_pairs, core_distances, use_lon_lat)
 
     mst_edges = _mst(mrd)
     
     edges_sorted   = mst_ext(mst_edges, core_distances) # << with self-loops
 
-    label_history_df, hierarchy_df = hdbscan(edges_sorted, min_cluster_size)
+    label_history_df, hierarchy_df = hdbscan(
+        edges_sorted, min_cluster_size,
+        neighbors, ts_idx, coords, times,
+        use_lon_lat=use_lon_lat
+    )
     
     #cluster_stability_df = compute_cluster_stability(label_history_df)
     cluster_stability_df = custom_cluster_stability(label_history_df)
@@ -641,11 +654,21 @@ def hdbscan_labels(traj, time_thresh, min_pts = 2, min_cluster_size = 10, traj_c
         rows.append({"time": ts, "cluster": -1})
     
     hdbscan_labels_df = pd.DataFrame(rows).sort_values("time").reset_index(drop=True)
-    labels_hdbscan = hdbscan_labels_df.cluster.set_axis(traj.index)
-    labels_hdbscan.name = 'cluster'
+    
+    lookup = dict(zip(hdbscan_labels_df["time"], hdbscan_labels_df["cluster"]))
+    ts_series = traj[traj_cols[t_key]]
+    if use_datetime:
+        ts_series = to_timestamp(ts_series)
+
+    labels_hdbscan = (
+        ts_series.map(lookup)
+                 .fillna(-1)
+                 .astype(int)
+    )
+    labels_hdbscan.name = "cluster"
     return labels_hdbscan
 
-def st_hdbscan(traj, time_thresh, min_pts = 2, min_cluster_size = 10, complete_output = False, traj_cols=None, **kwargs):
+def st_hdbscan(traj, time_thresh, min_pts = 2, min_cluster_size = 1, complete_output = False, traj_cols=None, **kwargs):
     labels_hdbscan = hdbscan_labels(traj=traj, time_thresh=time_thresh, min_pts = min_pts,
                                         min_cluster_size = min_cluster_size, traj_cols=traj_cols, **kwargs)
 
