@@ -653,7 +653,7 @@ def hdbscan_labels(traj, time_thresh, min_pts = 2, min_cluster_size = 1, traj_co
     for ts in all_timestamps - assigned_timestamps:
         rows.append({"time": ts, "cluster": -1})
     
-    hdbscan_labels_df = pd.DataFrame(rows).sort_values("time").reset_index(drop=True)
+    hdbscan_labels_df = pd.DataFrame(rows)
     
     lookup = dict(zip(hdbscan_labels_df["time"], hdbscan_labels_df["cluster"]))
     ts_series = traj[traj_cols[t_key]]
