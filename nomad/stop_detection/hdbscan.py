@@ -592,7 +592,7 @@ def select_most_stable_clusters(hierarchy_df, cluster_stability_df):
 
     return selected_clusters
 
-def hdbscan_labels(traj, time_thresh, min_pts = 2, min_cluster_size = 1, traj_cols=None, **kwargs):
+def hdbscan_labels(traj, time_thresh, min_pts=2, min_cluster_size=1, dur_min=5, traj_cols=None, **kwargs):
     # Check if user wants long and lat and datetime
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(traj.columns, traj_cols, kwargs)
     # Load default col names
@@ -618,7 +618,8 @@ def hdbscan_labels(traj, time_thresh, min_pts = 2, min_cluster_size = 1, traj_co
     label_history_df, hierarchy_df = hdbscan(
         edges_sorted, min_cluster_size,
         neighbors, ts_idx, coords, times,
-        use_lon_lat=use_lon_lat
+        use_lon_lat=use_lon_lat,
+        dur_min=dur_min
     )
     
     #cluster_stability_df = compute_cluster_stability(label_history_df)
@@ -660,19 +661,19 @@ def hdbscan_labels(traj, time_thresh, min_pts = 2, min_cluster_size = 1, traj_co
     if use_datetime:
         ts_series = to_timestamp(ts_series)
 
-    labels_hdbscan = (
+    labels = (
         ts_series.map(lookup)
                  .fillna(-1)
                  .astype(int)
     )
-    labels_hdbscan.name = "cluster"
-    return labels_hdbscan
+    labels.name = "cluster"
+    return labels
 
-def st_hdbscan(traj, time_thresh, min_pts = 2, min_cluster_size = 1, complete_output = False, traj_cols=None, **kwargs):
-    labels_hdbscan = hdbscan_labels(traj=traj, time_thresh=time_thresh, min_pts = min_pts,
-                                        min_cluster_size = min_cluster_size, traj_cols=traj_cols, **kwargs)
+def st_hdbscan(traj, time_thresh, min_pts = 2, min_cluster_size = 1, complete_output = False, dur_min=5, traj_cols=None, **kwargs):
+    labels = hdbscan_labels(traj=traj, time_thresh=time_thresh, min_pts = min_pts,
+                                        min_cluster_size = min_cluster_size, dur_min=dur_min, traj_cols=traj_cols, **kwargs)
 
-    merged_data_hdbscan = traj.join(labels_hdbscan)
+    merged_data_hdbscan = traj.join(labels)
     merged_data_hdbscan = merged_data_hdbscan[merged_data_hdbscan.cluster != -1]
 
     stop_table = merged_data_hdbscan.groupby('cluster', as_index=False).apply(
@@ -680,4 +681,4 @@ def st_hdbscan(traj, time_thresh, min_pts = 2, min_cluster_size = 1, complete_ou
                     include_groups=False)
                 
     # return stop_table
-    return labels_hdbscan, stop_table
+    return labels
