@@ -21,7 +21,7 @@ from nomad.filters import to_timestamp
 ########        Lachesis          ########
 ##########################################
 
-def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=False, keep_col_names = True, **kwargs):
+def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=False, keep_col_names = False, **kwargs):
     """
     Detects stops in trajectory data by analyzing spatial and temporal patterns.
 
@@ -93,8 +93,10 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
     use_datetime = False
     if traj_cols['timestamp'] in traj.columns:
         time_col_in = traj_cols['timestamp']
+        time_key = 'timestamp'
     elif traj_cols['start_timestamp'] in traj.columns:
         time_col_in = traj_cols['start_timestamp']
+        time_key = 'start_timestamp'
     else:
         use_datetime = True
         
@@ -107,8 +109,10 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
     # set final parameters based on use_datetime flag
     if use_datetime and traj_cols['datetime'] in traj.columns:
         time_col_in = traj_cols['datetime']
+        time_key = 'datetime'
     elif use_datetime and traj_cols['start_datetime'] in traj.columns:
         time_col_in = traj_cols['start_datetime']
+        time_key = 'start_datetime'
     
     # Parse if necessary
     if use_datetime:
@@ -117,15 +121,15 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
     else:
         first_val = traj[time_col_in].iloc[0]
         s_val = str(first_val)
-        if len(s_val) > 10:
-            if len(s_val) == 13:
-                warnings.warn(f"The '{time_col_in}' column appears to be in milliseconds. Converting to seconds.")
-                time_series = traj[time_col_in].astype('int64') // 10**3
-            elif len(s_val) == 19:
-                warnings.warn(f"The '{time_col_in}' column appears to be in nanoseconds. Converting to seconds.")
-                time_series = traj[time_col_in].astype('int64') // 10**9
-            else:
-                time_series = traj[time_col_in]
+        if len(s_val) == 13:
+            warnings.warn(f"The '{time_col_in}' column appears to be in milliseconds. Converting to seconds.")
+            time_series = traj[time_col_in] // 10**3
+        elif len(s_val) == 19:
+            warnings.warn(f"The '{time_col_in}' column appears to be in nanoseconds. Converting to seconds.")
+            time_series = traj[time_col_in] // 10**9
+        elif len(s_val) > 10: 
+            warnings.warn(f"The '{time_col_in}' column does not appear to be in seconds, with {len(s_val)} digits.")
+            time_series = traj[time_col_in]
         else:
             time_series = traj[time_col_in]
   
@@ -152,11 +156,11 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
                 j_final = j - 1
                 break
             d_start = d_update
+            print(d_start)
         else:
             j_final = n - 1
 
         duration = (time_series.iloc[j_final] - time_series.iloc[i]) // 60
-
         if duration >= dur_min:
             if use_datetime:
                 start_val = traj[time_col_in].iloc[i]
@@ -165,10 +169,10 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
                 start_val = time_series.iloc[i]
                 end_val = time_series.iloc[j_final]
 
-            medoid = utils._medoid(coords[i:j_final + 1])
+            medoid = utils._medoid(coords[i:j_final + 1], metric=metric)
 
             if complete_output:
-                cluster_times = time_series.iloc[i:j_final + 1].sort_values()
+                cluster_times = time_series.iloc[i:j_final + 1]
                 cluster_diffs = np.diff(cluster_times.values)
                 max_gap = int(np.max(cluster_diffs) // 60)
                 
@@ -209,7 +213,7 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
 
     return pd.DataFrame(stops, columns=columns)
 
-def _lachesis_labels(traj, dur_min, dt_max, delta_roam, traj_cols=None, **kwargs):
+def _lachesis_labels(traj, dt_max, delta_roam, dur_min=5, traj_cols=None, **kwargs):
     """
     Assigns a label to every point in the trajectory based on the stop it belongs to.
 
@@ -277,7 +281,6 @@ def _lachesis_labels(traj, dur_min, dt_max, delta_roam, traj_cols=None, **kwargs
         stop_end = stop[end_col]
         mask = (traj[time_col_in] >= stop_start) & (traj[time_col_in] <= stop_end)
         stop_labels.loc[traj[time_col_in][mask]] = stop_idx
-    
-    stop_labels.index = traj.index
 
+    stop_labels.index = traj.index
     return stop_labels
