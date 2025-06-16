@@ -5,6 +5,7 @@ import datetime as dt
 from datetime import timedelta
 import itertools
 import os
+import nomad.io.base as loader
 import nomad.constants as constants
 import pdb
 
@@ -37,7 +38,6 @@ def _diameter(coords, metric='euclidean'):
     else:
         return np.max(pdist(coords, metric=metric))
 
-
 def _medoid(coords, metric='euclidean'):
     """
     Calculate the medoid of a set of coordinates, defined as the point with the minimal 
@@ -61,15 +61,13 @@ def _medoid(coords, metric='euclidean'):
         return coords[0]
     
     if metric == 'haversine':
-        coords = np.radians(coords)
-        distances = _pairwise_haversine(coords)
+        distances = _pairwise_haversine(np.radians(coords))
     else:
         distances = cdist(coords, coords, metric=metric)
-    
+
     sum_distances = np.sum(distances, axis=1)
     medoid_index = np.argmin(sum_distances)
     return coords[medoid_index, :]
-
 
 def _haversine_distance(coord1, coord2):
     """
@@ -159,3 +157,234 @@ def _update_diameter(c_j, coords_prev, D_prev, metric='euclidean'):
     D_i_jp1 = np.max([D_prev, np.max(new_dists)])
 
     return D_i_jp1
+
+def _fallback_time_cols(col_names, traj_cols, kwargs):
+    '''
+    Helper to decide whether to use datetime vs timestamp in cases of ambiguity
+    '''
+    traj_cols = loader._parse_traj_cols(col_names, traj_cols, kwargs, defaults={}, warn=False)
+    # check for explicit datetime usage
+    t_keys = ['timestamp', 'start_timestamp', 'datetime', 'start_datetime']
+    if 'datetime' in kwargs or 'start_datetime' in kwargs: # prioritize datetime 
+        t_keys = t_keys[-2:] + t_keys[:2]
+
+    # load defaults and check for time columns
+    traj_cols = loader._update_schema(constants.DEFAULT_SCHEMA, traj_cols)
+    loader._has_time_cols(col_names, traj_cols) # error if no columns
+    
+    for t_key in t_keys:
+        if traj_cols[t_key] in col_names:
+            use_datetime = (t_key in ['datetime', 'start_datetime']) ## necessary?
+            break
+            
+    return t_key, use_datetime
+
+# should this be moved to io.utils?
+def _fallback_st_cols(col_names, traj_cols, kwargs):
+    '''
+    Helper function to decide whether to use latitude and longitude or x,y,
+    as well as datetime vs timestamp in cases of ambiguity
+    '''
+    traj_cols = loader._parse_traj_cols(col_names, traj_cols, kwargs, defaults={}, warn=False)
+    
+    # check for sufficient spatial coords
+    loader._has_spatial_cols(col_names, traj_cols, exclusive=True) 
+
+    use_lon_lat = ('latitude' in traj_cols and 'longitude' in traj_cols)
+    if use_lon_lat:
+        coord_key1, coord_key2 = 'longitude', 'latitude'
+    else:
+        coord_key1, coord_key2 = 'x', 'y'
+
+    # check for explicit datetime usage
+    t_keys = ['timestamp', 'start_timestamp', 'datetime', 'start_datetime']
+    if 'datetime' in kwargs or 'start_datetime' in kwargs: # prioritize datetime 
+        t_keys = t_keys[-2:] + t_keys[:2]
+
+    # load defaults and check for time columns
+    traj_cols = loader._update_schema(constants.DEFAULT_SCHEMA, traj_cols)
+    loader._has_time_cols(col_names, traj_cols)
+
+    for t_key in t_keys:
+        if traj_cols[t_key] in col_names:
+            use_datetime = (t_key in ['datetime', 'start_datetime']) ## necessary?
+            break
+            
+    return t_key, coord_key1, coord_key2, use_datetime, use_lon_lat
+
+def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_col_names = True, passthrough_cols= [], traj_cols=None, **kwargs):
+           
+    t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = _fallback_st_cols(grouped_data.columns, traj_cols, kwargs)
+    
+    # Load default col names
+    traj_cols = loader._parse_traj_cols(grouped_data.columns, traj_cols, kwargs)
+
+    metric = 'haversine' if use_lon_lat else 'euclidean'    
+    start_t_key = 'start_datetime' if use_datetime else 'start_timestamp'
+    end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
+    
+    if not keep_col_names:
+       traj_cols[coord_key1] = constants.DEFAULT_SCHEMA[coord_key1]
+       traj_cols[coord_key2] = constants.DEFAULT_SCHEMA[coord_key2]
+       # traj_cols[start_t_key] holds default or user provided value
+    else:
+        # use same time column key for start time
+        # e.g. start time col in stops will be 'unix_timestamp' instead of default 'start_timestamp'
+        traj_cols[start_t_key] = traj_cols[t_key]
+    
+    # Compute stop statistics
+    coords = grouped_data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
+    medoid = _medoid(coords, metric=metric)
+    end_time = grouped_data[traj_cols[t_key]].iloc[-1]
+
+    stop_attr = {} # the pandas series for the output
+    stop_attr[coord_key1] = medoid[0]
+    stop_attr[coord_key2] = medoid[1]
+    stop_attr[traj_cols[start_t_key]]  = grouped_data[traj_cols[t_key]].iloc[0]
+
+    if complete_output:
+        if traj_cols['ha'] in grouped_data.columns:
+            stop_attr[traj_cols['ha']] = int(grouped_data[traj_cols['ha']].mean())
+        stop_attr['diameter'] = _diameter(coords, metric=metric)
+        stop_attr['n_pings'] = len(grouped_data)
+        stop_attr[traj_cols[end_t_key]] = end_time
+        
+        time_diffs = grouped_data[traj_cols[t_key]].diff().dropna()
+        max_gap = time_diffs.max() if len(time_diffs) > 0 else 0
+
+    if use_datetime:
+        stop_attr['duration'] = int((end_time - stop_attr[traj_cols[start_t_key]]).total_seconds())//60
+        if complete_output:
+            stop_attr['max_gap'] = int(max_gap.total_seconds())//60
+    else:
+        stop_attr['duration'] = (end_time - stop_attr[traj_cols[start_t_key]])//60
+        if complete_output:
+            stop_attr['max_gap'] = max_gap//60
+
+    # passthrough columns: e.g. location_id
+    for col in passthrough_cols:
+        if col in grouped_data.columns:
+            stop_attr[col] = grouped_data[col].iloc[0]
+
+    return pd.Series(stop_attr)
+
+def pad_short_stops(stop_data, pad=5, dur_min=None, traj_cols = None, **kwargs):
+    """
+    Helper that pads stops shorter or equal than dur_min minutes 
+    extending the duration by pad minutes, but avoiding overlap. 
+    stop_data must be sorted chronologically and not overlap.
+    """
+    stop_data = stop_data.copy()
+    if not dur_min:
+        dur_min = pad
+    pad = max(pad, dur_min, 1) # we never shorten a stop
+    
+    t_key, use_datetime = _fallback_time_cols(stop_data.columns, traj_cols, kwargs)
+    end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
+
+    # Load default col names
+    traj_cols = loader._parse_traj_cols(stop_data.columns, traj_cols, kwargs)    
+    # check is diary table
+    end_col_present = loader._has_end_cols(stop_data.columns, traj_cols)
+    duration_col_present = loader._has_duration_cols(stop_data.columns, traj_cols)
+    if not (end_col_present or duration_col_present):
+        raise ValueError("Missing required (end or duration) temporal columns for stop_table dataframe.")
+
+    # to compute time differences
+    ts = to_timestamp(stop_data[traj_cols[t_key]]) if use_datetime else stop_data[traj_cols[t_key]]
+    next_ts = ts.shift(-1, fill_value=ts.iloc[-1]+3*pad*60)
+
+    if not duration_col_present:
+        if use_datetime:
+            stop_data[traj_cols['duration']] = int((stop_data[traj_cols[end_t_key]] - stop_data[traj_cols[t_key]]).total_seconds())//60
+        else:
+            stop_data[traj_cols['duration']] = (stop_data[traj_cols[end_t_key]] - stop_data[traj_cols[t_key]])//60
+    
+    new_duration = np.minimum((next_ts - ts)//(2*60), pad)
+    mask = (stop_data[traj_cols['duration']] <= dur_min)
+    stop_data[traj_cols['duration']] = np.maximum(new_duration*mask, stop_data[traj_cols['duration']])
+
+    # fix end column
+    if end_col_present:
+        if use_datetime:
+            stop_data[traj_cols[end_t_key]] = np.maximum(stop_data[traj_cols[end_t_key]],
+                                                         stop_data[traj_cols[t_key]] + pd.to_timedelta(stop_data[traj_cols['duration']]*60, unit='s'))
+        else:
+            stop_data[traj_cols[end_t_key]] = np.maximum(stop_data[traj_cols[end_t_key]],
+                                                         stop_data[traj_cols[t_key]] + stop_data[traj_cols['duration']]*60)   
+    return stop_data
+
+def invalid_stops(stop_data, traj_cols=None, **kwargs):
+    """
+    Detect any overlapping stops in a stop-detection table.
+
+    Parameters
+    ----------
+    stop_data : pd.DataFrame
+        Output of a stop-detection algorithm containing start/end columns.
+    traj_cols : dict, optional
+        Mapping for column names.  Only two keys matter:
+        - 'start_timestamp' or 'start_datetime'
+        - 'end_timestamp'   or 'end_datetime'
+
+    Returns
+    -------
+    False
+        When no overlaps are found.
+
+    Raises
+    ------
+    ValueError
+        If at least one pair of stops overlaps.  The message shows the
+        first offending pair.
+    """
+    stop_data = stop_data.copy()
+
+    # determine start-time key and whether it's datetime
+    t_key, use_datetime = _fallback_time_cols(stop_data.columns, traj_cols, kwargs)
+    end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
+
+    # canonical column mapping
+    traj_cols = loader._parse_traj_cols(stop_data.columns, traj_cols, kwargs)
+    end_col_present  = loader._has_end_cols(stop_data.columns, traj_cols)
+    duration_col_present  = loader._has_duration_cols(stop_data.columns, traj_cols)
+    if not (end_col_present or duration_col_present):
+        raise ValueError("Missing required (end or duration) temporal columns for stop_table dataframe.")
+
+    start_col = traj_cols[t_key]
+
+    # compute a uniform '_end_time' column
+    if end_col_present:
+        end_col = traj_cols[end_t_key]
+        stop_data['_end_time'] = stop_data[end_col]
+    else:
+        dur_col = traj_cols['duration']
+        if use_datetime:
+            stop_data['_end_time'] = (
+                stop_data[start_col]
+                + pd.to_timedelta(stop_data[dur_col], unit='m')
+            )
+        else:
+            stop_data['_end_time'] = (
+                stop_data[start_col]
+                + stop_data[dur_col] * 60
+            )
+
+    # alias start, preserve original index
+    stop_data['_start_time'] = stop_data[start_col]
+    df = stop_data.reset_index().rename(columns={'index':'_orig_idx'})
+    df = df[['_orig_idx','_start_time','_end_time']]
+    df = df.sort_values('_start_time').reset_index(drop=True)
+
+    # single scan for overlap
+    for i in range(1, len(df)):
+        prev, curr = df.iloc[i-1], df.iloc[i]
+        if curr['_start_time'] < prev['_end_time']:
+            raise ValueError(
+                f"Overlapping stops between rows {prev['_orig_idx']} "
+                f"({prev['_start_time']}–{prev['_end_time']}) and "
+                f"{curr['_orig_idx']} "
+                f"({curr['_start_time']}–{curr['_end_time']})"
+            )
+
+    return False

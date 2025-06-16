@@ -237,6 +237,7 @@ def test_lachesis_ground_truth(agent_traj_ground_truth):
     lachesis_out = LACHESIS._lachesis_labels(agent_traj_ground_truth,
                                              *lachesis_params,
                                              traj_cols)
+
     num_clusters = sum(lachesis_out.unique() > -1)
     assert num_clusters == 3
 
