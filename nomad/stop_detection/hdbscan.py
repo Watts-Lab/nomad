@@ -4,15 +4,17 @@ import heapq
 from collections import defaultdict
 import warnings
 from collections import defaultdict
+from scipy.stats import norm
 import matplotlib.pyplot as plt
-import networkx as nx
+
+
 import nomad.io.base as loader
 import nomad.constants as constants
-from scipy.stats import norm
-import pdb
 from nomad.stop_detection import utils
+from nomad.filters import to_timestamp
 from nomad.constants import DEFAULT_SCHEMA
-import time
+
+import pdb
 
 def _find_temp_neighbors(times, time_thresh, use_datetime):
     """
@@ -31,24 +33,8 @@ def _find_temp_neighbors(times, time_thresh, use_datetime):
     TC: O(n^2)
     """
     # getting times based on whether they are datetime values or timestamps, changed to seconds for calculations
-    if use_datetime:
-        times = pd.to_datetime(times)
-        times = times.dt.tz_convert('UTC').dt.tz_localize(None)
-        times = times.astype('int64') // 10**9
-        times = times.values
-    else:
-        # if timestamps, we change the values to seconds
-        first_timestamp = times.iloc[0]
-        timestamp_length = len(str(first_timestamp))
-    
-        if timestamp_length > 10:
-            if timestamp_length == 13:
-                times = times.values.view('int64') // 10 ** 3
-            elif timestamp_length == 19:
-                times = times.values.view('int64') // 10 ** 9   
-        else:
-            times = times.values
-    
+    times = to_timestamp(times).values if use_datetime else times.values
+        
     # Pairwise time differences
     # times[:, np.newaxis]: from shape (n,) -> to shape (n, 1) – a column vector
     time_diffs = np.abs(times[:, np.newaxis] - times)
@@ -91,7 +77,7 @@ def _compute_core_distance(traj, time_pairs, times, use_lon_lat, traj_cols, min_
     Returns
     -------
     core_distances : dictionary of timestamps
-        {timestamp_1: core_distance_1, ..., timestamp_n: core_distance_n}
+        {timestamp_1: core_distance_1, ..., timestamp_n: core_distance_n} distances are quantized
     """
     # getting coordinates based on whether they are geographic coordinates (lon, lat) or catesian (x,y)
     if use_lon_lat:
@@ -105,10 +91,11 @@ def _compute_core_distance(traj, time_pairs, times, use_lon_lat, traj_cols, min_
 
     # Build neighbor map from time_pairs
     neighbors = _build_neighbor_graph(time_pairs, times)
-    
+
+    D_INF = np.pi * 6_371_000  # max distance on earth
     core_distances = {}
 
-    for i in range(n): # TC: O(n+m (mlogm)) < O(n^2 log n)
+    for i in range(n): # TC: O(n+m (mlogm)) 
         u = times[i]
         allowed_neighbors = neighbors[u]
         dists = [0.0]  # distance to itself
@@ -118,17 +105,17 @@ def _compute_core_distance(traj, time_pairs, times, use_lon_lat, traj_cols, min_
             if j is not None:
                 if use_lon_lat:
                     dist = utils._haversine_distance(coords[i], coords[j])
-                    dists.append(dist)
                 else:
                     dist = np.sqrt(np.sum((coords[i] - coords[j]) ** 2))
-                    dists.append(dist)
+                
+                dists.append(np.round(dist * 4) / 4)
 
         # pad with large numbers if not enough neighbors
         while len(dists) < min_pts:
-            dists.append(np.inf) # use a very large number e.g. infinity for edges between points not temporally close
+            dists.append(D_INF) # use a very large number e.g. infinity for edges between points not temporally close
 
         sorted_dists = np.sort(dists) # TC: O(nlogn)
-        core_distances[u] = sorted_dists[min_pts - 1]
+        core_distances[u] = np.round(sorted_dists[min_pts - 1] * 4)/4
     return core_distances, coords
 
 def _compute_mrd_graph(coords, times, time_pairs, core_distances, use_lon_lat):
@@ -168,6 +155,8 @@ def _compute_mrd_graph(coords, times, time_pairs, core_distances, use_lon_lat):
             dist = (utils._haversine_distance(coords[i], coords[j])
                     if use_lon_lat
                     else np.linalg.norm(coords[j] - coords[i]))
+
+            dist   = np.round(dist * 4) / 4
             mrd_graph[(u, v)] = max(core_distances[u], core_distances[v], dist)
 
     return mrd_graph
@@ -212,36 +201,44 @@ def _mst(mrd_graph):
         for nbr, wt in graph[v]:
             if nbr not in visited:
                 heapq.heappush(heap, (wt, v, nbr))
+                
+    return np.array(mst,
+                    dtype=[('from', 'int64'),
+                           ('to', 'int64'),
+                           ('weight', 'float64')])
 
-    return mst
 
-def mst_ext(mst, core_distances):
+def mst_ext(mst_arr, core_distances):
     """
     Add self-edges to MST with weights equal to each point's core distance,
-    and return as a sorted DataFrame.
+    and return sorted.
 
     Parameters
     ----------
-    mst : list of (from, to, weight)
+    mst : (n_edges,3) structured array (from, to, weight)
     core_distances : dict {timestamp: core_distance}
-
     Returns
     -------
-    pd.DataFrame with columns ['from', 'to', 'weight']
+    (n_edges,3) structured array sorted by descending weight
     """
-    self_edges = [(ts, ts, core_distances[ts]) for ts in core_distances]
+    dtype = mst_arr.dtype
+    self_edges = np.array(
+        [(ts, ts, w) for ts, w in core_distances.items()],
+        dtype=dtype
+    )
+    edges = np.concatenate((mst_arr, self_edges))
+    order = np.argsort(edges['weight'])[::-1]          # big → small
+    return edges[order]
 
-    mst_ext_edges = mst + self_edges
-
-    return pd.DataFrame(mst_ext_edges, columns=["from", "to", "weight"])
-
-def hdbscan(mst_ext_df, min_cluster_size):
+def hdbscan(edges_sorted, min_cluster_size, neighbors, ts_idx, coords, times,
+            use_lon_lat=False, dur_min=5):
     hierarchy = []
     cluster_memberships = defaultdict(set)
     label_history = []
 
     # 4.1 For the root of the tree assign all objects the same label (single “cluster”), label = 0
-    all_pings = set(mst_ext_df['from']).union(set(mst_ext_df['to']))
+    all_pings = set(edges_sorted['from']).union(edges_sorted['to'])
+   
     label_map = {ts: 0 for ts in all_pings}
     active_clusters = {0: set(all_pings)}
     cluster_memberships[0] = set(all_pings)
@@ -249,14 +246,13 @@ def hdbscan(mst_ext_df, min_cluster_size):
     # Log initial labels
     label_history.append(pd.DataFrame({"time": list(label_map.keys()), "cluster_id": list(label_map.values()), "dendrogram_scale": np.nan}))
 
-    # group edges by weight
-    dendrogram_scales = {
-        w: list(zip(group['from'], group['to']))
-        for w, group in mst_ext_df.groupby('weight', sort=False)
-    }
-
-    # sort edges in decreasing order of weight
-    sorted_scales = sorted(dendrogram_scales.keys(), reverse=True)
+    # edges_sorted is already ordered by descending weight
+    weights = edges_sorted['weight']
+    # find split points where weight changes
+    split_idx = np.flatnonzero(np.diff(weights)) + 1
+    # batch edges of equal weight
+    batches = np.split(edges_sorted, split_idx)
+    sorted_scales = [batch[0]['weight'] for batch in batches]
 
     # next label after label 0
     current_label_id = 1
@@ -264,14 +260,12 @@ def hdbscan(mst_ext_df, min_cluster_size):
     # Iteratively remove all edges from MSText in decreasing order of weights
     # 4.2.1 Before each removal, set the dendrogram scale value of the current hierarchical level as the weight of the edge(s) to be removed.
     for scale in sorted_scales:
-        # print("---------")
-        # print("scale:", scale)
-        
-        edges = dendrogram_scales[scale]
+        # pop next batch of edges sharing this scale
+        edges = batches.pop(0)
         affected_clusters = set()
         edges_to_remove = []
 
-        for u, v in edges:
+        for u, v, _ in edges:
             # if labels between two timestamps are different, continue
             if label_map.get(u) != label_map.get(v):
                 continue
@@ -279,47 +273,59 @@ def hdbscan(mst_ext_df, min_cluster_size):
             affected_clusters.add(cluster_id)
             edges_to_remove.append((u, v))
 
-        # print("# of edges to rmv: ", len(edges_to_remove))
-        # print("edges to rmv: ", edges_to_remove)
-
         # 4.2.2: For each affected cluster, reassign components
+        claimed_border = set()
         for cluster_id in affected_clusters:
-            # print("affected cluster: ", cluster_id)
             if cluster_id == -1 or cluster_id not in active_clusters: 
                 continue # skip noise or already removed clusters
 
             members = active_clusters[cluster_id]
-            G = _build_graph(members, mst_ext_df, edges_to_remove)
+            G = _build_graph(members, edges_sorted, edges_to_remove)
             # visualize_adjacency_dict(G)
 
             components = _connected_components(G)
-            # print("number of components: ", len(components))
-            # print("components: ", components)
-            non_spurious = [c for c in components if len(c) >= min_cluster_size]
+            non_spurious = []
+            for comp in components:
+                if len(comp) < min_cluster_size:
+                    continue
+            
+                # --- border points within current scale ----------------------
+                border = set()
+                for ts in comp:
+                    for nb in neighbors[ts]:                 # temporally close
+                        if nb in comp or nb in claimed_border:
+                            continue                         # core or claimed
+                        i, j = ts_idx[ts], ts_idx[nb]
+                        d = (utils._haversine_distance(coords[i], coords[j])
+                             if use_lon_lat
+                             else np.linalg.norm(coords[i] - coords[j]))
+                        if d <= scale:                       # ε at this level
+                            border.add(nb)
 
-            # print("label map: ", label_map)
-            # print("active clusters:", active_clusters)
-                
+                full_cluster = set(comp).union(border)
+
+                # --- spurious test (duration incl. borders) --------------
+                if (max(full_cluster) - min(full_cluster)) >= dur_min * 60:
+                    claimed_border.update(border)            # lock them
+                    for ts in border:                        # label borders
+                        label_map[ts] = cluster_id
+                    non_spurious.append(full_cluster)
+                    
             # cluster has disappeared
             if not non_spurious:
-                # print("cluster has disappeared")
                 for ts in members:
                     label_map[ts] = -1 # noise
                 del active_clusters[cluster_id]
 
             # cluster has just shrunk
             elif len(non_spurious) == 1:
-                # print("cluster has just shrunk")
                 remaining_pings = non_spurious[0]
-                # print("remaining pings:", remaining_pings)
-                # print(len(remaining_pings))
                 for ts in members:
                     label_map[ts] = cluster_id if ts in remaining_pings else -1
-                active_clusters[cluster_id] = remaining_pings
+                active_clusters[cluster_id]   = remaining_pings
                 cluster_memberships[cluster_id] = set(remaining_pings)
             # true cluster split: multiple valid subclusters
             else:
-                # print("true cluster split")
                 new_ids = []
                 del active_clusters[cluster_id]
                 for component in non_spurious:
@@ -331,8 +337,6 @@ def hdbscan(mst_ext_df, min_cluster_size):
                     current_label_id += 1
 
                 hierarchy.append((scale, cluster_id, new_ids))
-
-            # print("active clusters:", active_clusters.keys())
         
         # log label map after this scale
         label_history.append(pd.DataFrame({"time": list(label_map.keys()), "cluster_id": list(label_map.values()), "dendrogram_scale": scale}))
@@ -341,7 +345,6 @@ def hdbscan(mst_ext_df, min_cluster_size):
     label_history_df = pd.concat(label_history, ignore_index=True)
     # build cluster lineage for all clusters
     hierarchy_df = _build_cluster_lineage(hierarchy)
-
     return label_history_df, hierarchy_df
 
 def compute_cluster_duration(cluster):
@@ -363,7 +366,7 @@ def _build_cluster_lineage(hierarchy):
             })
     return pd.DataFrame(lineage)
 
-def _build_graph(nodes, mst_df, removed_edges):
+def _build_graph(nodes, edges_arr, removed_edges):
     """
     Build the adjacency map for the given cluster, skipping any edges
     scheduled for removal.  No DataFrame row objects are created.
@@ -372,7 +375,7 @@ def _build_graph(nodes, mst_df, removed_edges):
     removed_set  = set(map(frozenset, removed_edges))
     graph        = defaultdict(set)
 
-    for u, v, _ in mst_df.itertuples(index=False, name=None):
+    for u, v, _ in edges_arr:
         if u not in nodes_set or v not in nodes_set or u == v:
             continue
         if frozenset((u, v)) in removed_set:
@@ -589,63 +592,35 @@ def select_most_stable_clusters(hierarchy_df, cluster_stability_df):
 
     return selected_clusters
 
-def hdbscan_labels(traj, time_thresh, min_pts = 2, min_cluster_size = 10, traj_cols=None, **kwargs):
-    # Check if user wants long and lat
-    use_lon_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs['latitude'] in traj.columns and kwargs['longitude'] in traj.columns
-
-    # Check if user wants datetime
-    use_datetime = 'datetime' in kwargs and kwargs['datetime'] in traj.columns
-
-
-    traj_cols = loader._parse_traj_cols(traj.columns, traj_cols, kwargs, warn=False) #load defaults
+def hdbscan_labels(traj, time_thresh, min_pts = 2, min_cluster_size = 1, traj_cols=None, **kwargs):
+    # Check if user wants long and lat and datetime
+    t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(traj.columns, traj_cols, kwargs)
+    # Load default col names
+    traj_cols = loader._parse_traj_cols(traj.columns, traj_cols, kwargs)
+    
+    # Tests to check for spatial and temporal columns
     loader._has_spatial_cols(traj.columns, traj_cols)
     loader._has_time_cols(traj.columns, traj_cols)
 
-    # Setting x and y as defaults if not specified by user in either traj_cols or kwargs
-    if traj_cols['x'] in traj.columns and traj_cols['y'] in traj.columns and not use_lon_lat:
-        use_lon_lat = False
-    else:
-        use_lon_lat = True
-
-    # Setting timestamp as default if not specified by user in either traj_cols or kwargs
-    if traj_cols['timestamp'] in traj.columns and not use_datetime:
-        use_datetime = False
-    else:
-        use_datetime = True
-
-    if use_datetime:
-        time_col_name = traj_cols['datetime']
-    else:
-        first_timestamp = traj[traj_cols['timestamp']].iloc[0]
-        timestamp_length = len(str(first_timestamp))
-        
-        if timestamp_length > 10:
-            if timestamp_length == 13:
-                warnings.warn(
-                    f"The '{traj_cols['timestamp']}' column appears to be in milliseconds. "
-                    "This may lead to inconsistencies."
-                )
-                
-            elif timestamp_length == 19:
-                warnings.warn(
-                    f"The '{traj_cols['timestamp']}' column appears to be in nanoseconds. "
-                    "This may lead to inconsistencies."
-                )
-        
-        time_col_name = traj_cols['timestamp']
-
-
-    time_pairs, times = _find_temp_neighbors(traj[time_col_name], time_thresh, use_datetime)
+    time_pairs, times = _find_temp_neighbors(traj[traj_cols[t_key]], time_thresh, use_datetime)
 
     core_distances, coords = _compute_core_distance(traj, time_pairs, times, use_lon_lat, traj_cols, min_pts)
 
+    neighbors = _build_neighbor_graph(time_pairs, times)
+    ts_idx = {ts: i for i, ts in enumerate(times)}
+    
     mrd = _compute_mrd_graph(coords, times, time_pairs, core_distances, use_lon_lat)
 
     mst_edges = _mst(mrd)
-    mstext_edges = mst_ext(mst_edges, core_distances)
     
-    label_history_df, hierarchy_df = hdbscan(mstext_edges, min_cluster_size)
+    edges_sorted   = mst_ext(mst_edges, core_distances) # << with self-loops
 
+    label_history_df, hierarchy_df = hdbscan(
+        edges_sorted, min_cluster_size,
+        neighbors, ts_idx, coords, times,
+        use_lon_lat=use_lon_lat
+    )
+    
     #cluster_stability_df = compute_cluster_stability(label_history_df)
     cluster_stability_df = custom_cluster_stability(label_history_df)
 
@@ -678,228 +653,31 @@ def hdbscan_labels(traj, time_thresh, min_pts = 2, min_cluster_size = 10, traj_c
     for ts in all_timestamps - assigned_timestamps:
         rows.append({"time": ts, "cluster": -1})
     
-    hdbscan_labels_df = pd.DataFrame(rows).sort_values("time").reset_index(drop=True)
-    # hdbscan_labels_series = hdbscan_labels_df.set_index("time")["cluster"] ## why?
-    return hdbscan_labels_df.cluster.set_axis(traj.index)
-
-def st_hdbscan(traj, traj_cols, time_thresh, min_pts = 2, min_cluster_size = 10, complete_output = False, **kwargs):
-    # Check if user wants long and lat
-    use_lon_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs['latitude'] in traj.columns and kwargs['longitude'] in traj.columns
-
-    # Check if user wants datetime
-    use_datetime = 'datetime' in kwargs and kwargs['datetime'] in traj.columns
-
-    # Set initial schema
-    if not traj_cols:
-        traj_cols = {}
-
-    traj_cols = loader._update_schema(traj_cols, kwargs)
-    traj_cols = loader._update_schema(constants.DEFAULT_SCHEMA, traj_cols)
-
-    # Tests to check for spatial and temporal columns
-    loader._has_spatial_cols(traj.columns, traj_cols)
-    loader._has_time_cols(traj.columns, traj_cols)
-
-    # Setting x and y as defaults if not specified by user in either traj_cols or kwargs
-    if traj_cols['x'] in traj.columns and traj_cols['y'] in traj.columns and not use_lon_lat:
-        use_lon_lat = False
-    else:
-        use_lon_lat = True
-
-    # Setting timestamp as default if not specified by user in either traj_cols or kwargs
-    if traj_cols['timestamp'] in traj.columns and not use_datetime:
-        use_datetime = False
-    else:
-        use_datetime = True
-
+    hdbscan_labels_df = pd.DataFrame(rows)
+    
+    lookup = dict(zip(hdbscan_labels_df["time"], hdbscan_labels_df["cluster"]))
+    ts_series = traj[traj_cols[t_key]]
     if use_datetime:
-        time_col_name = traj_cols['datetime']
-    else:
-        first_timestamp = traj[traj_cols['timestamp']].iloc[0]
-        timestamp_length = len(str(first_timestamp))
-        
-        if timestamp_length > 10:
-            if timestamp_length == 13:
-                warnings.warn(
-                    f"The '{traj_cols['timestamp']}' column appears to be in milliseconds. "
-                    "This may lead to inconsistencies."
-                )
-                
-            elif timestamp_length == 19:
-                warnings.warn(
-                    f"The '{traj_cols['timestamp']}' column appears to be in nanoseconds. "
-                    "This may lead to inconsistencies."
-                )
-        
-        time_col_name = traj_cols['timestamp']
+        ts_series = to_timestamp(ts_series)
 
-    start_time_key = 'start_datetime' if use_datetime else 'start_timestamp'
-    end_time_key = 'end_datetime' if use_datetime else 'end_timestamp' 
-    
+    labels_hdbscan = (
+        ts_series.map(lookup)
+                 .fillna(-1)
+                 .astype(int)
+    )
+    labels_hdbscan.name = "cluster"
+    return labels_hdbscan
+
+def st_hdbscan(traj, time_thresh, min_pts = 2, min_cluster_size = 1, complete_output = False, traj_cols=None, **kwargs):
     labels_hdbscan = hdbscan_labels(traj=traj, time_thresh=time_thresh, min_pts = min_pts,
-                                        min_cluster_size = min_cluster_size, traj_cols=traj_cols)
+                                        min_cluster_size = min_cluster_size, traj_cols=traj_cols, **kwargs)
 
-    merged_data_hdbscan = traj.join(labels_hdbscan)  
-    # remove noise pings from stop table
+    merged_data_hdbscan = traj.join(labels_hdbscan)
     merged_data_hdbscan = merged_data_hdbscan[merged_data_hdbscan.cluster != -1]
-    
-    stop_table = merged_data_hdbscan.groupby('cluster', as_index=False).apply(lambda group: _stop_metrics(group, use_lon_lat, use_datetime, traj_cols, complete_output), include_groups=False)
 
-    for key in [start_time_key, end_time_key, 'n_pings', 'duration']:
-        if key in stop_table:
-            if stop_table[key].dtype != "Int64":
-                stop_table[key] = stop_table[key].astype("Int64")
+    stop_table = merged_data_hdbscan.groupby('cluster', as_index=False).apply(
+                    lambda g: utils.summarize_stop(g, complete_output=complete_output, traj_cols=traj_cols, **kwargs),
+                    include_groups=False)
                 
     # return stop_table
     return labels_hdbscan, stop_table
- 
-def _stop_metrics(grouped_data, use_lon_lat, use_datetime, traj_cols, complete_output):
-    # Coordinates array and distance metrics
-    if use_lon_lat:
-        coords = grouped_data[[traj_cols['longitude'], traj_cols['latitude']]].to_numpy()
-        stop_medoid = utils._medoid(coords, metric='haversine')
-        diameter_m = utils._diameter(coords, metric='haversine')
-    else:
-        coords = grouped_data[[traj_cols['x'], traj_cols['y']]].to_numpy()
-        stop_medoid = utils._medoid(coords, metric='euclidean')
-        diameter_m = utils._diameter(coords, metric='euclidean')
-
-    # Compute duration and start and end time of stop
-    start_time_key = 'start_datetime' if use_datetime else 'start_timestamp'
-    end_time_key = 'end_datetime' if use_datetime else 'end_timestamp' 
-
-    if use_datetime:
-        start_time = grouped_data[traj_cols['datetime']].min()
-        end_time = grouped_data[traj_cols['datetime']].max()
-        duration = (end_time - start_time).total_seconds() // 60.0
-    else:
-        start_time = grouped_data[traj_cols['timestamp']].min()
-        # print("start time:", start_time)
-        end_time = grouped_data[traj_cols['timestamp']].max()
-        # print("end time:", end_time)
-        timestamp_length = len(str(start_time))
-
-        if timestamp_length > 10:
-            if timestamp_length == 13:
-                duration = int(((end_time // 10 ** 3) - (start_time // 10 ** 3)) / 60.0)
-            elif timestamp_length == 19:
-                duration = int(((end_time // 10 ** 9) - (start_time // 10 ** 9)) / 60.0)
-        else:
-            duration = int((end_time - start_time) / 60.0)
-                            
-    # Number of pings in stop
-    n_pings = len(grouped_data)
-    
-    # Compute max_gap between consecutive pings (in minutes)
-    if use_datetime:
-        times = pd.to_datetime(grouped_data[traj_cols['datetime']]).sort_values()
-        time_diffs = times.diff().dropna()
-        max_gap = int(time_diffs.max().total_seconds() / 60) if not time_diffs.empty else 0
-    else:
-        times = grouped_data[traj_cols['timestamp']].sort_values()
-        timestamp_length = len(str(times.iloc[0]))
-        
-        if timestamp_length == 13:
-            time_diffs = np.diff(times.values) // 1000
-        elif timestamp_length == 19:  # nanoseconds
-            time_diffs = np.diff(times.values) // 10**9
-        else:
-            time_diffs = np.diff(times.values)
-        
-        max_gap = int(np.max(time_diffs) / 60) if len(time_diffs) > 0 else 0
-
-    # Prepare data for the Series
-    
-    if use_lon_lat:
-        if complete_output:
-            stop_attr = {
-                start_time_key: start_time,
-                end_time_key: end_time,
-                traj_cols['longitude']: stop_medoid[0],
-                traj_cols['latitude']: stop_medoid[1],
-                'diameter': diameter_m,
-                'n_pings': n_pings,
-                'duration': duration,
-                'max_gap': max_gap
-            }
-        else:
-            stop_attr = {
-                start_time_key: start_time,
-                'duration': duration,
-                traj_cols['longitude']: stop_medoid[0],
-                traj_cols['latitude']: stop_medoid[1]
-            }
-    else:
-        if complete_output:
-            stop_attr = {
-                start_time_key: start_time,
-                end_time_key: end_time,
-                traj_cols['x']: stop_medoid[0],
-                traj_cols['y']: stop_medoid[1],
-                'diameter': diameter_m,
-                'n_pings': n_pings,
-                'duration': duration,
-                'max_gap': max_gap
-            }
-        else:
-            stop_attr = {
-                start_time_key: start_time,
-                'duration': duration,
-                traj_cols['x']: stop_medoid[0],
-                traj_cols['y']: stop_medoid[1]
-            }
-    return pd.Series(stop_attr)
-
-
-# def visualize_mst(mst_df):
-#     G = nx.Graph()
-
-#     for u, v, w in mst_df.itertuples(index=False):
-#         w_val = 1e6 if np.isinf(w) else w
-#         inv_w = 1.0 / w_val if w_val > 0 else 0.001
-#         label = "∞" if np.isinf(w) else f"{w:.2f}"
-#         G.add_edge(u, v, weight=w_val, inv_weight=inv_w, label=label)
-
-#     # Use inverse weights for layout
-#     pos = nx.spring_layout(G, weight='inv_weight')
-
-#     # Retrieve edge labels from edge attributes
-#     edge_labels = nx.get_edge_attributes(G, 'label')
-
-#     # Plot
-#     plt.figure(figsize=(6, 6))
-#     nx.draw(G, pos, with_labels=True, node_color='skyblue', node_size=200, edge_color='gray')
-#     nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
-#     plt.title("MST Extended Graph with Edge Weights")
-#     plt.axis('off')
-#     plt.show()
-
-# def visualize_adjacency_dict(G_dict):
-#     """
-#     Visualize an adjacency dictionary as a NetworkX graph.
-
-#     Parameters
-#     ----------
-#     G_dict : dict
-#         Output of _build_graph() — {node: set(neighbors)}
-#     """
-#     # Convert dict-of-sets into a networkx Graph
-#     G = nx.Graph()
-#     for u, neighbors in G_dict.items():
-#         for v in neighbors:
-#             G.add_edge(u, v)
-
-#     pos = nx.spring_layout(G, seed=42)
-
-#     # Draw graph
-#     nx.draw(
-#         G, pos,
-#         with_labels=True,
-#         node_color='lightgreen',
-#         edge_color='gray',
-#         node_size=200,
-#         font_size=10
-#     )
-#     plt.title("Connected Component After Edge Removal")
-#     plt.tight_layout()
-#     plt.show()
