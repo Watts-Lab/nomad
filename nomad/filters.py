@@ -57,10 +57,8 @@ def _timestamp_handling(
         raise ValueError("Invalid ts_output value. Use 'pd.timestamp' or 'unix'.")
 
 
-def to_timestamp(
-    datetime: pd.Series,
-    tz_offset: pd.Series = None
-) -> pd.Series:
+def to_timestamp(datetime, tz_offset
+):
     """
     Convert a datetime series into UNIX timestamps (seconds).
     
@@ -238,15 +236,14 @@ def filter_users(
     traj: pd.DataFrame,
     start_time,
     end_time,
-    timezone: str = None,
-    polygon: Polygon = None,
-    min_active_days: int = 1,
-    min_pings_per_day: int = 1,
-    traj_cols: dict = None,
-    crs: str = "EPSG:3857",
-    spark_session: SparkSession = None,
-    **kwargs
-) -> pd.DataFrame:
+    timezone = None,
+    polygon = None,
+    min_active_days = 1,
+    min_pings_per_day = 1,
+    traj_cols = None,
+    crs = "EPSG:3857",
+    spark_session = None,
+    **kwargs):
     '''
     Subsets to users who have at least min_pings_per_day pings on min_active_days distinct days
     in the polygon within the timeframe start_time to start_time.
@@ -478,10 +475,10 @@ def _filter_users_spark(
 
 
 def q_filter(df: pd.DataFrame,
-             qbar: float,
-             traj_cols: dict = None,
-             user_id: str = DEFAULT_SCHEMA["user_id"],
-             timestamp: str = DEFAULT_SCHEMA["timestamp"]):
+             qbar,
+             traj_cols,
+             user_id = DEFAULT_SCHEMA["user_id"],
+             timestamp = DEFAULT_SCHEMA["timestamp"]):
     """
     Computes the q statistic for each user as the proportion of unique hours with pings 
     over the total observed hours (last hour - first hour) and filters users where q > qbar.
@@ -520,7 +517,7 @@ def q_filter(df: pd.DataFrame,
 
 # the user can pass **kwargs with timestamp or datetime, then if you absolutely need datetime then 
 # create a variable, not a column in the dataframe
-def q_stats(df: pd.DataFrame, user_id: str, timestamp: str):
+def q_stats(df, user_id = DEFAULT_SCHEMA["user_id"], timestamp = DEFAULT_SCHEMA["timestamp"]):
     
     """
     Computes the q statistic for each user as the proportion of unique hours with pings 
@@ -532,7 +529,7 @@ def q_stats(df: pd.DataFrame, user_id: str, timestamp: str):
         A DataFrame containing user IDs and timestamps.
     user_id : str
         The name of the column containing user IDs.
-    timestamp_col : str
+    timestamp : str
         The name of the column containing timestamps.
 
     Returns
