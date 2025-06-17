@@ -12,89 +12,90 @@ import os
 import pdb
 import nomad.io.base as loader
 import warnings
+from nomad.stop_detection import preprocessing
 import nomad.constants as constants
 from nomad.stop_detection import utils
 
 ##########################################
 ########         DBSCAN           ########
 ##########################################
-def _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, traj_cols):
-    """
-    Compute neighbors within specified time and distance thresholds for a trajectory dataset.
+# def _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, traj_cols):
+#     """
+#     Compute neighbors within specified time and distance thresholds for a trajectory dataset.
     
-    Parameters
-    ----------
-    data : pandas.DataFrame
-        Trajectory data containing spatial and temporal information.
-    traj_cols : dict
-        Dictionary mapping column names for trajectory attributes.
-    time_thresh : int
-        Time threshold in minutes for considering neighboring points.
-    dist_thresh : float
-        Distance threshold for considering neighboring points.
-    use_lon_lat : bool
-        Whether to use longitude/latitude coordinates.
-    use_datetime : bool
-        Whether to cluster using time columns of type pandas.datetime64 if available.
+#     Parameters
+#     ----------
+#     data : pandas.DataFrame
+#         Trajectory data containing spatial and temporal information.
+#     traj_cols : dict
+#         Dictionary mapping column names for trajectory attributes.
+#     time_thresh : int
+#         Time threshold in minutes for considering neighboring points.
+#     dist_thresh : float
+#         Distance threshold for considering neighboring points.
+#     use_lon_lat : bool
+#         Whether to use longitude/latitude coordinates.
+#     use_datetime : bool
+#         Whether to cluster using time columns of type pandas.datetime64 if available.
     
-    Returns
-    -------
-    dict
-        A dictionary where keys are timestamps, and values are sets of neighboring
-        timestamps that satisfy both time and distance thresholds.
-    """
-    # getting coordinates based on whether they are geographic coordinates (lon, lat) or catesian (x,y)
-    if use_lon_lat:
-        coords = np.radians(data[[traj_cols['latitude'], traj_cols['longitude']]].values)
-    else:
-        coords = data[[traj_cols['x'], traj_cols['y']]].values
+#     Returns
+#     -------
+#     dict
+#         A dictionary where keys are timestamps, and values are sets of neighboring
+#         timestamps that satisfy both time and distance thresholds.
+#     """
+#     # getting coordinates based on whether they are geographic coordinates (lon, lat) or catesian (x,y)
+#     if use_lon_lat:
+#         coords = np.radians(data[[traj_cols['latitude'], traj_cols['longitude']]].values)
+#     else:
+#         coords = data[[traj_cols['x'], traj_cols['y']]].values
     
-    # getting times based on whether they are use_datetime values or timestamps, changed to seconds for calculations
-    if use_datetime:
-        times = pd.to_datetime(data[traj_cols['datetime']])
-        times = times.dt.tz_convert('UTC').dt.tz_localize(None)
-        times = times.astype('int64') // 10**9
-        times = times.values
+#     # getting times based on whether they are use_datetime values or timestamps, changed to seconds for calculations
+#     if use_datetime:
+#         times = pd.to_datetime(data[traj_cols['datetime']])
+#         times = times.dt.tz_convert('UTC').dt.tz_localize(None)
+#         times = times.astype('int64') // 10**9
+#         times = times.values
         
-    else:
-        # if timestamps, we change the values to seconds
-        first_timestamp = data[traj_cols['timestamp']].iloc[0]
-        timestamp_length = len(str(first_timestamp))
+#     else:
+#         # if timestamps, we change the values to seconds
+#         first_timestamp = data[traj_cols['timestamp']].iloc[0]
+#         timestamp_length = len(str(first_timestamp))
     
-        if timestamp_length > 10:
-            if timestamp_length == 13:
-                times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 3
-            elif timestamp_length == 19:
-                times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 9   
-        else:
-            times = data[traj_cols['timestamp']].values
+#         if timestamp_length > 10:
+#             if timestamp_length == 13:
+#                 times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 3
+#             elif timestamp_length == 19:
+#                 times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 9   
+#         else:
+#             times = data[traj_cols['timestamp']].values
       
-    # Pairwise time differences
-    time_diffs = np.abs(times[:, np.newaxis] - times)
-    time_diffs = time_diffs.astype(int)
+#     # Pairwise time differences
+#     time_diffs = np.abs(times[:, np.newaxis] - times)
+#     time_diffs = time_diffs.astype(int)
   
-    # Filter by time threshold
-    within_time_thresh = np.triu(time_diffs <= (time_thresh * 60), k=1)
-    time_pairs = np.where(within_time_thresh)
+#     # Filter by time threshold
+#     within_time_thresh = np.triu(time_diffs <= (time_thresh * 60), k=1)
+#     time_pairs = np.where(within_time_thresh)
   
-    # Distance calculation
-    if use_lon_lat:
-        distances = np.array([utils._haversine_distance(coords[i], coords[j]) for i, j in zip(*time_pairs)])
-    else:
-        distances_sq = (coords[time_pairs[0], 0] - coords[time_pairs[1], 0])**2 + (coords[time_pairs[0], 1] - coords[time_pairs[1], 1])**2
-        distances = np.sqrt(distances_sq)
+#     # Distance calculation
+#     if use_lon_lat:
+#         distances = np.array([utils._haversine_distance(coords[i], coords[j]) for i, j in zip(*time_pairs)])
+#     else:
+#         distances_sq = (coords[time_pairs[0], 0] - coords[time_pairs[1], 0])**2 + (coords[time_pairs[0], 1] - coords[time_pairs[1], 1])**2
+#         distances = np.sqrt(distances_sq)
 
-    # Filter by distance threshold
-    neighbor_pairs = distances < dist_thresh
+#     # Filter by distance threshold
+#     neighbor_pairs = distances < dist_thresh
   
-    # Building the neighbor dictionary
-    neighbor_dict = defaultdict(set)
+#     # Building the neighbor dictionary
+#     neighbor_dict = defaultdict(set)
   
-    for i, j in zip(time_pairs[0][neighbor_pairs], time_pairs[1][neighbor_pairs]):
-        neighbor_dict[times[i]].add(times[j])
-        neighbor_dict[times[j]].add(times[i])
+#     for i, j in zip(time_pairs[0][neighbor_pairs], time_pairs[1][neighbor_pairs]):
+#         neighbor_dict[times[i]].add(times[j])
+#         neighbor_dict[times[j]].add(times[i])
 
-    return neighbor_dict
+#     return neighbor_dict
 
 def _extract_middle(data):
     """
@@ -158,33 +159,36 @@ def dbscan(data, time_thresh, dist_thresh, min_pts, use_lon_lat, use_datetime, t
     """
     # getting the values for time, both the original and changed to seconds for calculations
     if use_datetime:
-        valid_times = pd.to_datetime(data[traj_cols['datetime']])
-        valid_times = valid_times.dt.tz_convert('UTC').dt.tz_localize(None)
-        valid_times = valid_times.astype('int64') // 10**9
-        valid_times = valid_times.values
+        times = pd.to_datetime(data[traj_cols['datetime']])
+        times = times.dt.tz_convert('UTC').dt.tz_localize(None)
+        times = times.astype('int64') // 10**9
+        times = times.values
     else:
-        first_timestamp = data[traj_cols['timestamp']].iloc[0]
-        timestamp_length = len(str(first_timestamp))
-        
-        if timestamp_length > 10:
-            if timestamp_length == 13:
-                valid_times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 3
-                
-            elif timestamp_length == 19:
-                valid_times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 9
-        else:
-            valid_times = data[traj_cols['timestamp']].values
-        
+        timestamp_length = len(str( data[traj_cols['timestamp']].iloc[0]))
+
+        if timestamp_length == 13:
+            times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 3   
+        elif timestamp_length == 19:
+            times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 9
+        elif timestamp_length > 10:
+            times = data[traj_cols['timestamp']].values
+    
+    # getting coordinates based on whether they are geographic coordinates (lon, lat) or catesian (x,y)
+    if use_lon_lat:
+        coords = np.radians(data[[traj_cols['latitude'], traj_cols['longitude']]].values)
+    else:
+        coords = data[[traj_cols['x'], traj_cols['y']]].values
+
     if not neighbor_dict:
-        neighbor_dict = _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, traj_cols)
+        neighbor_dict = preprocessing._find_spatio_temp_neighbors(times, coords, time_thresh, dist_thresh, use_lon_lat, use_datetime)
     else:
         neighbor_dict = defaultdict(set,
-                                    {k: v.intersection(valid_times) for k, v in
+                                    {k: v.intersection(times) for k, v in
                                      neighbor_dict.items() if
-                                     k in valid_times})
+                                     k in times})
 
-    cluster_df = pd.Series(-2, index=valid_times, name='cluster')
-    core_df = pd.Series(-3, index=valid_times, name='core')
+    cluster_df = pd.Series(-2, index=times, name='cluster')
+    core_df = pd.Series(-3, index=times, name='core')
     
     # Initialize cluster label
     cid = -1
@@ -249,7 +253,29 @@ def _process_clusters(data, time_thresh, dist_thresh, min_pts, output, use_lon_l
         True if at least one valid cluster is identified and processed, otherwise False.
     """
     if not neighbor_dict:
-        neighbor_dict = _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, traj_cols)
+        # getting the values for time, both the original and changed to seconds for calculations
+        if use_datetime:
+            times = pd.to_datetime(data[traj_cols['datetime']])
+            times = times.dt.tz_convert('UTC').dt.tz_localize(None)
+            times = times.astype('int64') // 10**9
+            times = times.values
+        else:
+            timestamp_length = len(str(data[traj_cols['timestamp']].iloc[0]))
+
+            if timestamp_length == 13:
+                times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 3   
+            elif timestamp_length == 19:
+                times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 9
+            elif timestamp_length > 10:
+                times = data[traj_cols['timestamp']].values
+
+        # getting coordinates based on whether they are geographic coordinates (lon, lat) or catesian (x,y)
+        if use_lon_lat:
+            coords = np.radians(data[[traj_cols['latitude'], traj_cols['longitude']]].values)
+        else:
+            coords = data[[traj_cols['x'], traj_cols['y']]].values
+        
+        neighbor_dict = preprocessing._find_spatio_temp_neighbors(times, coords, time_thresh, dist_thresh, use_lon_lat, use_datetime)
     if cluster_df is None:
         cluster_df = dbscan(data, time_thresh, dist_thresh, min_pts, use_lon_lat, use_datetime, traj_cols, neighbor_dict=neighbor_dict)
     if len(cluster_df) < min_pts:

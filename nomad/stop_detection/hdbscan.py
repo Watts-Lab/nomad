@@ -6,13 +6,12 @@ import warnings
 from collections import defaultdict
 from scipy.stats import norm
 import matplotlib.pyplot as plt
-
-
 import nomad.io.base as loader
 import nomad.constants as constants
 from nomad.stop_detection import utils
 from nomad.filters import to_timestamp
 from nomad.constants import DEFAULT_SCHEMA
+from nomad.stop_detection import preprocessing
 
 import pdb
 
@@ -602,7 +601,7 @@ def hdbscan_labels(traj, time_thresh, min_pts=2, min_cluster_size=1, dur_min=5, 
     loader._has_spatial_cols(traj.columns, traj_cols)
     loader._has_time_cols(traj.columns, traj_cols)
 
-    time_pairs, times = _find_temp_neighbors(traj[traj_cols[t_key]], time_thresh, use_datetime)
+    time_pairs, times = preprocessing._find_temp_neighbors(traj[traj_cols[t_key]], time_thresh, use_datetime)
 
     core_distances, coords = _compute_core_distance(traj, time_pairs, times, use_lon_lat, traj_cols, min_pts)
 
@@ -680,5 +679,5 @@ def st_hdbscan(traj, time_thresh, min_pts = 2, min_cluster_size = 1, complete_ou
                     lambda g: utils.summarize_stop(g, complete_output=complete_output, traj_cols=traj_cols, **kwargs),
                     include_groups=False)
                 
-    # return stop_table
-    return labels
+    return stop_table
+    # return labels
