@@ -10,6 +10,7 @@ import os
 import pyarrow.compute as pc
 import pyarrow.dataset as ds
 import pyarrow as pa
+import pyarrow.csv as pc_csv
 from nomad.constants import DEFAULT_SCHEMA
 import numpy as np
 import geopandas as gpd
@@ -36,7 +37,7 @@ def _update_schema(original, new_labels):
             updated_schema[label] = new_labels[label]
     return updated_schema
 
-def _parse_traj_cols(columns, traj_cols, kwargs, warn=True):
+def _parse_traj_cols(columns, traj_cols, kwargs, warn=True, defaults=DEFAULT_SCHEMA):
     """
     Internal helper to finalize trajectory column names using user input and defaults.
     """
@@ -55,7 +56,7 @@ def _parse_traj_cols(columns, traj_cols, kwargs, warn=True):
             if value not in columns:
                 warnings.warn(f"Trajectory column '{value}' specified for '{key}' not found in DataFrame.")
 
-    return _update_schema(DEFAULT_SCHEMA, traj_cols)
+    return _update_schema(defaults, traj_cols)
     
 def _offset_seconds_from_ts(ts):
     """
@@ -448,9 +449,10 @@ def _has_spatial_cols(col_names, traj_cols, exclusive=False):
             ('x' in traj_cols and 'y' in traj_cols and 
              traj_cols['x'] in col_names and traj_cols['y'] in col_names) 
         )
-        raise ValueError(
-            f"Too many user provided spatial columns in arguments {traj_cols}, only one pair of spatial coordinates is required."
-        )
+        if not single_spatial:
+            raise ValueError(
+                f"Too many user provided spatial columns in arguments {traj_cols}, only one pair of spatial coordinates is required."
+            )
     
     return spatial_exists
 
@@ -676,22 +678,39 @@ def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_f
                 df[col] = df[col].astype("str")
     return df
 
-def table_columns(filepath, format="csv", include_schema=False):
+def table_columns(filepath, format="csv", include_schema=False, sep=","):
     """
-    Return column names (default) or the full schema of a CSV/parquet source.
-    """
-    assert format in {"csv", "parquet"}
+    Return column names or the full schema of a data source.
 
-    if isinstance(filepath, list):
-        datasets = [ds.dataset(p, format=format, partitioning="hive") for p in filepath]
-        schema = ds.UnionDataset(schema=datasets[0].schema, children=datasets).schema
-    elif format == "parquet" or os.path.isdir(filepath):
-        schema = ds.dataset(filepath, format=format, partitioning="hive").schema
+    The 'sep' argument specifies the delimiter and is only used for 'csv' format;
+    it is ignored when reading 'parquet' files.
+    """
+    assert format in {"csv", "parquet"}, "format must be 'csv' or 'parquet'"
+
+    use_pyarrow_dataset = (
+        format == "parquet" or
+        isinstance(filepath, (list, tuple)) or
+        os.path.isdir(filepath)
+    )
+    if use_pyarrow_dataset:
+        file_format_obj = "parquet"
+        if format == "csv":
+            parse_options = pc_csv.ParseOptions(delimiter=sep)
+            file_format_obj = ds.CsvFileFormat(parse_options=parse_options)
+        
+        if isinstance(filepath, list):
+            if not filepath:
+                raise ValueError("Input filepath list cannot be empty.")
+            datasets = [ds.dataset(p, format=file_format_obj, partitioning="hive") for p in filepath]
+            schema = ds.UnionDataset(schema=datasets[0].schema, children=datasets).schema
+        else:
+            schema = ds.dataset(filepath, format=file_format_obj, partitioning="hive").schema
+        
+        return schema if include_schema else pd.Index(schema.names)
+    
     else:
-        header = pd.read_csv(filepath, nrows=0)
+        header = pd.read_csv(filepath, nrows=0, sep=sep)
         return header.dtypes if include_schema else header.columns
-
-    return schema if include_schema else pd.Index(schema.names)
 
 def from_df(df, traj_cols=None, parse_dates=True, mixed_timezone_behavior="naive", fixed_format=None, **kwargs):
     """
@@ -743,7 +762,7 @@ def from_df(df, traj_cols=None, parse_dates=True, mixed_timezone_behavior="naive
 
 
 def from_file(filepath, format="csv", traj_cols=None, parse_dates=True,
-              mixed_timezone_behavior="naive", fixed_format=None, **kwargs):
+              mixed_timezone_behavior="naive", fixed_format=None, sep=",", **kwargs):
     """
     Load and cast trajectory data from a specified file path or list of paths.
 
@@ -769,25 +788,44 @@ def from_file(filepath, format="csv", traj_cols=None, parse_dates=True,
     """
     assert format in ["csv", "parquet"]
 
-    column_names = table_columns(filepath, format)
+    column_names = table_columns(filepath, format=format, sep=sep)
     traj_cols = _parse_traj_cols(column_names, traj_cols, kwargs)
 
     _has_spatial_cols(column_names, traj_cols)
     _has_time_cols(column_names, traj_cols)
 
-    if format == "csv" and not isinstance(filepath, (list, tuple)) and not os.path.isdir(filepath):
-        read_csv_kwargs = {
-            k: v
-            for k, v in kwargs.items()
-            if k in inspect.signature(pd.read_csv).parameters
-        }
-        df = pd.read_csv(filepath, **read_csv_kwargs)
-    else:
+    use_pyarrow_dataset = (
+        format == "parquet" or
+        isinstance(filepath, (list, tuple)) or
+        os.path.isdir(filepath)
+    )
+
+    if use_pyarrow_dataset:
+        file_format_obj = "parquet"
+        if format == "csv":
+            parse_options = pc_csv.ParseOptions(delimiter=sep)
+            file_format_obj = ds.CsvFileFormat(parse_options=parse_options)
+        
+        if isinstance(filepath, list):
+            if not filepath:
+                raise ValueError("Input filepath list cannot be empty.")
+            datasets = [ds.dataset(p, format=file_format_obj, partitioning="hive") for p in filepath]
+            dataset_obj = ds.UnionDataset(schema=datasets[0].schema, children=datasets)
+        else:
+            dataset_obj = ds.dataset(filepath, format=file_format_obj, partitioning="hive")
+
         df = (
-            ds.dataset(filepath, format=format, partitioning="hive")
+            dataset_obj
             .to_table(columns=list(column_names))
             .to_pandas()
         )
+    else:
+        read_csv_kwargs = {
+            k: v for k, v in kwargs.items()
+            if k in inspect.signature(pd.read_csv).parameters
+        }
+        df = pd.read_csv(filepath, sep=sep, **read_csv_kwargs)
+
     return _cast_traj_cols(
         df,
         traj_cols=traj_cols,
@@ -796,51 +834,45 @@ def from_file(filepath, format="csv", traj_cols=None, parse_dates=True,
         fixed_format=fixed_format,
     )
 
-def sample_users(
-    filepath,
-    format="csv",
-    size=1.0,
-    traj_cols=None,
-    seed=None,
-    **kwargs
-):
-    """
-    Sample users from a dataset.
+def sample_users(filepath, format="csv", size=1.0, traj_cols=None, seed=None, sep=",", **kwargs):
 
-    Parameters
-    ----------
-    filepath : str or Path
-        Path to the data file.
-    format : str, default "csv"
-        Input format (“csv” or “parquet”).
-    size : float or int, default 1.0
-        Fraction (0–1) or absolute number of users to sample.
-    traj_cols : dict or None, default None
-        Mapping of trajectory column names, or None to use defaults.
-    seed : int or None
-        Random seed for reproducibility.
-    **kwargs
-        Passed through to the underlying reader.
-
-    Returns
-    -------
-    pandas.DataFrame with user ids. 
-    """
     assert format in {"csv", "parquet"}
 
-    column_names = table_columns(filepath, format)
+    column_names = table_columns(filepath, format=format, sep=sep)
     traj_cols = _parse_traj_cols(column_names, traj_cols, kwargs)
     _has_user_cols(column_names, traj_cols)
     uid_col = traj_cols["user_id"]
 
-    if format == "csv" and not isinstance(filepath, (list, tuple)) and not os.path.isdir(filepath):
+    use_pyarrow_dataset = (
+        format == "parquet" or
+        isinstance(filepath, (list, tuple)) or
+        os.path.isdir(filepath)
+    )
+
+    if use_pyarrow_dataset:
+        file_format_obj = "parquet"
+        if format == "csv":
+            parse_options = pc_csv.ParseOptions(delimiter=sep)
+            file_format_obj = ds.CsvFileFormat(parse_options=parse_options)
+        
+        if isinstance(filepath, list):
+            if not filepath:
+                raise ValueError("Input filepath list cannot be empty.")
+            datasets = [ds.dataset(p, format=file_format_obj, partitioning="hive") for p in filepath]
+            dataset_obj = ds.UnionDataset(schema=datasets[0].schema, children=datasets)
+        else:
+            dataset_obj = ds.dataset(filepath, format=file_format_obj, partitioning="hive")
+
+        user_ids = pc.unique(dataset_obj.to_table(columns=[uid_col])[uid_col]).to_pandas()
+    else:
+        read_csv_kwargs = {
+            k: v for k, v in kwargs.items()
+            if k in inspect.signature(pd.read_csv).parameters
+        }
         user_ids = (
-            pd.read_csv(filepath, usecols=[uid_col])[uid_col]
+            pd.read_csv(filepath, usecols=[uid_col], sep=sep, **read_csv_kwargs)[uid_col]
             .drop_duplicates()
         )
-    else:
-        ds_obj   = ds.dataset(filepath, format=format, partitioning="hive")
-        user_ids = pc.unique(ds_obj.to_table(columns=[uid_col])[uid_col]).to_pandas()
 
     if isinstance(size, int):
         return user_ids.sample(n=min(size, len(user_ids)), random_state=seed, replace=False)
@@ -860,6 +892,7 @@ def sample_from_file(
     parse_dates=True,
     mixed_timezone_behavior="naive",
     fixed_format=None,
+    sep=",",
     **kwargs
 ):
     """
@@ -897,7 +930,7 @@ def sample_from_file(
     """
     assert format in {"csv", "parquet"}
 
-    column_names = table_columns(filepath, format)
+    column_names = table_columns(filepath, format=format, sep=sep)
     traj_cols_ = _parse_traj_cols(column_names, traj_cols, kwargs)
 
     _has_spatial_cols(column_names, traj_cols_)
@@ -910,21 +943,41 @@ def sample_from_file(
             size=frac_users,
             traj_cols=traj_cols,
             seed=seed,
+            sep=sep,
             **kwargs,
         )
 
-    if format == "csv" and not isinstance(filepath, (list, tuple)) and not os.path.isdir(filepath):
-        df = pd.read_csv(filepath)
+    use_pyarrow_dataset = (
+        format == "parquet" or
+        isinstance(filepath, (list, tuple)) or
+        os.path.isdir(filepath)
+    )
+
+    if use_pyarrow_dataset:
+        file_format_obj = "parquet"
+        if format == "csv":
+            parse_options = pc_csv.ParseOptions(delimiter=sep)
+            file_format_obj = ds.CsvFileFormat(parse_options=parse_options)
+        
+        if isinstance(filepath, list):
+            if not filepath:
+                raise ValueError("Input filepath list cannot be empty.")
+            datasets = [ds.dataset(p, format=file_format_obj, partitioning="hive") for p in filepath]
+            dataset_obj = ds.UnionDataset(schema=datasets[0].schema, children=datasets)
+        else:
+            dataset_obj = ds.dataset(filepath, format=file_format_obj, partitioning="hive")
+
+        if users is None:
+            df = dataset_obj.to_table(columns=list(column_names)).to_pandas()
+        else:
+            df = dataset_obj.to_table(
+                filter=ds.field(traj_cols_['user_id']).isin(users),
+                columns=list(column_names)
+            ).to_pandas()
+    else:
+        df = pd.read_csv(filepath, sep=sep)
         if users is not None:
             df = df[df[traj_cols_['user_id']].isin(users)]
-    else:
-        dataset = ds.dataset(filepath, format=format, partitioning="hive")
-        if users is None:
-            df = dataset.to_table().to_pandas()
-        else:
-            df = dataset.to_table(
-                filter=ds.field(traj_cols_['user_id']).isin(users), columns=list(column_names)
-            ).to_pandas()
 
     if 0.0 < frac_records < 1.0:
         df = df.sample(frac=frac_records, random_state=seed)

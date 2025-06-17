@@ -1,15 +1,8 @@
 import pandas as pd
-from scipy.spatial.distance import pdist, cdist
 import numpy as np
-import math
-import datetime as dt
-from datetime import timedelta
-import matplotlib.pyplot as plt
-import itertools
 from collections import defaultdict
-import sys
-import os
 import pdb
+import warnings
 import nomad.io.base as loader
 import nomad.constants as constants
 from nomad.stop_detection import utils
@@ -335,31 +328,32 @@ def temporal_dbscan(data, time_thresh, dist_thresh, min_pts, traj_cols=None, com
         if timestamp_length > 10:
             if timestamp_length == 13:
                 warnings.warn(
-                    f"The '{data[traj_cols['timestamp']]}' column appears to be in milliseconds. "
+                    f"The '{traj_cols['timestamp']}' column appears to be in milliseconds. "
                     "This may lead to inconsistencies."
                 )
                 time_col_name = traj_cols['timestamp']
             elif timestamp_length == 19:
                 warnings.warn(
-                    f"The '{timestamp_col_name}' column appears to be in nanoseconds. "
+                    f"The '{traj_cols['timestamp']}' column appears to be in nanoseconds. "
                     "This may lead to inconsistencies."
                 )
                 time_col_name = traj_cols['timestamp']
         else:
             time_col_name = traj_cols['timestamp']
 
-    output = _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, traj_cols, **kwargs)
     
-    output = output[output['cluster'] != -1]
-    
-    complete_data = pd.merge(output, data, left_index=True, right_on=time_col_name, how='inner')
+
+    labels_tadbscan = _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, False, traj_cols, **kwargs) # see patch on 424
+
+    complete_data = data.join(labels_tadbscan)
+    complete_data = complete_data[complete_data['cluster'] != -1]
     
     stop_table = complete_data.groupby('cluster').apply(lambda group: _stop_metrics(group, long_lat, datetime, traj_cols, complete_output), include_groups=False)
     
-    return stop_table
+    # return stop_table
+    return labels_tadbscan, stop_table
 
-
-def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, traj_cols=None, **kwargs):
+def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, return_cores=False, traj_cols=None, **kwargs):
     # Check if user wants long and lat
     long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs['latitude'] in data.columns and kwargs['longitude'] in data.columns
 
@@ -403,14 +397,14 @@ def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, traj_cols=N
         if timestamp_length > 10:
             if timestamp_length == 13:
                 warnings.warn(
-                    f"The '{data[traj_cols['timestamp']]}' column appears to be in milliseconds. "
+                    f"The '{traj_cols['timestamp']}' column appears to be in milliseconds. "
                     "This may lead to inconsistencies."
                 )
                 valid_times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 3
                 time_col_name = traj_cols['timestamp']
             elif timestamp_length == 19:
                 warnings.warn(
-                    f"The '{timestamp_col_name}' column appears to be in nanoseconds. "
+                    f"The '{traj_cols['timestamp']}' column appears to be in nanoseconds. "
                     "This may lead to inconsistencies."
                 )
                 valid_times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 9
@@ -426,12 +420,14 @@ def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, traj_cols=N
 
     _process_clusters(data_temp, time_thresh, dist_thresh, min_pts, output, long_lat, datetime, traj_cols, min_duration=4)
 
-    output.index = list(data[time_col_name])
-
-    return output
+    if return_cores:
+        output.index = list(data[time_col_name])
+        return output
+    else:
+        labels = output.cluster
+        return labels.set_axis(data.index)
 
 def _stop_metrics(grouped_data, long_lat, datetime, traj_cols, complete_output):
-    # medoids, start times, end times, 
     # Coordinates array and distance metrics
     if long_lat:
         coords = grouped_data[[traj_cols['longitude'], traj_cols['latitude']]].to_numpy()
@@ -443,6 +439,9 @@ def _stop_metrics(grouped_data, long_lat, datetime, traj_cols, complete_output):
         diameter_m = utils._diameter(coords, metric='euclidean')
 
     # Compute duration and start and end time of stop
+    start_time_key = 'start_datetime' if datetime else 'start_timestamp'
+    end_time_key = 'end_datetime' if datetime else 'end_timestamp' 
+    
     if datetime:
         start_time = grouped_data[traj_cols['datetime']].min()
         end_time = grouped_data[traj_cols['datetime']].max()
@@ -486,8 +485,8 @@ def _stop_metrics(grouped_data, long_lat, datetime, traj_cols, complete_output):
     if long_lat:
         if complete_output:
             stop_attr = {
-                'start_time': start_time,
-                'end_time': end_time,
+                start_time_key: start_time,
+                end_time_key: end_time,
                 traj_cols['longitude']: stop_medoid[0],
                 traj_cols['latitude']: stop_medoid[1],
                 'diameter': diameter_m,
@@ -497,7 +496,7 @@ def _stop_metrics(grouped_data, long_lat, datetime, traj_cols, complete_output):
             }
         else:
             stop_attr = {
-                'start_time': start_time,
+                start_time_key: start_time,
                 'duration': duration,
                 traj_cols['longitude']: stop_medoid[0],
                 traj_cols['latitude']: stop_medoid[1]
@@ -505,8 +504,8 @@ def _stop_metrics(grouped_data, long_lat, datetime, traj_cols, complete_output):
     else:
         if complete_output:
             stop_attr = {
-                'start_time': start_time,
-                'end_time': end_time,
+                start_time_key: start_time,
+                end_time_key: end_time,
                 traj_cols['x']: stop_medoid[0],
                 traj_cols['y']: stop_medoid[1],
                 'diameter': diameter_m,
@@ -516,7 +515,7 @@ def _stop_metrics(grouped_data, long_lat, datetime, traj_cols, complete_output):
             }
         else:
             stop_attr = {
-                'start_time': start_time,
+                start_time_key: start_time,
                 'duration': duration,
                 traj_cols['x']: stop_medoid[0],
                 traj_cols['y']: stop_medoid[1]
