@@ -164,7 +164,7 @@ def compute_precision_recall_f1(overlaps, pred_visits, true_visits, traj_cols=No
     total_truth = true_visits[d_key].sum()
 
     loc_key_r = traj_cols['location_id']+'_right'
-    loc_key_l = traj_cols['location_id']+'_right'
+    loc_key_l = traj_cols['location_id']+'_left'
 
     tp = overlaps.loc[overlaps[loc_key_r] == overlaps[loc_key_l], d_key].sum()
     
@@ -172,6 +172,11 @@ def compute_precision_recall_f1(overlaps, pred_visits, true_visits, traj_cols=No
     recall = tp / total_truth if total_truth > 0 else 0.0
     f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
 
-    return {'precision': float(precision),
-            'recall': float(recall),
-            'f1': float(f1)}
+    return {
+        'precision': float(precision),
+        'recall': float(recall),
+        'f1': float(f1),
+        'tp_dur': float(tp),
+        'pred_dur': float(total_pred),
+        'true_dur': float(total_truth)
+    }

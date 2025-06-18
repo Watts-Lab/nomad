@@ -621,7 +621,7 @@ def hdbscan_labels(traj, time_thresh, min_pts = 2, min_cluster_size = 1, traj_co
         use_lon_lat=use_lon_lat
     )
     
-    #cluster_stability_df = compute_cluster_stability(label_history_df)
+    # cluster_stability_df = compute_cluster_stability(label_history_df)
     cluster_stability_df = custom_cluster_stability(label_history_df)
 
     selected_clusters = select_most_stable_clusters(hierarchy_df, cluster_stability_df)
@@ -679,5 +679,5 @@ def st_hdbscan(traj, time_thresh, min_pts = 2, min_cluster_size = 1, complete_ou
                     lambda g: utils.summarize_stop(g, complete_output=complete_output, traj_cols=traj_cols, **kwargs),
                     include_groups=False)
                 
-    # return stop_table
-    return labels_hdbscan, stop_table
+    return stop_table
+    # return labels_hdbscan, stop_table
