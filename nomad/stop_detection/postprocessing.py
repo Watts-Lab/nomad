@@ -5,6 +5,8 @@ import nomad.stop_detection.utils as utils
 import nomad.stop_detection.grid_based as GRID_BASED 
 
 def remove_overlaps(pred, time_thresh, traj_cols = None, post_processing = 'polygon'):
+    pred['building_id'] = pred['building_id'].fillna('None')
+
     if  post_processing == 'polygon':
         summarize_stops_with_loc = partial(utils.summarize_stop, x='x', y='y', keep_col_names=False, passthrough_cols = ['building_id'])
         labels = GRID_BASED.grid_based_labels(
@@ -15,11 +17,11 @@ def remove_overlaps(pred, time_thresh, traj_cols = None, post_processing = 'poly
                                 traj_cols=traj_cols)
                 
         pred['cluster'] = labels
-        stops = pred[pred.cluster!=-1].groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
+        stops = pred.groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
         return stops
     elif post_processing == 'cluster':
         summarize_stops_with_loc = partial(utils.summarize_stop, x='x', y='y', keep_col_names=False, passthrough_cols = ['cluster'])
-        stops = pred[pred.cluster!=-1].groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
+        stops = pred.groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
         return stops
     elif post_processing == 'recurse':
         return
