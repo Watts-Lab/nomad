@@ -16,6 +16,7 @@ import numpy as np
 import geopandas as gpd
 import warnings
 import inspect
+from constants import FILTER_OPERATORS
 import pdb
 
 import pandas as pd
@@ -681,6 +682,61 @@ def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_f
                 df[col] = df[col].astype("str")
     return df
 
+def _process_filters(filters, col_names):
+    """
+    Normalise *filters* into one pyarrow.dataset.Expression.
+
+    Parameters
+    ----------
+    filters : None | ds.Expression | (str, str, Any) | list[ds.Expression|tuple]
+        The user-supplied filter spec(s).  Multiple specs are AND-combined.
+    col_names : Iterable[str]
+        The set of valid column names in the dataset.
+
+    Returns
+    -------
+    ds.Expression | None
+        A single PyArrow filter expression, ready for Dataset.to_table(..., filter=expr).
+
+    Raises
+    ------
+    TypeError  : if *filters* is not recognised.
+    ValueError : if a column name is invalid or an operator unsupported.
+    """
+    if filters is None:
+        return None
+
+    # Always treat *filters* as an iterable of specs
+    specs = filters if isinstance(filters, (list, tuple)) else [filters]
+
+    exprs = []
+    for spec in specs:
+        # already a PyArrow expression → use as is
+        if isinstance(spec, ds.Expression):
+            exprs.append(spec)
+            continue
+
+        # shorthand (“col”, “op”, value) tuple
+        if isinstance(spec, tuple) and len(spec) == 3:
+            col, op, val = spec
+            if col not in col_names:
+                raise ValueError(f"Filter refers to unknown column {col!r}.")
+            if op not in FILTER_OPERATORS:
+                raise ValueError(f"Unsupported operator {op!r}.")
+            exprs.append(FILTER_OPERATORS[op](ds.field(col), val))
+            continue
+
+        raise TypeError(
+            "filters must be a PyArrow Expression, a (column, op, value) tuple, "
+            "or a list/tuple containing those."
+        )
+
+    # Combine all expressions with logical AND
+    flt = exprs[0]
+    for e in exprs[1:]:
+        flt = flt & e
+    return flt
+
 def table_columns(filepath, format="csv", include_schema=False, sep=","):
     """
     Return column names or the full schema of a data source.
@@ -817,9 +873,12 @@ def from_file(filepath, format="csv", traj_cols=None, parse_dates=True,
         else:
             dataset_obj = ds.dataset(filepath, format=file_format_obj, partitioning="hive")
 
+        arrow_flt = _process_filters(filters, column_names)
         df = (
             dataset_obj
-            .to_table(columns=list(column_names))
+            .to_table(
+                filter=arrow_flt,
+                columns=list(column_names))
             .to_pandas()
         )
     else:
