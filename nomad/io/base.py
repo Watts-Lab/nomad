@@ -821,7 +821,7 @@ def from_df(df, traj_cols=None, parse_dates=True, mixed_timezone_behavior="naive
 
 
 def from_file(filepath, format="csv", traj_cols=None, parse_dates=True,
-              mixed_timezone_behavior="naive", fixed_format=None, sep=",", **kwargs):
+              mixed_timezone_behavior="naive", fixed_format=None, sep=",", filters=None, **kwargs):
     """
     Load and cast trajectory data from a specified file path or list of paths.
 
