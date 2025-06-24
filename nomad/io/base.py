@@ -771,7 +771,7 @@ def table_columns(filepath, format="csv", include_schema=False, sep=","):
         header = pd.read_csv(filepath, nrows=0, sep=sep)
         return header.dtypes if include_schema else header.columns
 
-def from_df(df, traj_cols=None, parse_dates=True, mixed_timezone_behavior="naive", fixed_format=None, **kwargs):
+def from_df(df, traj_cols=None, parse_dates=True, mixed_timezone_behavior="naive", fixed_format=None, filters=None, **kwargs):
     """
     Converts a DataFrame into a standardized trajectory format by validating and casting 
     specified spatial and temporal columns.
