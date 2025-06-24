@@ -16,7 +16,7 @@ import numpy as np
 import geopandas as gpd
 import warnings
 import inspect
-from constants import FILTER_OPERATORS
+from nomad.constants import FILTER_OPERATORS
 import pdb
 
 import pandas as pd
