@@ -10,6 +10,7 @@ import os
 import pyarrow.compute as pc
 import pyarrow.dataset as ds
 import pyarrow as pa
+import pyarrow.types as pat
 import pyarrow.csv as pc_csv
 from nomad.constants import DEFAULT_SCHEMA
 import numpy as np
@@ -655,17 +656,18 @@ def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_f
                 df[col] = df[col].astype("Int64")
 
             if key == 'timestamp':
-                ts_len = len(str(df[col].iloc[0]))
-                if ts_len == 13:
-                    warnings.warn(
-                        f"The '{col}' column appears to be in milliseconds. "
-                        "This may lead to inconsistencies, converting to seconds is recommended."
-                    )
-                elif ts_len == 19:
-                    warnings.warn(
-                        f"The '{col}' column appears to be in nanoseconds. "
-                        "This may lead to inconsistencies, converting to seconds is recommended."
-                    )
+                if len(df)>0:
+                    ts_len = len(str(df[col].iloc[0]))
+                    if ts_len == 13:
+                        warnings.warn(
+                            f"The '{col}' column appears to be in milliseconds. "
+                            "This may lead to inconsistencies, converting to seconds is recommended."
+                        )
+                    elif ts_len == 19:
+                        warnings.warn(
+                            f"The '{col}' column appears to be in nanoseconds. "
+                            "This may lead to inconsistencies, converting to seconds is recommended."
+                        )
 
     # Handle float columns
     for key in ['latitude', 'longitude', 'x', 'y']:
@@ -682,40 +684,68 @@ def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_f
                 df[col] = df[col].astype("str")
     return df
 
-def _process_filters(filters, col_names):
+def _process_filters(filters, col_names, traj_cols=None, schema=None):
+    """
+    Build one pyarrow.Expression from filters, resolving aliases and
+    coercing literals for timestamp vs string columns.
+
+    Parameters
+    ----------
+    filters   : None | ds.Expression | (col, op, val) | list of same
+    col_names : iterable of actual column names
+    traj_cols : dict, optional, maps logical names → actual names
+    schema    : pyarrow.Schema, optional, for type lookups
+
+    Returns
+    -------
+    ds.Expression or None
+    """
     if filters is None:
         return None
 
-    # ──-- correct handling of a single tuple ───────────────────────────────
-    if isinstance(filters, ds.Expression) or (
-        isinstance(filters, tuple) and len(filters) == 3
-    ):
-        specs = [filters]          # exactly one spec
-    else:
-        specs = list(filters)      # an iterable of specs
-    # ───────────────────────────────────────────────────────────────────────
-
+    traj_cols = traj_cols or {}
+    specs = [filters] if isinstance(filters, (ds.Expression, tuple)) else list(filters)
     exprs = []
+
     for spec in specs:
         if isinstance(spec, ds.Expression):
             exprs.append(spec)
+
         elif isinstance(spec, tuple) and len(spec) == 3:
             col, op, val = spec
+
+            # resolve alias
             if col not in col_names:
-                raise ValueError(f"Filter refers to unknown column {col!r}.")
+                if col in traj_cols and traj_cols[col] in col_names:
+                    col = traj_cols[col]
+                else:
+                    raise ValueError(f"Unknown filter column {col!r}")
+
             if op not in FILTER_OPERATORS:
-                raise ValueError(f"Unsupported operator {op!r}.")
+                raise ValueError(f"Unsupported operator {op!r}")
+
+            # literal coercion when schema is available
+            if schema is not None:
+                pa_type = schema.field(col).type
+                if pat.is_timestamp(pa_type) and isinstance(val, str):
+                    warnings.warn(f"Coercing filter value {val!r} to pandas.Timestamp for column {col!r}")
+                    val = pd.Timestamp(val)
+                elif pat.is_string(pa_type) and isinstance(val, (pd.Timestamp, np.datetime64)):
+                    val = pd.Timestamp(val).isoformat()
+                    warnings.warn(f"Coercing filter datetime {val!r} to ISO string {val} for column {col!r}") 
+
             exprs.append(FILTER_OPERATORS[op](ds.field(col), val))
+
         else:
             raise TypeError(
-                "filters must be a pyarrow Expression, a (column, op, value) tuple, "
-                "or an iterable composed of those."
+                "filters must be a ds.Expression or a (column, op, value) tuple, "
+                "or a list of those."
             )
 
-    flt = exprs[0]
+    out = exprs[0]
     for e in exprs[1:]:
-        flt &= e
-    return flt
+        out &= e
+    return out
 
 def table_columns(filepath, format="csv", include_schema=False, sep=","):
     """
@@ -800,34 +830,55 @@ def from_df(df, traj_cols=None, parse_dates=True, mixed_timezone_behavior="naive
                            fixed_format=fixed_format)
 
 
-def from_file(filepath, format="csv", traj_cols=None, parse_dates=True,
-              mixed_timezone_behavior="naive", fixed_format=None, sep=",", filters=None, **kwargs):
+def from_file(filepath,
+              format="csv",
+              parse_dates=True,
+              mixed_timezone_behavior="naive",
+              fixed_format=None,
+              sep=",",
+              filters=None,
+              traj_cols=None,
+              **kwargs):
     """
-    Load and cast trajectory data from a specified file path or list of paths.
+    Load and cast trajectory data from file(s).
 
     Parameters
     ----------
     filepath : str or list of str
-        Path or list of paths to the file(s) or directories containing the data.
-    format : str, optional
-        The format of the data files, either 'csv' or 'parquet'.
+        Input path(s) or directories.
+    format : {'csv','parquet'}, default 'csv'
+        File format.
     traj_cols : dict, optional
-        Mapping of trajectory column names (e.g., 'latitude', 'timestamp').
-    **kwargs :
-        Additional arguments for reading CSV files, passed to pandas read_csv.
+        Mapping from trajectory fields (e.g. 'latitude', 'timestamp') to
+        column names in the input.
+    parse_dates : bool, default True
+        Whether to parse timestamp columns as datetime.
+    mixed_timezone_behavior : {'naive','warn','raise'}, default 'naive'
+        How to handle mixed‐timezone datetimes.
+    fixed_format : str, optional
+        strftime format string for datetime parsing.
+    sep : str, default ','
+        Field delimiter for CSV input.
+    filters : pyarrow.dataset.Expression or tuple or list of tuples, optional
+        Read‐time filter for Parquet. Accepts a PyArrow Expression,
+        a (column, operator, value) tuple, or a list of such tuples
+        (AND‐chained).
+    **kwargs : dict
+        Additional parameters for column inference when `traj_cols` is not provided.
 
     Returns
     -------
     pd.DataFrame
-        The DataFrame with specified trajectory columns cast to expected types.
-    
-    Notes
-    -----
-    - Checks before loading that files have required trajectory columns for analysis. 
+        DataFrame with trajectory columns cast and dates parsed.
     """
     assert format in ["csv", "parquet"]
 
     column_names = table_columns(filepath, format=format, sep=sep)
+    col_schema = None
+    if filters is not None:
+        col_schema = table_columns(filepath, format=format,
+                                   include_schema=True, sep=sep)
+        
     traj_cols = _parse_traj_cols(column_names, traj_cols, kwargs)
 
     _has_spatial_cols(column_names, traj_cols)
@@ -853,7 +904,10 @@ def from_file(filepath, format="csv", traj_cols=None, parse_dates=True,
         else:
             dataset_obj = ds.dataset(filepath, format=file_format_obj, partitioning="hive")
 
-        arrow_flt = _process_filters(filters, column_names)
+        arrow_flt = _process_filters(filters,
+                             col_names=column_names,
+                             traj_cols=traj_cols,
+                             schema=col_schema)
         df = (
             dataset_obj
             .to_table(
@@ -862,6 +916,9 @@ def from_file(filepath, format="csv", traj_cols=None, parse_dates=True,
             .to_pandas()
         )
     else:
+        if filters is not None:
+                warnings.warn("Filtering on read is not implemented for single CSV "
+                              "files; filter will be ignored.")
         read_csv_kwargs = {
             k: v for k, v in kwargs.items()
             if k in inspect.signature(pd.read_csv).parameters
