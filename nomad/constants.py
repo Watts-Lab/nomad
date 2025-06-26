@@ -1,3 +1,5 @@
+import operator
+
 # TO DO: Add other schemas
 # TO DO: Add tesselation cell default
 
@@ -29,6 +31,16 @@ ALLOWED_BUILDINGS = {
     22: ['home'], 23: ['home']
 }
 
+FILTER_OPERATORS = {
+    "==": operator.eq,
+    "!=": operator.ne,
+    ">":  operator.gt,
+    ">=": operator.ge,
+    "<":  operator.lt,
+    "<=": operator.le,
+}
+
+# For trajectory generation
 DEFAULT_SPEEDS = {'park': 2/1.96,
                   'home': 0.75/1.96,
                   'work': 0.75/1.96,
