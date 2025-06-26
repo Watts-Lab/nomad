@@ -229,18 +229,17 @@ def mst_ext(mst_arr, core_distances):
 
 def hdbscan(edges_sorted, min_cluster_size, neighbors, ts_idx, coords, times, use_lon_lat=False, dur_min=5):
     hierarchy = []
-    cluster_memberships = defaultdict(set)
     label_history = []
 
     # 4.1 For the root of the tree assign all objects the same label (single “cluster”), label = 0
     all_pings = set(edges_sorted['from']).union(edges_sorted['to'])
    
-    label_map = {ts: 0 for ts in all_pings}
-    active_clusters = {0: set(all_pings)}
-    cluster_memberships[0] = set(all_pings)
+    label_map = pd.Series(0, index=pd.Index(sorted(all_pings), name='time'), name='cluster_id', dtype=int)
 
     # Log initial labels
-    label_history.append(pd.DataFrame({"time": list(label_map.keys()), "cluster_id": list(label_map.values()), "dendrogram_scale": np.nan}))
+    df0 = label_map.to_frame()
+    df0['dendrogram_scale'] = np.nan
+    label_history.append(df0.reset_index())
 
     # edges_sorted is already ordered by descending weight
     weights = edges_sorted['weight']
@@ -255,41 +254,39 @@ def hdbscan(edges_sorted, min_cluster_size, neighbors, ts_idx, coords, times, us
 
     # Iteratively remove all edges from MSText in decreasing order of weights
     # 4.2.1 Before each removal, set the dendrogram scale value of the current hierarchical level as the weight of the edge(s) to be removed.
-    for scale in sorted_scales:
-        # pop next batch of edges sharing this scale
-        edges = batches.pop(0)
-        affected_clusters = set()
-        edges_to_remove = []
+    
+    for edges, scale in zip(batches, sorted_scales):
+        label_u = label_map.loc[edges['from']].values
+        label_v = label_map.loc[edges['to']].values
+        
+        mask = label_u == label_v
+        filtered = edges[mask]
+        
+        # affected clusters contain edges to be removed
+        affected_clusters = set(label_u[mask])
+        edges_to_remove   = list(zip(filtered['from'], filtered['to']))
 
-        for u, v, _ in edges:
-            # if labels between two timestamps are different, continue
-            if label_map.get(u) != label_map.get(v):
-                continue
-            cluster_id = label_map[u]
-            affected_clusters.add(cluster_id)
-            edges_to_remove.append((u, v))
-
-        # 4.2.2: For each affected cluster, reassign components
-        claimed_border = set()
         for cluster_id in affected_clusters:
-            if cluster_id == -1 or cluster_id not in active_clusters: 
-                continue # skip noise or already removed clusters
-
-            members = active_clusters[cluster_id]
+            if cluster_id == -1:
+                continue
+            members = set(label_map.index[label_map == cluster_id])
+            remaining_members = members.copy()
+            
             G = _build_graph(members, edges_sorted, edges_to_remove)
             # visualize_adjacency_dict(G)
 
             components = _connected_components(G)
+            core_points = {ts for comp in components for ts in comp}
+
             non_spurious = []
-            for comp in components:
-                if len(comp) < min_cluster_size:
-                    continue
-            
+            claimed_border = set()
+
+            for comp in components:            
                 # --- border points within current scale ----------------------
                 border = set()
                 for ts in comp:
-                    for nb in neighbors[ts]:                 # temporally close
-                        if nb in comp or nb in claimed_border:
+                    for nb in neighbors[ts].intersection(members) - core_points:  # temporally close, respecting hierarchy
+                        if nb in claimed_border:
                             continue                         # core or claimed
                         i, j = ts_idx[ts], ts_idx[nb]
                         d = (utils._haversine_distance(coords[i], coords[j])
@@ -301,42 +298,39 @@ def hdbscan(edges_sorted, min_cluster_size, neighbors, ts_idx, coords, times, us
                 full_cluster = set(comp).union(border)
 
                 # --- spurious test (duration incl. borders) --------------
-                if (max(full_cluster) - min(full_cluster)) >= dur_min * 60:
-                    claimed_border.update(border)            # lock them
-                    for ts in border:                        # label borders
-                        label_map[ts] = cluster_id
+                if ((max(full_cluster) - min(full_cluster)) >= dur_min * 60) and (len(comp) >= min_cluster_size):
+                    claimed_border.update(border)      # lock them
+                    label_map.loc[list(border)] = cluster_id
                     non_spurious.append(full_cluster)
                     
-            # cluster has disappeared
             if not non_spurious:
-                for ts in members:
-                    label_map[ts] = -1 # noise
-                del active_clusters[cluster_id]
+                pass # cluster has disappeared
 
             # cluster has just shrunk
             elif len(non_spurious) == 1:
-                remaining_pings = non_spurious[0]
-                for ts in members:
-                    label_map[ts] = cluster_id if ts in remaining_pings else -1
-                active_clusters[cluster_id]   = remaining_pings
-                cluster_memberships[cluster_id] = set(remaining_pings)
+                component = non_spurious[0]
+                label_map.loc[list(component)] = cluster_id
+                remaining_members = remaining_members.difference(component)
+
             # true cluster split: multiple valid subclusters
             else:
                 new_ids = []
-                del active_clusters[cluster_id]
                 for component in non_spurious:
-                    for ts in component:
-                        label_map[ts] = current_label_id
-                    active_clusters[current_label_id] = set(component)
-                    cluster_memberships[current_label_id] = set(component)
+                    label_map.loc[list(component)] = current_label_id
+                    remaining_members = remaining_members.difference(component)
+                        
                     new_ids.append(current_label_id)
                     current_label_id += 1
 
                 hierarchy.append((scale, cluster_id, new_ids))
-        
-        # log label map after this scale
-        label_history.append(pd.DataFrame({"time": list(label_map.keys()), "cluster_id": list(label_map.values()), "dendrogram_scale": scale}))
 
+            label_map.loc[list(remaining_members)] = -1
+
+        # log label map after this scale
+        df = label_map.to_frame()
+        df['dendrogram_scale'] = scale
+        label_history.append(df.reset_index())
+        
     # combine label history into one DataFrame
     label_history_df = pd.concat(label_history, ignore_index=True)
     # build cluster lineage for all clusters
@@ -631,13 +625,9 @@ def hdbscan_labels(traj, time_thresh, min_pts = 2, min_cluster_size = 1, traj_co
 
         if cluster_rows.empty:
             continue  # skip if no rows (just in case)
-        
-        # Find the smallest scale before this cluster disappears/splits into subclusters
-        # min_scale = cluster_rows['dendrogram_scale'].min()
+
         max_scale = cluster_rows['dendrogram_scale'].max()
         
-        # Get the timestamps assigned to this cluster at that scale
-        # members = set(cluster_rows[cluster_rows['dendrogram_scale'] == min_scale]['time'])
         members = set(cluster_rows[cluster_rows['dendrogram_scale'] == max_scale]['time'])
 
         for ts in members:
@@ -645,23 +635,15 @@ def hdbscan_labels(traj, time_thresh, min_pts = 2, min_cluster_size = 1, traj_co
         assigned_timestamps.update(members)
     
     # Add noise cluster (-1) for unassigned timestamps
-    for ts in all_timestamps - assigned_timestamps:
+    for ts in all_timestamps - assigned_timestamps: # <<<turn this into pandas series
         rows.append({"time": ts, "cluster": -1})
     
     hdbscan_labels_df = pd.DataFrame(rows)
-    
-    lookup = dict(zip(hdbscan_labels_df["time"], hdbscan_labels_df["cluster"]))
-    ts_series = traj[traj_cols[t_key]]
-    if use_datetime:
-        ts_series = to_timestamp(ts_series)
+    hdbscan_labels_df.sort_values('time', inplace=True)
 
-    labels_hdbscan = (
-        ts_series.map(lookup)
-                 .fillna(-1)
-                 .astype(int)
-    )
-    labels_hdbscan.name = "cluster"
-    return labels_hdbscan
+    hdbscan_labels_df.index = traj.index
+    
+    return hdbscan_labels_df.cluster
 
 def st_hdbscan(traj, time_thresh, min_pts = 2, min_cluster_size = 1, complete_output = False, traj_cols=None, **kwargs):
     labels_hdbscan = hdbscan_labels(traj=traj, time_thresh=time_thresh, min_pts = min_pts,
