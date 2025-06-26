@@ -292,7 +292,6 @@ def test_from_file_alias_equivalence_csv(io_sources):
         longitude="longitude",
         parse_dates=True,
     )
-
     df_via_file = loader.from_file(path, format=fmt, **alias_kwargs)
 
     raw = pd.read_csv(path)                   # plain pandas load
@@ -339,3 +338,44 @@ def test_to_file_roundtrip(tmp_path, fmt, dated_df):
     df_exp = dated_df.sort_values(["user_id", "timestamp"]).reset_index(drop=True)
 
     assert_frame_equal(df_out, df_exp, check_dtype=True)
+
+# Test for filters on read
+def test_filter_on_read_partitioned(io_sources):
+    path, fmt = io_sources[3]  # partitioned_parquet
+    
+    traj_cols = dict(
+        user_id="uid",
+        timestamp="timestamp",
+        latitude="latitude",
+        longitude="longitude"
+    )
+
+    filters = [("date", ">=", "2024-01-06"), ("user_id", "==", "wizardly_joliot")]
+
+    df = loader.from_file(path, format=fmt, traj_cols=traj_cols, filters=filters)
+
+    dataset = ds.dataset(path, format="parquet", partitioning="hive")
+    expr = (ds.field("date") >= "2024-01-06") & (ds.field("uid") == "wizardly_joliot")
+    expected = dataset.to_table(filter=expr).to_pandas()
+
+    assert len(df) == len(expected)
+
+# Test for empty filter output
+def test_filter_on_read_partitioned_empty(io_sources):
+    path, fmt = io_sources[2]  # partitioned_csv
+
+    traj_cols = dict(
+        datetime="local_datetime",
+        latitude="dev_lat",
+        longitude="dev_lon"
+    )
+
+    filters = ("datetime", "==", "1975-12-31 14:29:00")
+
+    df = loader.from_file(path, format=fmt,
+                          traj_cols=traj_cols,
+                          filters=filters,
+                          parse_dates=True)
+
+    assert len(df) == 0
+
