@@ -7,7 +7,13 @@ import nomad.stop_detection.hdbscan as HDBSCAN
 import pandas as pd
 import pdb
 
-def overlapping_visits(left, right, match_location=False, traj_cols=None, **kwargs):
+def overlapping_visits(left, right, match_location=False, filled_gaps=False, traj_cols=None, **kwargs):
+    # if filled_gaps:
+    #     if left.duration.sum() != right.duration.sum():
+
+
+    
+    
     # Handle column names
     _ = loader._parse_traj_cols(right.columns, traj_cols, kwargs) # for warning
     traj_cols = loader._parse_traj_cols(left.columns, traj_cols, kwargs)
