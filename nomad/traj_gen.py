@@ -67,9 +67,9 @@ def sample_hier_nhpp(traj,
     dt: float
         the time resolution of the output sequence. Must match that of the input trajectory.  
     ha: float
-        Mean horizontal-accuracy radius *in 15 m blocks*. The actual per-ping accuracy is random: HA ≥ 8 m/15 m and follows a
+        Mean horizontal-accuracy radius *in 15 m blocks*. The actual per-ping accuracy is random: ha ≥ 8 m/15 m and follows a
         Pareto distribution with that mean.  For each ping the positional error (ε_x, ε_y) is drawn i.i.d. N(0, σ²) with σ = HA / 1.515 so that
-        |ε_x| ≤ HA with 68 % probability.
+        |ε| ≤ HA with 68 % probability.
     seed : int0
         The seed for random number generation.
     output_bursts : bool
