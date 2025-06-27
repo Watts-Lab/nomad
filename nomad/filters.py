@@ -494,17 +494,6 @@ def _generate_Q_matrix(traj, traj_cols):
     return Q
 
 
-def _compute_mean_q(Q, date, SW_width_days):
-    '''
-    compute average q over a single sliding window iteration 
-    that is for a given day, take the window [day, day + SW_width_days] and compute individual q mean for all users
-    '''
-    #select index corresponding to the date
-    i = np.argwhere(Q.index==date).ravel()[0]
-    #compute the q mean over the specific sliding window iteration
-    return Q[i:i+SW_width_days].mean(axis=0)
-
-
 def _ax_visual_ticklabel(ax, DICT_xtl, axis='x'): 
     xt, xtl, rot, size = (DICT_xtl[c] for c in ['t', 'tl','rot','size'])
     if axis=='x':
@@ -513,7 +502,6 @@ def _ax_visual_ticklabel(ax, DICT_xtl, axis='x'):
     if axis=='y':
         ax.set_yticks(xt)
         ax.set_yticklabels(xtl, rotation = rot, size = size)   
-
 
 def _ax_visual_labeltitles(ax, DICT_lt): 
     xl = DICT_lt['xlabel']
