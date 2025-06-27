@@ -1180,7 +1180,7 @@ def sample_from_file(
             )(df)
             df = df[mask]
             
-    if (users is None) and frac_users and (frac_users < 1.0):
+    if (users is None) and frac_users:
         # build the user‐ID index
         user_ids = df[traj_cols_['user_id']].drop_duplicates()
         # integer count
@@ -1198,9 +1198,290 @@ def sample_from_file(
     if users is not None:
         df = df[df[traj_cols_['user_id']].isin(users)]
 
-    if 0.0 < frac_records < 1.0:
+    if (frac_records) and (0.0 < frac_records < 1.0):
         df = df.sample(frac=frac_records, random_state=seed)
 
+    return _cast_traj_cols(
+        df,
+        traj_cols=traj_cols_,
+        parse_dates=parse_dates,
+        mixed_timezone_behavior=mixed_timezone_behavior,
+        fixed_format=fixed_format,
+    )
+
+def sample_from_file_onread_list(
+    filepath,
+    users=None,
+    format="csv",
+    traj_cols=None,
+    frac_users=1.0,
+    frac_records=1.0,
+    seed=None,
+    parse_dates=True,
+    mixed_timezone_behavior="naive",
+    fixed_format=None,
+    sep=",",
+    filters=None,
+    **kwargs
+):
+    """
+    Read and sample trajectory data from a file.
+
+    Parameters
+    ----------
+    filepath : str or Path
+        Path to the input file.
+    users : list of hashable or None, default None
+        If provided, only include these user IDs; if None, include all users.
+    format : str, default "csv"
+        Data format, e.g. "csv" or "parquet".
+    traj_cols : dict or None, default None
+        Mapping of trajectory column names (e.g. {"uid": "user_id"}), or None to use defaults.
+    frac_users : float, default 1.0
+        Fraction of users to sample (0 < frac_users ≤ 1).
+    frac_records : float, default 1.0
+        Fraction of each user’s records to sample (0 < frac_records ≤ 1).
+    seed : int or None, default None
+        Random seed for reproducibility.
+    parse_dates : bool, default True
+        Whether to parse date/time columns as datetime objects.
+    mixed_timezone_behavior : str, default "naive"
+        How to handle mixed‐timezone timestamps; options might include "naive", "utc", etc.
+    fixed_format : str or None, default None
+        If specified, enforce this input format (overrides autodetection).
+    sep : str
+        Separator character for reader. Defaults to ",".
+    filters : pyarrow.dataset.Expression or tuple or list of tuples, optional
+        Read-time filter(s) for Parquet inputs. Ignored for single CSV files.
+    **kwargs
+        Passed through to the underlying reader (e.g. `pandas.read_csv`).
+
+    Returns
+    -------
+    pandas.DataFrame
+        Sampled trajectory data.
+    """
+    assert format in {"csv", "parquet"}
+
+    column_names = table_columns(filepath, format=format, sep=sep)
+    schema = None
+    if filters is not None:
+        schema = table_columns(filepath, format=format, include_schema=True, sep=sep)
+
+    traj_cols_ = _parse_traj_cols(column_names, traj_cols, kwargs)
+
+    _has_spatial_cols(column_names, traj_cols_)
+    _has_time_cols(column_names, traj_cols_)
+
+    use_pyarrow_dataset = (
+        format == "parquet" or
+        isinstance(filepath, (list, tuple)) or
+        os.path.isdir(filepath)
+    )
+
+    if use_pyarrow_dataset:
+        file_format_obj = "parquet"
+        if format == "csv":
+            parse_options = pc_csv.ParseOptions(delimiter=sep)
+            file_format_obj = ds.CsvFileFormat(parse_options=parse_options)
+        
+        if isinstance(filepath, list):
+            if not filepath:
+                raise ValueError("Input filepath list cannot be empty.")
+            datasets = [ds.dataset(p, format=file_format_obj, partitioning="hive") for p in filepath]
+            dataset_obj = ds.UnionDataset(schema=datasets[0].schema, children=datasets)
+        else:
+            dataset_obj = ds.dataset(filepath, format=file_format_obj, partitioning="hive")
+            
+        arrow_flt = _process_filters(
+            filters,
+            col_names=column_names,
+            traj_cols=traj_cols_,
+            schema=schema,
+            use_pyarrow_dataset=True
+        )
+
+        if users is not None:
+            user_expr = ds.field(traj_cols_['user_id']).isin(users)
+            arrow_flt = user_expr if arrow_flt is None else (arrow_flt & user_expr)
+        
+        df = dataset_obj.to_table(filter=arrow_flt,
+                                  columns=list(column_names)).to_pandas()
+
+    else:
+        df = pd.read_csv(filepath, sep=sep)
+        if filters is not None:
+            mask = _process_filters(
+                filters,
+                col_names=df.columns,
+                traj_cols=traj_cols_,
+                schema=schema,
+                use_pyarrow_dataset=False
+            )(df)
+            df = df[mask]
+
+        if users is not None:
+            df = df[df[traj_cols_['user_id']].isin(users)]
+            
+    if (users is None) and frac_users:
+        # build the user‐ID index
+        user_ids = df[traj_cols_['user_id']].drop_duplicates()
+        # integer count
+        if isinstance(frac_users, int):
+            n = min(frac_users, len(user_ids))
+            chosen = user_ids.sample(n=n, random_state=seed, replace=False)
+        # fractional
+        elif 0.0 < frac_users <= 1.0:
+            chosen = user_ids.sample(frac=frac_users, random_state=seed, replace=False)
+        else:
+            raise ValueError("frac_users must be an int ≥ 1 or a float in (0, 1].")
+        # restrict df to those users
+        df = df[df[traj_cols_['user_id']].isin(chosen)]
+
+    if (frac_records) and (0.0 < frac_records < 1.0):
+        df = df.sample(frac=frac_records, random_state=seed)
+        
+    return _cast_traj_cols(
+        df,
+        traj_cols=traj_cols_,
+        parse_dates=parse_dates,
+        mixed_timezone_behavior=mixed_timezone_behavior,
+        fixed_format=fixed_format,
+    )
+
+def sample_from_file_onread_pa_array(
+    filepath,
+    users=None,
+    format="csv",
+    traj_cols=None,
+    frac_users=1.0,
+    frac_records=1.0,
+    seed=None,
+    parse_dates=True,
+    mixed_timezone_behavior="naive",
+    fixed_format=None,
+    sep=",",
+    filters=None,
+    **kwargs
+):
+    """
+    Read and sample trajectory data from a file.
+
+    Parameters
+    ----------
+    filepath : str or Path
+        Path to the input file.
+    users : list of hashable or None, default None
+        If provided, only include these user IDs; if None, include all users.
+    format : str, default "csv"
+        Data format, e.g. "csv" or "parquet".
+    traj_cols : dict or None, default None
+        Mapping of trajectory column names (e.g. {"uid": "user_id"}), or None to use defaults.
+    frac_users : float, default 1.0
+        Fraction of users to sample (0 < frac_users ≤ 1).
+    frac_records : float, default 1.0
+        Fraction of each user’s records to sample (0 < frac_records ≤ 1).
+    seed : int or None, default None
+        Random seed for reproducibility.
+    parse_dates : bool, default True
+        Whether to parse date/time columns as datetime objects.
+    mixed_timezone_behavior : str, default "naive"
+        How to handle mixed‐timezone timestamps; options might include "naive", "utc", etc.
+    fixed_format : str or None, default None
+        If specified, enforce this input format (overrides autodetection).
+    sep : str
+        Separator character for reader. Defaults to ",".
+    filters : pyarrow.dataset.Expression or tuple or list of tuples, optional
+        Read-time filter(s) for Parquet inputs. Ignored for single CSV files.
+    **kwargs
+        Passed through to the underlying reader (e.g. `pandas.read_csv`).
+
+    Returns
+    -------
+    pandas.DataFrame
+        Sampled trajectory data.
+    """
+    assert format in {"csv", "parquet"}
+
+    column_names = table_columns(filepath, format=format, sep=sep)
+    schema = None
+    if filters is not None:
+        schema = table_columns(filepath, format=format, include_schema=True, sep=sep)
+
+    traj_cols_ = _parse_traj_cols(column_names, traj_cols, kwargs)
+
+    _has_spatial_cols(column_names, traj_cols_)
+    _has_time_cols(column_names, traj_cols_)
+
+    use_pyarrow_dataset = (
+        format == "parquet" or
+        isinstance(filepath, (list, tuple)) or
+        os.path.isdir(filepath)
+    )
+
+    if use_pyarrow_dataset:
+        file_format_obj = "parquet"
+        if format == "csv":
+            parse_options = pc_csv.ParseOptions(delimiter=sep)
+            file_format_obj = ds.CsvFileFormat(parse_options=parse_options)
+        
+        if isinstance(filepath, list):
+            if not filepath:
+                raise ValueError("Input filepath list cannot be empty.")
+            datasets = [ds.dataset(p, format=file_format_obj, partitioning="hive") for p in filepath]
+            dataset_obj = ds.UnionDataset(schema=datasets[0].schema, children=datasets)
+        else:
+            dataset_obj = ds.dataset(filepath, format=file_format_obj, partitioning="hive")
+            
+        arrow_flt = _process_filters(
+            filters,
+            col_names=column_names,
+            traj_cols=traj_cols_,
+            schema=schema,
+            use_pyarrow_dataset=True
+        )
+
+        if users is not None:
+            arrow_ids = pa.array(users)
+            user_expr = ds.field(traj_cols_['user_id']).isin(arrow_ids)
+            arrow_flt = user_expr if arrow_flt is None else (arrow_flt & user_expr)
+        
+        df = dataset_obj.to_table(filter=arrow_flt,
+                                  columns=list(column_names)).to_pandas()
+
+    else:
+        df = pd.read_csv(filepath, sep=sep)
+        if filters is not None:
+            mask = _process_filters(
+                filters,
+                col_names=df.columns,
+                traj_cols=traj_cols_,
+                schema=schema,
+                use_pyarrow_dataset=False
+            )(df)
+            df = df[mask]
+
+        if users is not None:
+            df = df[df[traj_cols_['user_id']].isin(users)]
+            
+    if (users is None) and frac_users:
+        # build the user‐ID index
+        user_ids = df[traj_cols_['user_id']].drop_duplicates()
+        # integer count
+        if isinstance(frac_users, int):
+            n = min(frac_users, len(user_ids))
+            chosen = user_ids.sample(n=n, random_state=seed, replace=False)
+        # fractional
+        elif 0.0 < frac_users <= 1.0:
+            chosen = user_ids.sample(frac=frac_users, random_state=seed, replace=False)
+        else:
+            raise ValueError("frac_users must be an int ≥ 1 or a float in (0, 1].")
+        # restrict df to those users
+        df = df[df[traj_cols_['user_id']].isin(chosen)]
+
+    if (frac_records) and (0.0 < frac_records < 1.0):
+        df = df.sample(frac=frac_records, random_state=seed)
+        
     return _cast_traj_cols(
         df,
         traj_cols=traj_cols_,
