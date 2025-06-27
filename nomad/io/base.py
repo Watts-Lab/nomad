@@ -1,5 +1,7 @@
 import pyarrow.parquet as pq
 import pandas as pd
+import geopandas as gpd
+import pyproj
 from functools import partial
 import multiprocessing
 from multiprocessing import Pool
@@ -19,6 +21,9 @@ import warnings
 import inspect
 from nomad.constants import FILTER_OPERATORS
 import pdb
+
+from shapely import wkt
+import shapely.geometry as sh_geom
 
 import pandas as pd
 from pandas.api.types import (
@@ -871,10 +876,13 @@ def sample_users(
     filepath,
     format="csv",
     size=1.0,
-    traj_cols=None,
     seed=None,
     sep=",",
     filters=None,
+    within=None,
+    poly_crs=None,
+    data_crs=None,
+    traj_cols=None,
     **kwargs
 ):
     """
@@ -888,14 +896,18 @@ def sample_users(
         Input format.
     size : float or int, default 1.0
         Fraction (0–1] or absolute number of users to sample.
-    traj_cols : dict, optional
-        Mapping of logical names ('user_id', etc.) to actual column names.
     seed : int, optional
         Random seed for reproducibility.
     sep : str, default ','
         CSV delimiter.
     filters : pyarrow.dataset.Expression or tuple or list of tuples, optional
         Read-time filter(s) for Parquet inputs. Ignored for single CSV files.
+    within : shapely Polygon/MultiPolygon or WKT str, default None
+        If supplied, keep only points whose coordinates fall inside this polygon.
+    data_crs : str or pyproj.CRS, optional
+        CRS for `data` when it is a plain DataFrame; ignored if `data` is a GeoDataFrame.
+    traj_cols : dict, optional
+        Mapping of logical names ('user_id', etc.) to actual column names.
     **kwargs
         Passed through to the underlying reader.
 
@@ -912,6 +924,57 @@ def sample_users(
         schema = table_columns(filepath, format=format,
                                include_schema=True, sep=sep)
 
+    if within:
+        coord_key1, coord_key2, use_lat_lon = _fallback_spatial_cols(column_names, traj_cols, kwargs)
+        
+        # normalise *poly* to a shapely geometry
+        if isinstance(within, str):
+            poly = wkt.loads(within)
+        elif isinstance(within, sh_geom.base.BaseGeometry):
+            poly = within
+        elif isinstance(within, gpd.GeoSeries):
+            poly = within.unary_union
+        elif isinstance(within, gpd.GeoDataFrame):
+            poly = within.geometry.unary_union
+        else:
+            raise TypeError("within must be WKT, shapely, GeoSeries, or GeoDataFrame")
+
+        if data_crs is None:
+            if use_lat_lon:
+                data_crs = "EPSG:4326"
+                warnings.warn("data_crs not provided; assuming EPSG:4326 for "
+                              "longitude/latitude coordinates.")
+            else:
+                raise ValueError(
+                    "data_crs must be supplied when using projected x/y columns, "
+                    "or provide latitude/longitude columns instead."
+                )
+                
+        data_crs = pyproj.CRS(data_crs)
+
+        # CRS check / reprojection
+        poly_crs_final = getattr(within, "crs", None) or poly_crs
+        if poly_crs_final is None:
+            warnings.warn("Polygon CRS unspecified; assuming it matches data_crs.")
+        else:
+            src_crs = pyproj.CRS(poly_crs_final)
+            if not src_crs.equals(data_crs):
+                poly = gpd.GeoSeries([poly], crs=src_crs).to_crs(data_crs).iloc[0]
+        
+        minx, miny, maxx, maxy = within.bounds
+        bbox_specs = [
+            (coord_key1, ">=", minx), (coord_key1, "<=", maxx),
+            (coord_key2, ">=", miny), (coord_key2, "<=", maxy),
+        ]
+        if filters is None:
+            filters = bbox_specs
+        elif isinstance(filters, tuple):
+            filters = [filters] + bbox_specs
+        elif isinstance(filters, list):
+            filters = filters + bbox_specs
+        else:  # raw ds.Expression – box filter can’t be merged, keep filters unchanged
+            pass
+    
     # Resolve trajectory column names
     traj_cols = _parse_traj_cols(column_names, traj_cols, kwargs)
     _has_user_cols(column_names, traj_cols)
@@ -943,8 +1006,15 @@ def sample_users(
                                      traj_cols=traj_cols,
                                      schema=schema,
                                      use_pyarrow_dataset=use_pyarrow_dataset)
-        table = dataset_obj.to_table(columns=[uid_col], filter=arrow_flt)
-        user_ids = pc.unique(table[uid_col]).to_pandas()
+        if within:
+            table = dataset_obj.to_table(columns=[uid_col, coord_x, coord_y], filter=arrow_flt)
+            df = table.to_pandas()
+            pts = gpd.GeoSeries(gpd.points_from_xy(df[coord_x], df[coord_y]),
+                                 crs=data_crs)
+            user_ids = df.loc[pts.within(poly), uid_col].drop_duplicates()
+        else:
+            table = dataset_obj.to_table(columns=[uid_col], filter=arrow_flt)
+            user_ids = pc.unique(table[uid_col]).to_pandas()
 
     else:
         read_csv_kwargs = {
@@ -966,7 +1036,9 @@ def sample_users(
             )
             df = df[mask_func(df)]
     
-        user_ids = df[uid_col].drop_duplicates()
+        pts = gpd.GeoSeries(gpd.points_from_xy(df[coord_x], df[coord_y]),
+                                 crs=data_crs)
+        user_ids = df.loc[pts.within(poly), uid_col].drop_duplicates()
         
     # Sample as int count or fraction
     if isinstance(size, int):
