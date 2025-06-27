@@ -683,7 +683,7 @@ def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_f
                 df[col] = df[col].astype("str")
     return df
 
-def _process_filters(filters, col_names, traj_cols=None, schema=None):
+def _process_filters(filters, col_names, use_pyarrow_dataset, traj_cols=None, schema=None):
     """
     Build one pyarrow.Expression from filters, resolving aliases and
     coercing literals for timestamp vs string columns.
@@ -692,59 +692,84 @@ def _process_filters(filters, col_names, traj_cols=None, schema=None):
     ----------
     filters   : None | ds.Expression | (col, op, val) | list of same
     col_names : iterable of actual column names
+    use_pyarrow_dataset : bool, whether to use pyarrow expressions
+        or a pandas series as a mask
     traj_cols : dict, optional, maps logical names → actual names
     schema    : pyarrow.Schema, optional, for type lookups
 
     Returns
     -------
-    ds.Expression or None
+    ds.Expression or callable function that generates a mask
     """
     if filters is None:
         return None
-
+        
     traj_cols = traj_cols or {}
     specs = [filters] if isinstance(filters, (ds.Expression, tuple)) else list(filters)
-    exprs = []
 
-    for spec in specs:
-        if isinstance(spec, ds.Expression):
-            exprs.append(spec)
-
-        elif isinstance(spec, tuple) and len(spec) == 3:
-            col, op, val = spec
-
-            # resolve alias
-            if col not in col_names:
-                if col in traj_cols and traj_cols[col] in col_names:
+    if use_pyarrow_dataset:
+        exprs = []
+        for spec in specs:
+            if isinstance(spec, ds.Expression):
+                exprs.append(spec)
+            elif (isinstance(spec, tuple) and len(spec) == 3):
+                col, op, val = spec
+                if col in col_names:
+                    pass
+                elif col in traj_cols and traj_cols[col] in col_names:
                     col = traj_cols[col]
                 else:
+                    raise KeyError(f"Filter column {col!r} not found in {col_names}")
+
+                if op not in FILTER_OPERATORS:
+                    raise ValueError(f"Unsupported operator {op!r}")
+
+                if schema is not None:
+                    pa_type = schema.field(col).type
+                    if pat.is_timestamp(pa_type) and isinstance(val, str):
+                        warnings.warn(f"Coercing filter value {val!r} to pandas.Timestamp for column {col!r}")
+                        val = pd.Timestamp(val)
+                    elif pat.is_string(pa_type) and isinstance(val, (pd.Timestamp, np.datetime64)):
+                        val = pd.Timestamp(val).isoformat()
+                        warnings.warn(f"Coercing filter datetime {val!r} to ISO string {val} for column {col!r}")
+                        
+                exprs.append(FILTER_OPERATORS[op](ds.field(col), val))
+
+            else:
+                raise TypeError(
+                    "filters must be a ds.Expression or a (column, op, value) tuple, "
+                    "or a list of those."
+                )
+
+        out = exprs[0]
+        for e in exprs[1:]:
+            out &= e
+        return out
+
+    else:
+        def mask_func(df):
+            mask = pd.Series(True, index=df.index)
+            for col, op, val in specs:
+                col = col if col in col_names else traj_cols.get(col, col)
+                if col not in df.columns:
                     raise ValueError(f"Unknown filter column {col!r}")
+                if op not in FILTER_OPERATORS:
+                    raise ValueError(f"Unsupported operator {op!r}")
 
-            if op not in FILTER_OPERATORS:
-                raise ValueError(f"Unsupported operator {op!r}")
+                if schema is not None:
+                    dtype = schema[col]
+                    if dtype.name.startswith("datetime") and isinstance(val, str):
+                        warnings.warn(f"Coercing {val!r} → pandas.Timestamp for {col!r}")
+                        val = pd.Timestamp(val)
+                    elif dtype.name.startswith("object") and isinstance(val, (pd.Timestamp, np.datetime64)):
+                        new_val = pd.Timestamp(val).isoformat()
+                        warnings.warn(f"Coercing {val!r} → {new_val!r} for {col!r}")
+                        val = new_val
 
-            # literal coercion when schema is available
-            if schema is not None:
-                pa_type = schema.field(col).type
-                if pat.is_timestamp(pa_type) and isinstance(val, str):
-                    warnings.warn(f"Coercing filter value {val!r} to pandas.Timestamp for column {col!r}")
-                    val = pd.Timestamp(val)
-                elif pat.is_string(pa_type) and isinstance(val, (pd.Timestamp, np.datetime64)):
-                    val = pd.Timestamp(val).isoformat()
-                    warnings.warn(f"Coercing filter datetime {val!r} to ISO string {val} for column {col!r}") 
+                mask &= FILTER_OPERATORS[op](df[col], val)
+            return mask
 
-            exprs.append(FILTER_OPERATORS[op](ds.field(col), val))
-
-        else:
-            raise TypeError(
-                "filters must be a ds.Expression or a (column, op, value) tuple, "
-                "or a list of those."
-            )
-
-    out = exprs[0]
-    for e in exprs[1:]:
-        out &= e
-    return out
+        return mask_func
 
 def table_columns(filepath, format="csv", include_schema=False, sep=","):
     """
@@ -906,7 +931,8 @@ def from_file(filepath,
         arrow_flt = _process_filters(filters,
                              col_names=column_names,
                              traj_cols=traj_cols,
-                             schema=col_schema)
+                             schema=col_schema,
+                             use_pyarrow_dataset=use_pyarrow_dataset)
         df = (
             dataset_obj
             .to_table(
@@ -915,14 +941,21 @@ def from_file(filepath,
             .to_pandas()
         )
     else:
-        if filters is not None:
-                warnings.warn("Filtering on read is not implemented for single CSV "
-                              "files; filter will be ignored.")
         read_csv_kwargs = {
             k: v for k, v in kwargs.items()
             if k in inspect.signature(pd.read_csv).parameters
         }
         df = pd.read_csv(filepath, sep=sep, **read_csv_kwargs)
+                # build a boolean mask from tuple filters
+        if filters is not None:
+            mask_func = _process_filters(
+                filters,
+                col_names=df.columns,
+                traj_cols=traj_cols,
+                schema=schema,
+                use_pyarrow_dataset=False
+            )
+            df = df[mask_func(df)]
 
     return _cast_traj_cols(
         df,
@@ -939,36 +972,45 @@ def sample_users(
     traj_cols=None,
     seed=None,
     sep=",",
+    filters=None,
     **kwargs
 ):
     """
-    Sample users from a dataset.
+    Sample users from a dataset, with optional read-time filtering for Parquet.
 
     Parameters
     ----------
     filepath : str or Path
-        Path to the data file.
-    format : str, default "csv"
-        Input format (“csv” or “parquet”).
+        Path to the data file or directory.
+    format : {'csv','parquet'}, default 'csv'
+        Input format.
     size : float or int, default 1.0
-        Fraction (0–1) or absolute number of users to sample.
-    traj_cols : dict or None, default None
-        Mapping of trajectory column names, or None to use defaults.
-    seed : int or None
+        Fraction (0–1] or absolute number of users to sample.
+    traj_cols : dict, optional
+        Mapping of logical names ('user_id', etc.) to actual column names.
+    seed : int, optional
         Random seed for reproducibility.
-    sep : str
-        Separator character for reader. Defaults to ",".
+    sep : str, default ','
+        CSV delimiter.
+    filters : pyarrow.dataset.Expression or tuple or list of tuples, optional
+        Read-time filter(s) for Parquet inputs. Ignored for single CSV files.
     **kwargs
         Passed through to the underlying reader.
 
     Returns
     -------
     pd.Series
-        A Series of sampled user IDs.
+        Sampled user IDs.
     """
     assert format in {"csv", "parquet"}
 
     column_names = table_columns(filepath, format=format, sep=sep)
+    schema = None
+    if filters is not None:
+        schema = table_columns(filepath, format=format,
+                               include_schema=True, sep=sep)
+
+    # Resolve trajectory column names
     traj_cols = _parse_traj_cols(column_names, traj_cols, kwargs)
     _has_user_cols(column_names, traj_cols)
     uid_col = traj_cols["user_id"]
@@ -993,17 +1035,38 @@ def sample_users(
         else:
             dataset_obj = ds.dataset(filepath, format=file_format_obj, partitioning="hive")
 
-        user_ids = pc.unique(dataset_obj.to_table(columns=[uid_col])[uid_col]).to_pandas()
+        # Apply filters at scan time
+        arrow_flt = _process_filters(filters,
+                                     col_names=column_names,
+                                     traj_cols=traj_cols,
+                                     schema=schema,
+                                     use_pyarrow_dataset=use_pyarrow_dataset)
+        table = dataset_obj.to_table(columns=[uid_col], filter=arrow_flt)
+        user_ids = pc.unique(table[uid_col]).to_pandas()
+
     else:
         read_csv_kwargs = {
             k: v for k, v in kwargs.items()
             if k in inspect.signature(pd.read_csv).parameters
         }
-        user_ids = (
-            pd.read_csv(filepath, usecols=[uid_col], sep=sep, **read_csv_kwargs)[uid_col]
-            .drop_duplicates()
-        )
-
+        if filters is None:
+            df = pd.read_csv(filepath, usecols=[uid_col], sep=sep, **read_csv_kwargs)
+        else:                                    # need all columns for filtering
+            df = pd.read_csv(filepath, sep=sep, **read_csv_kwargs)
+    
+            # build a boolean mask from tuple filters
+            mask_func = _process_filters(
+                filters,
+                col_names=df.columns,
+                traj_cols=traj_cols,
+                schema=schema,
+                use_pyarrow_dataset=False
+            )
+            df = df[mask_func(df)]
+    
+        user_ids = df[uid_col].drop_duplicates()
+        
+    # Sample as int count or fraction
     if isinstance(size, int):
         return user_ids.sample(n=min(size, len(user_ids)), random_state=seed, replace=False)
     if 0.0 < size <= 1.0:
@@ -1023,6 +1086,7 @@ def sample_from_file(
     mixed_timezone_behavior="naive",
     fixed_format=None,
     sep=",",
+    filters=None,
     **kwargs
 ):
     """
@@ -1052,6 +1116,8 @@ def sample_from_file(
         If specified, enforce this input format (overrides autodetection).
     sep : str
         Separator character for reader. Defaults to ",".
+    filters : pyarrow.dataset.Expression or tuple or list of tuples, optional
+        Read-time filter(s) for Parquet inputs. Ignored for single CSV files.
     **kwargs
         Passed through to the underlying reader (e.g. `pandas.read_csv`).
 
@@ -1063,21 +1129,14 @@ def sample_from_file(
     assert format in {"csv", "parquet"}
 
     column_names = table_columns(filepath, format=format, sep=sep)
+    schema = None
+    if filters is not None:
+        schema = table_columns(filepath, format=format, include_schema=True, sep=sep)
+
     traj_cols_ = _parse_traj_cols(column_names, traj_cols, kwargs)
 
     _has_spatial_cols(column_names, traj_cols_)
     _has_time_cols(column_names, traj_cols_)
-
-    if users is None and frac_users < 1.0:
-        users = sample_users(
-            filepath,
-            format=format,
-            size=frac_users,
-            traj_cols=traj_cols,
-            seed=seed,
-            sep=sep,
-            **kwargs,
-        )
 
     use_pyarrow_dataset = (
         format == "parquet" or
@@ -1099,17 +1158,45 @@ def sample_from_file(
         else:
             dataset_obj = ds.dataset(filepath, format=file_format_obj, partitioning="hive")
 
-        if users is None:
-            df = dataset_obj.to_table(columns=list(column_names)).to_pandas()
-        else:
-            df = dataset_obj.to_table(
-                filter=ds.field(traj_cols_['user_id']).isin(users),
-                columns=list(column_names)
-            ).to_pandas()
+        arrow_flt = _process_filters(
+            filters,
+            col_names=column_names,
+            traj_cols=traj_cols_,
+            schema=schema,
+            use_pyarrow_dataset=True
+        )
+        df = dataset_obj.to_table(filter=arrow_flt,
+                                  columns=list(column_names)).to_pandas()
+
     else:
         df = pd.read_csv(filepath, sep=sep)
-        if users is not None:
-            df = df[df[traj_cols_['user_id']].isin(users)]
+        if filters is not None:
+            mask = _process_filters(
+                filters,
+                col_names=df.columns,
+                traj_cols=traj_cols_,
+                schema=schema,
+                use_pyarrow_dataset=False
+            )(df)
+            df = df[mask]
+            
+    if (users is None) and frac_users and (frac_users < 1.0):
+        # build the user‐ID index
+        user_ids = df[traj_cols_['user_id']].drop_duplicates()
+        # integer count
+        if isinstance(frac_users, int):
+            n = min(frac_users, len(user_ids))
+            chosen = user_ids.sample(n=n, random_state=seed, replace=False)
+        # fractional
+        elif 0.0 < frac_users <= 1.0:
+            chosen = user_ids.sample(frac=frac_users, random_state=seed, replace=False)
+        else:
+            raise ValueError("frac_users must be an int ≥ 1 or a float in (0, 1].")
+        # restrict df to those users
+        df = df[df[traj_cols_['user_id']].isin(chosen)]
+    
+    if users is not None:
+        df = df[df[traj_cols_['user_id']].isin(users)]
 
     if 0.0 < frac_records < 1.0:
         df = df.sample(frac=frac_records, random_state=seed)
