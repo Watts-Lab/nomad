@@ -42,10 +42,10 @@ def _fallback_spatial_cols(col_names, traj_cols, kwargs):
     Helper function to decide whether to use latitude and longitude or x,y
     for processing algorithms
     '''
-    traj_cols = loader._parse_traj_cols(col_names, traj_cols, kwargs, defaults={}, warn=False)
+    traj_cols = _parse_traj_cols(col_names, traj_cols, kwargs, defaults={}, warn=False)
     
     # check for sufficient spatial coords
-    loader._has_spatial_cols(col_names, traj_cols, exclusive=True) 
+    _has_spatial_cols(col_names, traj_cols, exclusive=True) 
 
     use_lon_lat = ('latitude' in traj_cols and 'longitude' in traj_cols)
     if use_lon_lat:
@@ -452,37 +452,47 @@ def _has_duration_cols(col_names, traj_cols):
     return duration_exists
 
 def _has_spatial_cols(col_names, traj_cols, exclusive=False):
-    
+    """Return True if lon/lat, x/y or geohash columns are present; else raise."""
     if exclusive:
-        single_spatial = (
-            ('latitude' in traj_cols and 'longitude' in traj_cols and 
-             traj_cols['latitude'] in col_names and traj_cols['longitude'] in col_names) ^
-            ('x' in traj_cols and 'y' in traj_cols and 
-             traj_cols['x'] in col_names and traj_cols['y'] in col_names) 
+        has_lon_lat = (
+            'latitude' in traj_cols and 'longitude' in traj_cols and
+            traj_cols['latitude'] in col_names and traj_cols['longitude'] in col_names
         )
-        if not single_spatial:
+        has_x_y = (
+            'x' in traj_cols and 'y' in traj_cols and
+            traj_cols['x'] in col_names and traj_cols['y'] in col_names
+        )
+
+        if has_lon_lat and has_x_y:
+            raise ValueError("Too many spatial columns; provide only one pair.")
+        if not has_lon_lat and not has_x_y:
             raise ValueError(
-                f"Too many user provided spatial columns in arguments {traj_cols}, only one pair of spatial coordinates is required."
+                f"No spatial columns provided for spatial ops; please provide "
+                "explicit column names to be used for either ('latitude','longitude') or ('x','y')."
             )
+        return True
 
-    # load defaults here
-    traj_cols = _update_schema(DEFAULT_SCHEMA, traj_cols)
-    
-    spatial_exists = (
-        ('latitude' in traj_cols and 'longitude' in traj_cols and 
-         traj_cols['latitude'] in col_names and traj_cols['longitude'] in col_names) or
-        ('x' in traj_cols and 'y' in traj_cols and 
-         traj_cols['x'] in col_names and traj_cols['y'] in col_names) or
-        ('geohash' in traj_cols and traj_cols['geohash'] in col_names)
-    )
+    else:
+        traj_cols = _update_schema(DEFAULT_SCHEMA, traj_cols)
 
-    if not spatial_exists:
-        raise ValueError(
-            "Could not find required spatial columns in {}. The dataset must contain or map to at least one of the following sets: "
-            "('latitude', 'longitude'), ('x', 'y'), or 'geohash'.".format(col_names)
+        has_lon_lat = (
+            'latitude' in traj_cols and 'longitude' in traj_cols and
+            traj_cols['latitude'] in col_names and traj_cols['longitude'] in col_names
         )
-    
-    return spatial_exists
+        has_x_y = (
+            'x' in traj_cols and 'y' in traj_cols and
+            traj_cols['x'] in col_names and traj_cols['y'] in col_names
+        )
+        has_geohash = (
+            'geohash' in traj_cols and traj_cols['geohash'] in col_names
+        )
+
+        if not (has_lon_lat or has_x_y or has_geohash):
+            raise ValueError(
+                f"I didn't find spatial columns in {col_names}; please provide "
+                "column names for ('latitude','longitude') or ('x','y') or 'geohash'."
+            )
+        return True
 
 def _has_user_cols(col_names, traj_cols):
     
@@ -1007,9 +1017,9 @@ def sample_users(
                                      schema=schema,
                                      use_pyarrow_dataset=use_pyarrow_dataset)
         if within:
-            table = dataset_obj.to_table(columns=[uid_col, coord_x, coord_y], filter=arrow_flt)
+            table = dataset_obj.to_table(columns=[uid_col, coord_key1, coord_key2], filter=arrow_flt)
             df = table.to_pandas()
-            pts = gpd.GeoSeries(gpd.points_from_xy(df[coord_x], df[coord_y]),
+            pts = gpd.GeoSeries(gpd.points_from_xy(df[coord_key1], df[coord_key2]),
                                  crs=data_crs)
             user_ids = df.loc[pts.within(poly), uid_col].drop_duplicates()
         else:
@@ -1036,7 +1046,7 @@ def sample_users(
             )
             df = df[mask_func(df)]
     
-        pts = gpd.GeoSeries(gpd.points_from_xy(df[coord_x], df[coord_y]),
+        pts = gpd.GeoSeries(gpd.points_from_xy(df[coord_key1], df[coord_key2]),
                                  crs=data_crs)
         user_ids = df.loc[pts.within(poly), uid_col].drop_duplicates()
         

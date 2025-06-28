@@ -6,6 +6,7 @@ from pandas.testing import assert_series_equal, assert_frame_equal
 import numpy as np
 import geopandas as gpd
 import pygeohash as gh
+from shapely.geometry import Polygon
 import pyarrow.dataset as ds
 import pdb
 from nomad.io import base as loader
@@ -379,3 +380,35 @@ def test_filter_on_read_partitioned_empty(io_sources):
 
     assert len(df) == 0
 
+# test sample on read
+@pytest.mark.parametrize("idx", [0, 3], ids=["csv-single-within", "parquet-hive-within"])
+def test_sample_users_within_basic(io_sources, idx):
+    path, fmt = io_sources[idx]
+
+    # small box around the synthetic data cloud
+    poly = Polygon([(-36.6685, 38.3200),
+                    (-36.6685, 38.3235),
+                    (-36.6655, 38.3235),
+                    (-36.6655, 38.3200)])
+
+    traj_cols = dict(user_id="uid",
+                     latitude="latitude",
+                     longitude="longitude")
+
+    # result via on-read spatial filtering
+    ids_reader = loader.sample_users(
+        path,
+        format=fmt,
+        traj_cols=traj_cols,
+        within=poly,
+        data_crs="EPSG:4326",
+        size=1.0 # keep all matching users
+    )
+
+    # ground truth: load full file → spatial mask in pandas
+    df_full = loader.from_file(path, format=fmt, traj_cols=traj_cols)
+    pts = gpd.GeoSeries(gpd.points_from_xy(df_full.longitude, df_full.latitude),
+                        crs="EPSG:4326")
+    truth_ids = df_full.loc[pts.within(poly), "uid"].drop_duplicates()
+
+    assert set(ids_reader) == set(truth_ids)
