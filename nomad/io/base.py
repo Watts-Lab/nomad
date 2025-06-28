@@ -934,7 +934,7 @@ def sample_users(
         schema = table_columns(filepath, format=format,
                                include_schema=True, sep=sep)
 
-    if within:
+    if within is not None:
         coord_key1, coord_key2, use_lat_lon = _fallback_spatial_cols(column_names, traj_cols, kwargs)
         
         # normalise *poly* to a shapely geometry
@@ -971,7 +971,7 @@ def sample_users(
             if not src_crs.equals(data_crs):
                 poly = gpd.GeoSeries([poly], crs=src_crs).to_crs(data_crs).iloc[0]
         
-        minx, miny, maxx, maxy = within.bounds
+        minx, miny, maxx, maxy = poly.bounds
         bbox_specs = [
             (coord_key1, ">=", minx), (coord_key1, "<=", maxx),
             (coord_key2, ">=", miny), (coord_key2, "<=", maxy),
@@ -1016,7 +1016,7 @@ def sample_users(
                                      traj_cols=traj_cols,
                                      schema=schema,
                                      use_pyarrow_dataset=use_pyarrow_dataset)
-        if within:
+        if within is not None:
             table = dataset_obj.to_table(columns=[uid_col, coord_key1, coord_key2], filter=arrow_flt)
             df = table.to_pandas()
             pts = gpd.GeoSeries(gpd.points_from_xy(df[coord_key1], df[coord_key2]),
@@ -1046,10 +1046,12 @@ def sample_users(
             )
             df = df[mask_func(df)]
     
-        pts = gpd.GeoSeries(gpd.points_from_xy(df[coord_key1], df[coord_key2]),
-                                 crs=data_crs)
-        user_ids = df.loc[pts.within(poly), uid_col].drop_duplicates()
-        
+        if within is not None:
+            pts = gpd.GeoSeries(gpd.points_from_xy(df[coord_key1], df[coord_key2]),
+                                     crs=data_crs)
+            user_ids = df.loc[pts.within(poly), uid_col].drop_duplicates()
+        else:
+            user_ids = df[uid_col].drop_duplicates()
     # Sample as int count or fraction
     if isinstance(size, int):
         return user_ids.sample(n=min(size, len(user_ids)), random_state=seed, replace=False)

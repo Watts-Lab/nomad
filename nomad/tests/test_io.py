@@ -7,6 +7,7 @@ import numpy as np
 import geopandas as gpd
 import pygeohash as gh
 from shapely.geometry import Polygon
+from shapely import wkt
 import pyarrow.dataset as ds
 import pdb
 from nomad.io import base as loader
@@ -174,6 +175,22 @@ def expected_value_na_output_df():
            expected_df[col] = expected_df[col].astype(dtype_str)
     return expected_df
 
+
+@pytest.fixture
+def park_polygons():
+    hex_wkt = (
+        "POLYGON ((-38.3176943767 36.6695149320, "
+        "-38.3178191245 36.6697310917, "
+        "-38.3180686181 36.6697310917, "
+        "-38.3181933660 36.6695149320, "
+        "-38.3180686181 36.6692987719, "
+        "-38.3178191245 36.6692987719, "
+        "-38.3176943767 36.6695149320))"
+    )
+    hex_poly = wkt.loads(hex_wkt)                          # shapely
+    hex_gs   = gpd.GeoSeries([hex_poly], crs="EPSG:4326")   # attach CRS
+    hex_gs   = hex_gs.to_crs("EPSG:3857")                   # reproject to Web-Mercator
+    return [hex_wkt, hex_poly, hex_gs]
 # --- Tests ---
 
 # Correctly handles names when importing trajectories
@@ -380,35 +397,38 @@ def test_filter_on_read_partitioned_empty(io_sources):
 
     assert len(df) == 0
 
-# test sample on read
-@pytest.mark.parametrize("idx", [0, 3], ids=["csv-single-within", "parquet-hive-within"])
-def test_sample_users_within_basic(io_sources, idx):
+@pytest.mark.parametrize("idx", [0, 3], ids=["csv-single", "parquet-hive"])
+@pytest.mark.parametrize("poly_variant", range(3),
+                         ids=["wkt", "shapely", "geoseries"])
+def test_sample_users_within(io_sources, park_polygons, idx, poly_variant):
+    """
+    sample_users must accept WKT, shapely geometry, or GeoSeries for `within=`.
+    Ground truth is always computed with the shapely polygon version.
+    """
     path, fmt = io_sources[idx]
-
-    # small box around the synthetic data cloud
-    poly = Polygon([(-36.6685, 38.3200),
-                    (-36.6685, 38.3235),
-                    (-36.6655, 38.3235),
-                    (-36.6655, 38.3200)])
+    poly_wkt, poly_shape, poly_gs = park_polygons
+    poly_arg = [poly_wkt, poly_shape, poly_gs][poly_variant]
 
     traj_cols = dict(user_id="uid",
                      latitude="latitude",
                      longitude="longitude")
 
-    # result via on-read spatial filtering
+    # users returned by on-read spatial filtering
     ids_reader = loader.sample_users(
         path,
         format=fmt,
         traj_cols=traj_cols,
-        within=poly,
+        within=poly_arg,
         data_crs="EPSG:4326",
-        size=1.0 # keep all matching users
+        size=1.0,
     )
 
-    # ground truth: load full file → spatial mask in pandas
+    # ground truth: full load → spatial mask (always shapely polygon)
     df_full = loader.from_file(path, format=fmt, traj_cols=traj_cols)
-    pts = gpd.GeoSeries(gpd.points_from_xy(df_full.longitude, df_full.latitude),
-                        crs="EPSG:4326")
-    truth_ids = df_full.loc[pts.within(poly), "uid"].drop_duplicates()
+    pts = gpd.GeoSeries(
+        gpd.points_from_xy(df_full.longitude, df_full.latitude),
+        crs="EPSG:4326"
+    )
+    truth_ids = df_full.loc[pts.within(poly_shape), "uid"].drop_duplicates()
 
     assert set(ids_reader) == set(truth_ids)
