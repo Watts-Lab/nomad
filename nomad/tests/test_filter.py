@@ -82,6 +82,22 @@ def base_df():
     # dtypes: [object, int64, float64, float64, int64, object, float64, float64, object]
     return from_df(df)
 
+@pytest.fixture
+def park_polygons():
+    hex_wkt = (
+        "POLYGON ((-38.3176943767 36.6695149320, "
+        "-38.3178191245 36.6697310917, "
+        "-38.3180686181 36.6697310917, "
+        "-38.3181933660 36.6695149320, "
+        "-38.3180686181 36.6692987719, "
+        "-38.3178191245 36.6692987719, "
+        "-38.3176943767 36.6695149320))"
+    )
+    hex_poly = _wkt.loads(hex_wkt)                          # shapely
+    hex_gs   = gpd.GeoSeries([hex_poly], crs="EPSG:4326")   # attach CRS
+    hex_gs   = hex_gs.to_crs("EPSG:3857")                   # reproject to Web-Mercator
+    return [hex_wkt, hex_poly, hex_gs]
+
 def test_to_timestamp(base_df):
     timestamp_col = to_timestamp(base_df.local_datetime, base_df.tz_offset)
     assert np.array_equal(timestamp_col.values, base_df.timestamp.values)

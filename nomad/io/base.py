@@ -1,5 +1,7 @@
 import pyarrow.parquet as pq
 import pandas as pd
+import geopandas as gpd
+import pyproj
 from functools import partial
 import multiprocessing
 from multiprocessing import Pool
@@ -20,6 +22,9 @@ import inspect
 from nomad.constants import FILTER_OPERATORS
 import pdb
 
+from shapely import wkt
+import shapely.geometry as sh_geom
+
 import pandas as pd
 from pandas.api.types import (
     is_datetime64_any_dtype,
@@ -32,6 +37,24 @@ from pandas.api.types import (
 from pandas import Int64Dtype, Float64Dtype, StringDtype # For isinstance if needed later
 
 # utils
+def _fallback_spatial_cols(col_names, traj_cols, kwargs):
+    '''
+    Helper function to decide whether to use latitude and longitude or x,y
+    for processing algorithms
+    '''
+    traj_cols = _parse_traj_cols(col_names, traj_cols, kwargs, defaults={}, warn=False)
+    
+    # check for sufficient spatial coords
+    _has_spatial_cols(col_names, traj_cols, exclusive=True) 
+
+    use_lon_lat = ('latitude' in traj_cols and 'longitude' in traj_cols)
+    if use_lon_lat:
+        coord_key1, coord_key2 = 'longitude', 'latitude'
+    else:
+        coord_key1, coord_key2 = 'x', 'y'
+            
+    return coord_key1, coord_key2, use_lon_lat
+
 def _update_schema(original, new_labels):
     updated_schema = dict(original)
     for label in new_labels:
@@ -429,37 +452,47 @@ def _has_duration_cols(col_names, traj_cols):
     return duration_exists
 
 def _has_spatial_cols(col_names, traj_cols, exclusive=False):
-    
+    """Return True if lon/lat, x/y or geohash columns are present; else raise."""
     if exclusive:
-        single_spatial = (
-            ('latitude' in traj_cols and 'longitude' in traj_cols and 
-             traj_cols['latitude'] in col_names and traj_cols['longitude'] in col_names) ^
-            ('x' in traj_cols and 'y' in traj_cols and 
-             traj_cols['x'] in col_names and traj_cols['y'] in col_names) 
+        has_lon_lat = (
+            'latitude' in traj_cols and 'longitude' in traj_cols and
+            traj_cols['latitude'] in col_names and traj_cols['longitude'] in col_names
         )
-        if not single_spatial:
+        has_x_y = (
+            'x' in traj_cols and 'y' in traj_cols and
+            traj_cols['x'] in col_names and traj_cols['y'] in col_names
+        )
+
+        if has_lon_lat and has_x_y:
+            raise ValueError("Too many spatial columns; provide only one pair.")
+        if not has_lon_lat and not has_x_y:
             raise ValueError(
-                f"Too many user provided spatial columns in arguments {traj_cols}, only one pair of spatial coordinates is required."
+                f"No spatial columns provided for spatial ops; please provide "
+                "explicit column names to be used for either ('latitude','longitude') or ('x','y')."
             )
+        return True
 
-    # load defaults here
-    traj_cols = _update_schema(DEFAULT_SCHEMA, traj_cols)
-    
-    spatial_exists = (
-        ('latitude' in traj_cols and 'longitude' in traj_cols and 
-         traj_cols['latitude'] in col_names and traj_cols['longitude'] in col_names) or
-        ('x' in traj_cols and 'y' in traj_cols and 
-         traj_cols['x'] in col_names and traj_cols['y'] in col_names) or
-        ('geohash' in traj_cols and traj_cols['geohash'] in col_names)
-    )
+    else:
+        traj_cols = _update_schema(DEFAULT_SCHEMA, traj_cols)
 
-    if not spatial_exists:
-        raise ValueError(
-            "Could not find required spatial columns in {}. The dataset must contain or map to at least one of the following sets: "
-            "('latitude', 'longitude'), ('x', 'y'), or 'geohash'.".format(col_names)
+        has_lon_lat = (
+            'latitude' in traj_cols and 'longitude' in traj_cols and
+            traj_cols['latitude'] in col_names and traj_cols['longitude'] in col_names
         )
-    
-    return spatial_exists
+        has_x_y = (
+            'x' in traj_cols and 'y' in traj_cols and
+            traj_cols['x'] in col_names and traj_cols['y'] in col_names
+        )
+        has_geohash = (
+            'geohash' in traj_cols and traj_cols['geohash'] in col_names
+        )
+
+        if not (has_lon_lat or has_x_y or has_geohash):
+            raise ValueError(
+                f"I didn't find spatial columns in {col_names}; please provide "
+                "column names for ('latitude','longitude') or ('x','y') or 'geohash'."
+            )
+        return True
 
 def _has_user_cols(col_names, traj_cols):
     
@@ -473,122 +506,6 @@ def _has_user_cols(col_names, traj_cols):
     return user_exists
 
 # SPARK check is traj_dataframe
-
-def _is_traj_df_spark(df, traj_cols=None, **kwargs):
-    if not isinstance(df, psp.sql.dataframe.DataFrame):
-        return False
-
-    traj_cols = _parse_traj_cols(df.columns, traj_cols, kwargs)
-
-    if not _has_spatial_cols(df.columns, traj_cols) or not _has_time_cols(df.columns, traj_cols):
-        return False
-
-    if 'datetime' in traj_cols and traj_cols['datetime'] in df.columns:
-        if not isinstance(df.schema[traj_cols['datetime']].dataType, TimestampType):
-            return False
-
-    if 'timestamp' in traj_cols and traj_cols['timestamp'] in df.columns:
-        if not isinstance(df.schema[traj_cols['timestamp']].dataType, (IntegerType, LongType, TimestampType)):
-            return False
-
-    for col in ['latitude', 'longitude', 'x', 'y']:
-        if col in traj_cols and traj_cols[col] in df.columns:
-            if not isinstance(df.schema[traj_cols[col]].dataType, (FloatType, DoubleType)):
-                return False
-
-    for col in ['user_id', 'geohash']:
-        if col in traj_cols and traj_cols[col] in df.columns:
-            if not isinstance(df.schema[traj_cols[col]].dataType, StringType):
-                return False
-
-    return True
-
-
-
-# Cast data types and address datetime issues
-
-def _cast_traj_cols_spark(df, traj_cols):
-    """
-    Casts specified trajectory columns in a loaded Spark DataFrame to their expected data types, 
-    with warnings for timestamp precision and timezone-naive datetimes.
-
-    Parameters
-    ----------
-    df : pyspark.sql.DataFrame
-        The DataFrame containing the data to be cast.
-    traj_cols : dict
-        Dictionary mapping expected trajectory column names 
-        (e.g., 'latitude', 'longitude', 'timestamp', 'datetime', 'user_id', 'geohash')
-        to the actual column names in the DataFrame.
-
-    Returns
-    -------
-    pyspark.sql.DataFrame
-        The DataFrame with specified columns cast to their expected types.
-
-    Notes
-    -----
-    - The 'datetime' column is cast to Datetime64 or Object series (with Timestamps) if not already of that type.
-      A warning is issued if the first row appears timezone-naive.
-    - The 'timestamp' column is cast to IntegerType, with a warning for possible millisecond or nanosecond precision.
-    - Spatial columns ('latitude', 'longitude', 'x', 'y') are cast to FloatType if necessary.
-    - User identifier and geohash columns are cast to StringType.
-    """
-
-    # Cast 'datetime' column appropriately
-    if 'datetime' in traj_cols and traj_cols['datetime'] in df.columns:
-        datetime_col = traj_cols['datetime']
-        if not isinstance(df.schema[datetime_col].dataType, TimestampType):
-            df = df.withColumn(datetime_col, col(datetime_col).cast(TimestampType()))
-        
-        # Check if the first row is timezone-naive (PySpark doesn't store tz info)
-        first_row = df.select(datetime_col).first()
-        if first_row and first_row[0] is not None:
-            if first_row[0].tzinfo is None:
-                warnings.warn(
-                    f"The '{datetime_col}' column appears to be timezone-naive. "
-                    "Consider localizing to a timezone to avoid inconsistencies."
-                )
-
-    # Cast 'timestamp' column to IntegerType and check precision
-    if 'timestamp' in traj_cols and traj_cols['timestamp'] in df.columns:
-        timestamp_col = traj_cols['timestamp']
-        if not isinstance(df.schema[timestamp_col].dataType, (IntegerType, LongType)):
-            df = df.withColumn(timestamp_col, col(timestamp_col).cast(IntegerType()))
-
-        # Check for millisecond/nanosecond values by inspecting first row
-        first_timestamp = df.select(timestamp_col).first()
-        if first_timestamp and first_timestamp[0] is not None: # different index?
-            timestamp_length = len(str(first_timestamp[0]))
-            
-            if timestamp_length == 13:
-                warnings.warn(
-                    f"The '{timestamp_col}' column appears to be in milliseconds. "
-                    "This may lead to inconsistencies, converting to seconds is recommended."
-                )
-            elif timestamp_length == 19:
-                warnings.warn(
-                    f"The '{timestamp_col}' column appears to be in nanoseconds. "
-                    "This may lead to inconsistencies, converting to seconds is recommended."
-                )
-
-    # Cast spatial columns to FloatType or DoubleType
-    float_cols = ['latitude', 'longitude', 'x', 'y']
-    for col_name in float_cols:
-        if col_name in traj_cols and traj_cols[col_name] in df.columns:
-            actual_col = traj_cols[col_name]
-            if not isinstance(df.schema[actual_col].dataType, (FloatType, DoubleType)):
-                df = df.withColumn(actual_col, col(actual_col).cast(FloatType()))
-
-    # Cast identifier and geohash columns to StringType
-    string_cols = ['user_id', 'geohash']
-    for col_name in string_cols:
-        if col_name in traj_cols and traj_cols[col_name] in df.columns:
-            actual_col = traj_cols[col_name]
-            if not isinstance(df.schema[actual_col].dataType, StringType):
-                df = df.withColumn(actual_col, col(actual_col).cast(StringType()))
-
-    return df
     
 def _process_datetime_column(df, col, parse_dates, mixed_timezone_behavior, fixed_format, traj_cols):
     """Processes a datetime column: parses strings, handles timezones, adds offset."""
@@ -969,10 +886,13 @@ def sample_users(
     filepath,
     format="csv",
     size=1.0,
-    traj_cols=None,
     seed=None,
     sep=",",
     filters=None,
+    within=None,
+    poly_crs=None,
+    data_crs=None,
+    traj_cols=None,
     **kwargs
 ):
     """
@@ -986,14 +906,18 @@ def sample_users(
         Input format.
     size : float or int, default 1.0
         Fraction (0–1] or absolute number of users to sample.
-    traj_cols : dict, optional
-        Mapping of logical names ('user_id', etc.) to actual column names.
     seed : int, optional
         Random seed for reproducibility.
     sep : str, default ','
         CSV delimiter.
     filters : pyarrow.dataset.Expression or tuple or list of tuples, optional
         Read-time filter(s) for Parquet inputs. Ignored for single CSV files.
+    within : shapely Polygon/MultiPolygon or WKT str, default None
+        If supplied, keep only points whose coordinates fall inside this polygon.
+    data_crs : str or pyproj.CRS, optional
+        CRS for `data` when it is a plain DataFrame; ignored if `data` is a GeoDataFrame.
+    traj_cols : dict, optional
+        Mapping of logical names ('user_id', etc.) to actual column names.
     **kwargs
         Passed through to the underlying reader.
 
@@ -1010,6 +934,57 @@ def sample_users(
         schema = table_columns(filepath, format=format,
                                include_schema=True, sep=sep)
 
+    if within is not None:
+        coord_key1, coord_key2, use_lat_lon = _fallback_spatial_cols(column_names, traj_cols, kwargs)
+        
+        # normalise *poly* to a shapely geometry
+        if isinstance(within, str):
+            poly = wkt.loads(within)
+        elif isinstance(within, sh_geom.base.BaseGeometry):
+            poly = within
+        elif isinstance(within, gpd.GeoSeries):
+            poly = within.unary_union
+        elif isinstance(within, gpd.GeoDataFrame):
+            poly = within.geometry.unary_union
+        else:
+            raise TypeError("within must be WKT, shapely, GeoSeries, or GeoDataFrame")
+
+        if data_crs is None:
+            if use_lat_lon:
+                data_crs = "EPSG:4326"
+                warnings.warn("data_crs not provided; assuming EPSG:4326 for "
+                              "longitude/latitude coordinates.")
+            else:
+                raise ValueError(
+                    "data_crs must be supplied when using projected x/y columns, "
+                    "or provide latitude/longitude columns instead."
+                )
+                
+        data_crs = pyproj.CRS(data_crs)
+
+        # CRS check / reprojection
+        poly_crs_final = getattr(within, "crs", None) or poly_crs
+        if poly_crs_final is None:
+            warnings.warn("Polygon CRS unspecified; assuming it matches data_crs.")
+        else:
+            src_crs = pyproj.CRS(poly_crs_final)
+            if not src_crs.equals(data_crs):
+                poly = gpd.GeoSeries([poly], crs=src_crs).to_crs(data_crs).iloc[0]
+        
+        minx, miny, maxx, maxy = poly.bounds
+        bbox_specs = [
+            (coord_key1, ">=", minx), (coord_key1, "<=", maxx),
+            (coord_key2, ">=", miny), (coord_key2, "<=", maxy),
+        ]
+        if filters is None:
+            filters = bbox_specs
+        elif isinstance(filters, tuple):
+            filters = [filters] + bbox_specs
+        elif isinstance(filters, list):
+            filters = filters + bbox_specs
+        else:  # raw ds.Expression – box filter can’t be merged, keep filters unchanged
+            pass
+    
     # Resolve trajectory column names
     traj_cols = _parse_traj_cols(column_names, traj_cols, kwargs)
     _has_user_cols(column_names, traj_cols)
@@ -1041,8 +1016,15 @@ def sample_users(
                                      traj_cols=traj_cols,
                                      schema=schema,
                                      use_pyarrow_dataset=use_pyarrow_dataset)
-        table = dataset_obj.to_table(columns=[uid_col], filter=arrow_flt)
-        user_ids = pc.unique(table[uid_col]).to_pandas()
+        if within is not None:
+            table = dataset_obj.to_table(columns=[uid_col, coord_key1, coord_key2], filter=arrow_flt)
+            df = table.to_pandas()
+            pts = gpd.GeoSeries(gpd.points_from_xy(df[coord_key1], df[coord_key2]),
+                                 crs=data_crs)
+            user_ids = df.loc[pts.within(poly), uid_col].drop_duplicates()
+        else:
+            table = dataset_obj.to_table(columns=[uid_col], filter=arrow_flt)
+            user_ids = pc.unique(table[uid_col]).to_pandas()
 
     else:
         read_csv_kwargs = {
@@ -1064,8 +1046,12 @@ def sample_users(
             )
             df = df[mask_func(df)]
     
-        user_ids = df[uid_col].drop_duplicates()
-        
+        if within is not None:
+            pts = gpd.GeoSeries(gpd.points_from_xy(df[coord_key1], df[coord_key2]),
+                                     crs=data_crs)
+            user_ids = df.loc[pts.within(poly), uid_col].drop_duplicates()
+        else:
+            user_ids = df[uid_col].drop_duplicates()
     # Sample as int count or fraction
     if isinstance(size, int):
         return user_ids.sample(n=min(size, len(user_ids)), random_state=seed, replace=False)
