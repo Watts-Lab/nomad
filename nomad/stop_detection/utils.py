@@ -160,7 +160,7 @@ def _update_diameter(c_j, coords_prev, D_prev, metric='euclidean'):
 
 def _fallback_time_cols(col_names, traj_cols, kwargs):
     '''
-    Helper to decide whether to use datetime vs timestamp in cases of ambiguity
+    Helper to decide whether to use datetime vs timestamp for processing algorithms
     '''
     traj_cols = loader._parse_traj_cols(col_names, traj_cols, kwargs, defaults={}, warn=False)
     # check for explicit datetime usage
@@ -183,7 +183,7 @@ def _fallback_time_cols(col_names, traj_cols, kwargs):
 def _fallback_st_cols(col_names, traj_cols, kwargs):
     '''
     Helper function to decide whether to use latitude and longitude or x,y,
-    as well as datetime vs timestamp in cases of ambiguity
+    as well as datetime vs timestamp for processing algorithms
     '''
     traj_cols = loader._parse_traj_cols(col_names, traj_cols, kwargs, defaults={}, warn=False)
     
