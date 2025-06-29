@@ -12,8 +12,9 @@ import os
 import pdb
 import nomad.io.base as loader
 import warnings
-import nomad.constants as constants
+from nomad.filters import to_timestamp
 from nomad.stop_detection import utils
+import nomad.constants as constants
 
 ##########################################
 ########         DBSCAN           ########
@@ -339,7 +340,7 @@ def temporal_dbscan(data, time_thresh, dist_thresh, min_pts, complete_output=Fal
 
 def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, dur_min=5, traj_cols=None, **kwargs):
     # Check if user wants long and lat and datetime
-    t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(traj.columns, traj_cols, kwargs)
+    t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)
     # Load default col names
     traj_cols = loader._parse_traj_cols(traj.columns, traj_cols, kwargs)
     
