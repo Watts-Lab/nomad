@@ -33,11 +33,11 @@ def _xy_or_loc_col(col_names, verbose=False):
 def _datetime_or_ts_col(col_names, verbose=False):
     if 'datetime' in col_names:
         return "datetime"
-    elif "unix_timestamp" in col_names:
-        return "unix_timestamp"
+    elif 'timestamp' in col_names:
+        return 'timestamp'
     else:
         if verbose:
-            warnings.warn("No trajectory data was found or time columns ('datetime', 'unix_timestamp')\
+            warnings.warn("No trajectory data was found or time columns ('datetime', 'timestamp')\
                           in keyword arguments. '2025-01-01 00:00Z' will be used for starting trajectory time.")
         return "missing"
 
@@ -84,8 +84,8 @@ def sample_hier_nhpp(traj,
     if beta_durations is not None: beta_durations *= 60
 
     # absolute window
-    t0   = int(traj['unix_timestamp'].iloc[0])
-    t_end = int(traj['unix_timestamp'].iloc[-1])
+    t0   = int(traj['timestamp'].iloc[0])
+    t_end = int(traj['timestamp'].iloc[-1])
 
     # 1) bursts in continuous seconds
     if beta_start is None and beta_durations is None:
@@ -144,7 +144,7 @@ def sample_hier_nhpp(traj,
     ping_times = np.concatenate(ping_times).astype(int)
 
     # 3) map to last tick via two-index searchsorted
-    traj_ts = traj['unix_timestamp'].to_numpy()
+    traj_ts = traj['timestamp'].to_numpy()
     idx = np.searchsorted(traj_ts, ping_times, side='right') - 1
     valid = idx >= 0
     idx = idx[valid]
@@ -156,7 +156,7 @@ def sample_hier_nhpp(traj,
         ping_times = ping_times[keep]
 
     sampled_traj = traj.iloc[idx].copy()
-    sampled_traj['unix_timestamp'] = ping_times
+    sampled_traj['timestamp'] = ping_times
     sampled_traj['datetime'] = (
         pd.to_datetime(ping_times, unit='s', utc=True)
           .tz_convert(tz)
@@ -236,11 +236,11 @@ class Agent:
         speeds : dict, optional (default=DEFAULT_SPEEDS)
             Dictionary containing possible speeds of the agent.
         destination_diary : pandas.DataFrame, optional (default=None)
-            DataFrame containing the following columns: 'unix_timestamp', 'datetime', 'duration', 'location'.
+            DataFrame containing the following columns: 'timestamp', 'datetime', 'duration', 'location'.
         trajectory : pandas.DataFrame, optional (default=None)
-            DataFrame containing the following columns: 'x', 'y', 'datetime', 'unix_timestamp', 'identifier'.
+            DataFrame containing the following columns: 'x', 'y', 'datetime', 'timestamp', 'identifier'.
         diary : pandas.DataFrame,  optional (default=None)
-            DataFrame containing the following columns: 'unix_timestamp', 'datetime', 'duration', 'location'.
+            DataFrame containing the following columns: 'timestamp', 'datetime', 'duration', 'location'.
         dt : float, optional (default=1)
             Time step duration.
         """
@@ -263,11 +263,11 @@ class Agent:
         self.visit_freqs = None
 
         self.destination_diary = destination_diary if destination_diary is not None else pd.DataFrame(
-            columns=['datetime', 'unix_timestamp', 'duration', 'location'])
+            columns=['datetime', 'timestamp', 'duration', 'location'])
         self.trajectory = trajectory
         self.dt = None
         self.diary = diary if diary is not None else pd.DataFrame(
-            columns=['datetime', 'unix_timestamp', 'duration', 'location', 'identifier'])
+            columns=['datetime', 'timestamp', 'duration', 'location', 'identifier'])
         self.last_ping = trajectory.iloc[-1] if (trajectory is not None) else None
         self.sparse_traj = None
 
@@ -434,27 +434,27 @@ class Agent:
                 prev_ping = self.last_ping
                 start_point = (prev_ping['x'], prev_ping['y'])
                 dest_building = city.buildings[building_id]
-                unix_timestamp = prev_ping['unix_timestamp'] + tick_secs
+                unix_timestamp = prev_ping['timestamp'] + tick_secs
                 datetime = prev_ping['datetime'] + timedelta(seconds=tick_secs)               
                 coord, location = self._sample_step(start_point, dest_building, dt)
                 ping = {'x': coord[0], 
                         'y': coord[1],
                         'datetime': datetime,
-                        'unix_timestamp': unix_timestamp,
+                        'timestamp': unix_timestamp,
                         'identifier': self.identifier}
 
                 trajectory_update.append(ping)
                 self.last_ping = ping
                 if current_entry == None:
                     current_entry = {'datetime': datetime,
-                                     'unix_timestamp': unix_timestamp,
+                                     'timestamp': unix_timestamp,
                                      'duration': dt,
                                      'location': location,
                                      'identifier': self.identifier}
                 elif (current_entry['location'] != location):
                     entry_update.append(current_entry)
                     current_entry = {'datetime': datetime,
-                                     'unix_timestamp': unix_timestamp,
+                                     'timestamp': unix_timestamp,
                                      'duration': dt,
                                      'location': location,
                                      'identifier': self.identifier}
@@ -538,7 +538,7 @@ class Agent:
 
         if self.destination_diary.empty:
             start_time_local = self.last_ping['datetime']
-            start_time = self.last_ping['unix_timestamp']
+            start_time = self.last_ping['timestamp']
             curr = self.city.get_block((self.last_ping['x'], self.last_ping['y'])).id  # Always a building?? Could be street
         else:
             last_entry = self.destination_diary.iloc[-1]
@@ -582,7 +582,7 @@ class Agent:
 
             # Update destination diary
             entry = {'datetime': start_time_local,
-                     'unix_timestamp': start_time,
+                     'timestamp': start_time,
                      'duration': epr_time_res,
                      'location': curr}
             dest_update.append(entry)
@@ -615,7 +615,7 @@ class Agent:
         Parameters
         ----------
         destination_diary : pandas.DataFrame, optional (default=None)
-            DataFrame containing the following columns: 'unix_timestamp', 'datetime', 'duration', 'location'.
+            DataFrame containing the following columns: 'timestamp', 'datetime', 'duration', 'location'.
         end_time : pd.Timestamp, optional
             The end time to generate the trajectory until.
         epr_time_res : int, optional
@@ -624,7 +624,7 @@ class Agent:
             Random seed for reproducibility.
         kwargs : dict, optional
             Additional keyword arguments for trajectory generation. 
-            Can include 'x', 'y', 'datetime', 'unix_timestamp', 'tz'
+            Can include 'x', 'y', 'datetime', 'timestamp', 'tz'
             These are used to set the initial position of the agent.
         
         Returns
@@ -652,7 +652,7 @@ class Agent:
                 'x': x_coord,
                 'y': y_coord,
                 'datetime': datetime,
-                'unix_timestamp': unix_timestamp,
+                'timestamp': unix_timestamp,
                 'identifier': self.identifier
                 })
             self.trajectory = pd.DataFrame([self.last_ping])
@@ -678,8 +678,8 @@ class Agent:
                 if datetime.tz is None and 'tz' in kwargs:
                     datetime = datetime.tz_localize(kwargs['tz'])
                 unix_timestamp = int(datetime.timestamp())
-            elif _datetime_or_ts_col(kwargs.keys(), verbose) == "unix_timestamp":
-                unix_timestamp = kwargs['unix_timestamp']
+            elif _datetime_or_ts_col(kwargs.keys(), verbose) == 'timestamp':
+                unix_timestamp = kwargs['timestamp']
                 if 'tz' in kwargs:
                     datetime = pd.to_datetime(unix_timestamp, unit='s', utc=True).tz_convert(kwargs['tz'])
                 datetime = pd.to_datetime(unix_timestamp, unit='s')
@@ -691,12 +691,12 @@ class Agent:
                 'x': x_coord,
                 'y': y_coord,
                 'datetime': datetime,
-                'unix_timestamp': unix_timestamp,
+                'timestamp': unix_timestamp,
                 'identifier': self.identifier
                 })
         
         else:
-            if ('x' in kwargs)or('y' in kwargs)or('datetime'in kwargs)or('unix_timestamp' in kwargs):
+            if ('x' in kwargs)or('y' in kwargs)or('datetime'in kwargs)or('timestamp' in kwargs):
                 raise ValueError(
                     "Keywords arguments conflict with existing trajectory or destination diary,\
                     use Agent.reset_trajectory() or do not provide keyword arguments"
@@ -768,7 +768,7 @@ class Agent:
         else:
             sparse_traj = result
             
-        sparse_traj = sparse_traj.set_index('unix_timestamp', drop=False)
+        sparse_traj = sparse_traj.set_index('timestamp', drop=False)
 
         if self.sparse_traj is None or replace_sparse_traj:
             self.sparse_traj = sparse_traj
@@ -844,7 +844,7 @@ def condense_destinations(destination_diary):
     # Aggregate data by segment
     condensed_df = destination_diary.groupby('segment_id').agg({
         'datetime': 'first',
-        'unix_timestamp': 'first',
+        'timestamp': 'first',
         'duration': 'sum',
         'location': 'first'
     }).reset_index(drop=True)
