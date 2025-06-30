@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 import warnings
 import funkybob
 import s3fs
-
+import pdb
 import pyarrow as pa
 import pyarrow.dataset as ds
 
@@ -42,9 +42,9 @@ def _datetime_or_ts_col(col_names, verbose=False):
         return "missing"
 
 def sample_hier_nhpp(traj,
-                     beta_start,
-                     beta_durations,
-                     beta_ping,
+                     beta_start=None,
+                     beta_durations=None,
+                     beta_ping=5,
                      dt=1,
                      ha=3/4,
                      seed=None,
@@ -60,52 +60,55 @@ def sample_hier_nhpp(traj,
         scale parameter (mean) of Exponential distribution modeling burst inter-arrival times
         where 1/beta_start is the rate of events (bursts) per minute.
     beta_durations: float
-        scale parameter (mean) of Exponential distribution modeling burst durations
+        scale parameter (mean) of Exponential distribution modeling burst durations.
+        if beta_start and beta_durations are None, a single burst covering the whole trajectory is used.
     beta_ping: float
         scale parameter (mean) of Exponential distribution modeling ping inter-arrival times
         within a burst, where 1/beta_ping is the rate of events (pings) per minute.
     dt: float
         the time resolution of the output sequence. Must match that of the input trajectory.  
     ha: float
-        horizontal accuracy controlling the measurement error. Noisy locations are sampled as
-        (true x + eps_x, true y + eps_y) where (eps_x, eps_y) ~ N(0, nu/1.96).
+        Mean horizontal-accuracy radius *in 15 m blocks*. The actual per-ping accuracy is random: ha ≥ 8 m/15 m and follows a
+        Pareto distribution with that mean.  For each ping the positional error (ε_x, ε_y) is drawn i.i.d. N(0, σ²) with σ = HA / 1.515 so that
+        |ε| ≤ HA with 68 % probability.
     seed : int0
         The seed for random number generation.
     output_bursts : bool
         If True, outputs the latent variables on when bursts start and end.
     """
-    if seed:
-        npr.seed(seed)
+    rng = npr.default_rng(seed) 
 
-    # Adjust betas to dt time resolution
-    # should match the resolution of traj?
-    beta_start = beta_start / dt
-    beta_durations = beta_durations / dt
+    if beta_ping is None:
+        raise ValueError("beta_ping must be a positive number")
     beta_ping = beta_ping / dt
+    if beta_start is not None:
+        beta_start = beta_start / dt
+    if beta_durations is not None:
+        beta_durations = beta_durations / dt
 
     # Sample starting points of bursts using at most max_burst_samples times
-    max_burst_samples = len(traj)
-    
-    inter_arrival_times = npr.exponential(scale=beta_start, size=max_burst_samples)
-    burst_start_points = np.cumsum(inter_arrival_times).astype(int)
-    burst_start_points = burst_start_points[burst_start_points < len(traj)]
-
-    # Sample durations of each burst
-    burst_durations = np.random.exponential(scale=beta_durations, size=len(burst_start_points)).astype(int)
-
-    # Create start_points and end_points
-    burst_end_points = burst_start_points + burst_durations
-    burst_end_points = np.minimum(burst_end_points, len(traj) - 1)
-
-    # Adjust end_points to handle overlaps
-    for i in range(len(burst_start_points) - 1):
-        if burst_end_points[i] > burst_start_points[i + 1]:
-            burst_end_points[i] = burst_start_points[i + 1]
-
-    # Sample pings within each burst
-    sampled_trajectories = []
-    burst_info = []
+    if beta_start is None and beta_durations is None:
+        burst_start_points = np.array([0], dtype=int)
+        burst_end_points   = np.array([len(traj) - 1], dtype=int)
+    else:  
+        max_burst_samples = len(traj)
         
+        inter_arrival_times = rng.exponential(scale=beta_start, size=max_burst_samples)
+        burst_start_points = np.cumsum(inter_arrival_times).astype(int)
+        burst_start_points = burst_start_points[burst_start_points < max_burst_samples]
+    
+        # Sample durations of each burst
+        burst_durations = rng.exponential(scale=beta_durations, size=len(burst_start_points)).astype(int)
+    
+        # Create start_points and end_points
+        burst_end_points = burst_start_points + burst_durations
+        burst_end_points = np.minimum(burst_end_points, max_burst_samples - 1)
+    
+        # Adjust end_points to handle overlaps
+        burst_end_points[:-1] = np.minimum(burst_end_points[:-1],
+                                           burst_start_points[1:])
+    # Sample pings within each burst
+    sampled_trajectories, burst_info = [], []
     for start, end in zip(burst_start_points, burst_end_points):
         if output_bursts:
             burst_info += [traj.loc[[start, end], 'datetime'].tolist()]       
@@ -118,7 +121,7 @@ def sample_hier_nhpp(traj,
         # max_ping_samples = min(int(5*len(traj)/beta_start), len(burst_indices))
         max_ping_samples = len(burst_indices)
         
-        ping_intervals = np.random.exponential(scale=beta_ping, size=max_ping_samples)
+        ping_intervals = rng.exponential(scale=beta_ping, size=max_ping_samples)
         ping_times = np.unique(np.cumsum(ping_intervals).astype(int))
         ping_times = ping_times[ping_times < (end - start)] + start
 
@@ -137,9 +140,22 @@ def sample_hier_nhpp(traj,
     sampled_traj = sampled_traj.drop_duplicates('datetime')
 
     # Add sampling noise
-    noise = npr.normal(loc=0, scale=ha/1.96, size=(sampled_traj.shape[0], 2))
-    sampled_traj[['x', 'y']] = sampled_traj[['x', 'y']] + noise
-    sampled_traj['ha'] = ha
+    x_m = 8 / 15                     # hard floor: 8 m  →  8/15 blocks
+    if ha <= x_m:
+        raise ValueError("ha (mean accuracy) must exceed 8 m / 15 m ≈ 0.533 blocks")
+        
+    alpha = ha / (ha - x_m)          # Pareto shape parameter so that E[HA] = ha
+    n = len(sampled_traj)
+
+    # random accuracy radii (Rayleigh 68 % radius) for each ping, blocks
+    ha_realized = (rng.pareto(alpha, size=n) + 1) * x_m
+    # per-axis σ so that P(|Δx| ≤ ha) = 0.68  →  σ = ha / 1.515
+    sigma = ha_realized / 1.515
+    
+    noise = rng.standard_normal((n, 2)) * sigma[:, None]
+    
+    sampled_traj[["x", "y"]] = sampled_traj[["x", "y"]].to_numpy() + noise
+    sampled_traj["ha"]       = ha_realized            # store realized accuracy
 
     if output_bursts:
         burst_info = pd.DataFrame(burst_info, columns = ['start_time', 'end_time'])
@@ -443,8 +459,8 @@ class Agent:
                              end_time: pd.Timestamp, 
                              epr_time_res: int = 15,
                              stay_probs: dict = DEFAULT_STAY_PROBS,
-                             rho: float = 0.6, 
-                             gamma: float = 0.2, 
+                             rho: float = 0.4, 
+                             gamma: float = 0.3, 
                              seed: int = 0):
         """
         Exploration and preferential return.
@@ -491,14 +507,14 @@ class Agent:
             }).set_index('id')
 
             # Initializes past counts randomly
-            visit_freqs.loc[self.home, 'freq'] = 35
-            visit_freqs.loc[self.workplace, 'freq'] = 35
-            visit_freqs.loc[visit_freqs.type == 'park', 'freq'] = 3
+            visit_freqs.loc[self.home, 'freq'] = 20
+            visit_freqs.loc[self.workplace, 'freq'] = 20
+            visit_freqs.loc[visit_freqs.type == 'park', 'freq'] = 5
 
             initial_locs = []
-            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'retail'].index, size=npr.poisson(6)))
-            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'work'].index, size=npr.poisson(3)))
-            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'home'].index, size=npr.poisson(3)))
+            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'retail'].index, size=npr.poisson(4)))
+            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'work'].index, size=npr.poisson(2)))
+            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'home'].index, size=npr.poisson(2)))
             visit_freqs.loc[initial_locs, 'freq'] += 2
 
         if self.destination_diary.empty:
