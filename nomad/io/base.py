@@ -1,5 +1,7 @@
 import pyarrow.parquet as pq
 import pandas as pd
+import geopandas as gpd
+import pyproj
 from functools import partial
 import multiprocessing
 from multiprocessing import Pool
@@ -10,12 +12,18 @@ import os
 import pyarrow.compute as pc
 import pyarrow.dataset as ds
 import pyarrow as pa
+import pyarrow.types as pat
+import pyarrow.csv as pc_csv
 from nomad.constants import DEFAULT_SCHEMA
 import numpy as np
 import geopandas as gpd
 import warnings
 import inspect
+from nomad.constants import FILTER_OPERATORS
 import pdb
+
+from shapely import wkt
+import shapely.geometry as sh_geom
 
 import pandas as pd
 from pandas.api.types import (
@@ -29,6 +37,24 @@ from pandas.api.types import (
 from pandas import Int64Dtype, Float64Dtype, StringDtype # For isinstance if needed later
 
 # utils
+def _fallback_spatial_cols(col_names, traj_cols, kwargs):
+    '''
+    Helper function to decide whether to use latitude and longitude or x,y
+    for processing algorithms
+    '''
+    traj_cols = _parse_traj_cols(col_names, traj_cols, kwargs, defaults={}, warn=False)
+    
+    # check for sufficient spatial coords
+    _has_spatial_cols(col_names, traj_cols, exclusive=True) 
+
+    use_lon_lat = ('latitude' in traj_cols and 'longitude' in traj_cols)
+    if use_lon_lat:
+        coord_key1, coord_key2 = 'longitude', 'latitude'
+    else:
+        coord_key1, coord_key2 = 'x', 'y'
+            
+    return coord_key1, coord_key2, use_lon_lat
+
 def _update_schema(original, new_labels):
     updated_schema = dict(original)
     for label in new_labels:
@@ -36,25 +62,26 @@ def _update_schema(original, new_labels):
             updated_schema[label] = new_labels[label]
     return updated_schema
 
-def _parse_traj_cols(columns, traj_cols, optional_args):
+def _parse_traj_cols(columns, traj_cols, kwargs, warn=True, defaults=DEFAULT_SCHEMA):
     """
     Internal helper to finalize trajectory column names using user input and defaults.
     """
     if traj_cols:
-        for k in optional_args:
-            if k in traj_cols and optional_args[k] != traj_cols[k]:
+        for k in kwargs:
+            if k in traj_cols and kwargs[k] != traj_cols[k]:
                 raise ValueError(
-                    f"Conflicting column name for '{k}': '{traj_cols[k]}' (from traj_cols) vs '{optional_args[k]}' (from keyword arguments)."
+                    f"Conflicting column name for '{k}': '{traj_cols[k]}' (from traj_cols) vs '{kwargs[k]}' (from keyword arguments)."
                 )
-        traj_cols = _update_schema(traj_cols, optional_args)
+        traj_cols = _update_schema(traj_cols, kwargs)
     else:
-        traj_cols = _update_schema({}, optional_args)
+        traj_cols = _update_schema({}, kwargs)
 
-    for key, value in traj_cols.items():
-        if value not in columns:
-            warnings.warn(f"Trajectory column '{value}' specified for '{key}' not found in DataFrame.")
+    if warn:
+        for key, value in traj_cols.items():
+            if value not in columns:
+                warnings.warn(f"Trajectory column '{value}' specified for '{key}' not found in DataFrame.")
 
-    return _update_schema(DEFAULT_SCHEMA, traj_cols)
+    return _update_schema(defaults, traj_cols)
     
 def _offset_seconds_from_ts(ts):
     """
@@ -425,33 +452,47 @@ def _has_duration_cols(col_names, traj_cols):
     return duration_exists
 
 def _has_spatial_cols(col_names, traj_cols, exclusive=False):
-    
-    spatial_exists = (
-        ('latitude' in traj_cols and 'longitude' in traj_cols and 
-         traj_cols['latitude'] in col_names and traj_cols['longitude'] in col_names) or
-        ('x' in traj_cols and 'y' in traj_cols and 
-         traj_cols['x'] in col_names and traj_cols['y'] in col_names) or
-        ('geohash' in traj_cols and traj_cols['geohash'] in col_names)
-    )
-
-    if not spatial_exists:
-        raise ValueError(
-            "Could not find required spatial columns in {}. The dataset must contain or map to at least one of the following sets: "
-            "('latitude', 'longitude'), ('x', 'y'), or 'geohash'.".format(col_names)
-        )
-
+    """Return True if lon/lat, x/y or geohash columns are present; else raise."""
     if exclusive:
-        single_spatial = (
-            ('latitude' in traj_cols and 'longitude' in traj_cols and 
-             traj_cols['latitude'] in col_names and traj_cols['longitude'] in col_names) ^
-            ('x' in traj_cols and 'y' in traj_cols and 
-             traj_cols['x'] in col_names and traj_cols['y'] in col_names) 
+        has_lon_lat = (
+            'latitude' in traj_cols and 'longitude' in traj_cols and
+            traj_cols['latitude'] in col_names and traj_cols['longitude'] in col_names
         )
-        raise ValueError(
-            f"Too many user provided spatial columns in arguments {traj_cols}, only one pair of spatial coordinates is required."
+        has_x_y = (
+            'x' in traj_cols and 'y' in traj_cols and
+            traj_cols['x'] in col_names and traj_cols['y'] in col_names
         )
-    
-    return spatial_exists
+
+        if has_lon_lat and has_x_y:
+            raise ValueError("Too many spatial columns; provide only one pair.")
+        if not has_lon_lat and not has_x_y:
+            raise ValueError(
+                f"No spatial columns provided for spatial ops; please provide "
+                "explicit column names to be used for either ('latitude','longitude') or ('x','y')."
+            )
+        return True
+
+    else:
+        traj_cols = _update_schema(DEFAULT_SCHEMA, traj_cols)
+
+        has_lon_lat = (
+            'latitude' in traj_cols and 'longitude' in traj_cols and
+            traj_cols['latitude'] in col_names and traj_cols['longitude'] in col_names
+        )
+        has_x_y = (
+            'x' in traj_cols and 'y' in traj_cols and
+            traj_cols['x'] in col_names and traj_cols['y'] in col_names
+        )
+        has_geohash = (
+            'geohash' in traj_cols and traj_cols['geohash'] in col_names
+        )
+
+        if not (has_lon_lat or has_x_y or has_geohash):
+            raise ValueError(
+                f"I didn't find spatial columns in {col_names}; please provide "
+                "column names for ('latitude','longitude') or ('x','y') or 'geohash'."
+            )
+        return True
 
 def _has_user_cols(col_names, traj_cols):
     
@@ -465,122 +506,6 @@ def _has_user_cols(col_names, traj_cols):
     return user_exists
 
 # SPARK check is traj_dataframe
-
-def _is_traj_df_spark(df, traj_cols=None, **kwargs):
-    if not isinstance(df, psp.sql.dataframe.DataFrame):
-        return False
-
-    traj_cols = _parse_traj_cols(df.columns, traj_cols, kwargs)
-
-    if not _has_spatial_cols(df.columns, traj_cols) or not _has_time_cols(df.columns, traj_cols):
-        return False
-
-    if 'datetime' in traj_cols and traj_cols['datetime'] in df.columns:
-        if not isinstance(df.schema[traj_cols['datetime']].dataType, TimestampType):
-            return False
-
-    if 'timestamp' in traj_cols and traj_cols['timestamp'] in df.columns:
-        if not isinstance(df.schema[traj_cols['timestamp']].dataType, (IntegerType, LongType, TimestampType)):
-            return False
-
-    for col in ['latitude', 'longitude', 'x', 'y']:
-        if col in traj_cols and traj_cols[col] in df.columns:
-            if not isinstance(df.schema[traj_cols[col]].dataType, (FloatType, DoubleType)):
-                return False
-
-    for col in ['user_id', 'geohash']:
-        if col in traj_cols and traj_cols[col] in df.columns:
-            if not isinstance(df.schema[traj_cols[col]].dataType, StringType):
-                return False
-
-    return True
-
-
-
-# Cast data types and address datetime issues
-
-def _cast_traj_cols_spark(df, traj_cols):
-    """
-    Casts specified trajectory columns in a loaded Spark DataFrame to their expected data types, 
-    with warnings for timestamp precision and timezone-naive datetimes.
-
-    Parameters
-    ----------
-    df : pyspark.sql.DataFrame
-        The DataFrame containing the data to be cast.
-    traj_cols : dict
-        Dictionary mapping expected trajectory column names 
-        (e.g., 'latitude', 'longitude', 'timestamp', 'datetime', 'user_id', 'geohash')
-        to the actual column names in the DataFrame.
-
-    Returns
-    -------
-    pyspark.sql.DataFrame
-        The DataFrame with specified columns cast to their expected types.
-
-    Notes
-    -----
-    - The 'datetime' column is cast to Datetime64 or Object series (with Timestamps) if not already of that type.
-      A warning is issued if the first row appears timezone-naive.
-    - The 'timestamp' column is cast to IntegerType, with a warning for possible millisecond or nanosecond precision.
-    - Spatial columns ('latitude', 'longitude', 'x', 'y') are cast to FloatType if necessary.
-    - User identifier and geohash columns are cast to StringType.
-    """
-
-    # Cast 'datetime' column appropriately
-    if 'datetime' in traj_cols and traj_cols['datetime'] in df.columns:
-        datetime_col = traj_cols['datetime']
-        if not isinstance(df.schema[datetime_col].dataType, TimestampType):
-            df = df.withColumn(datetime_col, col(datetime_col).cast(TimestampType()))
-        
-        # Check if the first row is timezone-naive (PySpark doesn't store tz info)
-        first_row = df.select(datetime_col).first()
-        if first_row and first_row[0] is not None:
-            if first_row[0].tzinfo is None:
-                warnings.warn(
-                    f"The '{datetime_col}' column appears to be timezone-naive. "
-                    "Consider localizing to a timezone to avoid inconsistencies."
-                )
-
-    # Cast 'timestamp' column to IntegerType and check precision
-    if 'timestamp' in traj_cols and traj_cols['timestamp'] in df.columns:
-        timestamp_col = traj_cols['timestamp']
-        if not isinstance(df.schema[timestamp_col].dataType, (IntegerType, LongType)):
-            df = df.withColumn(timestamp_col, col(timestamp_col).cast(IntegerType()))
-
-        # Check for millisecond/nanosecond values by inspecting first row
-        first_timestamp = df.select(timestamp_col).first()
-        if first_timestamp and first_timestamp[0] is not None: # different index?
-            timestamp_length = len(str(first_timestamp[0]))
-            
-            if timestamp_length == 13:
-                warnings.warn(
-                    f"The '{timestamp_col}' column appears to be in milliseconds. "
-                    "This may lead to inconsistencies, converting to seconds is recommended."
-                )
-            elif timestamp_length == 19:
-                warnings.warn(
-                    f"The '{timestamp_col}' column appears to be in nanoseconds. "
-                    "This may lead to inconsistencies, converting to seconds is recommended."
-                )
-
-    # Cast spatial columns to FloatType or DoubleType
-    float_cols = ['latitude', 'longitude', 'x', 'y']
-    for col_name in float_cols:
-        if col_name in traj_cols and traj_cols[col_name] in df.columns:
-            actual_col = traj_cols[col_name]
-            if not isinstance(df.schema[actual_col].dataType, (FloatType, DoubleType)):
-                df = df.withColumn(actual_col, col(actual_col).cast(FloatType()))
-
-    # Cast identifier and geohash columns to StringType
-    string_cols = ['user_id', 'geohash']
-    for col_name in string_cols:
-        if col_name in traj_cols and traj_cols[col_name] in df.columns:
-            actual_col = traj_cols[col_name]
-            if not isinstance(df.schema[actual_col].dataType, StringType):
-                df = df.withColumn(actual_col, col(actual_col).cast(StringType()))
-
-    return df
     
 def _process_datetime_column(df, col, parse_dates, mixed_timezone_behavior, fixed_format, traj_cols):
     """Processes a datetime column: parses strings, handles timezones, adds offset."""
@@ -597,6 +522,7 @@ def _process_datetime_column(df, col, parse_dates, mixed_timezone_behavior, fixe
             fixed_format=fixed_format,
             check_valid_datetime_str=False
         )
+
         df[col] = parsed
         # do not compute offset column if already exists
         has_tz = ('tz_offset' in traj_cols) and (traj_cols['tz_offset'] in df.columns)
@@ -639,24 +565,25 @@ def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_f
             )
 
     # Handle integer columns
-    for key in ['tz_offset', 'duration', 'timestamp', 'start_timestamp']:
+    for key in ['tz_offset', 'duration', 'timestamp']:
         if key in traj_cols and traj_cols[key] in df:
             col = traj_cols[key]
             if df[col].dtype != "Int64":
                 df[col] = df[col].astype("Int64")
 
-            if key == 'timestamp' or key == 'start_timestamp':
-                ts_len = len(str(df[col].iloc[0]))
-                if ts_len == 13:
-                    warnings.warn(
-                        f"The '{col}' column appears to be in milliseconds. "
-                        "This may lead to inconsistencies, converting to seconds is recommended."
-                    )
-                elif ts_len == 19:
-                    warnings.warn(
-                        f"The '{col}' column appears to be in nanoseconds. "
-                        "This may lead to inconsistencies, converting to seconds is recommended."
-                    )
+            if key == 'timestamp':
+                if len(df)>0:
+                    ts_len = len(str(df[col].iloc[0]))
+                    if ts_len == 13:
+                        warnings.warn(
+                            f"The '{col}' column appears to be in milliseconds. "
+                            "This may lead to inconsistencies, converting to seconds is recommended."
+                        )
+                    elif ts_len == 19:
+                        warnings.warn(
+                            f"The '{col}' column appears to be in nanoseconds. "
+                            "This may lead to inconsistencies, converting to seconds is recommended."
+                        )
 
     # Handle float columns
     for key in ['latitude', 'longitude', 'x', 'y']:
@@ -673,24 +600,129 @@ def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_f
                 df[col] = df[col].astype("str")
     return df
 
-def table_columns(filepath, format="csv", include_schema=False):
+def _process_filters(filters, col_names, use_pyarrow_dataset, traj_cols=None, schema=None):
     """
-    Return column names (default) or the full schema of a CSV/parquet source.
-    """
-    assert format in {"csv", "parquet"}
+    Build one pyarrow.Expression from filters, resolving aliases and
+    coercing literals for timestamp vs string columns.
 
-    if isinstance(filepath, list):
-        datasets = [ds.dataset(p, format=format, partitioning="hive") for p in filepath]
-        schema = ds.UnionDataset(schema=datasets[0].schema, children=datasets).schema
-    elif format == "parquet" or os.path.isdir(filepath):
-        schema = ds.dataset(filepath, format=format, partitioning="hive").schema
+    Parameters
+    ----------
+    filters   : None | ds.Expression | (col, op, val) | list of same
+    col_names : iterable of actual column names
+    use_pyarrow_dataset : bool, whether to use pyarrow expressions
+        or a pandas series as a mask
+    traj_cols : dict, optional, maps logical names → actual names
+    schema    : pyarrow.Schema, optional, for type lookups
+
+    Returns
+    -------
+    ds.Expression or callable function that generates a mask
+    """
+    if filters is None:
+        return None
+        
+    traj_cols = traj_cols or {}
+    specs = [filters] if isinstance(filters, (ds.Expression, tuple)) else list(filters)
+
+    if use_pyarrow_dataset:
+        exprs = []
+        for spec in specs:
+            if isinstance(spec, ds.Expression):
+                exprs.append(spec)
+            elif (isinstance(spec, tuple) and len(spec) == 3):
+                col, op, val = spec
+                if col in col_names:
+                    pass
+                elif col in traj_cols and traj_cols[col] in col_names:
+                    col = traj_cols[col]
+                else:
+                    raise KeyError(f"Filter column {col!r} not found in {col_names}")
+
+                if op not in FILTER_OPERATORS:
+                    raise ValueError(f"Unsupported operator {op!r}")
+
+                if schema is not None:
+                    pa_type = schema.field(col).type
+                    if pat.is_timestamp(pa_type) and isinstance(val, str):
+                        warnings.warn(f"Coercing filter value {val!r} to pandas.Timestamp for column {col!r}")
+                        val = pd.Timestamp(val)
+                    elif pat.is_string(pa_type) and isinstance(val, (pd.Timestamp, np.datetime64)):
+                        val = pd.Timestamp(val).isoformat()
+                        warnings.warn(f"Coercing filter datetime {val!r} to ISO string {val} for column {col!r}")
+                        
+                exprs.append(FILTER_OPERATORS[op](ds.field(col), val))
+
+            else:
+                raise TypeError(
+                    "filters must be a ds.Expression or a (column, op, value) tuple, "
+                    "or a list of those."
+                )
+
+        out = exprs[0]
+        for e in exprs[1:]:
+            out &= e
+        return out
+
     else:
-        header = pd.read_csv(filepath, nrows=0)
+        def mask_func(df):
+            mask = pd.Series(True, index=df.index)
+            for col, op, val in specs:
+                col = col if col in col_names else traj_cols.get(col, col)
+                if col not in df.columns:
+                    raise ValueError(f"Unknown filter column {col!r}")
+                if op not in FILTER_OPERATORS:
+                    raise ValueError(f"Unsupported operator {op!r}")
+
+                if schema is not None:
+                    dtype = schema[col]
+                    if dtype.name.startswith("datetime") and isinstance(val, str):
+                        warnings.warn(f"Coercing {val!r} → pandas.Timestamp for {col!r}")
+                        val = pd.Timestamp(val)
+                    elif dtype.name.startswith("object") and isinstance(val, (pd.Timestamp, np.datetime64)):
+                        new_val = pd.Timestamp(val).isoformat()
+                        warnings.warn(f"Coercing {val!r} → {new_val!r} for {col!r}")
+                        val = new_val
+
+                mask &= FILTER_OPERATORS[op](df[col], val)
+            return mask
+
+        return mask_func
+
+def table_columns(filepath, format="csv", include_schema=False, sep=","):
+    """
+    Return column names or the full schema of a data source.
+
+    The 'sep' argument specifies the delimiter and is only used for 'csv' format;
+    it is ignored when reading 'parquet' files.
+    """
+    assert format in {"csv", "parquet"}, "format must be 'csv' or 'parquet'"
+
+    use_pyarrow_dataset = (
+        format == "parquet" or
+        isinstance(filepath, (list, tuple)) or
+        os.path.isdir(filepath)
+    )
+    if use_pyarrow_dataset:
+        file_format_obj = "parquet"
+        if format == "csv":
+            parse_options = pc_csv.ParseOptions(delimiter=sep)
+            file_format_obj = ds.CsvFileFormat(parse_options=parse_options)
+        
+        if isinstance(filepath, list):
+            if not filepath:
+                raise ValueError("Input filepath list cannot be empty.")
+            datasets = [ds.dataset(p, format=file_format_obj, partitioning="hive") for p in filepath]
+            schema = ds.UnionDataset(schema=datasets[0].schema, children=datasets).schema
+        else:
+            schema = ds.dataset(filepath, format=file_format_obj, partitioning="hive").schema
+        
+        return schema if include_schema else pd.Index(schema.names)
+    
+    else:
+        header = pd.read_csv(filepath, nrows=0, sep=sep)
         return header.dtypes if include_schema else header.columns
 
-    return schema if include_schema else pd.Index(schema.names)
-
-def from_df(df, traj_cols=None, parse_dates=True, mixed_timezone_behavior="naive", fixed_format=None, **kwargs):
+def from_df(df, traj_cols=None, parse_dates=True, mixed_timezone_behavior="naive", fixed_format=None, filters=None, **kwargs):
     """
     Converts a DataFrame into a standardized trajectory format by validating and casting 
     specified spatial and temporal columns.
@@ -739,8 +771,15 @@ def from_df(df, traj_cols=None, parse_dates=True, mixed_timezone_behavior="naive
                            fixed_format=fixed_format)
 
 
-def from_file(filepath, format="csv", traj_cols=None, parse_dates=True,
-              mixed_timezone_behavior="naive", fixed_format=None, **kwargs):
+def from_file(filepath,
+              format="csv",
+              parse_dates=True,
+              mixed_timezone_behavior="naive",
+              fixed_format=None,
+              sep=",",
+              filters=None,
+              traj_cols=None,
+              **kwargs):
     """
     Load and cast trajectory data from a specified file path or list of paths.
 
@@ -751,40 +790,90 @@ def from_file(filepath, format="csv", traj_cols=None, parse_dates=True,
     format : str, optional
         The format of the data files, either 'csv' or 'parquet'.
     traj_cols : dict, optional
-        Mapping of trajectory column names (e.g., 'latitude', 'timestamp').
-    **kwargs :
-        Additional arguments for reading CSV files, passed to pandas read_csv.
+        Mapping from trajectory fields (e.g. 'latitude', 'timestamp') to
+        column names in the input.
+    parse_dates : bool, default True
+        Whether to parse timestamp columns as datetime.
+    mixed_timezone_behavior : {'naive','warn','raise'}, default 'naive'
+        How to handle mixed‐timezone datetimes.
+    fixed_format : str, optional
+        strftime format string for datetime parsing.
+    sep : str, default ','
+        Field delimiter for CSV input.
+    filters : pyarrow.dataset.Expression or tuple or list of tuples, optional
+        Read‐time filter for Parquet. Accepts a PyArrow Expression,
+        a (column, operator, value) tuple, or a list of such tuples
+        (AND‐chained).
+    **kwargs : dict
+        Additional parameters for column inference when `traj_cols` is not provided.
 
     Returns
     -------
     pd.DataFrame
-        The DataFrame with specified trajectory columns cast to expected types.
-    
-    Notes
-    -----
-    - Checks before loading that files have required trajectory columns for analysis. 
+        DataFrame with trajectory columns cast and dates parsed.
     """
     assert format in ["csv", "parquet"]
 
-    column_names = table_columns(filepath, format)
+    column_names = table_columns(filepath, format=format, sep=sep)
+    col_schema = None
+    if filters is not None:
+        col_schema = table_columns(filepath, format=format,
+                                   include_schema=True, sep=sep)
+        
     traj_cols = _parse_traj_cols(column_names, traj_cols, kwargs)
 
     _has_spatial_cols(column_names, traj_cols)
     _has_time_cols(column_names, traj_cols)
 
-    if format == "csv" and not isinstance(filepath, (list, tuple)) and not os.path.isdir(filepath):
-        read_csv_kwargs = {
-            k: v
-            for k, v in kwargs.items()
-            if k in inspect.signature(pd.read_csv).parameters
-        }
-        df = pd.read_csv(filepath, **read_csv_kwargs)
-    else:
+    use_pyarrow_dataset = (
+        format == "parquet" or
+        isinstance(filepath, (list, tuple)) or
+        os.path.isdir(filepath)
+    )
+
+    if use_pyarrow_dataset:
+        file_format_obj = "parquet"
+        if format == "csv":
+            parse_options = pc_csv.ParseOptions(delimiter=sep)
+            file_format_obj = ds.CsvFileFormat(parse_options=parse_options)
+        
+        if isinstance(filepath, list):
+            if not filepath:
+                raise ValueError("Input filepath list cannot be empty.")
+            datasets = [ds.dataset(p, format=file_format_obj, partitioning="hive") for p in filepath]
+            dataset_obj = ds.UnionDataset(schema=datasets[0].schema, children=datasets)
+        else:
+            dataset_obj = ds.dataset(filepath, format=file_format_obj, partitioning="hive")
+
+        arrow_flt = _process_filters(filters,
+                             col_names=column_names,
+                             traj_cols=traj_cols,
+                             schema=col_schema,
+                             use_pyarrow_dataset=use_pyarrow_dataset)
         df = (
-            ds.dataset(filepath, format=format, partitioning="hive")
-            .to_table(columns=list(column_names))
+            dataset_obj
+            .to_table(
+                filter=arrow_flt,
+                columns=list(column_names))
             .to_pandas()
         )
+    else:
+        read_csv_kwargs = {
+            k: v for k, v in kwargs.items()
+            if k in inspect.signature(pd.read_csv).parameters
+        }
+        df = pd.read_csv(filepath, sep=sep, **read_csv_kwargs)
+                # build a boolean mask from tuple filters
+        if filters is not None:
+            mask_func = _process_filters(
+                filters,
+                col_names=df.columns,
+                traj_cols=traj_cols,
+                schema=schema,
+                use_pyarrow_dataset=False
+            )
+            df = df[mask_func(df)]
+
     return _cast_traj_cols(
         df,
         traj_cols=traj_cols,
@@ -797,68 +886,192 @@ def sample_users(
     filepath,
     format="csv",
     size=1.0,
-    traj_cols=None,
     seed=None,
+    sep=",",
+    filters=None,
+    within=None,
+    poly_crs=None,
+    data_crs=None,
+    traj_cols=None,
     **kwargs
 ):
     """
-    Sample users from a dataset.
+    Sample users from a dataset, with optional read-time filtering for Parquet.
 
     Parameters
     ----------
     filepath : str or Path
-        Path to the data file.
-    format : str, default "csv"
-        Input format (“csv” or “parquet”).
+        Path to the data file or directory.
+    format : {'csv','parquet'}, default 'csv'
+        Input format.
     size : float or int, default 1.0
-        Fraction (0–1) or absolute number of users to sample.
-    traj_cols : dict or None, default None
-        Mapping of trajectory column names, or None to use defaults.
-    seed : int or None
+        Fraction (0–1] or absolute number of users to sample.
+    seed : int, optional
         Random seed for reproducibility.
+    sep : str, default ','
+        CSV delimiter.
+    filters : pyarrow.dataset.Expression or tuple or list of tuples, optional
+        Read-time filter(s) for Parquet inputs. Ignored for single CSV files.
+    within : shapely Polygon/MultiPolygon or WKT str, default None
+        If supplied, keep only points whose coordinates fall inside this polygon.
+    data_crs : str or pyproj.CRS, optional
+        CRS for `data` when it is a plain DataFrame; ignored if `data` is a GeoDataFrame.
+    traj_cols : dict, optional
+        Mapping of logical names ('user_id', etc.) to actual column names.
     **kwargs
         Passed through to the underlying reader.
 
     Returns
     -------
-    pandas.DataFrame with user ids. 
+    pd.Series
+        Sampled user IDs.
     """
     assert format in {"csv", "parquet"}
 
-    column_names = table_columns(filepath, format)
+    column_names = table_columns(filepath, format=format, sep=sep)
+    schema = None
+    if filters is not None:
+        schema = table_columns(filepath, format=format,
+                               include_schema=True, sep=sep)
+
+    if within is not None:
+        coord_key1, coord_key2, use_lat_lon = _fallback_spatial_cols(column_names, traj_cols, kwargs)
+        
+        # normalise *poly* to a shapely geometry
+        if isinstance(within, str):
+            poly = wkt.loads(within)
+        elif isinstance(within, sh_geom.base.BaseGeometry):
+            poly = within
+        elif isinstance(within, gpd.GeoSeries):
+            poly = within.unary_union
+        elif isinstance(within, gpd.GeoDataFrame):
+            poly = within.geometry.unary_union
+        else:
+            raise TypeError("within must be WKT, shapely, GeoSeries, or GeoDataFrame")
+
+        if data_crs is None:
+            if use_lat_lon:
+                data_crs = "EPSG:4326"
+                warnings.warn("data_crs not provided; assuming EPSG:4326 for "
+                              "longitude/latitude coordinates.")
+            else:
+                raise ValueError(
+                    "data_crs must be supplied when using projected x/y columns, "
+                    "or provide latitude/longitude columns instead."
+                )
+                
+        data_crs = pyproj.CRS(data_crs)
+
+        # CRS check / reprojection
+        poly_crs_final = getattr(within, "crs", None) or poly_crs
+        if poly_crs_final is None:
+            warnings.warn("Polygon CRS unspecified; assuming it matches data_crs.")
+        else:
+            src_crs = pyproj.CRS(poly_crs_final)
+            if not src_crs.equals(data_crs):
+                poly = gpd.GeoSeries([poly], crs=src_crs).to_crs(data_crs).iloc[0]
+        
+        minx, miny, maxx, maxy = poly.bounds
+        bbox_specs = [
+            (coord_key1, ">=", minx), (coord_key1, "<=", maxx),
+            (coord_key2, ">=", miny), (coord_key2, "<=", maxy),
+        ]
+        if filters is None:
+            filters = bbox_specs
+        elif isinstance(filters, tuple):
+            filters = [filters] + bbox_specs
+        elif isinstance(filters, list):
+            filters = filters + bbox_specs
+        else:  # raw ds.Expression – box filter can’t be merged, keep filters unchanged
+            pass
+    
+    # Resolve trajectory column names
     traj_cols = _parse_traj_cols(column_names, traj_cols, kwargs)
     _has_user_cols(column_names, traj_cols)
     uid_col = traj_cols["user_id"]
 
-    if format == "csv" and not isinstance(filepath, (list, tuple)) and not os.path.isdir(filepath):
-        user_ids = (
-            pd.read_csv(filepath, usecols=[uid_col])[uid_col]
-            .drop_duplicates()
-        )
-    else:
-        ds_obj   = ds.dataset(filepath, format=format, partitioning="hive")
-        user_ids = pc.unique(ds_obj.to_table(columns=[uid_col])[uid_col]).to_pandas()
+    use_pyarrow_dataset = (
+        format == "parquet" or
+        isinstance(filepath, (list, tuple)) or
+        os.path.isdir(filepath)
+    )
 
+    if use_pyarrow_dataset:
+        file_format_obj = "parquet"
+        if format == "csv":
+            parse_options = pc_csv.ParseOptions(delimiter=sep)
+            file_format_obj = ds.CsvFileFormat(parse_options=parse_options)
+        
+        if isinstance(filepath, list):
+            if not filepath:
+                raise ValueError("Input filepath list cannot be empty.")
+            datasets = [ds.dataset(p, format=file_format_obj, partitioning="hive") for p in filepath]
+            dataset_obj = ds.UnionDataset(schema=datasets[0].schema, children=datasets)
+        else:
+            dataset_obj = ds.dataset(filepath, format=file_format_obj, partitioning="hive")
+
+        # Apply filters at scan time
+        arrow_flt = _process_filters(filters,
+                                     col_names=column_names,
+                                     traj_cols=traj_cols,
+                                     schema=schema,
+                                     use_pyarrow_dataset=use_pyarrow_dataset)
+        if within is not None:
+            table = dataset_obj.to_table(columns=[uid_col, coord_key1, coord_key2], filter=arrow_flt)
+            df = table.to_pandas()
+            pts = gpd.GeoSeries(gpd.points_from_xy(df[coord_key1], df[coord_key2]),
+                                 crs=data_crs)
+            user_ids = df.loc[pts.within(poly), uid_col].drop_duplicates()
+        else:
+            table = dataset_obj.to_table(columns=[uid_col], filter=arrow_flt)
+            user_ids = pc.unique(table[uid_col]).to_pandas()
+
+    else:
+        read_csv_kwargs = {
+            k: v for k, v in kwargs.items()
+            if k in inspect.signature(pd.read_csv).parameters
+        }
+        if filters is None:
+            df = pd.read_csv(filepath, usecols=[uid_col], sep=sep, **read_csv_kwargs)
+        else:                                    # need all columns for filtering
+            df = pd.read_csv(filepath, sep=sep, **read_csv_kwargs)
+    
+            # build a boolean mask from tuple filters
+            mask_func = _process_filters(
+                filters,
+                col_names=df.columns,
+                traj_cols=traj_cols,
+                schema=schema,
+                use_pyarrow_dataset=False
+            )
+            df = df[mask_func(df)]
+    
+        if within is not None:
+            pts = gpd.GeoSeries(gpd.points_from_xy(df[coord_key1], df[coord_key2]),
+                                     crs=data_crs)
+            user_ids = df.loc[pts.within(poly), uid_col].drop_duplicates()
+        else:
+            user_ids = df[uid_col].drop_duplicates()
+    # Sample as int count or fraction
     if isinstance(size, int):
         return user_ids.sample(n=min(size, len(user_ids)), random_state=seed, replace=False)
     if 0.0 < size <= 1.0:
         return user_ids.sample(frac=size, random_state=seed, replace=False)
     raise ValueError("size must be an int ≥ 1 or a float in (0, 1].")
 
-    user_ids = pc.unique(dataset.to_table(columns=[uid_col])[uid_col]).to_pandas()
-    return user_ids.sample(frac=frac_users) if frac_users < 1.0 else user_ids
-
 def sample_from_file(
     filepath,
     users=None,
     format="csv",
-    traj_cols=None,
     frac_users=1.0,
     frac_records=1.0,
     seed=None,
     parse_dates=True,
     mixed_timezone_behavior="naive",
     fixed_format=None,
+    sep=",",
+    filters=None,
+    traj_cols=None,
     **kwargs
 ):
     """
@@ -886,6 +1099,10 @@ def sample_from_file(
         How to handle mixed‐timezone timestamps; options might include "naive", "utc", etc.
     fixed_format : str or None, default None
         If specified, enforce this input format (overrides autodetection).
+    sep : str
+        Separator character for reader. Defaults to ",".
+    filters : pyarrow.dataset.Expression or tuple or list of tuples, optional
+        Read-time filter(s) for Parquet inputs. Ignored for single CSV files.
     **kwargs
         Passed through to the underlying reader (e.g. `pandas.read_csv`).
 
@@ -896,38 +1113,85 @@ def sample_from_file(
     """
     assert format in {"csv", "parquet"}
 
-    column_names = table_columns(filepath, format)
+    column_names = table_columns(filepath, format=format, sep=sep)
+    schema = None
+    if filters is not None:
+        schema = table_columns(filepath, format=format, include_schema=True, sep=sep)
+
     traj_cols_ = _parse_traj_cols(column_names, traj_cols, kwargs)
 
     _has_spatial_cols(column_names, traj_cols_)
     _has_time_cols(column_names, traj_cols_)
 
-    if users is None and frac_users < 1.0:
-        users = sample_users(
-            filepath,
-            format=format,
-            size=frac_users,
-            traj_cols=traj_cols,
-            seed=seed,
-            **kwargs,
+    use_pyarrow_dataset = (
+        format == "parquet" or
+        isinstance(filepath, (list, tuple)) or
+        os.path.isdir(filepath)
+    )
+
+    if use_pyarrow_dataset:
+        file_format_obj = "parquet"
+        if format == "csv":
+            parse_options = pc_csv.ParseOptions(delimiter=sep)
+            file_format_obj = ds.CsvFileFormat(parse_options=parse_options)
+        
+        if isinstance(filepath, list):
+            if not filepath:
+                raise ValueError("Input filepath list cannot be empty.")
+            datasets = [ds.dataset(p, format=file_format_obj, partitioning="hive") for p in filepath]
+            dataset_obj = ds.UnionDataset(schema=datasets[0].schema, children=datasets)
+        else:
+            dataset_obj = ds.dataset(filepath, format=file_format_obj, partitioning="hive")
+            
+        arrow_flt = _process_filters(
+            filters,
+            col_names=column_names,
+            traj_cols=traj_cols_,
+            schema=schema,
+            use_pyarrow_dataset=True
         )
 
-    if format == "csv" and not isinstance(filepath, (list, tuple)) and not os.path.isdir(filepath):
-        df = pd.read_csv(filepath)
+        if users is not None:
+            arrow_ids = pa.array(users)
+            user_expr = ds.field(traj_cols_['user_id']).isin(arrow_ids)
+            arrow_flt = user_expr if arrow_flt is None else (arrow_flt & user_expr)
+        
+        df = dataset_obj.to_table(filter=arrow_flt,
+                                  columns=list(column_names)).to_pandas()
+
+    else:
+        df = pd.read_csv(filepath, sep=sep)
+        if filters is not None:
+            mask = _process_filters(
+                filters,
+                col_names=df.columns,
+                traj_cols=traj_cols_,
+                schema=schema,
+                use_pyarrow_dataset=False
+            )(df)
+            df = df[mask]
+
         if users is not None:
             df = df[df[traj_cols_['user_id']].isin(users)]
-    else:
-        dataset = ds.dataset(filepath, format=format, partitioning="hive")
-        if users is None:
-            df = dataset.to_table().to_pandas()
+            
+    if (users is None) and frac_users:
+        # build the user‐ID index
+        user_ids = df[traj_cols_['user_id']].drop_duplicates()
+        # integer count
+        if isinstance(frac_users, int):
+            n = min(frac_users, len(user_ids))
+            chosen = user_ids.sample(n=n, random_state=seed, replace=False)
+        # fractional
+        elif 0.0 < frac_users <= 1.0:
+            chosen = user_ids.sample(frac=frac_users, random_state=seed, replace=False)
         else:
-            df = dataset.to_table(
-                filter=ds.field(uid_col).isin(users), columns=list(column_names)
-            ).to_pandas()
+            raise ValueError("frac_users must be an int ≥ 1 or a float in (0, 1].")
+        # restrict df to those users
+        df = df[df[traj_cols_['user_id']].isin(chosen)]
 
-    if 0.0 < frac_records < 1.0:
+    if (frac_records) and (0.0 < frac_records < 1.0):
         df = df.sample(frac=frac_records, random_state=seed)
-
+        
     return _cast_traj_cols(
         df,
         traj_cols=traj_cols_,

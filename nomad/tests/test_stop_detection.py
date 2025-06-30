@@ -92,7 +92,7 @@ def test_lachesis_output_is_valid_stop_df(base_df):
     single_user_df = df[df[traj_cols["user_id"]] == first_user].copy()
 
     stops_df = LACHESIS.lachesis(
-        traj=single_user_df,
+        data=single_user_df,
         dur_min=5,
         dt_max=10,
         delta_roam=100,
@@ -123,7 +123,7 @@ def test_lachesis_name_handling_from_variants(single_user_df, column_variations,
     traj_cols = dict(zip(keys, new_names))
 
     result = LACHESIS.lachesis(
-        traj=df_subset,
+        data=df_subset,
         dur_min=5,
         dt_max=10,
         delta_roam=100,
@@ -206,7 +206,7 @@ def test_lachesis_number_labels(single_user_df):
     single_user_df = loader.from_df(single_user_df, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior="utc")
 
     stops_df = LACHESIS.lachesis(
-        traj=single_user_df,
+        data=single_user_df,
         dur_min=5,
         dt_max=10,
         delta_roam=100,
@@ -216,7 +216,7 @@ def test_lachesis_number_labels(single_user_df):
     )
     
     labels = LACHESIS._lachesis_labels(
-        traj=single_user_df,
+        data=single_user_df,
         dur_min=5,
         dt_max=10,
         delta_roam=100,
