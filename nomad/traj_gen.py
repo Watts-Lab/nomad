@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 import warnings
 import funkybob
 import s3fs
-
+import pdb
 import pyarrow as pa
 import pyarrow.dataset as ds
 
@@ -42,13 +42,13 @@ def _datetime_or_ts_col(col_names, verbose=False):
         return "missing"
 
 def sample_hier_nhpp(traj,
-                     beta_start,
-                     beta_durations,
-                     beta_ping,
-                     dt=1,
+                     beta_start=None,
+                     beta_durations=None,
+                     beta_ping=5,
                      ha=3/4,
                      seed=None,
-                     output_bursts=False):
+                     output_bursts=False,
+                     deduplicate=True):
     """
     Sample from simulated trajectory, drawn using hierarchical Poisson processes.
 
@@ -60,92 +60,124 @@ def sample_hier_nhpp(traj,
         scale parameter (mean) of Exponential distribution modeling burst inter-arrival times
         where 1/beta_start is the rate of events (bursts) per minute.
     beta_durations: float
-        scale parameter (mean) of Exponential distribution modeling burst durations
+        scale parameter (mean) of Exponential distribution modeling burst durations.
+        if beta_start and beta_durations are None, a single burst covering the whole trajectory is used.
     beta_ping: float
         scale parameter (mean) of Exponential distribution modeling ping inter-arrival times
         within a burst, where 1/beta_ping is the rate of events (pings) per minute.
-    dt: float
-        the time resolution of the output sequence. Must match that of the input trajectory.  
     ha: float
-        horizontal accuracy controlling the measurement error. Noisy locations are sampled as
-        (true x + eps_x, true y + eps_y) where (eps_x, eps_y) ~ N(0, nu/1.96).
+        Mean horizontal-accuracy radius *in 15 m blocks*. The actual per-ping accuracy is random: ha ≥ 8 m/15 m and follows a
+        Pareto distribution with that mean.  For each ping the positional error (ε_x, ε_y) is drawn i.i.d. N(0, σ²) with σ = HA / 1.515 so that
+        |ε| ≤ HA with 68 % probability.
     seed : int0
         The seed for random number generation.
     output_bursts : bool
         If True, outputs the latent variables on when bursts start and end.
+    deduplicate : bool
+        If True, sampled times are also discretized to be in ticks
     """
-    if seed:
-        npr.seed(seed)
+    rng = npr.default_rng(seed)
 
-    # Adjust betas to dt time resolution
-    # should match the resolution of traj?
-    beta_start = beta_start / dt
-    beta_durations = beta_durations / dt
-    beta_ping = beta_ping / dt
+    # convert minutes→seconds
+    beta_ping   = beta_ping   * 60
+    if beta_start    is not None: beta_start    *= 60
+    if beta_durations is not None: beta_durations *= 60
 
-    # Sample starting points of bursts using at most max_burst_samples times
-    max_burst_samples = len(traj)
-    
-    inter_arrival_times = npr.exponential(scale=beta_start, size=max_burst_samples)
-    burst_start_points = np.cumsum(inter_arrival_times).astype(int)
-    burst_start_points = burst_start_points[burst_start_points < len(traj)]
+    # absolute window
+    t0   = int(traj['unix_timestamp'].iloc[0])
+    t_end = int(traj['unix_timestamp'].iloc[-1])
 
-    # Sample durations of each burst
-    burst_durations = np.random.exponential(scale=beta_durations, size=len(burst_start_points)).astype(int)
+    # 1) bursts in continuous seconds
+    if beta_start is None and beta_durations is None:
+        burst_start_points = np.array([0.0])
+        burst_end_points   = np.array([t_end - t0], dtype=float)
+    else:
+        # draw at least 3× the mean number of bursts + 10
+        est_n = int(3 * (t_end - t0) / beta_start) + 10
+        inter_arrival_times = rng.exponential(scale=beta_start, size=est_n)
+        burst_start_points = np.cumsum(inter_arrival_times)
+        # keep only those inside the window
+        burst_start_points = burst_start_points[burst_start_points < (t_end - t0)]
 
-    # Create start_points and end_points
-    burst_end_points = burst_start_points + burst_durations
-    burst_end_points = np.minimum(burst_end_points, len(traj) - 1)
+        # durations
+        burst_durations = rng.exponential(scale=beta_durations,
+                                          size=burst_start_points.size)
+        burst_end_points = burst_start_points + burst_durations
+        # clip to the overall end
+        burst_end_points = np.minimum(burst_end_points, t_end - t0)
 
-    # Adjust end_points to handle overlaps
-    for i in range(len(burst_start_points) - 1):
-        if burst_end_points[i] > burst_start_points[i + 1]:
-            burst_end_points[i] = burst_start_points[i + 1]
+        # forbid overlap: each burst_end ≤ next burst_start
+        burst_end_points[:-1] = np.minimum(burst_end_points[:-1], burst_start_points[1:])
 
-    # Sample pings within each burst
-    sampled_trajectories = []
+    # 2) pings continuously
+    ping_times = []
     burst_info = []
-        
+    tz = traj['datetime'].dt.tz
+
     for start, end in zip(burst_start_points, burst_end_points):
         if output_bursts:
-            burst_info += [traj.loc[[start, end], 'datetime'].tolist()]       
-            
-        burst_indices = np.arange(start, end)
+            burst_info.append([
+                pd.to_datetime(t0 + start, unit='s', utc=True)
+                  .tz_convert(tz),
+                pd.to_datetime(t0 + end, unit='s', utc=True)
+                  .tz_convert(tz)
+            ])
 
-        if len(burst_indices) == 0:
+        dur = end - start
+        if dur <= 0:
             continue
 
-        # max_ping_samples = min(int(5*len(traj)/beta_start), len(burst_indices))
-        max_ping_samples = len(burst_indices)
-        
-        ping_intervals = np.random.exponential(scale=beta_ping, size=max_ping_samples)
-        ping_times = np.unique(np.cumsum(ping_intervals).astype(int))
-        ping_times = ping_times[ping_times < (end - start)] + start
+        # oversample ping intervals, then clip
+        est_pings = int(3 * dur / beta_ping) + 10
+        ping_intervals = rng.exponential(scale=beta_ping, size=est_pings)
+        times_rel = np.cumsum(ping_intervals)
+        times_rel = times_rel[times_rel < dur]
 
-        if len(ping_times) == 0:
-            continue
+        ping_times.append(t0 + times_rel)
 
-        burst_data = traj.iloc[ping_times].copy()
+    if not ping_times:
+        empty = pd.DataFrame(columns=traj.columns)
+        if output_bursts:
+            return empty, pd.DataFrame(burst_info, columns=['start_time','end_time'])
+        return empty
 
-        sampled_trajectories.append(burst_data)
+    ping_times = np.concatenate(ping_times).astype(int)
 
-    if sampled_trajectories:
-        sampled_traj = pd.concat(sampled_trajectories).sort_values(by='unix_timestamp') #why wouldn't they be sorted already?
-    else:  # empty
-        sampled_traj = pd.DataFrame(columns=list(traj.columns))
+    # 3) map to last tick via two-index searchsorted
+    traj_ts = traj['unix_timestamp'].to_numpy()
+    idx = np.searchsorted(traj_ts, ping_times, side='right') - 1
+    valid = idx >= 0
+    idx = idx[valid]
+    ping_times = ping_times[valid]
 
-    sampled_traj = sampled_traj.drop_duplicates('datetime')
+    if deduplicate:
+        _, keep = np.unique(idx, return_index=True)
+        idx = idx[keep]
+        ping_times = ping_times[keep]
 
-    # Add sampling noise
-    noise = npr.normal(loc=0, scale=ha/1.96, size=(sampled_traj.shape[0], 2))
-    sampled_traj[['x', 'y']] = sampled_traj[['x', 'y']] + noise
-    sampled_traj['ha'] = ha
+    sampled_traj = traj.iloc[idx].copy()
+    sampled_traj['unix_timestamp'] = ping_times
+    sampled_traj['datetime'] = (
+        pd.to_datetime(ping_times, unit='s', utc=True)
+          .tz_convert(tz)
+    )
+
+    # 4) noise injection (unchanged)
+    x_m = 8/15
+    if ha <= x_m:
+        raise ValueError("ha must exceed 8 m / 15 m ≈ 0.533 blocks")
+    alpha = ha / (ha - x_m)
+    n = len(sampled_traj)
+    ha_realized = (rng.pareto(alpha, size=n) + 1) * x_m
+    sigma = ha_realized / 1.515
+    sampled_traj[['x','y']] += rng.standard_normal((n, 2)) * sigma[:, None]
+    sampled_traj['ha'] = ha_realized
 
     if output_bursts:
-        burst_info = pd.DataFrame(burst_info, columns = ['start_time', 'end_time'])
+        burst_info = pd.DataFrame(burst_info, columns=['start_time','end_time'])
         return sampled_traj, burst_info
-    else:
-        return sampled_traj
+
+    return sampled_traj
 
 
 # =============================================================================
@@ -389,18 +421,21 @@ class Agent:
             current_entry = self.diary.iloc[-1].to_dict()
             self.diary = self.diary.iloc[:-1]
 
+        tick_secs = int(60*dt)
+
         entry_update = []
         for i in range(destination_diary.shape[0]):
             destination_info = destination_diary.iloc[i]
             duration = int(destination_info['duration'] * 1/dt)
             building_id = destination_info['location']
 
-            for t in range(int(duration//dt)):
+            duration_in_ticks = int(destination_info['duration'] / dt)
+            for _ in range(duration_in_ticks):
                 prev_ping = self.last_ping
                 start_point = (prev_ping['x'], prev_ping['y'])
                 dest_building = city.buildings[building_id]
-                unix_timestamp = prev_ping['unix_timestamp'] + 60*dt
-                datetime = prev_ping['datetime'] + timedelta(minutes=dt)               
+                unix_timestamp = prev_ping['unix_timestamp'] + tick_secs
+                datetime = prev_ping['datetime'] + timedelta(seconds=tick_secs)               
                 coord, location = self._sample_step(start_point, dest_building, dt)
                 ping = {'x': coord[0], 
                         'y': coord[1],
@@ -424,7 +459,7 @@ class Agent:
                                      'location': location,
                                      'identifier': self.identifier}
                 else:
-                    current_entry['duration'] += 1*dt
+                    current_entry['duration'] += 1*dt #add one tick to the duration
 
         if self.trajectory is None:
             self.trajectory = pd.DataFrame(trajectory_update)
@@ -443,8 +478,8 @@ class Agent:
                              end_time: pd.Timestamp, 
                              epr_time_res: int = 15,
                              stay_probs: dict = DEFAULT_STAY_PROBS,
-                             rho: float = 0.6, 
-                             gamma: float = 0.2, 
+                             rho: float = 0.4, 
+                             gamma: float = 0.3, 
                              seed: int = 0):
         """
         Exploration and preferential return.
@@ -491,14 +526,14 @@ class Agent:
             }).set_index('id')
 
             # Initializes past counts randomly
-            visit_freqs.loc[self.home, 'freq'] = 35
-            visit_freqs.loc[self.workplace, 'freq'] = 35
-            visit_freqs.loc[visit_freqs.type == 'park', 'freq'] = 3
+            visit_freqs.loc[self.home, 'freq'] = 20
+            visit_freqs.loc[self.workplace, 'freq'] = 20
+            visit_freqs.loc[visit_freqs.type == 'park', 'freq'] = 5
 
             initial_locs = []
-            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'retail'].index, size=npr.poisson(6)))
-            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'work'].index, size=npr.poisson(3)))
-            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'home'].index, size=npr.poisson(3)))
+            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'retail'].index, size=npr.poisson(4)))
+            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'work'].index, size=npr.poisson(2)))
+            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'home'].index, size=npr.poisson(2)))
             visit_freqs.loc[initial_locs, 'freq'] += 2
 
         if self.destination_diary.empty:
@@ -687,8 +722,8 @@ class Agent:
                           beta_ping,
                           seed=0,
                           ha=3/4,
-                          dt=None,
                           output_bursts=False,
+                          deduplicate=True,
                           replace_sparse_traj=False,
                           cache_traj=False):
         """
@@ -717,25 +752,15 @@ class Agent:
         cache_traj : bool
             if True, empties the Agent's trajectory DataFrame.
         """
-
-        # Compute the empirical dt as the mode of the empirical delta time between pings
-        empirical_dt = self.trajectory['datetime'].diff()
-        empirical_dt = empirical_dt.mode().iloc[0].total_seconds() / 60
-        if dt is None:
-            dt = empirical_dt
-        if dt is not None and dt != empirical_dt:
-            warnings.warn(f"dt ({dt}) does not match the empirical dt ({empirical_dt}).\
-                          The trajectory may not be sampled correctly.")
-
         result = sample_hier_nhpp(
             self.trajectory, 
             beta_start, 
             beta_durations, 
             beta_ping, 
-            dt=dt, 
             ha=ha,
             seed=seed, 
-            output_bursts=output_bursts
+            output_bursts=output_bursts,
+            deduplicate=deduplicate
         )
 
         if output_bursts:
