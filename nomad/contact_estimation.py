@@ -10,10 +10,6 @@ import pdb
 def overlapping_visits(left, right, match_location=False, filled_gaps=False, traj_cols=None, **kwargs):
     # if filled_gaps:
     #     if left.duration.sum() != right.duration.sum():
-
-
-    
-    
     # Handle column names
     _ = loader._parse_traj_cols(right.columns, traj_cols, kwargs) # for warning
     traj_cols = loader._parse_traj_cols(left.columns, traj_cols, kwargs)
@@ -43,7 +39,7 @@ def overlapping_visits(left, right, match_location=False, filled_gaps=False, tra
     # Non-na locations and end_timestamp on copy    
     left = left.loc[~left[loc_key].isna()].copy()
     right = right.loc[~right[loc_key].isna()].copy()
-            
+
     keep_uid = (uid_key in left.columns and uid_key in right.columns )
     if keep_uid:
         same_id = (left[uid_key].iloc[0] == right[uid_key].iloc[0])
@@ -131,10 +127,17 @@ def compute_visitation_errors(overlaps, true_visits, traj_cols=None, **kwargs):
     missed = (n_truth - len(gt_overlapped)) / n_truth
 
     # compute merging
+    # merged_ids = set()
+    # for pred_ts, group in overlaps.groupby(t_key_l):
+    #     if group[loc_key_r].nunique() > 1:
+    #         merged_ids.update(group[t_key_r].unique())
+    # merged = len(merged_ids) / n_truth
+
+
     merged_ids = set()
     for pred_ts, group in overlaps.groupby(t_key_l):
-        if group[loc_key_r].nunique() > 1:
-            merged_ids.update(group[t_key_r].unique())
+        if group[t_key_r].nunique() > 1:
+            merged_ids.update(group[t_key_r].unique())  # multiple GT visits overlapped
     merged = len(merged_ids) / n_truth
 
     # compute splitting

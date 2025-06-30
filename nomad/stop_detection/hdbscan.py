@@ -337,6 +337,115 @@ def hdbscan(edges_sorted, min_cluster_size, neighbors, ts_idx, coords, times, us
     hierarchy_df = _build_cluster_lineage(hierarchy)
     return label_history_df, hierarchy_df
 
+# def hdbscan(edges_sorted, min_cluster_size):
+#     hierarchy = []
+#     cluster_memberships = defaultdict(set)
+#     label_history = []
+
+#     # 4.1 For the root of the tree assign all objects the same label (single “cluster”), label = 0
+#     all_pings = set(edges_sorted['from']).union(edges_sorted['to'])
+   
+#     label_map = {ts: 0 for ts in all_pings}
+#     active_clusters = {0: set(all_pings)}
+#     cluster_memberships[0] = set(all_pings)
+
+#     # Log initial labels
+#     label_history.append(pd.DataFrame({"time": list(label_map.keys()), "cluster_id": list(label_map.values()), "dendrogram_scale": np.nan}))
+
+#     # edges_sorted is already ordered by descending weight
+#     weights = edges_sorted['weight']
+#     # find split points where weight changes
+#     split_idx = np.flatnonzero(np.diff(weights)) + 1
+#     # batch edges of equal weight
+#     batches = np.split(edges_sorted, split_idx)
+#     sorted_scales = [batch[0]['weight'] for batch in batches]
+
+#     # next label after label 0
+#     current_label_id = 1
+
+#     # Iteratively remove all edges from MSText in decreasing order of weights
+#     # 4.2.1 Before each removal, set the dendrogram scale value of the current hierarchical level as the weight of the edge(s) to be removed.
+#     for scale in sorted_scales:
+#         # pop next batch of edges sharing this scale
+#         edges = batches.pop(0)
+#         affected_clusters = set()
+#         edges_to_remove = []
+
+#         for u, v, _ in edges:
+#             # if labels between two timestamps are different, continue
+#             if label_map.get(u) != label_map.get(v):
+#                 continue
+#             cluster_id = label_map[u]
+#             affected_clusters.add(cluster_id)
+#             edges_to_remove.append((u, v))
+
+#         # print("# of edges to rmv: ", len(edges_to_remove))
+#         # print("edges to rmv: ", edges_to_remove)
+
+#         # 4.2.2: For each affected cluster, reassign components
+#         for cluster_id in affected_clusters:
+#             # print("affected cluster: ", cluster_id)
+#             if cluster_id == -1 or cluster_id not in active_clusters: 
+#                 continue # skip noise or already removed clusters
+
+#             members = active_clusters[cluster_id]
+#             G = _build_graph(members, edges_sorted, edges_to_remove)
+#             # visualize_adjacency_dict(G)
+
+#             components = _connected_components(G)
+#             # print("number of components: ", len(components))
+#             # print("components: ", components)
+#             non_spurious = [c for c in components if len(c) >= min_cluster_size]
+
+#             # print("label map: ", label_map)
+#             # print("active clusters:", active_clusters)
+                
+#             # cluster has disappeared
+#             if not non_spurious:
+#                 # print("cluster has disappeared")
+#                 for ts in members:
+#                     label_map[ts] = -1 # noise
+#                 del active_clusters[cluster_id]
+
+#             # cluster has just shrunk
+#             elif len(non_spurious) == 1:
+#                 # print("cluster has just shrunk")
+#                 remaining_pings = non_spurious[0]
+#                 # print("remaining pings:", remaining_pings)
+#                 # print(len(remaining_pings))
+#                 for ts in members:
+#                     label_map[ts] = cluster_id if ts in remaining_pings else -1
+#                 active_clusters[cluster_id] = remaining_pings
+#                 cluster_memberships[cluster_id] = set(remaining_pings)
+#             # true cluster split: multiple valid subclusters
+#             else:
+#                 # print("true cluster split")
+#                 new_ids = []
+#                 del active_clusters[cluster_id]
+#                 for component in non_spurious:
+#                     for ts in component:
+#                         label_map[ts] = current_label_id
+#                     active_clusters[current_label_id] = set(component)
+#                     cluster_memberships[current_label_id] = set(component)
+#                     new_ids.append(current_label_id)
+#                     current_label_id += 1
+
+#                 hierarchy.append((scale, cluster_id, new_ids))
+
+#             # print("active clusters:", active_clusters.keys())
+        
+#         # log label map after this scale
+#         label_history.append(pd.DataFrame({"time": list(label_map.keys()), "cluster_id": list(label_map.values()), "dendrogram_scale": scale}))
+
+#     # combine label history into one DataFrame
+#     label_history_df = pd.concat(label_history, ignore_index=True)
+#     # build cluster lineage for all clusters
+#     hierarchy_df = _build_cluster_lineage(hierarchy)
+
+#     return label_history_df, hierarchy_df
+
+
+
 def compute_cluster_duration(cluster):
     max_time = max(cluster)
     min_time = min(cluster)
@@ -460,49 +569,73 @@ def custom_CDF(eps):
     m = (x > 80) & (x <= 200)
     y[m] = 120 + (x[m] - 80)
 
-    y[x > 200] = 1
+    m = x > 200
+    y[m] = 240 + (x[m] - 200)
+
+    y[x > 200] = 240
+    # m = x > 200
+    # y[m] = 240 + (x[m] - 200)
     return y
 
+# def custom_cluster_stability(label_history_df):
+#     # restrict to real clusters and non-NaN scales
+#     df = label_history_df[
+#         (label_history_df['cluster_id'] != 0) &
+#         (label_history_df['cluster_id'] != -1) &
+#         label_history_df['dendrogram_scale'].notna()
+#     ]
+
+#     # build lookup: time → (scales_desc, cluster_ids_at_scales)
+#     history_by_time = {}
+#     for ts, grp in df.groupby('time', sort=False):
+#         sorted_grp = grp.sort_values('dendrogram_scale', ascending=False)
+#         history_by_time[ts] = (
+#             sorted_grp['dendrogram_scale'].to_numpy(),
+#             sorted_grp['cluster_id'].to_numpy()
+#         )
+
+#     # precompute ε_max per cluster
+#     eps_max = df.groupby('cluster_id')['dendrogram_scale'].max().to_dict()
+
+#     out = []
+#     for cluster_id, eps_max_c in eps_max.items():
+#         total_stab = 0.0
+#         for scales, clusters in history_by_time.values():
+#             # find all positions where this time was still in cluster:
+#             in_mask = (clusters == cluster_id)
+#             if not in_mask.any():
+#                 continue
+#             # last scale at which it was in Ci
+#             last_in = scales[in_mask].min()
+#             # among scales < last_in where cluster != Ci, take max (or ∞)
+#             out_mask = (clusters != cluster_id) & (scales < last_in)
+#             eps_min = scales[out_mask].max() if out_mask.any() else np.inf
+
+#             total_stab += custom_CDF([eps_max_c])[0] - custom_CDF([eps_min])[0]
+#             # print(total_stab)
+
+#         out.append({'cluster_id': cluster_id, 'cluster_stability': total_stab})
+
+#     return pd.DataFrame(out)
+
 def custom_cluster_stability(label_history_df):
-    # restrict to real clusters and non-NaN scales
-    df = label_history_df[
-        (label_history_df['cluster_id'] != 0) &
-        (label_history_df['cluster_id'] != -1) &
-        label_history_df['dendrogram_scale'].notna()
-    ]
+    # Get clusters that are not root (0) or noise (-1)
+    clusters = label_history_df.loc[~label_history_df['cluster_id'].isin([0, -1]), 'cluster_id'].unique()
 
-    # build lookup: time → (scales_desc, cluster_ids_at_scales)
-    history_by_time = {}
-    for ts, grp in df.groupby('time', sort=False):
-        sorted_grp = grp.sort_values('dendrogram_scale', ascending=False)
-        history_by_time[ts] = (
-            sorted_grp['dendrogram_scale'].to_numpy(),
-            sorted_grp['cluster_id'].to_numpy()
-        )
+    cluster_stability_df = []
 
-    # precompute ε_max per cluster
-    eps_max = df.groupby('cluster_id')['dendrogram_scale'].max().to_dict()
+    for cluster_id in clusters:
+        eps_df = _get_eps(label_history_df, target_cluster_id=cluster_id)
 
-    out = []
-    for cluster_id, eps_max_c in eps_max.items():
-        total_stab = 0.0
-        for scales, clusters in history_by_time.values():
-            # find all positions where this time was still in cluster:
-            in_mask = (clusters == cluster_id)
-            if not in_mask.any():
-                continue
-            # last scale at which it was in Ci
-            last_in = scales[in_mask].min()
-            # among scales < last_in where cluster != Ci, take max (or ∞)
-            out_mask = (clusters != cluster_id) & (scales < last_in)
-            eps_min = scales[out_mask].max() if out_mask.any() else np.inf
+        # Avoid division by zero or NaNs
+        eps_df = eps_df.replace({'eps_min': {0: np.nan}, 'eps_max': {0: np.nan}})
+        # CDF(eps_max) - CDF(eps_min)
+        eps_df['stability_term'] = custom_CDF(eps_df['eps_max']) - custom_CDF(eps_df['eps_min'])
+        total_stability = eps_df['stability_term'].sum(skipna=True)
 
-            total_stab += custom_CDF([eps_min])[0] - custom_CDF([eps_max_c])[0]
+        cluster_stability_df.append({"cluster_id": cluster_id, "cluster_stability": total_stability})
 
-        out.append({'cluster_id': cluster_id, 'cluster_stability': total_stab})
-
-    return pd.DataFrame(out)
-
+    return pd.DataFrame(cluster_stability_df)
 
 def compute_cluster_stability(label_history_df):
     # Get clusters that are not root (0) or noise (-1)
@@ -610,6 +743,10 @@ def hdbscan_labels(traj, time_thresh, min_pts = 2, min_cluster_size = 1, traj_co
                                              neighbors, ts_idx, coords, times,
                                              use_lon_lat=use_lon_lat)
     
+    # label_history_df, hierarchy_df = hdbscan(edges_sorted, min_cluster_size)
+    
+    # pdb.set_trace()
+    
     # cluster_stability_df = compute_cluster_stability(label_history_df)
     cluster_stability_df = custom_cluster_stability(label_history_df)
     
@@ -642,6 +779,7 @@ def hdbscan_labels(traj, time_thresh, min_pts = 2, min_cluster_size = 1, traj_co
     hdbscan_labels_df.sort_values('time', inplace=True)
 
     hdbscan_labels_df.index = traj.index
+    # pdb.set_trace()
     
     return hdbscan_labels_df.cluster
 

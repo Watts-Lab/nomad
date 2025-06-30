@@ -29,9 +29,8 @@ def remove_overlaps(pred, time_thresh, dur_min, min_pts, traj_cols = None, post_
                                 location_id='cluster',
                                 traj_cols=traj_cols)
         pred.loc[pred.cluster!=-1, 'cluster'] = labels
-
         stops = pred.groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
-
+    
     elif post_processing == 'recurse':
         pass
 
