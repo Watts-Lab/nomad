@@ -4,6 +4,7 @@ import numpy.random as npr
 from matplotlib import cm
 from shapely.geometry import box, Point, MultiLineString
 from shapely.ops import unary_union
+from shapely import distance as shp_distance
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 import warnings
@@ -373,26 +374,30 @@ class Agent:
             path_ml = MultiLineString([path])
             path_length = path_ml.length
 
-            # Bounding polygon
+            # Bounding polygon: needs to stay in street
             street_poly = unary_union([city.get_block(block).geometry for block in street_path])
             bound_poly = unary_union([start_geometry.geometry, street_poly])
-            # Snap to path
-            snap_point_dist = path_ml.project(Point(start_point))
-    
-            delta = 3.33 * dt
+            
+            # Transformed coordinates of current position
+            path_coord = _path_coords(path_ml, start_point)
+
+            heading_drift = 3.33 * dt
             sigma = 0.5 * dt / 1.96
-    
+
             while True:
-                transformed_step = np.random.normal(loc=[delta, 0], scale=sigma*np.sqrt(dt), size=2)
-                distance = snap_point_dist + transformed_step[0]
-    
-                if distance > path_length:
+                # Step in transformed (path-based) space
+                step = np.random.normal(loc=[heading_drift, 0], scale=sigma * np.sqrt(dt), size=2)
+                path_coord = (path_coord[0] + step[0], 0.7 * path_coord[1] + step[1])
+
+                if path_coord[0] > path_length:
                     coord = np.array(dest_building.geometry.centroid.coords[0])
                     break
-                coord = _ortho_coord(path_ml, distance, transformed_step[1])
+
+                coord = _cartesian_coords(path_ml, *path_coord)
+
                 if bound_poly.contains(Point(coord)):
                     break
-                    
+
         return coord, location
 
 
@@ -783,31 +788,31 @@ class Agent:
             return burst_info
 
 
-def _ortho_coord(multilines, distance, offset, eps=0.001):
+def _cartesian_coords(multilines, distance, offset, eps=0.001):
     """
-    Given a MultiLineString, a distance along it, and an orthogonal offset,
-    returns the coordinates of a point offset from the path at that distance.
+    Converts path-based coordinates (distance along path, signed perpendicular offset)
+    into cartesian coordinates on the plane.
 
     Parameters
     ----------
     multilines : shapely.geometry.MultiLineString
         MultiLineString representing the street path.
     distance : float
-        Distance along the path to project from.
+        Distance along the path.
     offset : float
-        Perpendicular offset from the path (positive to the left, negative to the right).
+        Signed perpendicular offset from the path (positive to the left, negative to the right).
     eps : float, optional
         Small delta used to estimate the path's tangent direction.
 
     Returns
     -------
     tuple
-        Coordinates of the offset point (x, y).
+        Cartesian coordinates (x, y) corresponding to the input path-based coordinates.
     """
-    point = multilines.interpolate(distance)
+    point_on_path = multilines.interpolate(distance)
     offset_point = multilines.interpolate(distance - eps)
 
-    p = np.array([point.x, point.y])
+    p = np.array([point_on_path.x, point_on_path.y])
     q = np.array([offset_point.x, offset_point.y])
     direction = p - q
     unit_direction = direction / np.linalg.norm(direction)
@@ -816,6 +821,45 @@ def _ortho_coord(multilines, distance, offset, eps=0.001):
     normal = np.flip(unit_direction) * np.array([-1, 1])
 
     return tuple(p + offset * normal)
+
+def _path_coords(multilines, point, eps=0.001):
+    """
+    Given a MultiLineString and a cartesian point, returns the transformed coordinates:
+    distance along the path and signed perpendicular offset.
+
+    Parameters
+    ----------
+    multilines : shapely.geometry.MultiLineString
+        MultiLineString representing the street path.
+    point : shapely.geometry.Point or tuple
+        The cartesian point to transform.
+    eps : float, optional
+        Small delta used to estimate the path's tangent direction.
+
+    Returns
+    -------
+    tuple
+        (distance_along_path, orthogonal_offset)
+    """
+    if not isinstance(point, Point):
+        point = Point(point)
+
+    distance = multilines.project(point)
+    point_on_path = multilines.interpolate(distance)
+    offset_point = multilines.interpolate(distance - eps)
+
+    p = np.array([point_on_path.x, point_on_path.y])
+    q = np.array([offset_point.x, offset_point.y])
+    direction = p - q
+    unit_direction = direction / np.linalg.norm(direction)
+
+    # Rotate 90° counter-clockwise to get the normal vector
+    normal = np.flip(unit_direction) * np.array([-1, 1])
+
+    delta = np.array([point.x - p[0], point.y - p[1]])
+    offset = np.dot(delta, normal)
+
+    return distance, offset
 
 def condense_destinations(destination_diary):
     """
