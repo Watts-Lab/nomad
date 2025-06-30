@@ -135,7 +135,7 @@ def lachesis(data, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
   
     stops = []
     i = 0
-    n = len(traj)
+    n = len(data)
     while i < n - 1:
         t_i = time_series.iloc[i]
         j_star = next((j for j in range(i, n) if (time_series.iloc[j] - t_i) >= dur_min * 60), -1)

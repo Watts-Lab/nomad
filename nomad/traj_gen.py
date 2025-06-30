@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 import warnings
 import funkybob
 import s3fs
-
+import pdb
 import pyarrow as pa
 import pyarrow.dataset as ds
 
@@ -42,9 +42,9 @@ def _datetime_or_ts_col(col_names, verbose=False):
         return "missing"
 
 def sample_hier_nhpp(traj,
-                     beta_start,
-                     beta_durations,
-                     beta_ping,
+                     beta_start=None,
+                     beta_durations=None,
+                     beta_ping=5,
                      dt=1,
                      ha=3/4,
                      seed=None,
@@ -60,7 +60,8 @@ def sample_hier_nhpp(traj,
         scale parameter (mean) of Exponential distribution modeling burst inter-arrival times
         where 1/beta_start is the rate of events (bursts) per minute.
     beta_durations: float
-        scale parameter (mean) of Exponential distribution modeling burst durations
+        scale parameter (mean) of Exponential distribution modeling burst durations.
+        if beta_start and beta_durations are None, a single burst covering the whole trajectory is used.
     beta_ping: float
         scale parameter (mean) of Exponential distribution modeling ping inter-arrival times
         within a burst, where 1/beta_ping is the rate of events (pings) per minute.
@@ -77,34 +78,37 @@ def sample_hier_nhpp(traj,
     """
     rng = npr.default_rng(seed) 
 
-    # Adjust betas to dt time resolution
-    # should match the resolution of traj?
-    beta_start = beta_start / dt
-    beta_durations = beta_durations / dt
+    if beta_ping is None:
+        raise ValueError("beta_ping must be a positive number")
     beta_ping = beta_ping / dt
+    if beta_start is not None:
+        beta_start = beta_start / dt
+    if beta_durations is not None:
+        beta_durations = beta_durations / dt
 
     # Sample starting points of bursts using at most max_burst_samples times
-    max_burst_samples = len(traj)
-    
-    inter_arrival_times = rng.exponential(scale=beta_start, size=max_burst_samples)
-    burst_start_points = np.cumsum(inter_arrival_times).astype(int)
-    burst_start_points = burst_start_points[burst_start_points < len(traj)]
-
-    # Sample durations of each burst
-    burst_durations = rng.exponential(scale=beta_durations, size=len(burst_start_points)).astype(int)
-
-    # Create start_points and end_points
-    burst_end_points = burst_start_points + burst_durations
-    burst_end_points = np.minimum(burst_end_points, len(traj) - 1)
-
-    # Adjust end_points to handle overlaps
-    burst_end_points[:-1] = np.minimum(burst_end_points[:-1],
-                                       burst_start_points[1:])
-
-    # Sample pings within each burst
-    sampled_trajectories = []
-    burst_info = []
+    if beta_start is None and beta_durations is None:
+        burst_start_points = np.array([0], dtype=int)
+        burst_end_points   = np.array([len(traj) - 1], dtype=int)
+    else:  
+        max_burst_samples = len(traj)
         
+        inter_arrival_times = rng.exponential(scale=beta_start, size=max_burst_samples)
+        burst_start_points = np.cumsum(inter_arrival_times).astype(int)
+        burst_start_points = burst_start_points[burst_start_points < max_burst_samples]
+    
+        # Sample durations of each burst
+        burst_durations = rng.exponential(scale=beta_durations, size=len(burst_start_points)).astype(int)
+    
+        # Create start_points and end_points
+        burst_end_points = burst_start_points + burst_durations
+        burst_end_points = np.minimum(burst_end_points, max_burst_samples - 1)
+    
+        # Adjust end_points to handle overlaps
+        burst_end_points[:-1] = np.minimum(burst_end_points[:-1],
+                                           burst_start_points[1:])
+    # Sample pings within each burst
+    sampled_trajectories, burst_info = [], []
     for start, end in zip(burst_start_points, burst_end_points):
         if output_bursts:
             burst_info += [traj.loc[[start, end], 'datetime'].tolist()]       
