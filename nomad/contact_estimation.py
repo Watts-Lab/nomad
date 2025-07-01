@@ -137,7 +137,7 @@ def compute_visitation_errors(overlaps, true_visits, traj_cols=None, **kwargs):
     merged_ids = set()
     for pred_ts, group in overlaps.groupby(t_key_l):
         if group[t_key_r].nunique() > 1:
-            merged_ids.update(group[t_key_r].unique())  # multiple GT visits overlapped
+            merged_ids.update(group[t_key_r].unique())  # multiple ground truth visits overlapped
     merged = len(merged_ids) / n_truth
 
     # compute splitting

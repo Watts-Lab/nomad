@@ -227,130 +227,19 @@ def mst_ext(mst_arr, core_distances):
     order = np.argsort(edges['weight'])[::-1]          # big → small
     return edges[order]
 
-def hdbscan(edges_sorted, min_cluster_size, neighbors, ts_idx, coords, times, use_lon_lat=False, dur_min=5):
-    hierarchy = []
-    label_history = []
-
-    # 4.1 For the root of the tree assign all objects the same label (single “cluster”), label = 0
-    all_pings = set(edges_sorted['from']).union(edges_sorted['to'])
-   
-    label_map = pd.Series(0, index=pd.Index(sorted(all_pings), name='time'), name='cluster_id', dtype=int)
-
-    # Log initial labels
-    df0 = label_map.to_frame()
-    df0['dendrogram_scale'] = np.nan
-    label_history.append(df0.reset_index())
-
-    # edges_sorted is already ordered by descending weight
-    weights = edges_sorted['weight']
-    # find split points where weight changes
-    split_idx = np.flatnonzero(np.diff(weights)) + 1
-    # batch edges of equal weight
-    batches = np.split(edges_sorted, split_idx)
-    sorted_scales = [batch[0]['weight'] for batch in batches]
-
-    # next label after label 0
-    current_label_id = 1
-
-    # Iteratively remove all edges from MSText in decreasing order of weights
-    # 4.2.1 Before each removal, set the dendrogram scale value of the current hierarchical level as the weight of the edge(s) to be removed.
-    
-    for edges, scale in zip(batches, sorted_scales):
-        label_u = label_map.loc[edges['from']].values
-        label_v = label_map.loc[edges['to']].values
-        
-        mask = label_u == label_v
-        filtered = edges[mask]
-        
-        # affected clusters contain edges to be removed
-        affected_clusters = set(label_u[mask])
-        edges_to_remove   = list(zip(filtered['from'], filtered['to']))
-
-        for cluster_id in affected_clusters:
-            if cluster_id == -1:
-                continue
-            members = set(label_map.index[label_map == cluster_id])
-            remaining_members = members.copy()
-            
-            G = _build_graph(members, edges_sorted, edges_to_remove)
-            # visualize_adjacency_dict(G)
-
-            components = _connected_components(G)
-            core_points = {ts for comp in components for ts in comp}
-
-            non_spurious = []
-            claimed_border = set()
-
-            for comp in components:            
-                # --- border points within current scale ----------------------
-                border = set()
-                for ts in comp:
-                    for nb in neighbors[ts].intersection(members) - core_points:  # temporally close, respecting hierarchy
-                        if nb in claimed_border:
-                            continue                         # core or claimed
-                        i, j = ts_idx[ts], ts_idx[nb]
-                        d = (utils._haversine_distance(coords[i], coords[j])
-                             if use_lon_lat
-                             else np.linalg.norm(coords[i] - coords[j]))
-                        if d <= scale:                       # ε at this level
-                            border.add(nb)
-
-                full_cluster = set(comp).union(border)
-
-                # --- spurious test (duration incl. borders) --------------
-                if ((max(full_cluster) - min(full_cluster)) >= dur_min * 60) and (len(comp) >= min_cluster_size):
-                    claimed_border.update(border)      # lock them
-                    label_map.loc[list(border)] = cluster_id
-                    non_spurious.append(full_cluster)
-                    
-            if not non_spurious:
-                pass # cluster has disappeared
-
-            # cluster has just shrunk
-            elif len(non_spurious) == 1:
-                component = non_spurious[0]
-                label_map.loc[list(component)] = cluster_id
-                remaining_members = remaining_members.difference(component)
-
-            # true cluster split: multiple valid subclusters
-            else:
-                new_ids = []
-                for component in non_spurious:
-                    label_map.loc[list(component)] = current_label_id
-                    remaining_members = remaining_members.difference(component)
-                        
-                    new_ids.append(current_label_id)
-                    current_label_id += 1
-
-                hierarchy.append((scale, cluster_id, new_ids))
-
-            label_map.loc[list(remaining_members)] = -1
-
-        # log label map after this scale
-        df = label_map.to_frame()
-        df['dendrogram_scale'] = scale
-        label_history.append(df.reset_index())
-        
-    # combine label history into one DataFrame
-    label_history_df = pd.concat(label_history, ignore_index=True)
-    # build cluster lineage for all clusters
-    hierarchy_df = _build_cluster_lineage(hierarchy)
-    return label_history_df, hierarchy_df
-
-# def hdbscan(edges_sorted, min_cluster_size):
+# def hdbscan(edges_sorted, min_cluster_size, neighbors, ts_idx, coords, times, use_lon_lat=False, dur_min=5):
 #     hierarchy = []
-#     cluster_memberships = defaultdict(set)
 #     label_history = []
 
 #     # 4.1 For the root of the tree assign all objects the same label (single “cluster”), label = 0
 #     all_pings = set(edges_sorted['from']).union(edges_sorted['to'])
    
-#     label_map = {ts: 0 for ts in all_pings}
-#     active_clusters = {0: set(all_pings)}
-#     cluster_memberships[0] = set(all_pings)
+#     label_map = pd.Series(0, index=pd.Index(sorted(all_pings), name='time'), name='cluster_id', dtype=int)
 
 #     # Log initial labels
-#     label_history.append(pd.DataFrame({"time": list(label_map.keys()), "cluster_id": list(label_map.values()), "dendrogram_scale": np.nan}))
+#     df0 = label_map.to_frame()
+#     df0['dendrogram_scale'] = np.nan
+#     label_history.append(df0.reset_index())
 
 #     # edges_sorted is already ordered by descending weight
 #     weights = edges_sorted['weight']
@@ -365,84 +254,195 @@ def hdbscan(edges_sorted, min_cluster_size, neighbors, ts_idx, coords, times, us
 
 #     # Iteratively remove all edges from MSText in decreasing order of weights
 #     # 4.2.1 Before each removal, set the dendrogram scale value of the current hierarchical level as the weight of the edge(s) to be removed.
-#     for scale in sorted_scales:
-#         # pop next batch of edges sharing this scale
-#         edges = batches.pop(0)
-#         affected_clusters = set()
-#         edges_to_remove = []
+    
+#     for edges, scale in zip(batches, sorted_scales):
+#         label_u = label_map.loc[edges['from']].values
+#         label_v = label_map.loc[edges['to']].values
+        
+#         mask = label_u == label_v
+#         filtered = edges[mask]
+        
+#         # affected clusters contain edges to be removed
+#         affected_clusters = set(label_u[mask])
+#         edges_to_remove   = list(zip(filtered['from'], filtered['to']))
 
-#         for u, v, _ in edges:
-#             # if labels between two timestamps are different, continue
-#             if label_map.get(u) != label_map.get(v):
-#                 continue
-#             cluster_id = label_map[u]
-#             affected_clusters.add(cluster_id)
-#             edges_to_remove.append((u, v))
-
-#         # print("# of edges to rmv: ", len(edges_to_remove))
-#         # print("edges to rmv: ", edges_to_remove)
-
-#         # 4.2.2: For each affected cluster, reassign components
 #         for cluster_id in affected_clusters:
-#             # print("affected cluster: ", cluster_id)
-#             if cluster_id == -1 or cluster_id not in active_clusters: 
-#                 continue # skip noise or already removed clusters
-
-#             members = active_clusters[cluster_id]
+#             if cluster_id == -1:
+#                 continue
+#             members = set(label_map.index[label_map == cluster_id])
+#             remaining_members = members.copy()
+            
 #             G = _build_graph(members, edges_sorted, edges_to_remove)
 #             # visualize_adjacency_dict(G)
 
 #             components = _connected_components(G)
-#             # print("number of components: ", len(components))
-#             # print("components: ", components)
-#             non_spurious = [c for c in components if len(c) >= min_cluster_size]
+#             core_points = {ts for comp in components for ts in comp}
 
-#             # print("label map: ", label_map)
-#             # print("active clusters:", active_clusters)
-                
-#             # cluster has disappeared
+#             non_spurious = []
+#             claimed_border = set()
+
+#             for comp in components:            
+#                 # --- border points within current scale ----------------------
+#                 border = set()
+#                 for ts in comp:
+#                     for nb in neighbors[ts].intersection(members) - core_points:  # temporally close, respecting hierarchy
+#                         if nb in claimed_border:
+#                             continue                         # core or claimed
+#                         i, j = ts_idx[ts], ts_idx[nb]
+#                         d = (utils._haversine_distance(coords[i], coords[j])
+#                              if use_lon_lat
+#                              else np.linalg.norm(coords[i] - coords[j]))
+#                         if d <= scale:                       # ε at this level
+#                             border.add(nb)
+
+#                 full_cluster = set(comp).union(border)
+
+#                 # --- spurious test (duration incl. borders) --------------
+#                 if ((max(full_cluster) - min(full_cluster)) >= dur_min * 60) and (len(comp) >= min_cluster_size):
+#                     claimed_border.update(border)      # lock them
+#                     label_map.loc[list(border)] = cluster_id
+#                     non_spurious.append(full_cluster)
+                    
 #             if not non_spurious:
-#                 # print("cluster has disappeared")
-#                 for ts in members:
-#                     label_map[ts] = -1 # noise
-#                 del active_clusters[cluster_id]
+#                 pass # cluster has disappeared
 
 #             # cluster has just shrunk
 #             elif len(non_spurious) == 1:
-#                 # print("cluster has just shrunk")
-#                 remaining_pings = non_spurious[0]
-#                 # print("remaining pings:", remaining_pings)
-#                 # print(len(remaining_pings))
-#                 for ts in members:
-#                     label_map[ts] = cluster_id if ts in remaining_pings else -1
-#                 active_clusters[cluster_id] = remaining_pings
-#                 cluster_memberships[cluster_id] = set(remaining_pings)
+#                 component = non_spurious[0]
+#                 label_map.loc[list(component)] = cluster_id
+#                 remaining_members = remaining_members.difference(component)
+
 #             # true cluster split: multiple valid subclusters
 #             else:
-#                 # print("true cluster split")
 #                 new_ids = []
-#                 del active_clusters[cluster_id]
 #                 for component in non_spurious:
-#                     for ts in component:
-#                         label_map[ts] = current_label_id
-#                     active_clusters[current_label_id] = set(component)
-#                     cluster_memberships[current_label_id] = set(component)
+#                     label_map.loc[list(component)] = current_label_id
+#                     remaining_members = remaining_members.difference(component)
+                        
 #                     new_ids.append(current_label_id)
 #                     current_label_id += 1
 
 #                 hierarchy.append((scale, cluster_id, new_ids))
 
-#             # print("active clusters:", active_clusters.keys())
-        
-#         # log label map after this scale
-#         label_history.append(pd.DataFrame({"time": list(label_map.keys()), "cluster_id": list(label_map.values()), "dendrogram_scale": scale}))
+#             label_map.loc[list(remaining_members)] = -1
 
+#         # log label map after this scale
+#         df = label_map.to_frame()
+#         df['dendrogram_scale'] = scale
+#         label_history.append(df.reset_index())
+        
 #     # combine label history into one DataFrame
 #     label_history_df = pd.concat(label_history, ignore_index=True)
 #     # build cluster lineage for all clusters
 #     hierarchy_df = _build_cluster_lineage(hierarchy)
-
 #     return label_history_df, hierarchy_df
+
+def hdbscan(edges_sorted, min_cluster_size, dur_min=5):
+    hierarchy = []
+    cluster_memberships = defaultdict(set)
+    label_history = []
+
+    # 4.1 For the root of the tree assign all objects the same label (single “cluster”), label = 0
+    all_pings = set(edges_sorted['from']).union(edges_sorted['to'])
+   
+    label_map = {ts: 0 for ts in all_pings}
+    active_clusters = {0: set(all_pings)}
+    cluster_memberships[0] = set(all_pings)
+
+    # Log initial labels
+    label_history.append(pd.DataFrame({"time": list(label_map.keys()), "cluster_id": list(label_map.values()), "dendrogram_scale": np.nan}))
+
+    # edges_sorted is already ordered by descending weight
+    weights = edges_sorted['weight']
+    # find split points where weight changes
+    split_idx = np.flatnonzero(np.diff(weights)) + 1
+    # batch edges of equal weight
+    batches = np.split(edges_sorted, split_idx)
+    sorted_scales = [batch[0]['weight'] for batch in batches]
+
+    # next label after label 0
+    current_label_id = 1
+
+    # Iteratively remove all edges from MSText in decreasing order of weights
+    # 4.2.1 Before each removal, set the dendrogram scale value of the current hierarchical level as the weight of the edge(s) to be removed.
+    for scale in sorted_scales:
+        # pop next batch of edges sharing this scale
+        edges = batches.pop(0)
+        affected_clusters = set()
+        edges_to_remove = []
+
+        for u, v, _ in edges:
+            # if labels between two timestamps are different, continue
+            if label_map.get(u) != label_map.get(v):
+                continue
+            cluster_id = label_map[u]
+            affected_clusters.add(cluster_id)
+            edges_to_remove.append((u, v))
+
+        # print("# of edges to rmv: ", len(edges_to_remove))
+        # print("edges to rmv: ", edges_to_remove)
+
+        # 4.2.2: For each affected cluster, reassign components
+        for cluster_id in affected_clusters:
+            # print("affected cluster: ", cluster_id)
+            if cluster_id == -1 or cluster_id not in active_clusters: 
+                continue # skip noise or already removed clusters
+
+            members = active_clusters[cluster_id]
+            G = _build_graph(members, edges_sorted, edges_to_remove)
+            # visualize_adjacency_dict(G)
+
+            components = _connected_components(G)
+            # print("number of components: ", len(components))
+            # print("components: ", components)
+            non_spurious = [c for c in components if ((max(c) - min(c)) >= dur_min * 60) and (len(c) >= min_cluster_size)]
+
+            # print("label map: ", label_map)
+            # print("active clusters:", active_clusters)
+                
+            # cluster has disappeared
+            if not non_spurious:
+                # print("cluster has disappeared")
+                for ts in members:
+                    label_map[ts] = -1 # noise
+                del active_clusters[cluster_id]
+
+            # cluster has just shrunk
+            elif len(non_spurious) == 1:
+                # print("cluster has just shrunk")
+                remaining_pings = non_spurious[0]
+                # print("remaining pings:", remaining_pings)
+                # print(len(remaining_pings))
+                for ts in members:
+                    label_map[ts] = cluster_id if ts in remaining_pings else -1
+                active_clusters[cluster_id] = remaining_pings
+                cluster_memberships[cluster_id] = set(remaining_pings)
+            # true cluster split: multiple valid subclusters
+            else:
+                # print("true cluster split")
+                new_ids = []
+                del active_clusters[cluster_id]
+                for component in non_spurious:
+                    for ts in component:
+                        label_map[ts] = current_label_id
+                    active_clusters[current_label_id] = set(component)
+                    cluster_memberships[current_label_id] = set(component)
+                    new_ids.append(current_label_id)
+                    current_label_id += 1
+
+                hierarchy.append((scale, cluster_id, new_ids))
+
+            # print("active clusters:", active_clusters.keys())
+        
+        # log label map after this scale
+        label_history.append(pd.DataFrame({"time": list(label_map.keys()), "cluster_id": list(label_map.values()), "dendrogram_scale": scale}))
+
+    # combine label history into one DataFrame
+    label_history_df = pd.concat(label_history, ignore_index=True)
+    # build cluster lineage for all clusters
+    hierarchy_df = _build_cluster_lineage(hierarchy)
+
+    return label_history_df, hierarchy_df
 
 
 
@@ -738,17 +738,17 @@ def hdbscan_labels(traj, time_thresh, min_pts = 2, min_cluster_size = 1, traj_co
     
     edges_sorted = mst_ext(mst_edges, core_distances) # << with self-loops
 
-    label_history_df, hierarchy_df = hdbscan(edges_sorted,
-                                             min_cluster_size,
-                                             neighbors, ts_idx, coords, times,
-                                             use_lon_lat=use_lon_lat)
+    # label_history_df, hierarchy_df = hdbscan(edges_sorted,
+    #                                          min_cluster_size,
+    #                                          neighbors, ts_idx, coords, times,
+    #                                          use_lon_lat=use_lon_lat)
     
-    # label_history_df, hierarchy_df = hdbscan(edges_sorted, min_cluster_size)
+    label_history_df, hierarchy_df = hdbscan(edges_sorted, min_cluster_size)
     
     # pdb.set_trace()
     
-    # cluster_stability_df = compute_cluster_stability(label_history_df)
-    cluster_stability_df = custom_cluster_stability(label_history_df)
+    cluster_stability_df = compute_cluster_stability(label_history_df)
+    # cluster_stability_df = custom_cluster_stability(label_history_df)
     
     selected_clusters = select_most_stable_clusters(hierarchy_df, cluster_stability_df)
 
