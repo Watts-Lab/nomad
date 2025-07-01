@@ -104,11 +104,11 @@ def sample_hier_nhpp(traj,
         burst_durations = rng.exponential(scale=beta_durations,
                                           size=burst_start_points.size)
         burst_end_points = burst_start_points + burst_durations
-        # clip to the overall end
-        burst_end_points = np.minimum(burst_end_points, t_end - t0)
 
         # forbid overlap: each burst_end ≤ next burst_start
         burst_end_points[:-1] = np.minimum(burst_end_points[:-1], burst_start_points[1:])
+        # clip last end point
+        burst_end_points[-1] = min(burst_end_points[-1], t_end - t0)
 
     # 2) pings continuously
     ping_times = []
@@ -134,7 +134,7 @@ def sample_hier_nhpp(traj,
         times_rel = np.cumsum(ping_intervals)
         times_rel = times_rel[times_rel < dur]
 
-        ping_times.append(t0 + times_rel)
+        ping_times.append(t0 + start + times_rel)
 
     if not ping_times:
         empty = pd.DataFrame(columns=traj.columns)
@@ -273,18 +273,23 @@ class Agent:
         self.sparse_traj = None
 
 
-    def reset_trajectory(self):
+    def reset_trajectory(self, trajectory = True, sparse = True, last_ping = True, diary = True):
         """
         Resets the agent's trajectories and diaries to the initial state. 
         Keeps the agent's identifier, home, and workplace.
         This method is useful for reinitializing the agent after a simulation run.
         """
         self.destination_diary = pd.DataFrame(columns=self.destination_diary.columns)
-        self.trajectory = None
         self.dt = None
-        self.diary = pd.DataFrame(columns=self.diary.columns)
-        self.last_ping = None
-        self.sparse_traj = None
+        
+        if trajectory:
+            self.trajectory = None
+        if diary:
+            self.diary = pd.DataFrame(columns=self.diary.columns)
+        if last_ping:
+            self.last_ping = None
+        if sparse:
+            self.sparse_traj = None
 
     def plot_traj(self,
                   ax,
