@@ -4,6 +4,7 @@ import numpy.random as npr
 from matplotlib import cm
 from shapely.geometry import box, Point, MultiLineString
 from shapely.ops import unary_union
+from shapely import distance as shp_distance
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 import warnings
@@ -22,11 +23,11 @@ from nomad.constants import FAST_STILL_PROBS, SLOW_STILL_PROBS, ALLOWED_BUILDING
 def _xy_or_loc_col(col_names, verbose=False):
     if ('x' in col_names and 'y' in col_names):
         return "xy"
-    elif 'location_id' in col_names:
-        return 'location_id'
+    elif 'location' in col_names:
+        return "location"
     else:
         if verbose:
-            warnings.warn("No trajectory data was found or spatial columns ('x','y', 'location_id') in keyword arguments.\
+            warnings.warn("No trajectory data was found or spatial columns ('x','y', 'location') in keyword arguments.\
                           Agent's home will be used as trajectory starting point.")
         return "missing"
 
@@ -103,11 +104,11 @@ def sample_hier_nhpp(traj,
         burst_durations = rng.exponential(scale=beta_durations,
                                           size=burst_start_points.size)
         burst_end_points = burst_start_points + burst_durations
-        # clip to the overall end
-        burst_end_points = np.minimum(burst_end_points, t_end - t0)
 
         # forbid overlap: each burst_end ≤ next burst_start
         burst_end_points[:-1] = np.minimum(burst_end_points[:-1], burst_start_points[1:])
+        # clip last end point
+        burst_end_points[-1] = min(burst_end_points[-1], t_end - t0)
 
     # 2) pings continuously
     ping_times = []
@@ -133,7 +134,7 @@ def sample_hier_nhpp(traj,
         times_rel = np.cumsum(ping_intervals)
         times_rel = times_rel[times_rel < dur]
 
-        ping_times.append(t0 + times_rel)
+        ping_times.append(t0 + start + times_rel)
 
     if not ping_times:
         empty = pd.DataFrame(columns=traj.columns)
@@ -236,11 +237,11 @@ class Agent:
         speeds : dict, optional (default=DEFAULT_SPEEDS)
             Dictionary containing possible speeds of the agent.
         destination_diary : pandas.DataFrame, optional (default=None)
-            DataFrame containing the following columns: 'timestamp', 'datetime', 'duration', 'location_id'.
+            DataFrame containing the following columns: 'timestamp', 'datetime', 'duration', 'location'.
         trajectory : pandas.DataFrame, optional (default=None)
             DataFrame containing the following columns: 'x', 'y', 'datetime', 'timestamp', 'identifier'.
         diary : pandas.DataFrame,  optional (default=None)
-            DataFrame containing the following columns: 'timestamp', 'datetime', 'duration', 'location_id'.
+            DataFrame containing the following columns: 'timestamp', 'datetime', 'duration', 'location'.
         dt : float, optional (default=1)
             Time step duration.
         """
@@ -263,27 +264,32 @@ class Agent:
         self.visit_freqs = None
 
         self.destination_diary = destination_diary if destination_diary is not None else pd.DataFrame(
-            columns=['datetime', 'timestamp', 'duration', 'location_id'])
+            columns=['datetime', 'timestamp', 'duration', 'location'])
         self.trajectory = trajectory
         self.dt = None
         self.diary = diary if diary is not None else pd.DataFrame(
-            columns=['datetime', 'timestamp', 'duration', 'location_id', 'identifier'])
+            columns=['datetime', 'timestamp', 'duration', 'location', 'identifier'])
         self.last_ping = trajectory.iloc[-1] if (trajectory is not None) else None
         self.sparse_traj = None
 
 
-    def reset_trajectory(self):
+    def reset_trajectory(self, trajectory = True, sparse = True, last_ping = True, diary = True):
         """
         Resets the agent's trajectories and diaries to the initial state. 
         Keeps the agent's identifier, home, and workplace.
         This method is useful for reinitializing the agent after a simulation run.
         """
         self.destination_diary = pd.DataFrame(columns=self.destination_diary.columns)
-        self.trajectory = None
         self.dt = None
-        self.diary = pd.DataFrame(columns=self.diary.columns)
-        self.last_ping = None
-        self.sparse_traj = None
+        
+        if trajectory:
+            self.trajectory = None
+        if diary:
+            self.diary = pd.DataFrame(columns=self.diary.columns)
+        if last_ping:
+            self.last_ping = None
+        if sparse:
+            self.sparse_traj = None
 
     def plot_traj(self,
                   ax,
@@ -373,26 +379,30 @@ class Agent:
             path_ml = MultiLineString([path])
             path_length = path_ml.length
 
-            # Bounding polygon
+            # Bounding polygon: needs to stay in street
             street_poly = unary_union([city.get_block(block).geometry for block in street_path])
             bound_poly = unary_union([start_geometry.geometry, street_poly])
-            # Snap to path
-            snap_point_dist = path_ml.project(Point(start_point))
-    
-            delta = 3.33 * dt
+            
+            # Transformed coordinates of current position
+            path_coord = _path_coords(path_ml, start_point)
+
+            heading_drift = 3.33 * dt
             sigma = 0.5 * dt / 1.96
-    
+
             while True:
-                transformed_step = np.random.normal(loc=[delta, 0], scale=sigma*np.sqrt(dt), size=2)
-                distance = snap_point_dist + transformed_step[0]
-    
-                if distance > path_length:
+                # Step in transformed (path-based) space
+                step = np.random.normal(loc=[heading_drift, 0], scale=sigma * np.sqrt(dt), size=2)
+                path_coord = (path_coord[0] + step[0], 0.7 * path_coord[1] + step[1])
+
+                if path_coord[0] > path_length:
                     coord = np.array(dest_building.geometry.centroid.coords[0])
                     break
-                coord = _ortho_coord(path_ml, distance, transformed_step[1])
+
+                coord = _cartesian_coords(path_ml, *path_coord)
+
                 if bound_poly.contains(Point(coord)):
                     break
-                    
+
         return coord, location
 
 
@@ -427,7 +437,7 @@ class Agent:
         for i in range(destination_diary.shape[0]):
             destination_info = destination_diary.iloc[i]
             duration = int(destination_info['duration'] * 1/dt)
-            building_id = destination_info['location_id']
+            building_id = destination_info['location']
 
             duration_in_ticks = int(destination_info['duration'] / dt)
             for _ in range(duration_in_ticks):
@@ -449,14 +459,14 @@ class Agent:
                     current_entry = {'datetime': datetime,
                                      'timestamp': unix_timestamp,
                                      'duration': dt,
-                                     'location_id': location,
+                                     'location': location,
                                      'identifier': self.identifier}
-                elif (current_entry['location_id'] != location):
+                elif (current_entry['location'] != location):
                     entry_update.append(current_entry)
                     current_entry = {'datetime': datetime,
                                      'timestamp': unix_timestamp,
                                      'duration': dt,
-                                     'location_id': location,
+                                     'location': location,
                                      'identifier': self.identifier}
                 else:
                     current_entry['duration'] += 1*dt #add one tick to the duration
@@ -584,7 +594,7 @@ class Agent:
             entry = {'datetime': start_time_local,
                      'timestamp': start_time,
                      'duration': epr_time_res,
-                     'location_id': curr}
+                     'location': curr}
             dest_update.append(entry)
 
             start_time_local = start_time_local + timedelta(minutes=int(epr_time_res))
@@ -615,7 +625,7 @@ class Agent:
         Parameters
         ----------
         destination_diary : pandas.DataFrame, optional (default=None)
-            DataFrame containing the following columns: 'timestamp', 'datetime', 'duration', 'location_id'.
+            DataFrame containing the following columns: 'timestamp', 'datetime', 'duration', 'location'.
         end_time : pd.Timestamp, optional
             The end time to generate the trajectory until.
         epr_time_res : int, optional
@@ -643,7 +653,7 @@ class Agent:
             self.destination_diary = destination_diary
             # warning for overwriting agent's destination diary if it exists?
 
-            loc = destination_diary.iloc[0]['location_id']
+            loc = destination_diary.iloc[0]['location']
             loc_centroid = self.city.buildings[loc].geometry.centroid
             x_coord, y_coord = loc_centroid.x, loc_centroid.y
             datetime = destination_diary.iloc[0]['datetime']
@@ -659,8 +669,8 @@ class Agent:
 
         # ensure last ping
         if self.trajectory is None:
-            if _xy_or_loc_col(kwargs.keys(), verbose) == 'location_id':
-                loc_centroid = self.city.buildings[kwargs['location_id']].geometry.centroid
+            if _xy_or_loc_col(kwargs.keys(), verbose) == "location":
+                loc_centroid = self.city.buildings[kwargs['location']].geometry.centroid
                 x_coord, y_coord = loc_centroid.x, loc_centroid.y
             elif _xy_or_loc_col(kwargs.keys(), verbose) == "xy":
                 x_coord, y_coord = kwargs['x'], kwargs['y']
@@ -783,31 +793,31 @@ class Agent:
             return burst_info
 
 
-def _ortho_coord(multilines, distance, offset, eps=0.001):
+def _cartesian_coords(multilines, distance, offset, eps=0.001):
     """
-    Given a MultiLineString, a distance along it, and an orthogonal offset,
-    returns the coordinates of a point offset from the path at that distance.
+    Converts path-based coordinates (distance along path, signed perpendicular offset)
+    into cartesian coordinates on the plane.
 
     Parameters
     ----------
     multilines : shapely.geometry.MultiLineString
         MultiLineString representing the street path.
     distance : float
-        Distance along the path to project from.
+        Distance along the path.
     offset : float
-        Perpendicular offset from the path (positive to the left, negative to the right).
+        Signed perpendicular offset from the path (positive to the left, negative to the right).
     eps : float, optional
         Small delta used to estimate the path's tangent direction.
 
     Returns
     -------
     tuple
-        Coordinates of the offset point (x, y).
+        Cartesian coordinates (x, y) corresponding to the input path-based coordinates.
     """
-    point = multilines.interpolate(distance)
+    point_on_path = multilines.interpolate(distance)
     offset_point = multilines.interpolate(distance - eps)
 
-    p = np.array([point.x, point.y])
+    p = np.array([point_on_path.x, point_on_path.y])
     q = np.array([offset_point.x, offset_point.y])
     direction = p - q
     unit_direction = direction / np.linalg.norm(direction)
@@ -816,6 +826,45 @@ def _ortho_coord(multilines, distance, offset, eps=0.001):
     normal = np.flip(unit_direction) * np.array([-1, 1])
 
     return tuple(p + offset * normal)
+
+def _path_coords(multilines, point, eps=0.001):
+    """
+    Given a MultiLineString and a cartesian point, returns the transformed coordinates:
+    distance along the path and signed perpendicular offset.
+
+    Parameters
+    ----------
+    multilines : shapely.geometry.MultiLineString
+        MultiLineString representing the street path.
+    point : shapely.geometry.Point or tuple
+        The cartesian point to transform.
+    eps : float, optional
+        Small delta used to estimate the path's tangent direction.
+
+    Returns
+    -------
+    tuple
+        (distance_along_path, orthogonal_offset)
+    """
+    if not isinstance(point, Point):
+        point = Point(point)
+
+    distance = multilines.project(point)
+    point_on_path = multilines.interpolate(distance)
+    offset_point = multilines.interpolate(distance - eps)
+
+    p = np.array([point_on_path.x, point_on_path.y])
+    q = np.array([offset_point.x, offset_point.y])
+    direction = p - q
+    unit_direction = direction / np.linalg.norm(direction)
+
+    # Rotate 90° counter-clockwise to get the normal vector
+    normal = np.flip(unit_direction) * np.array([-1, 1])
+
+    delta = np.array([point.x - p[0], point.y - p[1]])
+    offset = np.dot(delta, normal)
+
+    return distance, offset
 
 def condense_destinations(destination_diary):
     """
@@ -837,7 +886,7 @@ def condense_destinations(destination_diary):
         return pd.DataFrame()
 
     # Detect changes in location
-    destination_diary['new_segment'] = destination_diary['location_id'].ne(destination_diary['location_id'].shift())
+    destination_diary['new_segment'] = destination_diary['location'].ne(destination_diary['location'].shift())
 
     # Create segment identifiers for grouping
     destination_diary['segment_id'] = destination_diary['new_segment'].cumsum()
@@ -846,7 +895,7 @@ def condense_destinations(destination_diary):
         'datetime': 'first',
         'timestamp': 'first',
         'duration': 'sum',
-        'location_id': 'first'
+        'location': 'first'
     }).reset_index(drop=True)
 
     return condensed_df
