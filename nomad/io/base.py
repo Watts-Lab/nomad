@@ -12,6 +12,7 @@ import os
 import pyarrow.compute as pc
 import pyarrow.dataset as ds
 import pyarrow as pa
+import pyarrow.fs as pafs
 import pyarrow.types as pat
 import pyarrow.csv as pc_csv
 from nomad.constants import DEFAULT_SCHEMA
@@ -688,6 +689,11 @@ def _process_filters(filters, col_names, use_pyarrow_dataset, traj_cols=None, sc
 
         return mask_func
 
+def _is_directory(path: str) -> bool:
+    fs, rel_path = pafs.FileSystem.from_uri(path)
+    rel_path = rel_path.rstrip("/") or rel_path          # handle “foo/”
+    return fs.get_file_info(rel_path).type == pafs.FileType.Directory
+    
 def table_columns(filepath, format="csv", include_schema=False, sep=","):
     """
     Return column names or the full schema of a data source.
@@ -700,8 +706,9 @@ def table_columns(filepath, format="csv", include_schema=False, sep=","):
     use_pyarrow_dataset = (
         format == "parquet" or
         isinstance(filepath, (list, tuple)) or
-        os.path.isdir(filepath)
+        _is_directory(filepath)
     )
+
     if use_pyarrow_dataset:
         file_format_obj = "parquet"
         if format == "csv":
@@ -828,7 +835,7 @@ def from_file(filepath,
     use_pyarrow_dataset = (
         format == "parquet" or
         isinstance(filepath, (list, tuple)) or
-        os.path.isdir(filepath)
+        _is_directory(filepath)
     )
 
     if use_pyarrow_dataset:
@@ -993,7 +1000,7 @@ def sample_users(
     use_pyarrow_dataset = (
         format == "parquet" or
         isinstance(filepath, (list, tuple)) or
-        os.path.isdir(filepath)
+        _is_directory(filepath)
     )
 
     if use_pyarrow_dataset:
@@ -1071,6 +1078,9 @@ def sample_from_file(
     fixed_format=None,
     sep=",",
     filters=None,
+    within=None,
+    poly_crs=None,
+    data_crs=None,
     traj_cols=None,
     **kwargs
 ):
@@ -1118,6 +1128,60 @@ def sample_from_file(
     if filters is not None:
         schema = table_columns(filepath, format=format, include_schema=True, sep=sep)
 
+    poly = None
+    coord_key1 = coord_key2 = None
+    if within is not None:
+        # decide which coordinate pair to use
+        coord_key1, coord_key2, use_lat_lon = _fallback_spatial_cols(
+            column_names, traj_cols, kwargs
+        )
+
+        # normalise the polygon
+        if isinstance(within, str):
+            poly = wkt.loads(within)
+        elif isinstance(within, sh_geom.base.BaseGeometry):
+            poly = within
+        elif isinstance(within, gpd.GeoSeries):
+            poly = within.unary_union
+        elif isinstance(within, gpd.GeoDataFrame):
+            poly = within.geometry.unary_union
+        else:
+            raise TypeError(
+                "within must be WKT, shapely geometry, GeoSeries or GeoDataFrame."
+            )
+
+        # CRS handling
+        if data_crs is None:
+            if use_lat_lon:
+                data_crs = "EPSG:4326"
+                warnings.warn(
+                    "data_crs not provided; assuming EPSG:4326 for longitude/latitude."
+                )
+            else:
+                raise ValueError(
+                    "data_crs must be supplied when using projected x/y columns, "
+                    "or provide latitude/longitude columns instead."
+                )
+
+        data_crs = pyproj.CRS(data_crs)
+        src_crs = getattr(within, "crs", None) or poly_crs
+        if src_crs is not None and not pyproj.CRS(src_crs).equals(data_crs):
+            poly = gpd.GeoSeries([poly], crs=src_crs).to_crs(data_crs).iloc[0]
+
+        minx, miny, maxx, maxy = poly.bounds
+        bbox_specs = [
+            (coord_key1, ">=", minx),
+            (coord_key1, "<=", maxx),
+            (coord_key2, ">=", miny),
+            (coord_key2, "<=", maxy),
+        ]
+        if filters is None:
+            filters = bbox_specs
+        elif isinstance(filters, tuple):
+            filters = [filters] + bbox_specs
+        elif isinstance(filters, list):
+            filters = filters + bbox_specs
+    
     traj_cols_ = _parse_traj_cols(column_names, traj_cols, kwargs)
 
     _has_spatial_cols(column_names, traj_cols_)
@@ -1126,7 +1190,7 @@ def sample_from_file(
     use_pyarrow_dataset = (
         format == "parquet" or
         isinstance(filepath, (list, tuple)) or
-        os.path.isdir(filepath)
+        _is_directory(filepath)
     )
 
     if use_pyarrow_dataset:
@@ -1173,7 +1237,13 @@ def sample_from_file(
 
         if users is not None:
             df = df[df[traj_cols_['user_id']].isin(users)]
-            
+
+    if poly is not None and not df.empty:
+        pts = gpd.GeoSeries(
+            gpd.points_from_xy(df[coord_key1], df[coord_key2]), crs=data_crs
+        )
+        df = df[pts.within(poly)]
+    
     if (users is None) and frac_users:
         # build the user‐ID index
         user_ids = df[traj_cols_['user_id']].drop_duplicates()
