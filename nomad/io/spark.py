@@ -1,4 +1,25 @@
-
+import pandas as pd
+import numpy as np
+import geopandas as gpd
+import pyproj
+from functools import partial
+import re
+from pyspark.sql import SparkSession
+import sys
+import os
+# --------- Delete? ---------------
+import pyarrow.parquet as pq
+import pyarrow.compute as pc
+import pyarrow as pa
+import pyarrow.fs as pafs
+import pyarrow.types as pat
+import pyarrow.csv as pc_csv
+# ----------------------------------
+from nomad.constants import DEFAULT_SCHEMA
+import warnings
+import inspect
+from nomad.constants import FILTER_OPERATORS
+from nomad.io.base import _fallback_spatial_cols, _parse_traj_cols
 
 def _is_traj_df_spark(df, traj_cols=None, **kwargs):
     if not isinstance(df, psp.sql.dataframe.DataFrame):
@@ -28,8 +49,6 @@ def _is_traj_df_spark(df, traj_cols=None, **kwargs):
                 return False
 
     return True
-
-
 
 # Cast data types and address datetime issues
 
@@ -115,3 +134,4 @@ def _cast_traj_cols_spark(df, traj_cols):
                 df = df.withColumn(actual_col, col(actual_col).cast(StringType()))
 
     return df
+
