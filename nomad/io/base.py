@@ -18,8 +18,10 @@ import pathlib
 import pyarrow.csv as pc_csv
 from nomad.constants import DEFAULT_SCHEMA, FILTER_OPERATORS
 import numpy as np
+import geopandas as gpd
 import warnings
 import inspect
+from nomad.constants import FILTER_OPERATORS
 import pdb
 
 from shapely import wkt
@@ -626,7 +628,6 @@ def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_f
             col = traj_cols[key]
             if not is_string_dtype(df[col].dtype):
                 df[col] = df[col].astype("str")
-                
     return df
 
 def _process_filters(filters, col_names, use_pyarrow_dataset, traj_cols=None, schema=None):
@@ -753,7 +754,6 @@ def table_columns(filepath, format="csv", include_schema=False, sep=","):
         isinstance(filepath, (list, tuple)) or
         _is_directory(filepath)
     )
-
     if use_pyarrow_dataset:
         file_format_obj = "parquet"
         if format == "csv":
@@ -820,7 +820,6 @@ def from_df(df, traj_cols=None, parse_dates=True, mixed_timezone_behavior="naive
     return _cast_traj_cols(df.copy(), traj_cols, parse_dates=parse_dates,
                            mixed_timezone_behavior=mixed_timezone_behavior,
                            fixed_format=fixed_format)
-    
 
 
 def from_file(filepath,
@@ -1388,7 +1387,6 @@ def to_file(df, path, format="csv",
     if use_offset and traj_cols["tz_offset"] not in df.columns:
         raise ValueError(f"use_offset=True but tz_offset column '{traj_cols['tz_offset']}' not found in df")
 
-
     for k in ["datetime", "start_datetime", "end_datetime"]:
         if k in traj_cols and traj_cols[k] in df.columns:
             col = df[traj_cols[k]]
@@ -1421,7 +1419,6 @@ def to_file(df, path, format="csv",
             if k in inspect.signature(ds.write_dataset).parameters
         }
         table = pa.Table.from_pandas(df, preserve_index=False)
-
         ds.write_dataset(table, base_dir=str(path),
                          format=format,
                          partitioning=partition_by,
