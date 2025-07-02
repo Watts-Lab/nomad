@@ -11,13 +11,15 @@ import sys
 import os
 import pdb
 import nomad.io.base as loader
-import nomad.constants as constants
+import warnings
+from nomad.filters import to_timestamp
 from nomad.stop_detection import utils
+import nomad.constants as constants
 
 ##########################################
 ########         DBSCAN           ########
 ##########################################
-def _find_neighbors(data, time_thresh, dist_thresh, long_lat, datetime, traj_cols):
+def _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, traj_cols):
     """
     Compute neighbors within specified time and distance thresholds for a trajectory dataset.
     
@@ -31,10 +33,10 @@ def _find_neighbors(data, time_thresh, dist_thresh, long_lat, datetime, traj_col
         Time threshold in minutes for considering neighboring points.
     dist_thresh : float
         Distance threshold for considering neighboring points.
-    long_lat : bool, optional
+    use_lon_lat : bool
         Whether to use longitude/latitude coordinates.
-    datetime : bool, optional
-        Whether to process timestamps as datetime objects.
+    use_datetime : bool
+        Whether to cluster using time columns of type pandas.datetime64 if available.
     
     Returns
     -------
@@ -43,13 +45,13 @@ def _find_neighbors(data, time_thresh, dist_thresh, long_lat, datetime, traj_col
         timestamps that satisfy both time and distance thresholds.
     """
     # getting coordinates based on whether they are geographic coordinates (lon, lat) or catesian (x,y)
-    if long_lat:
+    if use_lon_lat:
         coords = np.radians(data[[traj_cols['latitude'], traj_cols['longitude']]].values)
     else:
         coords = data[[traj_cols['x'], traj_cols['y']]].values
     
-    # getting times based on whether they are datetime values or timestamps, changed to seconds for calculations
-    if datetime:
+    # getting times based on whether they are use_datetime values or timestamps, changed to seconds for calculations
+    if use_datetime:
         times = pd.to_datetime(data[traj_cols['datetime']])
         times = times.dt.tz_convert('UTC').dt.tz_localize(None)
         times = times.astype('int64') // 10**9
@@ -77,7 +79,7 @@ def _find_neighbors(data, time_thresh, dist_thresh, long_lat, datetime, traj_col
     time_pairs = np.where(within_time_thresh)
   
     # Distance calculation
-    if long_lat:
+    if use_lon_lat:
         distances = np.array([utils._haversine_distance(coords[i], coords[j]) for i, j in zip(*time_pairs)])
     else:
         distances_sq = (coords[time_pairs[0], 0] - coords[time_pairs[1], 0])**2 + (coords[time_pairs[0], 1] - coords[time_pairs[1], 1])**2
@@ -125,7 +127,7 @@ def _extract_middle(data):
         j = i + np.where(~x[i:])[0][0]
     return (i, j)
 
-def dbscan(data, time_thresh, dist_thresh, min_pts, long_lat, datetime, traj_cols, neighbor_dict=None):
+def dbscan(data, time_thresh, dist_thresh, min_pts, use_lon_lat, use_datetime, traj_cols, neighbor_dict=None):
     """
     Perform DBSCAN on a trajectory dataset with spatiotemporal constraints.
     
@@ -139,10 +141,10 @@ def dbscan(data, time_thresh, dist_thresh, min_pts, long_lat, datetime, traj_col
         Distance threshold for identifying neighbors.
     min_pts : int
         Minimum number of points required to form a dense region (core point).
-    long_lat : bool
-        Whether to use longitude/latitude coordinates.
-    datetime : bool
-        Whether to process timestamps as datetime objects.
+    use_lon_lat : bool
+        Whether to cluster using longitude/latitude columns if available.
+    use_datetime : bool
+        Whether to cluster using time columns of type pandas.datetime64 if available.
     traj_cols : dict
         Dictionary mapping column names for trajectory attributes.
     neighbor_dict : dict, optional
@@ -156,7 +158,7 @@ def dbscan(data, time_thresh, dist_thresh, min_pts, long_lat, datetime, traj_col
         - 'core': Core point labels for each point. Non-core points are labeled as -3.
     """
     # getting the values for time, both the original and changed to seconds for calculations
-    if datetime:
+    if use_datetime:
         valid_times = pd.to_datetime(data[traj_cols['datetime']])
         valid_times = valid_times.dt.tz_convert('UTC').dt.tz_localize(None)
         valid_times = valid_times.astype('int64') // 10**9
@@ -175,7 +177,7 @@ def dbscan(data, time_thresh, dist_thresh, min_pts, long_lat, datetime, traj_col
             valid_times = data[traj_cols['timestamp']].values
         
     if not neighbor_dict:
-        neighbor_dict = _find_neighbors(data, time_thresh, dist_thresh, long_lat, datetime, traj_cols)
+        neighbor_dict = _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, traj_cols)
     else:
         neighbor_dict = defaultdict(set,
                                     {k: v.intersection(valid_times) for k, v in
@@ -211,8 +213,8 @@ def dbscan(data, time_thresh, dist_thresh, min_pts, long_lat, datetime, traj_col
     return pd.DataFrame({'cluster': cluster_df, 'core': core_df})
 
 
-def _process_clusters(data, time_thresh, dist_thresh, min_pts, output, long_lat, datetime, traj_cols, 
-                     cluster_df=None, neighbor_dict=None, min_duration=4):
+def _process_clusters(data, time_thresh, dist_thresh, min_pts, output, use_lon_lat, use_datetime, traj_cols, 
+                     cluster_df=None, neighbor_dict=None, dur_min=5):
     """
     Recursively process spatiotemporal clusters from trajectory data to identify and refine valid clusters.
     
@@ -228,10 +230,10 @@ def _process_clusters(data, time_thresh, dist_thresh, min_pts, output, long_lat,
         Minimum number of points required to form a dense region (core point).
     output : pandas.DataFrame
         Output DataFrame to store cluster and core labels for valid clusters.
-    long_lat : bool
+    use_lon_lat : bool
         Whether to use longitude/latitude coordinates.
-    datetime : bool
-        Whether to process timestamps as datetime objects.
+    use_datetime : bool
+        Whether to cluster using time columns of type pandas.datetime64 if available.
     traj_cols : dict
         Dictionary mapping column names for trajectory attributes.
     cluster_df : pandas.DataFrame, optional
@@ -239,7 +241,7 @@ def _process_clusters(data, time_thresh, dist_thresh, min_pts, output, long_lat,
         it will be computed.
     neighbor_dict : dict, optional
         Precomputed dictionary of neighbors. If not provided, it will be computed.
-    min_duration : int, optional
+    dur_min : int, optional
         Minimum duration (in minutes) required for a cluster to be considered valid (default is 4).
     
     Returns
@@ -248,9 +250,9 @@ def _process_clusters(data, time_thresh, dist_thresh, min_pts, output, long_lat,
         True if at least one valid cluster is identified and processed, otherwise False.
     """
     if not neighbor_dict:
-        neighbor_dict = _find_neighbors(data, time_thresh, dist_thresh, long_lat, datetime, traj_cols)
+        neighbor_dict = _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, traj_cols)
     if cluster_df is None:
-        cluster_df = dbscan(data, time_thresh, dist_thresh, min_pts, long_lat, datetime, traj_cols, neighbor_dict=neighbor_dict)
+        cluster_df = dbscan(data, time_thresh, dist_thresh, min_pts, use_lon_lat, use_datetime, traj_cols, neighbor_dict=neighbor_dict)
     if len(cluster_df) < min_pts:
         return False
 
@@ -260,7 +262,7 @@ def _process_clusters(data, time_thresh, dist_thresh, min_pts, output, long_lat,
     if len(cluster_df['cluster'].unique()) == 1:
         # We rerun dbscan because possibly these points no longer hold their own
         x = dbscan(data = data.loc[cluster_df.index], time_thresh = time_thresh, dist_thresh = dist_thresh,
-                   min_pts = min_pts, long_lat = long_lat, datetime = datetime, traj_cols = traj_cols, neighbor_dict = neighbor_dict)
+                   min_pts = min_pts, use_lon_lat = use_lon_lat, use_datetime = use_datetime, traj_cols = traj_cols, neighbor_dict = neighbor_dict)
         
         y = x.loc[x['cluster'] != -1]
         z = x.loc[x['core'] != -1]
@@ -268,7 +270,7 @@ def _process_clusters(data, time_thresh, dist_thresh, min_pts, output, long_lat,
         if len(y) > 0:
             duration = int((y.index.max() - y.index.min()) // 60)
 
-            if duration > min_duration:
+            if duration > dur_min:
                 cid = max(output['cluster']) + 1 # Create new cluster id
                 output.loc[y.index, 'cluster'] = cid
                 output.loc[z.index, 'core'] = cid
@@ -286,22 +288,22 @@ def _process_clusters(data, time_thresh, dist_thresh, min_pts, output, long_lat,
         i, j = _extract_middle(cluster_df)  # Indices of the "middle" of the cluster
         
         # Recursively processes clusters
-        if _process_clusters(data, time_thresh, dist_thresh, min_pts, output, long_lat, datetime, traj_cols, cluster_df = cluster_df[i:j]):  # Valid cluster in the middle
+        if _process_clusters(data, time_thresh, dist_thresh, min_pts, output, use_lon_lat, use_datetime, traj_cols, cluster_df = cluster_df[i:j], dur_min=dur_min):  # Valid cluster in the middle
             _process_clusters(data, time_thresh, dist_thresh, min_pts, output,
-                             long_lat, datetime, traj_cols, cluster_df = cluster_df[:i])  # Process the initial stub
+                             use_lon_lat, use_datetime, traj_cols, cluster_df = cluster_df[:i], dur_min=dur_min)  # Process the initial stub
             _process_clusters(data, time_thresh, dist_thresh, min_pts, output,
-                             long_lat, datetime, traj_cols, cluster_df = cluster_df[j:])  # Process the "tail"
+                             use_lon_lat, use_datetime, traj_cols, cluster_df = cluster_df[j:], dur_min=dur_min)  # Process the "tail"
             return True
         else:  # No valid cluster in the middle
-            return _process_clusters(data, time_thresh, dist_thresh, min_pts, output, long_lat, datetime, traj_cols, pd.concat([cluster_df[:i], cluster_df[j:]]))
+            return _process_clusters(data, time_thresh, dist_thresh, min_pts, output, use_lon_lat, use_datetime, traj_cols, pd.concat([cluster_df[:i], cluster_df[j:]]), dur_min=dur_min)
 
 
-def temporal_dbscan(data, time_thresh, dist_thresh, min_pts, traj_cols=None, complete_output=False, **kwargs):
+def temporal_dbscan(data, time_thresh, dist_thresh, min_pts, complete_output=False, dur_min=5, traj_cols=None, **kwargs):
     # Check if user wants long and lat
-    long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs['latitude'] in data.columns and kwargs['longitude'] in data.columns
+    use_lon_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs['latitude'] in data.columns and kwargs['longitude'] in data.columns
 
     # Check if user wants datetime
-    datetime = 'datetime' in kwargs and kwargs['datetime'] in data.columns
+    use_datetime = 'datetime' in kwargs and kwargs['datetime'] in data.columns
 
     # Set initial schema
     if not traj_cols:
@@ -315,124 +317,54 @@ def temporal_dbscan(data, time_thresh, dist_thresh, min_pts, traj_cols=None, com
     loader._has_time_cols(data.columns, traj_cols)
 
     # Setting x and y as defaults if not specified by user in either traj_cols or kwargs
-    if traj_cols['x'] in data.columns and traj_cols['y'] in data.columns and not long_lat:
-        long_lat = False
+    if traj_cols['x'] in data.columns and traj_cols['y'] in data.columns and not use_lon_lat:
+        use_lon_lat = False
     else:
-        long_lat = True
+        use_lon_lat = True
 
     # Setting timestamp as default if not specified by user in either traj_cols or kwargs
-    if traj_cols['timestamp'] in data.columns and not datetime:
-        datetime = False
+    if traj_cols['timestamp'] in data.columns and not use_datetime:
+        use_datetime = False
     else:
-        datetime = True
+        use_datetime = True
 
-    if datetime:
-        time_col_name = traj_cols['datetime']
-    else:
-        first_timestamp = data[traj_cols['timestamp']].iloc[0]
-        timestamp_length = len(str(first_timestamp))
-        
-        if timestamp_length > 10:
-            if timestamp_length == 13:
-                warnings.warn(
-                    f"The '{data[traj_cols['timestamp']]}' column appears to be in milliseconds. "
-                    "This may lead to inconsistencies."
-                )
-                time_col_name = traj_cols['timestamp']
-            elif timestamp_length == 19:
-                warnings.warn(
-                    f"The '{timestamp_col_name}' column appears to be in nanoseconds. "
-                    "This may lead to inconsistencies."
-                )
-                time_col_name = traj_cols['timestamp']
-        else:
-            time_col_name = traj_cols['timestamp']
+    output = _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, dur_min=dur_min, traj_cols=traj_cols, **kwargs)
 
-    output = _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, traj_cols, **kwargs)
-    
-    output = output[output['cluster'] != -1]
-    
-    complete_data = pd.merge(output, data, left_index=True, right_on=time_col_name, how='inner')
-    
-    stop_table = complete_data.groupby('cluster').apply(lambda group: _stop_metrics(group, long_lat, datetime, traj_cols, complete_output), include_groups=False)
+    data_labels = data.copy()
+    data_labels['cluster'] = output['cluster']
+    data_labels = data_labels[data_labels['cluster'] != -1]
+    # data_labels = pd.merge(output, data, left_index=True, right_on=time_col_name, how='inner')
+    stop_table = data_labels.groupby('cluster').apply(lambda group: _stop_metrics(group, use_lon_lat, use_datetime, traj_cols, complete_output), include_groups=False)
     
     return stop_table
 
-
-def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, traj_cols=None, **kwargs):
-    # Check if user wants long and lat
-    long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs['latitude'] in data.columns and kwargs['longitude'] in data.columns
-
-    # Check if user wants datetime
-    datetime = 'datetime' in kwargs and kwargs['datetime'] in data.columns
-
-    # Set initial schema
-    if not traj_cols:
-        traj_cols = {}
-
-    traj_cols = loader._update_schema(traj_cols, kwargs)
-    traj_cols = loader._update_schema(constants.DEFAULT_SCHEMA, traj_cols)
-
+def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, dur_min=5, traj_cols=None, **kwargs):
+    # Check if user wants long and lat and datetime
+    t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)
+    # Load default col names
+    traj_cols = loader._parse_traj_cols(traj.columns, traj_cols, kwargs)
+    
     # Tests to check for spatial and temporal columns
-    loader._has_spatial_cols(data.columns, traj_cols)
-    loader._has_time_cols(data.columns, traj_cols)
+    loader._has_spatial_cols(traj.columns, traj_cols)
+    loader._has_time_cols(traj.columns, traj_cols)
 
-    # Setting x and y as defaults if not specified by user in either traj_cols or kwargs
-    if traj_cols['x'] in data.columns and traj_cols['y'] in data.columns and not long_lat:
-        long_lat = False
-    else:
-        long_lat = True
-
-    # Setting timestamp as default if not specified by user in either traj_cols or kwargs
-    if traj_cols['timestamp'] in data.columns and not datetime:
-        datetime = False
-    else:
-        datetime = True
-
-    if datetime:
-        time_col_name = traj_cols['datetime']
-
-        valid_times = pd.to_datetime(data[traj_cols['datetime']])
-        valid_times = valid_times.dt.tz_convert('UTC').dt.tz_localize(None)
-        valid_times = valid_times.astype('int64') // 10**9
-        valid_times = valid_times.values
-    else:
-        first_timestamp = data[traj_cols['timestamp']].iloc[0]
-        timestamp_length = len(str(first_timestamp))
-        
-        if timestamp_length > 10:
-            if timestamp_length == 13:
-                warnings.warn(
-                    f"The '{data[traj_cols['timestamp']]}' column appears to be in milliseconds. "
-                    "This may lead to inconsistencies."
-                )
-                valid_times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 3
-                time_col_name = traj_cols['timestamp']
-            elif timestamp_length == 19:
-                warnings.warn(
-                    f"The '{timestamp_col_name}' column appears to be in nanoseconds. "
-                    "This may lead to inconsistencies."
-                )
-                valid_times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 9
-                time_col_name = traj_cols['timestamp']
-        else:
-            valid_times = data[traj_cols['timestamp']].values
-            time_col_name = traj_cols['timestamp']
+    times = data[traj_cols[t_key]]
+    valid_times = to_timestamp(times).values if use_datetime else times.values
 
     data_temp = data.copy()
-    data_temp.index = valid_times        
+    data_temp.index = valid_times
 
     output = pd.DataFrame({'cluster': -1, 'core': -1}, index=valid_times)
 
-    _process_clusters(data_temp, time_thresh, dist_thresh, min_pts, output, long_lat, datetime, traj_cols, min_duration=4)
+    _process_clusters(data_temp, time_thresh, dist_thresh, min_pts, output, use_lon_lat, use_datetime, traj_cols, dur_min=dur_min)
 
-    output.index = list(data[time_col_name])
+    output.index = data.index
 
     return output
 
-def _stop_metrics(grouped_data, long_lat, datetime, traj_cols, complete_output):
+def _stop_metrics(grouped_data, use_lon_lat, use_datetime, traj_cols, complete_output):
     # Coordinates array and distance metrics
-    if long_lat:
+    if use_lon_lat:
         coords = grouped_data[[traj_cols['longitude'], traj_cols['latitude']]].to_numpy()
         stop_medoid = utils._medoid(coords, metric='haversine')
         diameter_m = utils._diameter(coords, metric='haversine')
@@ -442,7 +374,7 @@ def _stop_metrics(grouped_data, long_lat, datetime, traj_cols, complete_output):
         diameter_m = utils._diameter(coords, metric='euclidean')
 
     # Compute duration and start and end time of stop
-    if datetime:
+    if use_datetime:
         start_time = grouped_data[traj_cols['datetime']].min()
         end_time = grouped_data[traj_cols['datetime']].max()
         duration = (end_time - start_time).total_seconds() / 60.0
@@ -464,7 +396,7 @@ def _stop_metrics(grouped_data, long_lat, datetime, traj_cols, complete_output):
     n_pings = len(grouped_data)
     
     # Compute max_gap between consecutive pings (in minutes)
-    if datetime:
+    if use_datetime:
         times = pd.to_datetime(grouped_data[traj_cols['datetime']]).sort_values()
         time_diffs = times.diff().dropna()
         max_gap = int(time_diffs.max().total_seconds() / 60) if not time_diffs.empty else 0
@@ -482,7 +414,7 @@ def _stop_metrics(grouped_data, long_lat, datetime, traj_cols, complete_output):
         max_gap = int(np.max(time_diffs) / 60) if len(time_diffs) > 0 else 0
 
     # Prepare data for the Series
-    if long_lat:
+    if use_lon_lat:
         if complete_output:
             stop_attr = {
                 'start_time': start_time,

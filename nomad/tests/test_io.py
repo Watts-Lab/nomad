@@ -6,6 +6,8 @@ from pandas.testing import assert_series_equal, assert_frame_equal
 import numpy as np
 import geopandas as gpd
 import pygeohash as gh
+from shapely.geometry import Polygon
+from shapely import wkt
 import pyarrow.dataset as ds
 import pdb
 from nomad.io import base as loader
@@ -173,6 +175,22 @@ def expected_value_na_output_df():
            expected_df[col] = expected_df[col].astype(dtype_str)
     return expected_df
 
+
+@pytest.fixture
+def park_polygons():
+    hex_wkt = (
+        "POLYGON ((-38.3176943767 36.6695149320, "
+        "-38.3178191245 36.6697310917, "
+        "-38.3180686181 36.6697310917, "
+        "-38.3181933660 36.6695149320, "
+        "-38.3180686181 36.6692987719, "
+        "-38.3178191245 36.6692987719, "
+        "-38.3176943767 36.6695149320))"
+    )
+    hex_poly = wkt.loads(hex_wkt)                          # shapely
+    hex_gs   = gpd.GeoSeries([hex_poly], crs="EPSG:4326")   # attach CRS
+    hex_gs   = hex_gs.to_crs("EPSG:3857")                   # reproject to Web-Mercator
+    return [hex_wkt, hex_poly, hex_gs]
 # --- Tests ---
 
 # Correctly handles names when importing trajectories
@@ -292,7 +310,6 @@ def test_from_file_alias_equivalence_csv(io_sources):
         longitude="longitude",
         parse_dates=True,
     )
-
     df_via_file = loader.from_file(path, format=fmt, **alias_kwargs)
 
     raw = pd.read_csv(path)                   # plain pandas load
@@ -339,3 +356,79 @@ def test_to_file_roundtrip(tmp_path, fmt, dated_df):
     df_exp = dated_df.sort_values(["user_id", "timestamp"]).reset_index(drop=True)
 
     assert_frame_equal(df_out, df_exp, check_dtype=True)
+
+# Test for filters on read
+def test_filter_on_read_partitioned(io_sources):
+    path, fmt = io_sources[3]  # partitioned_parquet
+    
+    traj_cols = dict(
+        user_id="uid",
+        timestamp="timestamp",
+        latitude="latitude",
+        longitude="longitude"
+    )
+
+    filters = [("date", ">=", "2024-01-06"), ("user_id", "==", "wizardly_joliot")]
+
+    df = loader.from_file(path, format=fmt, traj_cols=traj_cols, filters=filters)
+
+    dataset = ds.dataset(path, format="parquet", partitioning="hive")
+    expr = (ds.field("date") >= "2024-01-06") & (ds.field("uid") == "wizardly_joliot")
+    expected = dataset.to_table(filter=expr).to_pandas()
+
+    assert len(df) == len(expected)
+
+# Test for empty filter output
+def test_filter_on_read_partitioned_empty(io_sources):
+    path, fmt = io_sources[2]  # partitioned_csv
+
+    traj_cols = dict(
+        datetime="local_datetime",
+        latitude="dev_lat",
+        longitude="dev_lon"
+    )
+
+    filters = ("datetime", "==", "1975-12-31 14:29:00")
+
+    df = loader.from_file(path, format=fmt,
+                          traj_cols=traj_cols,
+                          filters=filters,
+                          parse_dates=True)
+
+    assert len(df) == 0
+
+@pytest.mark.parametrize("idx", [0, 3], ids=["csv-single", "parquet-hive"])
+@pytest.mark.parametrize("poly_variant", range(3),
+                         ids=["wkt", "shapely", "geoseries"])
+def test_sample_users_within(io_sources, park_polygons, idx, poly_variant):
+    """
+    sample_users must accept WKT, shapely geometry, or GeoSeries for `within=`.
+    Ground truth is always computed with the shapely polygon version.
+    """
+    path, fmt = io_sources[idx]
+    poly_wkt, poly_shape, poly_gs = park_polygons
+    poly_arg = [poly_wkt, poly_shape, poly_gs][poly_variant]
+
+    traj_cols = dict(user_id="uid",
+                     latitude="latitude",
+                     longitude="longitude")
+
+    # users returned by on-read spatial filtering
+    ids_reader = loader.sample_users(
+        path,
+        format=fmt,
+        traj_cols=traj_cols,
+        within=poly_arg,
+        data_crs="EPSG:4326",
+        size=1.0,
+    )
+
+    # ground truth: full load → spatial mask (always shapely polygon)
+    df_full = loader.from_file(path, format=fmt, traj_cols=traj_cols)
+    pts = gpd.GeoSeries(
+        gpd.points_from_xy(df_full.longitude, df_full.latitude),
+        crs="EPSG:4326"
+    )
+    truth_ids = df_full.loc[pts.within(poly_shape), "uid"].drop_duplicates()
+
+    assert set(ids_reader) == set(truth_ids)

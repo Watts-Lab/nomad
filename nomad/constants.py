@@ -1,3 +1,8 @@
+import operator
+
+# TO DO: Add other schemas
+# TO DO: Add tesselation cell default
+
 DEFAULT_SCHEMA = {
     "user_id": "user_id",
     "latitude": "latitude",
@@ -12,7 +17,9 @@ DEFAULT_SCHEMA = {
     "y": "y",
     "geohash": "geohash",
     "tz_offset": "tz_offset",
-    "duration" : "duration"}
+    "duration" : "duration",
+    "ha":"ha",
+    "location_id" : "location_id"}
 
 ALLOWED_BUILDINGS = {
     0: ['home'], 1: ['home'], 2: ['home'], 3: ['home'], 4: ['home'],
@@ -24,6 +31,16 @@ ALLOWED_BUILDINGS = {
     22: ['home'], 23: ['home']
 }
 
+FILTER_OPERATORS = {
+    "==": operator.eq,
+    "!=": operator.ne,
+    ">":  operator.gt,
+    ">=": operator.ge,
+    "<":  operator.lt,
+    "<=": operator.le,
+}
+
+# For trajectory generation
 DEFAULT_SPEEDS = {'park': 2/1.96,
                   'home': 0.75/1.96,
                   'work': 0.75/1.96,
