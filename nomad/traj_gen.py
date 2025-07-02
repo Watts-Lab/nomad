@@ -105,6 +105,14 @@ def sample_hier_nhpp(traj,
                                           size=burst_start_points.size)
         burst_end_points = burst_start_points + burst_durations
 
+        # handle cases where no bursts are generated
+        if burst_end_points.size == 0:
+            empty_traj = pd.DataFrame(columns=traj.columns)
+            empty_burst_info = pd.DataFrame(columns=['start_time','end_time'])
+            if output_bursts:
+                return empty_traj, empty_burst_info
+            return empty_traj
+
         # forbid overlap: each burst_end ≤ next burst_start
         burst_end_points[:-1] = np.minimum(burst_end_points[:-1], burst_start_points[1:])
         # clip last end point
