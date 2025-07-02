@@ -18,7 +18,6 @@ import pathlib
 import pyarrow.csv as pc_csv
 from nomad.constants import DEFAULT_SCHEMA, FILTER_OPERATORS
 import numpy as np
-import geopandas as gpd
 import warnings
 import inspect
 from nomad.constants import FILTER_OPERATORS

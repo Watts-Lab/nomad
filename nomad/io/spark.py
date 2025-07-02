@@ -50,8 +50,6 @@ def _is_traj_df_spark(df, traj_cols=None, **kwargs):
 
     return True
 
-
-
 # Cast data types and address datetime issues
 
 def _cast_traj_cols_spark(df, traj_cols):
