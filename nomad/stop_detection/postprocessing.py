@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from functools import partial
+import nomad.io.base as loader
 import nomad.stop_detection.utils as utils
 import nomad.stop_detection.grid_based as GRID_BASED 
 
@@ -65,7 +66,7 @@ def invalid_stops(stop_data, traj_cols=None, **kwargs):
         first offending pair.
     """
     # determine start-time key and whether it's datetime
-    t_key, use_datetime = _fallback_time_cols(stop_data.columns, traj_cols, kwargs)
+    t_key, use_datetime = utils._fallback_time_cols(stop_data.columns, traj_cols, kwargs)
     end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
 
     # canonical column mapping
