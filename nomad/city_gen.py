@@ -353,7 +353,7 @@ class City:
         with open(filename, 'wb') as file:
             pickle.dump(self, file)
 
-    def plot_city(self, ax, doors=True, address=True, zorder=1, heatmap_agent=None):
+    def plot_city(self, ax, doors=True, address=True, zorder=1, heatmap_agent=None, colors=None):
         """
         Plots the city on a given matplotlib axis.
 
@@ -369,6 +369,8 @@ class City:
             The z-order of the plot.
         heatmap_agent : Agent
             The agent for which to plot a heatmap of time spent in each building.
+        colors : dict
+            A dictionary mapping building types to colors for plotting.
         """
 
         # Draw city boundary
@@ -376,12 +378,13 @@ class City:
         ax.plot(np.array(x), np.array(y), linewidth=2, color='black')  # Dashed line for the boundary
 
         # Define colors for different building types
-        colors = {
-            'home': 'skyblue',
-            'work': '#C9A0DC',
-            'retail': 'lightgrey',
-            'park': 'lightgreen'
-        }
+        if colors is None:
+            colors = {
+                'home': 'skyblue',
+                'work': '#C9A0DC',
+                'retail': 'lightgrey',
+                'park': 'lightgreen'
+            }
 
         if heatmap_agent is not None:
             weights = heatmap_agent.diary.groupby('location').duration.sum()

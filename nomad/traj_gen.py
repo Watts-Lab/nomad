@@ -189,6 +189,59 @@ def sample_hier_nhpp(traj,
     return sampled_traj
 
 
+def plot_sparse_clusters(
+    sparse_traj,
+    labels,
+    ax,
+    full_traj=None,
+    buffer=None,
+    cmap=cm.tab20c
+):
+    """
+    Plots trajectory with clusters.
+    
+    Parameters
+    ----------
+    sparse_traj : pd.DataFrame
+        Sparse trajectory DataFrame with columns 'x', 'y'.
+    labels : np.ndarray
+        Cluster labels for the sparse trajectory. Output of clustering algorithm, e.g., DBSCAN.
+    ax : matplotlib.axes.Axes
+        Matplotlib axes to plot on.
+    full_traj : pd.DataFrame, optional
+        Full trajectory DataFrame with columns 'x', 'y'.
+    buffer : float, optional
+        Padding for the plot bounding box.
+        # 0-1 = pad bbox by (1+buffer); None = no limits
+    cmap : matplotlib.colors.Colormap, optional
+        Colormap for the clusters.
+
+    Returns
+    -------
+    ax : matplotlib.axes.Axes
+        Matplotlib axes with the plotted clusters.
+    """
+    n_clusters = int(labels[labels >= 0].max() + 1) if (labels >= 0).any() else 0
+    for cid in range(n_clusters):
+        m = labels == cid
+        ax.scatter(sparse_traj.x[m], sparse_traj.y[m],
+                   s=80, color=cmap(cid / (n_clusters + 1)),
+                   zorder=2)
+    ax.scatter(sparse_traj.x, sparse_traj.y, s=6, color='black', zorder=2)
+    if full_traj is not None:
+        ax.plot(full_traj.x, full_traj.y, lw=1.2, color='blue', alpha=0.2, zorder=1)
+        if buffer is not None:
+            x0, x1 = full_traj.x.min(), full_traj.x.max()
+            y0, y1 = full_traj.y.min(), full_traj.y.max()
+            pad_x = (x1 - x0) * buffer / 2
+            pad_y = (y1 - y0) * buffer / 2
+            ax.set_xlim(x0 - pad_x, x1 + pad_x)
+            ax.set_ylim(y0 - pad_y, y1 + pad_y)
+    ax.set_xticks([]); ax.set_yticks([])
+    ax.set_aspect('equal', adjustable='box')
+    plt.tight_layout()
+    return ax
+
 # =============================================================================
 # AGENT CLASS
 # =============================================================================
