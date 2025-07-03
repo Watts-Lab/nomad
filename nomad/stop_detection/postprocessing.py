@@ -3,20 +3,41 @@ import numpy as np
 from functools import partial
 import nomad.stop_detection.utils as utils
 import nomad.stop_detection.grid_based as GRID_BASED 
+import nomad.io.base as loader
 
-def remove_overlaps(pred, time_thresh, dur_min, min_pts, traj_cols = None, method = 'polygon'):
-
+def remove_overlaps(pred, time_thresh, dur_min, min_pts, method = 'polygon', traj_cols = None, **kwargs):
         pred = pred.copy()
+        # load kwarg and traj_col args onto lean defaults
+        traj_cols = loader._parse_traj_cols(
+            pred.columns,
+            traj_cols,
+            kwargs,
+            defaults={'location_id':'location_id'},
+            warn=False) 
+    
+        summarize_stops_with_loc = partial(
+            utils.summarize_stop,
+            x=traj_cols['x'], # to do: what if it is lat, lon?
+            y=traj_cols['y'],
+            keep_col_names=False,
+            passthrough_cols = [traj_cols['location_id']])
+    
         if  method == 'polygon':
-            pred['temp_building_id'] = pred['building_id'].fillna("None-"+pred.cluster.astype(str))
+            if traj_cols['location_id'] not in pred.columns:
+                raise KeyError(
+                        f"Missing required `location_id` column for method `polygon`."
+                         " pass a column name for `location_id` in keyword arguments or traj_cols"
+                         " or use another method."
+                    )
+                
+            pred['temp_building_id'] = pred[traj_cols['location_id']].fillna("None-"+pred.cluster.astype(str))
+            traj_cols['location_id'] = 'temp_building_id'
             
-            summarize_stops_with_loc = partial(utils.summarize_stop, x='x', y='y', keep_col_names=False, passthrough_cols = ['building_id'])
             labels = GRID_BASED.grid_based_labels(
                                     data=pred.loc[pred.cluster!=-1],
                                     time_thresh=time_thresh,
                                     dur_min=dur_min,
                                     min_cluster_size=min_pts,
-                                    location_id='pred_building_id',
                                     traj_cols=traj_cols)
                     
             pred.loc[pred.cluster!=-1, 'cluster'] = labels
@@ -25,22 +46,23 @@ def remove_overlaps(pred, time_thresh, dur_min, min_pts, traj_cols = None, metho
             stops = pred.loc[pred.cluster!=-1].groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
     
         elif method == 'cluster':
+            traj_cols['location_id'] = 'cluster'
             labels = GRID_BASED.grid_based_labels(
                                     data=pred.loc[pred.cluster!=-1],
                                     time_thresh=time_thresh,
                                     dur_min=dur_min,
                                     min_cluster_size=min_pts,
-                                    location_id='cluster',
                                     traj_cols=traj_cols)
+            
             pred.loc[pred.cluster!=-1, 'cluster'] = labels
             stops = pred.groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
         
         elif method == 'recurse':
-            pass
+            raise ValueError("Method `recurse` not implemented yet.")
     
         return stops
 
-def invalid_stops(stop_data, traj_cols=None, **kwargs):
+def invalid_stops(stop_data, traj_cols=None, print_stops=False, **kwargs):
     """
     Detect any overlapping stops in a stop-detection table.
 
@@ -65,11 +87,11 @@ def invalid_stops(stop_data, traj_cols=None, **kwargs):
         first offending pair.
     """
     # determine start-time key and whether it's datetime
-    t_key, use_datetime = _fallback_time_cols(stop_data.columns, traj_cols, kwargs)
+    t_key, use_datetime = utils._fallback_time_cols(stop_data.columns, traj_cols, kwargs)
     end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
 
     # canonical column mapping
-    traj_cols = loader._parse_traj_cols(stop_data.columns, traj_cols, kwargs)
+    traj_cols = loader._parse_traj_cols(stop_data.columns, traj_cols, kwargs, warn=False)
     end_col_present  = loader._has_end_cols(stop_data.columns, traj_cols)
     duration_col_present  = loader._has_duration_cols(stop_data.columns, traj_cols)
     if not (end_col_present or duration_col_present):
@@ -83,6 +105,8 @@ def invalid_stops(stop_data, traj_cols=None, **kwargs):
             end_col = stop_data[traj_cols[t_key]] + pd.to_timedelta(dur_mins, unit='m')
         else:
             end_col = stop_data[traj_cols[t_key]] + dur_mins*60
+    else:
+        end_col = stop_data[traj_cols[end_t_key]]
 
 
     # single scan for overlap
@@ -91,11 +115,12 @@ def invalid_stops(stop_data, traj_cols=None, **kwargs):
         prev_end, curr_end = end_col.iloc[i-1], end_col.iloc[i] #scalar
         
         if curr[traj_cols[t_key]] < prev_end:
-            print(
-                f"Overlapping stops spanning:",
-                f"({prev[traj_cols[t_key]]}–{prev_end}) and ",
-                f"({curr[traj_cols[t_key]]}–{curr_end})"
-                )
+            if print_stops:
+                print(
+                    f"Overlapping stops spanning:",
+                    f"({prev[traj_cols[t_key]]}–{prev_end}) and ",
+                    f"({curr[traj_cols[t_key]]}–{curr_end})"
+                    )
             return True
 
     return False
