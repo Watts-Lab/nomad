@@ -243,7 +243,7 @@ def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_
 
     if complete_output:
         if traj_cols['ha'] in grouped_data.columns:
-            stop_attr[traj_cols['ha']] = int(grouped_data[traj_cols['ha']].mean())
+            stop_attr[traj_cols['ha']] = grouped_data[traj_cols['ha']].mean()
         stop_attr['diameter'] = _diameter(coords, metric=metric)
         stop_attr['n_pings'] = len(grouped_data)
         stop_attr[traj_cols[end_t_key]] = end_time

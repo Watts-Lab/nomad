@@ -126,50 +126,39 @@ def invalid_stops(stop_data, traj_cols=None, print_stops=False, **kwargs):
     return False
 
 def fill_timestamp_gaps(first_time, last_time, stop_table):
+    # If the stop table is empty, the entire duration is a gap.
+    if stop_table.empty:
+        gap = (last_time - first_time) // 60
+        return pd.DataFrame([{
+            'start_timestamp': first_time,
+            'duration': gap,
+            'building_id': "Street"
+        }])
+
     new_rows = []
+    # Use "Street" instead of "None" for clarity
+    gap_building_id = "Street"
 
     # fill initial gap
     if first_time < stop_table.loc[0, 'start_timestamp']:
         gap = (stop_table.loc[0, 'start_timestamp'] - first_time) // 60
-        new_rows.append({
-            'cluster': None,
-            'x': None,
-            'y': None,
-            'start_timestamp': first_time,
-            'duration': gap,
-            'building_id': "None"
-        })
+        new_rows.append({'start_timestamp': first_time, 'duration': gap, 'building_id': gap_building_id})
 
     # fill intermediate gaps
     for i in range(len(stop_table) - 1):
         end_time = stop_table.loc[i, 'start_timestamp'] + stop_table.loc[i, 'duration'] * 60
         next_start = stop_table.loc[i + 1, 'start_timestamp']
-        
         if end_time < next_start:
             gap = (next_start - end_time) // 60
-            new_rows.append({
-                'cluster': None,
-                'x': None,
-                'y': None,
-                'start_timestamp': end_time,
-                'duration': gap,
-                'building_id': "None"
-            })
+            new_rows.append({'start_timestamp': end_time, 'duration': gap, 'building_id': gap_building_id})
 
     # fill final gap
     last_end = stop_table.iloc[-1]['start_timestamp'] + stop_table.iloc[-1]['duration'] * 60
     if last_end < last_time:
         gap = (last_time - last_end) // 60
-        new_rows.append({
-            'cluster': None,
-            'x': None,
-            'y': None,
-            'start_timestamp': last_end,
-            'duration': gap,
-            'building_id': "None"
-        })
+        new_rows.append({'start_timestamp': last_end, 'duration': gap, 'building_id': gap_building_id})
 
+    # Combine and sort, filling other columns with NaN automatically
     df_full = pd.concat([stop_table, pd.DataFrame(new_rows)], ignore_index=True)
     df_full = df_full.sort_values('start_timestamp').reset_index(drop=True)
-
     return df_full
