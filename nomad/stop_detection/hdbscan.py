@@ -621,7 +621,7 @@ def _build_hdbscan_graphs(coords, ts_idx, neighbors, core_dist, use_lon_lat):
     )
     return edges_sorted_df, d_graph
 
-def hdbscan_labels(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min=5, traj_cols=None, **kwargs):
+def hdbscan_labels(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min=5, include_border_points = True, traj_cols=None, **kwargs):
     # Check if user wants long and lat and datetime
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)
     # Load default col names
@@ -678,7 +678,6 @@ def hdbscan_labels(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min
         # Exclude points already claimed by a denser cluster (should be rare for cores, but good practice)
         unclaimed_cores = core_members - claimed_points
 
-        include_border_points = True
         if include_border_points:
             # 2. Find border points for these unclaimed cores at this scale
             border_map = _build_border_map(scale, core_distances, d_graph)
