@@ -418,7 +418,7 @@ def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, return_core
 
     output = pd.DataFrame({'cluster': -1, 'core': -1}, index=valid_times)
 
-    _process_clusters(data_temp, time_thresh, dist_thresh, min_pts, output, long_lat, datetime, traj_cols, min_duration=4)
+    _process_clusters(data_temp, time_thresh, dist_thresh, min_pts, output, long_lat, datetime, traj_cols, min_duration=5)
 
     if return_cores:
         output.index = list(data[time_col_name])

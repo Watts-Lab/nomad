@@ -14,12 +14,13 @@ def remove_overlaps(pred, time_thresh, dur_min, min_pts, method = 'polygon', tra
             kwargs,
             defaults={'location_id':'location_id'},
             warn=False) 
-    
+        
         summarize_stops_with_loc = partial(
             utils.summarize_stop,
             x=traj_cols['x'], # to do: what if it is lat, lon?
             y=traj_cols['y'],
             keep_col_names=False,
+            complete_output=True,
             passthrough_cols = [traj_cols['location_id']])
     
         if  method == 'polygon':
@@ -55,7 +56,7 @@ def remove_overlaps(pred, time_thresh, dur_min, min_pts, method = 'polygon', tra
                                     traj_cols=traj_cols)
             
             pred.loc[pred.cluster!=-1, 'cluster'] = labels
-            stops = pred.groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
+            stops = pred.loc[pred.cluster!=-1].groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
         
         elif method == 'recurse':
             raise ValueError("Method `recurse` not implemented yet.")
