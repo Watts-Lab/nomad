@@ -428,7 +428,7 @@ def compute_cluster_stability(label_history_df, cdf_function=_base_cdf):
 
     This method is significantly faster than iterative approaches by avoiding
     Python loops in favor of pandas' optimized, C-backend operations.
-
+    
     Parameters
     ----------
     label_history_df : pd.DataFrame
