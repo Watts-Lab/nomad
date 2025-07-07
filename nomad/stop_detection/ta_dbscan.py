@@ -205,7 +205,7 @@ def dbscan(data, time_thresh, dist_thresh, min_pts, long_lat, datetime, traj_col
 
 
 def _process_clusters(data, time_thresh, dist_thresh, min_pts, output, long_lat, datetime, traj_cols, 
-                     cluster_df=None, neighbor_dict=None, min_duration=4):
+                     cluster_df=None, neighbor_dict=None, min_duration=5):
     """
     Recursively process spatiotemporal clusters from trajectory data to identify and refine valid clusters.
     
