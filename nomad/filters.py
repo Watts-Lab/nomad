@@ -460,7 +460,7 @@ def q_filter(traj: pd.DataFrame,
         A Series containing the user IDs for users whose q_stat > qbar.
     """
 
-    Q = _generate_Q_matrix(traj, traj_cols)
+    Q = generate_Q_matrix(traj, traj_cols)
 
     SW_dates = Q.index[:-sliding_window]  # dates involved in the sliding window computation
 
@@ -476,50 +476,27 @@ def q_filter(traj: pd.DataFrame,
     return filtered_users
 
 
-def _generate_Q_matrix(traj, traj_cols):
+def generate_Q_matrix(traj, traj_cols, **kwargs):
     '''
     generate Q daily matrix
     '''
+    traj_cols = loader._parse_traj_cols(traj.columns, traj_cols, kwargs)
+    loader._has_spatial_cols(traj.columns, traj_cols)#, exclusive=True)
+    loader._has_time_cols(traj.columns, traj_cols)
+    time_col = traj_cols['datetime']
+    user_id_col = traj_cols['user_id']
+
+    # Copy the trajectory DataFrame to avoid modifying the original
     df = traj.copy()
-    #Compute number of complete users over each window with 1-day timestep
-    df['date_hour'] = df[traj_cols['datetime']].dt.floor('h')
-    df['date'] = df[traj_cols['datetime']].dt.date
-    df_downsampled_1hour = df[[traj_cols['user_id'],'date','date_hour']].drop_duplicates()
-    df_date_nhours = df_downsampled_1hour.groupby([traj_cols['user_id'],'date']).size().reset_index()
-    df_date_nhours.rename(columns = {0:'nhours'}, inplace = True)
-    df_date_nhours['perc_hours'] = df_date_nhours['nhours']/24
-    Q = df_date_nhours.pivot(index = 'date', 
-                             columns = traj_cols['user_id'], 
-                             values = 'perc_hours').fillna(0)
+
+    # Compute q matrix
+    df['date_hour'] = df[time_col].dt.floor('h')
+    df['date'] = df[time_col].dt.date
+    df_downsampled_1hour = df[[user_id_col, 'date', 'date_hour']].drop_duplicates()
+    df_date_nhours = df_downsampled_1hour.groupby([user_id_col, 'date']).size().reset_index()
+    df_date_nhours.rename(columns={0: 'nhours'}, inplace=True)
+    df_date_nhours['perc_hours'] = df_date_nhours['nhours'] / 24
+    Q = df_date_nhours.pivot(index='date',
+                             columns=user_id_col,
+                             values='perc_hours').fillna(0)
     return Q
-
-
-def _ax_visual_ticklabel(ax, DICT_xtl, axis='x'): 
-    xt, xtl, rot, size = (DICT_xtl[c] for c in ['t', 'tl','rot','size'])
-    if axis=='x':
-        ax.set_xticks(xt)
-        ax.set_xticklabels(xtl, rotation = rot, size = size)
-    if axis=='y':
-        ax.set_yticks(xt)
-        ax.set_yticklabels(xtl, rotation = rot, size = size)   
-
-def _ax_visual_labeltitles(ax, DICT_lt): 
-    xl = DICT_lt['xlabel']
-    yl = DICT_lt['ylabel']
-    title = DICT_lt['title']
-    size_l = DICT_lt['label_size']
-    size_t = DICT_lt['title_size']
-    ax.set_xlabel(xl, size = size_l)
-    ax.set_ylabel(yl, size = size_l)
-    ax.set_title(title, size = size_t)
-
-
-def _ax_visual_legend(ax, DICT_legend): 
-    Colors = DICT_legend['colors']
-    Indicators = DICT_legend['classes']
-    Patches = [patches.Patch(color=c, label=l)  for c,l in zip(Colors, Indicators)]
-    ax.legend(handles= Patches, 
-              title=  DICT_legend['title'], 
-              loc            = DICT_legend['loc'], 
-              fontsize       = DICT_legend['fontsize'],
-              title_fontsize = DICT_legend['title_fontsize'])
