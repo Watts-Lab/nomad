@@ -10,7 +10,6 @@ from zoneinfo import ZoneInfo
 import warnings
 import funkybob
 import s3fs
-import pdb
 import pyarrow as pa
 import pyarrow.dataset as ds
 
@@ -59,13 +58,11 @@ def sample_hier_nhpp(traj,
         simulated trajectory from simulate_traj
     beta_start: float
         scale parameter (mean) of Exponential distribution modeling burst inter-arrival times
-        where 1/beta_start is the rate of events (bursts) per minute.
     beta_durations: float
-        scale parameter (mean) of Exponential distribution modeling burst durations.
+        scale parameter (mean) of Exponential distribution modeling burst durations
         if beta_start and beta_durations are None, a single burst covering the whole trajectory is used.
     beta_ping: float
         scale parameter (mean) of Exponential distribution modeling ping inter-arrival times
-        within a burst, where 1/beta_ping is the rate of events (pings) per minute.
     ha: float
         Mean horizontal-accuracy radius *in 15 m blocks*. The actual per-ping accuracy is random: ha ≥ 8 m/15 m and follows a
         Pareto distribution with that mean.  For each ping the positional error (ε_x, ε_y) is drawn i.i.d. N(0, σ²) with σ = HA / 1.515 so that
@@ -163,16 +160,21 @@ def sample_hier_nhpp(traj,
           .tz_convert(tz)
     )
 
-    # 4) noise injection (unchanged)
+    # realized horizontal accuracy
+
     x_m = 8/15
     if ha <= x_m:
         raise ValueError("ha must exceed 8 m / 15 m ≈ 0.533 blocks")
     alpha = ha / (ha - x_m)
     n = len(sampled_traj)
     ha_realized = (rng.pareto(alpha, size=n) + 1) * x_m
+    np.minimum(ha_realized, 20, out=ha_realized) # no unrealistic ha (in blocks)
+    sampled_traj['ha'] = ha_realized    
     sigma = ha_realized / 1.515
-    sampled_traj[['x','y']] += rng.standard_normal((n, 2)) * sigma[:, None]
-    sampled_traj['ha'] = ha_realized
+    # spatial noise
+    noise = rng.standard_normal((n, 2)) * sigma[:, None]
+    np.clip(noise, -250, 250, out=noise)
+    sampled_traj[['x', 'y']] += noise
 
     if output_bursts:
         burst_info = pd.DataFrame(burst_info, columns=['start_time','end_time'])
@@ -732,6 +734,7 @@ class Agent:
                           beta_ping,
                           seed=0,
                           ha=3/4,
+                          dt=None,
                           output_bursts=False,
                           deduplicate=True,
                           replace_sparse_traj=False,
@@ -989,6 +992,7 @@ class Population:
                  partition_cols=None,
                  mixed_timezone_behavior="naive",
                  filesystem=None,
+                 fmt='parquet',
                  **kwargs):
         """
         Save trajectories, homes, and diaries to local or S3 destinations.
@@ -1003,8 +1007,7 @@ class Population:
             Destination path for the homes table.
         diaries_path : str or Path, optional
             Destination path for diaries.
-        partition_cols : dict, optional
-            Dict with keys in {'full_traj', 'sparse_traj', 'diaries'} and values as lists of partition column names.
+        partition_cols : list of partition column names.
         filesystem : pyarrow.fs.FileSystem or None
             Optional filesystem object (e.g., s3fs.S3FileSystem). If None, inferred automatically.
         """
@@ -1013,9 +1016,9 @@ class Population:
             full_df = from_df(full_df, traj_cols=traj_cols, mixed_timezone_behavior=mixed_timezone_behavior)
             to_file(full_df,
                     path=full_path,
-                    format="parquet",
-                    partition_by=partition_cols.get('full_traj') if partition_cols else None,
-                    filesystem=filesystem, 
+                    format=fmt,
+                    partition_by=partition_cols,
+                    filesystem=filesystem,
                     existing_data_behavior='delete_matching')
     
         if sparse_path:
@@ -1023,20 +1026,22 @@ class Population:
             sparse_df = from_df(sparse_df, traj_cols=traj_cols, mixed_timezone_behavior=mixed_timezone_behavior)
             to_file(sparse_df,
                     path=sparse_path,
-                    format="parquet",
-                    partition_by=partition_cols.get('sparse_traj') if partition_cols else None,
-                    filesystem=filesystem, 
-                    existing_data_behavior='delete_matching')
+                    format=fmt,
+                    partition_by=partition_cols,
+                    filesystem=filesystem,
+                    existing_data_behavior='delete_matching',
+                    traj_cols=traj_cols)
     
         if diaries_path:
             diaries_df = pd.concat([agent.diary for agent in self.roster.values()], ignore_index=True)
             diaries_df = from_df(diaries_df, traj_cols=traj_cols, mixed_timezone_behavior=mixed_timezone_behavior)
             to_file(diaries_df,
                     path=diaries_path,
-                    format="parquet",
-                    partition_by=partition_cols.get('diaries') if partition_cols else None,
-                    filesystem=filesystem, 
-                    existing_data_behavior='delete_matching')
+                    format=fmt,
+                    partition_by=partition_cols,
+                    filesystem=filesystem,
+                    existing_data_behavior='delete_matching',
+                    traj_cols=traj_cols)
     
         if homes_path:
             homes_data = []
@@ -1049,11 +1054,10 @@ class Population:
             table = pa.Table.from_pandas(homes_df, preserve_index=False)
             ds.write_dataset(table,
                              base_dir=str(homes_path),
-                             format="parquet",
+                             format=fmt,
                              partitioning_flavor='hive',
                              filesystem=filesystem,
                              existing_data_behavior='delete_matching')
-
 
 # =============================================================================
 # AUXILIARY METHODS
