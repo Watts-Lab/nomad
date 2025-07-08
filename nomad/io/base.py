@@ -1386,6 +1386,7 @@ def to_file(df, path, format="csv",
     if use_offset and traj_cols["tz_offset"] not in df.columns:
         raise ValueError(f"use_offset=True but tz_offset column '{traj_cols['tz_offset']}' not found in df")
 
+
     for k in ["datetime", "start_datetime", "end_datetime"]:
         if k in traj_cols and traj_cols[k] in df.columns:
             col = df[traj_cols[k]]
@@ -1418,6 +1419,7 @@ def to_file(df, path, format="csv",
             if k in inspect.signature(ds.write_dataset).parameters
         }
         table = pa.Table.from_pandas(df, preserve_index=False)
+
         ds.write_dataset(table, base_dir=str(path),
                          format=format,
                          partitioning=partition_by,
