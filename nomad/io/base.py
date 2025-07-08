@@ -4,9 +4,7 @@ import geopandas as gpd
 import pyproj
 from functools import partial
 import multiprocessing
-from multiprocessing import Pool
 import re
-from pyspark.sql import SparkSession
 import sys
 import os
 import pyarrow.compute as pc
@@ -20,8 +18,6 @@ from nomad.constants import DEFAULT_SCHEMA, FILTER_OPERATORS
 import numpy as np
 import warnings
 import inspect
-from nomad.constants import FILTER_OPERATORS
-import pdb
 
 from shapely import wkt
 import shapely.geometry as sh_geom

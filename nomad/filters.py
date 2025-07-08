@@ -10,6 +10,7 @@ import warnings
 
 import nomad.io.base as loader
 from nomad.constants import DEFAULT_SCHEMA, SEC_PER_UNIT
+from nomad.base import _fallback_time_cols_dt
 
 def _timestamp_handling(
     ts,
