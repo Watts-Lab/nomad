@@ -14,6 +14,7 @@ import pyarrow.dataset as ds
 import pyarrow as pa
 import pyarrow.fs as pafs
 import pyarrow.types as pat
+import pathlib
 import pyarrow.csv as pc_csv
 from nomad.constants import DEFAULT_SCHEMA
 import numpy as np
@@ -688,10 +689,27 @@ def _process_filters(filters, col_names, use_pyarrow_dataset, traj_cols=None, sc
 
         return mask_func
 
-def _is_directory(path: str) -> bool:
-    fs, rel_path = pafs.FileSystem.from_uri(path)
-    rel_path = rel_path.rstrip("/") or rel_path          # handle “foo/”
-    return fs.get_file_info(rel_path).type == pafs.FileType.Directory
+
+def _is_directory(path):
+    """
+    True if *path* points to a directory, locally or on a remote/URI FS.
+
+    Accepts str, pathlib.Path, or os.PathLike.
+    """
+    # pathlib.Path → str (Arrow wants str)
+    if isinstance(path, (pathlib.Path, os.PathLike)):
+        return pathlib.Path(path).is_dir()
+
+    # Try Arrow’s universal resolver
+    try:
+        fs, rel = pafs.FileSystem.from_uri(path)
+        # ``rel`` is "" for the bucket root ("s3://bucket") → treat as dir
+        rel = rel.rstrip("/") or rel
+        info = fs.get_file_info(rel)
+        return info.type == pafs.FileType.Directory
+    except (pa.ArrowInvalid, ValueError):
+        # Arrow could not parse → assume local path string
+        return os.path.isdir(path)
     
 def table_columns(filepath, format="csv", include_schema=False, sep=","):
     """
@@ -800,8 +818,11 @@ def from_file(filepath,
         column names in the input.
     parse_dates : bool, default True
         Whether to parse timestamp columns as datetime.
-    mixed_timezone_behavior : {'naive','warn','raise'}, default 'naive'
-        How to handle mixed‐timezone datetimes.
+    mixed_timezone_behavior : {'utc', 'naive', 'object'}, default='naive'
+        Controls how datetime columns with mixed time zones are handled:
+        - `'utc'`: Convert all datetimes to UTC.
+        - `'naive'`: Strip time zone information and store offsets separately.
+        - `'object'`: Keep timestamps as `pd.Timestamp` objects with mixed time zones.
     fixed_format : str, optional
         strftime format string for datetime parsing.
     sep : str, default ','
