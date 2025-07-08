@@ -51,7 +51,24 @@ def _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, t
         coords = data[[traj_cols['x'], traj_cols['y']]].values
     
     # getting times based on whether they are use_datetime values or timestamps, changed to seconds for calculations
-    times = to_timestamp(data[traj_cols['datetime']]).values if use_datetime else data[traj_cols['timestamp']].values
+    if use_datetime:
+        times = pd.to_datetime(data[traj_cols['datetime']])
+        times = times.dt.tz_convert('UTC').dt.tz_localize(None)
+        times = times.astype('int64') // 10**9
+        times = times.values
+        
+    else:
+        # if timestamps, we change the values to seconds
+        first_timestamp = data[traj_cols['timestamp']].iloc[0]
+        timestamp_length = len(str(first_timestamp))
+    
+        if timestamp_length > 10:
+            if timestamp_length == 13:
+                times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 3
+            elif timestamp_length == 19:
+                times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 9   
+        else:
+            times = data[traj_cols['timestamp']].values
       
     # Pairwise time differences
     time_diffs = np.abs(times[:, np.newaxis] - times)
@@ -141,7 +158,23 @@ def dbscan(data, time_thresh, dist_thresh, min_pts, use_lon_lat, use_datetime, t
         - 'core': Core point labels for each point. Non-core points are labeled as -3.
     """
     # getting the values for time, both the original and changed to seconds for calculations
-    valid_times = to_timestamp(data[traj_cols['datetime']]).values if use_datetime else data[traj_cols['timestamp']].values
+    if use_datetime:
+        valid_times = pd.to_datetime(data[traj_cols['datetime']])
+        valid_times = valid_times.dt.tz_convert('UTC').dt.tz_localize(None)
+        valid_times = valid_times.astype('int64') // 10**9
+        valid_times = valid_times.values
+    else:
+        first_timestamp = data[traj_cols['timestamp']].iloc[0]
+        timestamp_length = len(str(first_timestamp))
+        
+        if timestamp_length > 10:
+            if timestamp_length == 13:
+                valid_times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 3
+                
+            elif timestamp_length == 19:
+                valid_times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 9
+        else:
+            valid_times = data[traj_cols['timestamp']].values
         
     if not neighbor_dict:
         neighbor_dict = _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, traj_cols)
@@ -309,11 +342,11 @@ def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, dur_min=5, 
     # Check if user wants long and lat and datetime
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)
     # Load default col names
-    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    traj_cols = loader._parse_traj_cols(traj.columns, traj_cols, kwargs)
     
     # Tests to check for spatial and temporal columns
-    loader._has_spatial_cols(data.columns, traj_cols)
-    loader._has_time_cols(data.columns, traj_cols)
+    loader._has_spatial_cols(traj.columns, traj_cols)
+    loader._has_time_cols(traj.columns, traj_cols)
 
     times = data[traj_cols[t_key]]
     valid_times = to_timestamp(times).values if use_datetime else times.values

@@ -3,9 +3,7 @@ import numpy as np
 import heapq
 from collections import defaultdict
 import warnings
-from collections import defaultdict
 from scipy.stats import norm
-import matplotlib.pyplot as plt
 import nomad.io.base as loader
 import nomad.constants as constants
 from nomad.stop_detection import utils
@@ -55,14 +53,14 @@ def _build_neighbor_graph(time_pairs, times):
     
     return neighbors
 
-def _compute_core_distance(traj, time_pairs, times, use_lon_lat, traj_cols, min_pts = 2):
+def _compute_core_distance(data, time_pairs, times, use_lon_lat, traj_cols, min_pts = 2):
     """
-    Calculate the core distance for each ping in traj.
+    Calculate the core distance for each ping in data.
     It gives local density estimate: small core distance → high local density.
 
     Parameters
     ----------
-    traj : dataframe
+    data : dataframe
 
     time_pairs : tuples of timestamps that are close in time given time_thresh
     
@@ -78,9 +76,9 @@ def _compute_core_distance(traj, time_pairs, times, use_lon_lat, traj_cols, min_
     """
     # getting coordinates based on whether they are geographic coordinates (lon, lat) or catesian (x,y)
     if use_lon_lat:
-        coords = np.radians(traj[[traj_cols['latitude'], traj_cols['longitude']]].values) # TC: O(n)
+        coords = np.radians(data[[traj_cols['latitude'], traj_cols['longitude']]].values) # TC: O(n)
     else:
-        coords = traj[[traj_cols['x'], traj_cols['y']]].values # TC: O(n)
+        coords = data[[traj_cols['x'], traj_cols['y']]].values # TC: O(n)
     
     n = len(coords)
     # get the index of timestamp in the arrays (for accessing their value later)
@@ -114,49 +112,6 @@ def _compute_core_distance(traj, time_pairs, times, use_lon_lat, traj_cols, min_
         sorted_dists = np.sort(dists) # TC: O(nlogn)
         core_distances[u] = np.round(sorted_dists[min_pts - 1] * 4)/4
     return core_distances, coords
-
-def _compute_mrd_graph(coords, times, time_pairs, core_distances, use_lon_lat):
-    """
-    Mutual Reachability Distance (MRD) of point p and point q is the maximum of: 
-        core distance of p, core distance of q, and the distance between p and q.
-    An edge is stored only for temporally admissible pairs (given by time_pairs).
-    
-    Explanation:
-    - Edges between dense regions are favored, and sparse regions have larger edge weights.
-    - MRD will inflate distances so that sparse areas are less likely to form clusters.
-    - Even if two points are physically close they may live in very different local densities.
-
-    Parameters
-    ----------
-    traj : dataframe
-    
-    core_distances : dict
-        Keys are (timestamp1, timestamp2), values are mutual reachability distances.
-
-    Returns
-    -------
-    mrd_graph : dictionary of timestamp pairs
-        {(timestamp1, timestamp2): mrd_value}.
-    """
-
-    ts_idx = {ts: i for i, ts in enumerate(times)}
-    neighbours = _build_neighbor_graph(time_pairs, times)
-    mrd_graph = {}
-
-    for u in times:
-        i = ts_idx[u]
-        for v in neighbours[u]:
-            if u >= v:        # keep each undirected edge once
-                continue
-            j = ts_idx[v]
-            dist = (utils._haversine_distance(coords[i], coords[j])
-                    if use_lon_lat
-                    else np.linalg.norm(coords[j] - coords[i]))
-
-            dist   = np.round(dist * 4) / 4
-            mrd_graph[(u, v)] = max(core_distances[u], core_distances[v], dist)
-
-    return mrd_graph
 
 def _mst(mrd_graph):
     """
@@ -204,104 +159,131 @@ def _mst(mrd_graph):
                            ('to', 'int64'),
                            ('weight', 'float64')])
 
-
-def mst_ext(mst_arr, core_distances):
+def _build_border_map(scale, core_distances, d_graph):
     """
-    Add self-edges to MST with weights equal to each point's core distance,
-    and return sorted.
+    For a given threshold `scale`, assign each non-core point to its nearest
+    core neighbor (preceding or succeeding in time) within distance <= scale.
+    
+    Parameters
+    ----------
+    scale : float
+        Distance threshold at this dendogram level.
+    core_distances : pd.Series
+        Indexed by timestamp; contains each point's “core distance.”
+        Must be sorted by index (timestamp).
+    d_graph : pd.Series
+        MultiIndex (border, core) → actual distance between points.
+    
+    Returns
+    -------
+    defaultdict(set)
+        Mapping {core_ts: set(border_ts, ...)} of border points for each core.
+    """
+    # Identify which timestamps are core vs border
+    is_core = core_distances <= scale
+    cores   = core_distances.index[is_core].to_numpy()
+    borders = core_distances.index[~is_core].to_numpy()
+    
+    if cores.size == 0 or borders.size == 0:
+        return defaultdict(set)
+    
+    # Locate insertion points of each border among cores
+    succ_pos = np.searchsorted(cores, borders, side="left")
+    pred_pos = succ_pos - 1
+    
+    # Build pairs (border, candidate_core) for existing neighbors
+    pairs = []
+    # predecessor candidates
+    valid_pred = pred_pos >= 0
+    for b, p in zip(borders[valid_pred], cores[pred_pos[valid_pred]]):
+        pairs.append((b, p))
+    # successor candidates
+    valid_succ = succ_pos < cores.size
+    for b, s in zip(borders[valid_succ], cores[succ_pos[valid_succ]]):
+        pairs.append((b, s))
+    
+    # Look up distances, drop ones beyond scale
+    idx = pd.MultiIndex.from_tuples(pairs, names=["border", "core"])
+    dists = d_graph.reindex(idx).dropna()
+    dists = dists[dists <= scale]
+    
+    if dists.empty:
+        return defaultdict(set)
+    
+    # For each border, pick the core with minimal distance (ties break naturally)
+    best = dists.groupby(level="border").idxmin().values
+    core_to_border = defaultdict(set)
+    for border, core in best:
+        core_to_border[core].add(border)
+    
+    return core_to_border
+
+def hdbscan(edges_sorted_df, core_distances, d_graph, min_cluster_size, dur_min=5):
+    """
+    Builds a cluster hierarchy from a pre-computed Minimum Spanning Tree.
+
+    Iteratively removes edges from the MST (from largest to smallest weight)
+    to form a hierarchy of clusters. Uses a chronological border-point
+    assignment strategy to test for cluster spuriousness.
 
     Parameters
     ----------
-    mst : (n_edges,3) structured array (from, to, weight)
-    core_distances : dict {timestamp: core_distance}
+    edges_sorted_df : pd.Series
+        The MST with self-loops, indexed by ('from', 'to') and sorted
+        descending by weight (which represents distance/scale).
+    core_distances : pd.Series
+        Sorted Series mapping each timestamp to its core distance.
+    d_graph : pd.Series
+        Symmetric graph of raw distances between all temporally-close points.
+    min_cluster_size : int
+        Minimum number of core points for a cluster to be considered valid.
+    dur_min : int
+        Minimum duration in minutes for a cluster to be considered valid.
+
     Returns
     -------
-    (n_edges,3) structured array sorted by descending weight
+    tuple
+        (label_history_df, hierarchy_df)
     """
-    dtype = mst_arr.dtype
-    self_edges = np.array(
-        [(ts, ts, w) for ts, w in core_distances.items()],
-        dtype=dtype
-    )
-    edges = np.concatenate((mst_arr, self_edges))
-    order = np.argsort(edges['weight'])[::-1]          # big → small
-    return edges[order]
-
-def hdbscan(edges_sorted, min_cluster_size, neighbors, ts_idx, coords, times, use_lon_lat=False, dur_min=5):
     hierarchy = []
     label_history = []
-
-    # 4.1 For the root of the tree assign all objects the same label (single “cluster”), label = 0
-    all_pings = set(edges_sorted['from']).union(edges_sorted['to'])
-   
-    label_map = pd.Series(0, index=pd.Index(sorted(all_pings), name='time'), name='cluster_id', dtype=int)
+    
+    # All pings are taken from the core_distances index
+    all_pings = core_distances.index
+    label_map = pd.Series(0, index=all_pings, name='cluster_id', dtype=int)
 
     # Log initial labels
     df0 = label_map.to_frame()
-    df0['dendrogram_scale'] = np.nan
+    df0['dendogram_scale'] = np.nan
     label_history.append(df0.reset_index())
 
-    # edges_sorted is already ordered by descending weight
-    weights = edges_sorted['weight']
-    # find split points where weight changes
-    split_idx = np.flatnonzero(np.diff(weights)) + 1
-    # batch edges of equal weight
-    batches = np.split(edges_sorted, split_idx)
-    sorted_scales = [batch[0]['weight'] for batch in batches]
-
-    # next label after label 0
     current_label_id = 1
 
-    # Iteratively remove all edges from MSText in decreasing order of weights
-    # 4.2.1 Before each removal, set the dendrogram scale value of the current hierarchical level as the weight of the edge(s) to be removed.
-    
-    for edges, scale in zip(batches, sorted_scales):
-        label_u = label_map.loc[edges['from']].values
-        label_v = label_map.loc[edges['to']].values
-        
-        mask = label_u == label_v
-        filtered = edges[mask]
-        
-        # affected clusters contain edges to be removed
-        affected_clusters = set(label_u[mask])
-        edges_to_remove   = list(zip(filtered['from'], filtered['to']))
+    # Iteratively process edges grouped by weight (scale)
+    for scale, edges_to_remove in edges_sorted_df.groupby(edges_sorted_df, sort=False):
+
+        border_map = _build_border_map(scale, core_distances, d_graph) # can be computed without thinking of edges
+        idx_from = edges_to_remove.index.get_level_values('from')
+        affected_clusters = set(label_map.loc[idx_from].unique()) 
 
         for cluster_id in affected_clusters:
             if cluster_id == -1:
                 continue
-            members = set(label_map.index[label_map == cluster_id])
-            remaining_members = members.copy()
+ 
+            members = label_map.index[label_map == cluster_id]
+            remaining_members = set(members)
             
-            G = _build_graph(members, edges_sorted, edges_to_remove)
-            # visualize_adjacency_dict(G)
-
+            G = _build_graph_pd(members, edges_sorted_df, edges_to_remove)
             components = _connected_components(G)
-            core_points = {ts for comp in components for ts in comp}
-
+            
             non_spurious = []
-            claimed_border = set()
 
-            for comp in components:            
-                # --- border points within current scale ----------------------
-                border = set()
-                for ts in comp:
-                    for nb in neighbors[ts].intersection(members) - core_points:  # temporally close, respecting hierarchy
-                        if nb in claimed_border:
-                            continue                         # core or claimed
-                        i, j = ts_idx[ts], ts_idx[nb]
-                        d = (utils._haversine_distance(coords[i], coords[j])
-                             if use_lon_lat
-                             else np.linalg.norm(coords[i] - coords[j]))
-                        if d <= scale:                       # ε at this level
-                            border.add(nb)
-
-                full_cluster = set(comp).union(border)
-
-                # --- spurious test (duration incl. borders) --------------
+            for comp in components:
+                # Look up this component's borders in the global map
+                comp_borders = set().union(*(border_map.get(ts, set()) for ts in comp))
+                full_cluster = set(comp).union(comp_borders)
                 if ((max(full_cluster) - min(full_cluster)) >= dur_min * 60) and (len(comp) >= min_cluster_size):
-                    claimed_border.update(border)      # lock them
-                    label_map.loc[list(border)] = cluster_id
-                    non_spurious.append(full_cluster)
+                    non_spurious.append(comp)
                     
             if not non_spurious:
                 pass # cluster has disappeared
@@ -328,7 +310,7 @@ def hdbscan(edges_sorted, min_cluster_size, neighbors, ts_idx, coords, times, us
 
         # log label map after this scale
         df = label_map.to_frame()
-        df['dendrogram_scale'] = scale
+        df['dendogram_scale'] = scale
         label_history.append(df.reset_index())
         
     # combine label history into one DataFrame
@@ -356,23 +338,19 @@ def _build_cluster_lineage(hierarchy):
             })
     return pd.DataFrame(lineage)
 
-def _build_graph(nodes, edges_arr, removed_edges):
-    """
-    Build the adjacency map for the given cluster, skipping any edges
-    scheduled for removal.  No DataFrame row objects are created.
-    """
-    nodes_set    = set(nodes)                       # O( |cluster| )
-    removed_set  = set(map(frozenset, removed_edges))
-    graph        = defaultdict(set)
+def _build_graph_pd(nodes, edges_sorted_df, removed_edges):
+    graph = defaultdict(set)
+    
+    mask1 = edges_sorted_df.index.get_level_values('from').isin(nodes) & edges_sorted_df.index.get_level_values('to').isin(nodes)
+    sub = edges_sorted_df.loc[mask1]
+    
+    mask2 = sub.index.get_level_values('from') != sub.index.get_level_values('to')
+    mask3 = ~sub.index.isin(removed_edges.index)
 
-    for u, v, _ in edges_arr:
-        if u not in nodes_set or v not in nodes_set or u == v:
-            continue
-        if frozenset((u, v)) in removed_set:
-            continue
+    for u, v in sub[mask2&mask3].index:
         graph[u].add(v)
         graph[v].add(u)
-
+        
     return graph
 
 def _connected_components(graph):
@@ -402,52 +380,31 @@ def _connected_components(graph):
     return components
 
 
-def _get_eps(label_history_df, target_cluster_id):
-    eps_df = []
+def _base_cdf(eps):
+    """
+    The standard HDBSCAN stability CDF, equivalent to (1 - 1/eps).
+    Handles edge cases for eps=inf (returns 1) and eps=0 (returns 0).
+    """
+    eps = np.asarray(eps)
+    # Create a result array of floats
+    res = np.zeros_like(eps, dtype=float)
     
-    # ε_max(Ci): maximum ε value at which Ci exisits
-    eps_max = label_history_df[label_history_df['cluster_id']== target_cluster_id]['dendrogram_scale'].max()
-    timestamps = label_history_df[label_history_df['cluster_id'] == target_cluster_id]['time'].unique()
+    # Where eps is not infinite and greater than 0
+    valid_mask = (eps != np.inf) & (eps > 0)
+    res[valid_mask] = 1.0 - (1.0 / eps[valid_mask])
+    
+    # Where eps is infinite, the CDF is 1
+    res[eps == np.inf] = 1.0
+    
+    # Where eps is 0 or invalid, the CDF is 0
+    # This is already handled by np.zeros_like initialization
+    
+    return res
 
-    for ts in timestamps:
-        # print(ts)
-        history = label_history_df[label_history_df['time'] == ts].copy()
-        # print(history)
-        history = history[~history['dendrogram_scale'].isna()]
-        history = history.sort_values('dendrogram_scale', ascending=False)
-        # print(history)
-
-        in_cluster = history[history['cluster_id'] == target_cluster_id]
-        # print("in cluster:")
-        # print(in_cluster)
-        out_cluster = history[history['cluster_id'] != target_cluster_id]
-        # print("out cluster:")
-        # print(out_cluster)
-
-        if not in_cluster.empty:
-            last_in_cluster_scale = in_cluster['dendrogram_scale'].min()  # since descending
-            # print("scale last in cluster", last_in_cluster_scale)
-            exited_after = out_cluster[out_cluster['dendrogram_scale'] < last_in_cluster_scale]
-
-            if not exited_after.empty:
-                # ε_min(xj , Ci): ε value (scale) beyond which object xj no longer belongs to cluster Ci
-                eps_min = exited_after['dendrogram_scale'].max()  # highest scale after exit
-            else:
-                eps_min = np.inf  # never exited
-        else:
-            eps_min = np.nan  # never entered
-
-        eps_df.append({
-            "time": ts,
-            "eps_min": eps_min,
-            "eps_max": eps_max
-        })
-
-        # print("-----")
-
-    return pd.DataFrame(eps_df)
-
-def custom_CDF(eps):
+def _piecewise_linear_cdf(eps):
+    """
+    Example of a custom, piecewise CDF for stability calculations.
+    """
     x = np.asarray(eps)
     y = np.zeros_like(x, dtype=float)
 
@@ -460,70 +417,81 @@ def custom_CDF(eps):
     m = (x > 80) & (x <= 200)
     y[m] = 120 + (x[m] - 80)
 
-    y[x > 200] = 1
-    return y
+    m = x > 200
+    y[x > 200] = 240
 
-def custom_cluster_stability(label_history_df):
-    # restrict to real clusters and non-NaN scales
+    return y/240
+
+def compute_cluster_stability(label_history_df, cdf_function=_base_cdf):
+    """
+    Computes cluster stability using a vectorized approach and a provided CDF.
+
+    This method is significantly faster than iterative approaches by avoiding
+    Python loops in favor of pandas' optimized, C-backend operations.
+
+    Parameters
+    ----------
+    label_history_df : pd.DataFrame
+        DataFrame containing the cluster label history for each point at each scale.
+        Must have columns ['time', 'cluster_id', 'dendogram_scale'].
+    cdf_function : callable, optional
+        A function that computes the Cumulative Distribution Function for a given
+        epsilon (scale). It should accept a NumPy array and return an array of
+        the same shape. Defaults to the standard HDBSCAN stability CDF (1 - 1/eps).
+
+    Returns
+    -------
+    pd.DataFrame
+        A DataFrame with ['cluster_id', 'cluster_stability'] for each valid cluster.
+    """
+
     df = label_history_df[
-        (label_history_df['cluster_id'] != 0) &
-        (label_history_df['cluster_id'] != -1) &
-        label_history_df['dendrogram_scale'].notna()
-    ]
+        (label_history_df['cluster_id'] > 0) &
+        (label_history_df['dendogram_scale'].notna())
+    ].copy()
 
-    # build lookup: time → (scales_desc, cluster_ids_at_scales)
-    history_by_time = {}
-    for ts, grp in df.groupby('time', sort=False):
-        sorted_grp = grp.sort_values('dendrogram_scale', ascending=False)
-        history_by_time[ts] = (
-            sorted_grp['dendrogram_scale'].to_numpy(),
-            sorted_grp['cluster_id'].to_numpy()
-        )
+    if df.empty:
+        return pd.DataFrame(columns=['cluster_id', 'cluster_stability'])
 
-    # precompute ε_max per cluster
-    eps_max = df.groupby('cluster_id')['dendrogram_scale'].max().to_dict()
+    # 2. For each point-cluster pair, find eps_max (birth scale of the cluster).
+    eps_max_map = df.groupby('cluster_id')['dendogram_scale'].max()
+    df['eps_max'] = df['cluster_id'].map(eps_max_map)
 
-    out = []
-    for cluster_id, eps_max_c in eps_max.items():
-        total_stab = 0.0
-        for scales, clusters in history_by_time.values():
-            # find all positions where this time was still in cluster:
-            in_mask = (clusters == cluster_id)
-            if not in_mask.any():
-                continue
-            # last scale at which it was in Ci
-            last_in = scales[in_mask].min()
-            # among scales < last_in where cluster != Ci, take max (or ∞)
-            out_mask = (clusters != cluster_id) & (scales < last_in)
-            eps_min = scales[out_mask].max() if out_mask.any() else np.inf
+    # 3. For each 'time', we go from largest scale (birth) to smallest.
+    df.sort_values(['time', 'dendogram_scale'], ascending=[True, False], inplace=True)
 
-            total_stab += custom_CDF([eps_min])[0] - custom_CDF([eps_max_c])[0]
+    # 4. For each point, find the cluster of the *next* step in its timeline.
+    # This allows us to detect when a point "exits" a cluster.
+    df['next_cluster_id'] = df.groupby('time')['cluster_id'].shift(-1)
+    
+    # 5. An exit occurs where the cluster_id changes.
+    # The 'eps_min' for that point-cluster pair is the scale at which it was last seen.
+    # When a point drops out of all clusters, its next_cluster_id is NaN.
+    exit_events = df[df['cluster_id'] != df['next_cluster_id']].copy()
+    exit_events.rename(columns={'dendogram_scale': 'eps_min'}, inplace=True)
+    
+    # 6. For points that never exit a cluster (i.e., stay in it until the MST is one component),
+    # their eps_min is effectively infinite. They contribute to stability until the end.
+    # We find these by identifying the last known state for each point.
+    last_state = df.drop_duplicates(subset='time', keep='last')
+    # Filter for those that were not already marked as an exit event (i.e., next_cluster_id was NaN)
+    never_exited = last_state[last_state['next_cluster_id'].isna()]
+    
+    # Combine the two types of stability events
+    stability_points = pd.concat([
+        exit_events[['time', 'cluster_id', 'eps_min', 'eps_max']],
+        never_exited[['time', 'cluster_id', 'dendogram_scale', 'eps_max']].assign(eps_min=np.inf)
+    ])
+    
+    # 7. Apply the provided CDF to calculate the stability contribution of each point.
+    stability_points['stability_term'] = (
+        cdf_function(stability_points['eps_max']) - cdf_function(stability_points['eps_min'])
+    )
 
-        out.append({'cluster_id': cluster_id, 'cluster_stability': total_stab})
+    # 8. Sum the contributions for each cluster to get the final stability score.
+    final_stability = stability_points.groupby('cluster_id')['stability_term'].sum()
 
-    return pd.DataFrame(out)
-
-
-def compute_cluster_stability(label_history_df):
-    # Get clusters that are not root (0) or noise (-1)
-    clusters = label_history_df.loc[~label_history_df['cluster_id'].isin([0, -1]), 'cluster_id'].unique()
-
-    cluster_stability_df = []
-
-    for cluster in clusters:
-        eps_df = _get_eps(label_history_df, target_cluster_id=cluster)
-        
-        # Avoid division by zero or NaNs
-        eps_df = eps_df.replace({'eps_min': {0: np.nan}, 'eps_max': {0: np.nan}})
-        eps_df['stability_term'] = (1 / eps_df['eps_min']) - (1 / eps_df['eps_max'])
-        total_stability = eps_df['stability_term'].sum(skipna=True)
-
-        cluster_stability_df.append({
-            "cluster_id": cluster,
-            "cluster_stability": total_stability
-        })
-
-    return pd.DataFrame(cluster_stability_df)
+    return final_stability.reset_index().rename(columns={'stability_term': 'cluster_stability'})
 
 def select_most_stable_clusters(hierarchy_df, cluster_stability_df):
     hierarchy = [
@@ -582,177 +550,171 @@ def select_most_stable_clusters(hierarchy_df, cluster_stability_df):
 
     return selected_clusters
 
-def hdbscan_labels(traj, time_thresh, min_pts = 2, min_cluster_size = 1, traj_cols=None, **kwargs):
+def _build_hdbscan_graphs(coords, ts_idx, neighbors, core_dist, use_lon_lat):
+    """
+    Computes all graphs required for the HDBSCAN algorithm in one pass.
+
+    Returns
+    -------
+    edges_sorted : np.recarray
+        [from, to, weight] sorted descending by weight.
+    d_graph : pd.Series
+        Symmetric graph of raw distances, MultiIndex (from, to).
+    """
+    mrd_graph = {}
+    u_list, v_list, d_list = [], [], []
+
+    for u, u_neighbors in neighbors.items():
+        i = ts_idx[u]
+        for v in u_neighbors:
+            if u >= v:
+                continue
+            
+            j = ts_idx[v]
+            dist = (utils._haversine_distance(coords[i], coords[j])
+                    if use_lon_lat else np.linalg.norm(coords[i] - coords[j]))
+            dist = np.round(dist * 4) / 4
+
+            mrd_graph[(u, v)] = max(core_dist[u], core_dist[v], dist)
+            u_list.append(u)
+            v_list.append(v)
+            d_list.append(dist)
+
+
+    idx = pd.MultiIndex.from_arrays([u_list, v_list], names=["from", "to"])
+    d_graph_part = pd.Series(d_list, index=idx)
+    
+    rev = d_graph_part.copy()
+    rev.index = rev.index.swaplevel(0, 1)
+    d_graph = pd.concat([d_graph_part, rev])
+
+
+    # --- Build MST from MRD graph ---
+    mst_arr = _mst(mrd_graph)
+
+    # --- Extend and sort MST with self-loops ---
+    self_loops_items = list(core_dist.items())
+    if not self_loops_items:
+        self_loops_full = np.empty(0, dtype=mst_arr.dtype)
+    else:
+        self_loops = np.array(
+            self_loops_items,
+            dtype=[('from', 'int64'), ('weight', 'float64')]
+        )
+        self_loops_full = np.empty(len(self_loops), dtype=mst_arr.dtype)
+        self_loops_full['from'] = self_loops['from']
+        self_loops_full['to'] = self_loops['from']
+        self_loops_full['weight'] = self_loops['weight']
+    
+    all_edges = np.concatenate([mst_arr, self_loops_full])
+    
+    order = np.argsort(all_edges["weight"])[::-1]
+    sorted_edges = all_edges[order]
+    
+    edges_sorted_df = pd.Series(
+        sorted_edges['weight'],
+        index=pd.MultiIndex.from_arrays(
+            [sorted_edges['from'], sorted_edges['to']],
+            names=['from', 'to']
+        ),
+        name='weight'
+    )
+    return edges_sorted_df, d_graph
+
+def hdbscan_labels(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min=5, traj_cols=None, **kwargs):
     # Check if user wants long and lat and datetime
-    t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(traj.columns, traj_cols, kwargs)
+    t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)
     # Load default col names
-    traj_cols = loader._parse_traj_cols(traj.columns, traj_cols, kwargs)
+    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     
     # Tests to check for spatial and temporal columns
-    loader._has_spatial_cols(traj.columns, traj_cols)
-    loader._has_time_cols(traj.columns, traj_cols)
+    loader._has_spatial_cols(data.columns, traj_cols)
+    loader._has_time_cols(data.columns, traj_cols)
 
-    time_pairs, times = _find_temp_neighbors(traj[traj_cols[t_key]], time_thresh, use_datetime)
-
-    core_distances, coords = _compute_core_distance(traj, time_pairs, times, use_lon_lat, traj_cols, min_pts)
+    time_pairs, times = _find_temp_neighbors(data[traj_cols[t_key]], time_thresh, use_datetime)
 
     neighbors = _build_neighbor_graph(time_pairs, times)
     ts_idx = {ts: i for i, ts in enumerate(times)}
-    
-    mrd = _compute_mrd_graph(coords, times, time_pairs, core_distances, use_lon_lat)
 
-    mst_edges = _mst(mrd)
-    
-    edges_sorted = mst_ext(mst_edges, core_distances) # << with self-loops
+    core_distances, coords = _compute_core_distance(data, time_pairs, times, use_lon_lat, traj_cols, min_pts)
 
-    label_history_df, hierarchy_df = hdbscan(edges_sorted,
-                                             min_cluster_size,
-                                             neighbors, ts_idx, coords, times,
-                                             use_lon_lat=use_lon_lat)
+    edges_sorted, d_graph = _build_hdbscan_graphs(coords, ts_idx, neighbors, core_distances, use_lon_lat)
     
-    # cluster_stability_df = compute_cluster_stability(label_history_df)
-    cluster_stability_df = custom_cluster_stability(label_history_df)
+    core_distances = pd.Series(core_distances).sort_index()
+    core_distances.index.name = 'time'
+
+    label_history_df, hierarchy_df = hdbscan(
+        edges_sorted_df=edges_sorted,
+        core_distances=core_distances,
+        d_graph=d_graph,
+        min_cluster_size=min_cluster_size,
+        dur_min=dur_min)
     
+    cluster_stability_df = compute_cluster_stability(label_history_df) # default old func
+    # cluster_stability_df = compute_cluster_stability(label_history_df, cdf_function=_piecewise_linear_cdf)
     selected_clusters = select_most_stable_clusters(hierarchy_df, cluster_stability_df)
 
-    all_timestamps = set(label_history_df['time'])
-    assigned_timestamps = set()
-    rows = []
-
-    for cid in selected_clusters:
-        # Filter to rows where cluster_id == cid
-        cluster_rows = label_history_df[label_history_df['cluster_id'] == cid]
-
-        if cluster_rows.empty:
-            continue  # skip if no rows (just in case)
-
-        max_scale = cluster_rows['dendrogram_scale'].max()
+    final_labels = pd.Series(-1, index=core_distances.index, name='cluster', dtype=int)
+    
+    if not selected_clusters: # Handle case with no stable clusters
+        final_labels.index = data.index
+        return final_labels
         
-        members = set(cluster_rows[cluster_rows['dendrogram_scale'] == max_scale]['time'])
+    # keep only info of selected clusters and their birthscales, sort from denser to less dense
+    cluster_info_df = label_history_df[label_history_df['cluster_id'].isin(selected_clusters)]
+    birth_scales = cluster_info_df.groupby('cluster_id')['dendogram_scale'].max()
+    cluster_info = birth_scales.sort_values(ascending=True).reset_index().rename(columns={'dendogram_scale': 'scale'})
 
-        for ts in members:
-            rows.append({"time": ts, "cluster": cid})
-        assigned_timestamps.update(members)
+    claimed_points = set()
+    for _, row in cluster_info.iterrows():
+        cid, scale = row['cluster_id'], row['scale']
+        
+        # 1. Identify core members for this cluster at its birth scale
+        # These are points that are part of the cluster and have not been claimed by a denser cluster
+        core_mask = (label_history_df['cluster_id'] == cid) & \
+                    (label_history_df['dendogram_scale'] == scale)
+        core_members = set(label_history_df.loc[core_mask, 'time'].unique())
+        
+        # Exclude points already claimed by a denser cluster (should be rare for cores, but good practice)
+        unclaimed_cores = core_members - claimed_points
+
+        include_border_points = True
+        if include_border_points:
+            # 2. Find border points for these unclaimed cores at this scale
+            border_map = _build_border_map(scale, core_distances, d_graph)
+            potential_borders = set().union(*(border_map.get(ts, set()) for ts in unclaimed_cores))
+            
+            # Assign only unclaimed border points
+            unclaimed_borders = potential_borders - claimed_points
+            
+            # 3. Assign labels and update claimed set
+            all_new_members = unclaimed_cores.union(unclaimed_borders)
+        else:
+            # just the core points
+            all_new_members = unclaimed_cores
+        
+        if all_new_members:
+            final_labels.loc[list(all_new_members)] = cid
+            claimed_points.update(all_new_members)
+
+    # Align index with original dataframe before returning
+    final_labels.index = data.index
     
-    # Add noise cluster (-1) for unassigned timestamps
-    for ts in all_timestamps - assigned_timestamps: # <<<turn this into pandas series
-        rows.append({"time": ts, "cluster": -1})
-    
-    hdbscan_labels_df = pd.DataFrame(rows)
-    hdbscan_labels_df.sort_values('time', inplace=True)
+    return final_labels
 
-    hdbscan_labels_df.index = traj.index
-    
-    return hdbscan_labels_df.cluster
+def st_hdbscan(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min=5, complete_output = False, traj_cols=None, **kwargs):
+    labels_hdbscan = hdbscan_labels(data=data, time_thresh=time_thresh, min_pts = min_pts,
+                                        min_cluster_size = min_cluster_size, dur_min=dur_min, traj_cols=traj_cols, **kwargs)
 
-def st_hdbscan(traj, time_thresh, min_pts = 2, min_cluster_size = 1, complete_output = False, traj_cols=None, **kwargs):
-    labels_hdbscan = hdbscan_labels(traj=traj, time_thresh=time_thresh, min_pts = min_pts,
-                                        min_cluster_size = min_cluster_size, traj_cols=traj_cols, **kwargs)
-
-    merged_data_hdbscan = traj.join(labels_hdbscan)
+    merged_data_hdbscan = data.join(labels_hdbscan)
     merged_data_hdbscan = merged_data_hdbscan[merged_data_hdbscan.cluster != -1]
 
     stop_table = merged_data_hdbscan.groupby('cluster', as_index=False).apply(
-                    lambda g: _stop_metrics(g, complete_output=complete_output, traj_cols=traj_cols, **kwargs),
-                    include_groups=False)
+            lambda grouped_data: utils.summarize_stop(grouped_data,
+                                           complete_output=complete_output,
+                                           traj_cols=traj_cols,
+                                           keep_col_names=False,   # match old behaviour
+                                           **kwargs),
+            include_groups=False)
                 
     return stop_table
-    # return labels_hdbscan, stop_table
-
-
-def _stop_metrics(grouped_data, is_long_lat, is_datetime, traj_cols, complete_output):
-    # Coordinates array and distance metrics
-    if is_long_lat:
-        coords = grouped_data[[traj_cols['longitude'], traj_cols['latitude']]].to_numpy()
-        stop_medoid = utils._medoid(coords, metric='haversine')
-        diameter_m = utils._diameter(coords, metric='haversine')
-    else:
-        coords = grouped_data[[traj_cols['x'], traj_cols['y']]].to_numpy()
-        stop_medoid = utils._medoid(coords, metric='euclidean')
-        diameter_m = utils._diameter(coords, metric='euclidean')
-
-    # Compute duration and start and end time of stop
-    start_time_key = 'start_datetime' if is_datetime else 'start_timestamp'
-    end_time_key = 'end_datetime' if is_datetime else 'end_timestamp' 
-
-    if is_datetime:
-        start_time = grouped_data[traj_cols['datetime']].min()
-        end_time = grouped_data[traj_cols['datetime']].max()
-        duration = (end_time - start_time).total_seconds() // 60.0
-    else:
-        start_time = grouped_data[traj_cols['timestamp']].min()
-        # print("start time:", start_time)
-        end_time = grouped_data[traj_cols['timestamp']].max()
-        # print("end time:", end_time)
-        timestamp_length = len(str(start_time))
-
-        if timestamp_length > 10:
-            if timestamp_length == 13:
-                duration = int(((end_time // 10 ** 3) - (start_time // 10 ** 3)) / 60.0)
-            elif timestamp_length == 19:
-                duration = int(((end_time // 10 ** 9) - (start_time // 10 ** 9)) / 60.0)
-        else:
-            duration = int((end_time - start_time) / 60.0)
-
-    # Number of pings in stop
-    n_pings = len(grouped_data)
-
-    # Compute max_gap between consecutive pings (in minutes)
-    if is_datetime:
-        times = pd.to_datetime(grouped_data[traj_cols['datetime']]).sort_values()
-        time_diffs = times.diff().dropna()
-        max_gap = int(time_diffs.max().total_seconds() / 60) if not time_diffs.empty else 0
-    else:
-        times = grouped_data[traj_cols['timestamp']].sort_values()
-        timestamp_length = len(str(times.iloc[0]))
-
-        if timestamp_length == 13:
-            time_diffs = np.diff(times.values) // 1000
-        elif timestamp_length == 19:  # nanoseconds
-            time_diffs = np.diff(times.values) // 10**9
-        else:
-            time_diffs = np.diff(times.values)
-
-        max_gap = int(np.max(time_diffs) / 60) if len(time_diffs) > 0 else 0
-
-    # Prepare data for the Series
-
-    if is_long_lat:
-        if complete_output:
-            stop_attr = {
-                start_time_key: start_time,
-                end_time_key: end_time,
-                traj_cols['longitude']: stop_medoid[0],
-                traj_cols['latitude']: stop_medoid[1],
-                'diameter': diameter_m,
-                'n_pings': n_pings,
-                'duration': duration,
-                'max_gap': max_gap
-            }
-        else:
-            stop_attr = {
-                start_time_key: start_time,
-                'duration': duration,
-                traj_cols['longitude']: stop_medoid[0],
-                traj_cols['latitude']: stop_medoid[1]
-            }
-    else:
-        if complete_output:
-            stop_attr = {
-                start_time_key: start_time,
-                end_time_key: end_time,
-                traj_cols['x']: stop_medoid[0],
-                traj_cols['y']: stop_medoid[1],
-                'diameter': diameter_m,
-                'n_pings': n_pings,
-                'duration': duration,
-                'max_gap': max_gap
-            }
-        else:
-            stop_attr = {
-                start_time_key: start_time,
-                'duration': duration,
-                traj_cols['x']: stop_medoid[0],
-                traj_cols['y']: stop_medoid[1]
-            }
-    return pd.Series(stop_attr)

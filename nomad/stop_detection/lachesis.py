@@ -21,7 +21,7 @@ from nomad.filters import to_timestamp
 ########        Lachesis          ########
 ##########################################
 
-def lachesis(data, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=False, keep_col_names = False, **kwargs):
+def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=False, keep_col_names = False, **kwargs):
     """
     Detects stops in trajectory data by analyzing spatial and temporal patterns.
 
@@ -123,13 +123,13 @@ def lachesis(data, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
         s_val = str(first_val)
         if len(s_val) == 13:
             warnings.warn(f"The '{time_col_in}' column appears to be in milliseconds. Converting to seconds.")
-            time_series = data[time_col_in] // 10**3
+            time_series = traj[time_col_in] // 10**3
         elif len(s_val) == 19:
             warnings.warn(f"The '{time_col_in}' column appears to be in nanoseconds. Converting to seconds.")
-            time_series = data[time_col_in] // 10**9
+            time_series = traj[time_col_in] // 10**9
         elif len(s_val) > 10: 
             warnings.warn(f"The '{time_col_in}' column does not appear to be in seconds, with {len(s_val)} digits.")
-            time_series = data[time_col_in]
+            time_series = traj[time_col_in]
         else:
             time_series = data[time_col_in]
   
@@ -156,6 +156,7 @@ def lachesis(data, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
                 j_final = j - 1
                 break
             d_start = d_update
+            print(d_start)
         else:
             j_final = n - 1
 
@@ -212,7 +213,7 @@ def lachesis(data, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
 
     return pd.DataFrame(stops, columns=columns)
 
-def _lachesis_labels(data, dt_max, delta_roam, dur_min=5, traj_cols=None, **kwargs):
+def _lachesis_labels(traj, dt_max, delta_roam, dur_min=5, traj_cols=None, **kwargs):
     """
     Assigns a label to every point in the trajectory based on the stop it belongs to.
 
@@ -278,8 +279,8 @@ def _lachesis_labels(data, dt_max, delta_roam, dur_min=5, traj_cols=None, **kwar
     for stop_idx, stop in stops.iterrows():
         stop_start = stop[start_col]
         stop_end = stop[end_col]
-        mask = (data[time_col_in] >= stop_start) & (data[time_col_in] <= stop_end)
-        stop_labels.loc[data[time_col_in][mask]] = stop_idx
+        mask = (traj[time_col_in] >= stop_start) & (traj[time_col_in] <= stop_end)
+        stop_labels.loc[traj[time_col_in][mask]] = stop_idx
 
-    stop_labels.index = data.index
+    stop_labels.index = traj.index
     return stop_labels
