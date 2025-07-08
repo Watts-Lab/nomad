@@ -862,7 +862,10 @@ def from_file(filepath,
         file_format_obj = "parquet"
         if format == "csv":
             parse_options = pc_csv.ParseOptions(delimiter=sep)
-            file_format_obj = ds.CsvFileFormat(parse_options=parse_options)
+            conv_options = pc_csv.ConvertOptions(
+                column_types={traj_cols['datetime']: pa.string()} if traj_cols['datetime'] in column_names else None
+            )
+            file_format_obj = ds.CsvFileFormat(parse_options=parse_options, convert_options=conv_options)
         
         if isinstance(filepath, list):
             if not filepath:
@@ -889,6 +892,7 @@ def from_file(filepath,
             k: v for k, v in kwargs.items()
             if k in inspect.signature(pd.read_csv).parameters
         }
+        read_csv_kwargs['parse_dates'] = False
         df = pd.read_csv(filepath, sep=sep, **read_csv_kwargs)
                 # build a boolean mask from tuple filters
         if filters is not None:
@@ -1027,7 +1031,10 @@ def sample_users(
         file_format_obj = "parquet"
         if format == "csv":
             parse_options = pc_csv.ParseOptions(delimiter=sep)
-            file_format_obj = ds.CsvFileFormat(parse_options=parse_options)
+            conv_options = pc_csv.ConvertOptions(
+                column_types={traj_cols['datetime']: pa.string()} if traj_cols['datetime'] in column_names else None
+            )
+            file_format_obj = ds.CsvFileFormat(parse_options=parse_options, convert_options=conv_options)
         
         if isinstance(filepath, list):
             if not filepath:
@@ -1042,7 +1049,7 @@ def sample_users(
                                      col_names=column_names,
                                      traj_cols=traj_cols,
                                      schema=schema,
-                                     use_pyarrow_dataset=use_pyarrow_dataset)
+                                     use_pyarrow_dataset=use_pyarrow_dataset) # What happens with timezones??
         if within is not None:
             table = dataset_obj.to_table(columns=[uid_col, coord_key1, coord_key2], filter=arrow_flt)
             df = table.to_pandas()
@@ -1217,7 +1224,10 @@ def sample_from_file(
         file_format_obj = "parquet"
         if format == "csv":
             parse_options = pc_csv.ParseOptions(delimiter=sep)
-            file_format_obj = ds.CsvFileFormat(parse_options=parse_options)
+            conv_options = pc_csv.ConvertOptions(
+                column_types={traj_cols['datetime']: pa.string()} if traj_cols['datetime'] in column_names else None
+            )
+            file_format_obj = ds.CsvFileFormat(parse_options=parse_options, convert_options=conv_options)
         
         if isinstance(filepath, list):
             if not filepath:
@@ -1295,7 +1305,6 @@ def to_file(df, path, format="csv",
             partition_by=None, filesystem=None,
             use_offset=False,
             **kwargs):
-    df = df.copy()
     assert format in {"csv", "parquet"}
 
     traj_cols = _parse_traj_cols(df.columns, traj_cols, kwargs)
@@ -1309,6 +1318,7 @@ def to_file(df, path, format="csv",
 
     if use_offset and traj_cols["tz_offset"] not in df.columns:
         raise ValueError(f"use_offset=True but tz_offset column '{traj_cols['tz_offset']}' not found in df")
+
 
     for k in ["datetime", "start_datetime", "end_datetime"]:
         if k in traj_cols and traj_cols[k] in df.columns:
@@ -1330,14 +1340,29 @@ def to_file(df, path, format="csv",
                             for k in traj_cols
                             if k in output_traj_cols and traj_cols[k] in df.columns})
 
-    other_kwargs = {k: v for k, v in kwargs.items() if k not in traj_cols}
-    if format == "csv":
-        df.to_csv(path, index=False, **other_kwargs)
-    else:
+    # create directory if not exists    
+    parent_dir = os.path.dirname(path)
+    if not os.path.exists(parent_dir):
+        warnings.warn(f"Parent directory '{parent_dir}' does not exist and will be created.")
+        os.makedirs(parent_dir)
+        
+    if format=="parquet" or _is_directory(path):
+        other_kwargs = {
+            k: v for k, v in kwargs.items()
+            if k in inspect.signature(ds.write_dataset).parameters
+        }
         table = pa.Table.from_pandas(df, preserve_index=False)
+
         ds.write_dataset(table, base_dir=str(path),
-                         format="parquet",
+                         format=format,
                          partitioning=partition_by,
                          partitioning_flavor='hive',
                          filesystem=filesystem,
-                         **other_kwargs)
+                         **other_kwargs)        
+    
+    else:
+        other_kwargs = {
+            k: v for k, v in kwargs.items()
+            if k in inspect.signature(df.to_csv).parameters
+        }
+        df.to_csv(path, index=False, **other_kwargs)

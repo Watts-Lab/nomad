@@ -15,6 +15,7 @@ import warnings
 import numpy as np
 
 
+# Should this be deleted?
 def _timestamp_handling(
     ts,
     output_type,
@@ -55,6 +56,7 @@ def _timestamp_handling(
         return int(ts.timestamp())
     else:
         raise ValueError("Invalid ts_output value. Use 'pd.timestamp' or 'unix'.")
+
 
 
 def to_timestamp(
@@ -124,6 +126,55 @@ def to_timestamp(
         f = np.frompyfunc(lambda x: x.timestamp(), 1, 1)
         return pd.Series(f(datetime).astype("int64"), index=datetime.index)
 
+def _ds_epoch(ts: pd.Series, minutes: int = 1, keep: str = "first") -> pd.Series:
+    """
+    Internal: mask that keeps at most one Unix-epoch second per *minutes* block.
+    `ts` must be int64 seconds since 1970-01-01 UTC.
+    """
+    bins = ts // (minutes * 60)
+    return ~bins.duplicated(keep=keep)
+
+
+def _ds_dt(ts: pd.Series, minutes: int = 1, keep: str = "first") -> pd.Series:
+    """
+    Internal: mask that keeps at most one timestamp per *minutes* block.
+    `ts` may be naïve or tz-aware datetime64[ns]; timezone is ignored.
+    """
+    nanos = ts.astype("int64", copy=False)
+    bins = nanos // (minutes * 60 * 1_000_000_000)
+    return ~pd.Series(bins, index=ts.index).duplicated(keep=keep)
+
+
+def downsample(df: pd.DataFrame,               
+               minutes= 1,
+               keep= "first",
+               traj_cols=None,
+               **kwargs):
+    """
+    Return a view of *df* with at most one record per UTC *minutes* block.
+    """
+    if minutes < 1:
+        raise ValueError("minutes must be ≥ 1")
+        
+    traj_cols = loader._parse_traj_cols(df.columns, traj_cols, kwargs)
+    loader._has_time_cols(df.columns, traj_cols)
+
+    multi_user = (traj_cols['user_id'] in df.columns) and (df[traj_cols['user_id']].nunique()>1)
+
+    if multi_user:
+        if traj_cols['timestamp'] in df.columns:
+            mask = df.groupby(traj_cols['user_id'])[traj_cols['timestamp']] \
+                     .transform(lambda x: _ds_epoch(x, minutes=minutes, keep=keep))
+        else:
+            mask = df.groupby(traj_cols['user_id'])[traj_cols['datetime']] \
+                     .transform(lambda x: _ds_dt(x, minutes=minutes, keep=keep))
+    else:
+        if traj_cols['timestamp'] in df.columns:
+            mask = _ds_epoch(df[traj_cols['timestamp']], minutes=minutes, keep=keep)
+        else:
+            mask = _ds_dt(df[traj_cols['datetime']], minutes=minutes, keep=keep)
+
+    return df[mask]
 
 def to_projection(
     traj: pd.DataFrame,
