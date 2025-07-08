@@ -1033,7 +1033,7 @@ def sample_users(
             conv_options = pc_csv.ConvertOptions(
                 column_types={traj_cols['datetime']: pa.string()} if traj_cols['datetime'] in column_names else None
             )
-            file_format_obj = ds.CsvFileFormat(parse_options=parse_option, convert_options=conv_options)
+            file_format_obj = ds.CsvFileFormat(parse_options=parse_options, convert_options=conv_options)
         
         if isinstance(filepath, list):
             if not filepath:
