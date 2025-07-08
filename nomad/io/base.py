@@ -794,8 +794,11 @@ def from_file(filepath,
         column names in the input.
     parse_dates : bool, default True
         Whether to parse timestamp columns as datetime.
-    mixed_timezone_behavior : {'naive','warn','raise'}, default 'naive'
-        How to handle mixed‐timezone datetimes.
+    mixed_timezone_behavior : {'utc', 'naive', 'object'}, default='naive'
+        Controls how datetime columns with mixed time zones are handled:
+        - `'utc'`: Convert all datetimes to UTC.
+        - `'naive'`: Strip time zone information and store offsets separately.
+        - `'object'`: Keep timestamps as `pd.Timestamp` objects with mixed time zones.
     fixed_format : str, optional
         strftime format string for datetime parsing.
     sep : str, default ','
