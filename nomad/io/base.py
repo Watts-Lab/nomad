@@ -56,6 +56,31 @@ def _fallback_spatial_cols(col_names, traj_cols, kwargs):
             
     return coord_key1, coord_key2, use_lon_lat
 
+def _fallback_time_cols_dt(col_names, traj_cols, kwargs):
+    '''
+    Helper to decide whether to use datetime vs timestamp in cases of ambiguity
+    '''
+    traj_cols = loader._parse_traj_cols(col_names, traj_cols, kwargs, defaults={}, warn=False)
+    # check for explicit datetime usage
+    t_keys = ['datetime', 'start_datetime', 'timestamp', 'start_timestamp']
+    
+    if 'timestamp' in kwargs or 'start_timestamp' in kwargs: # prioritize timestamp 
+        t_keys = t_keys[-2:] + t_keys[:2]
+    
+    if 'datetime' in kwargs or 'start_datetime' in kwargs: # prioritize datetime 
+        t_keys = t_keys[-2:] + t_keys[:2]
+
+    # load defaults and check for time columns
+    traj_cols = loader._update_schema(constants.DEFAULT_SCHEMA, traj_cols)
+    loader._has_time_cols(col_names, traj_cols) # error if no columns
+    
+    for t_key in t_keys:
+        if traj_cols[t_key] in col_names:
+            use_datetime = (t_key in ['datetime', 'start_datetime']) ## necessary?
+            break
+            
+    return t_key, use_datetime
+
 def _update_schema(original, new_labels):
     updated_schema = dict(original)
     for label in new_labels:

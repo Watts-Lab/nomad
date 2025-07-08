@@ -10,7 +10,8 @@ from pyspark.sql import functions as F
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, LongType, DoubleType
 
 import nomad.io.base as loader
-from nomad.constants import DEFAULT_SCHEMA
+from nomad.constants import DEFAULT_SCHEMA, SEC_PER_UNIT
+from nomad.base import _fallback_time_cols_dt
 import warnings
 import numpy as np
 
@@ -59,10 +60,7 @@ def _timestamp_handling(
 
 
 
-def to_timestamp(
-    datetime: pd.Series,
-    tz_offset: pd.Series = None
-) -> pd.Series:
+def to_timestamp(datetime, tz_offset=None):
     """
     Convert a datetime series into UNIX timestamps (seconds).
     
@@ -126,53 +124,94 @@ def to_timestamp(
         f = np.frompyfunc(lambda x: x.timestamp(), 1, 1)
         return pd.Series(f(datetime).astype("int64"), index=datetime.index)
 
-def _ds_epoch(ts: pd.Series, minutes: int = 1, keep: str = "first") -> pd.Series:
-    """
-    Internal: mask that keeps at most one Unix-epoch second per *minutes* block.
-    `ts` must be int64 seconds since 1970-01-01 UTC.
-    """
-    bins = ts // (minutes * 60)
-    return ~bins.duplicated(keep=keep)
+def _dup_per_freq_mask(sec, periods=1, freq='min', keep='first'):  # one-row docstring
+    if not isinstance(periods, (int, np.integer)) or periods < 1:
+        raise ValueError("periods must be an integer ≥ 1")
+    if freq not in SEC_PER_UNIT:
+        raise ValueError("freq must be one of 's', 'min', 'h', 'd', 'w'")
+    bins = sec // (periods * SEC_PER_UNIT[freq])
+    if isinstance(sec, pd.Series):
+        return ~pd.Series(bins, index=sec.index).duplicated(keep=keep)
+    return ~pd.Series(bins).duplicated(keep=keep).to_numpy()
 
 
-def _ds_dt(ts: pd.Series, minutes: int = 1, keep: str = "first") -> pd.Series:
-    """
-    Internal: mask that keeps at most one timestamp per *minutes* block.
-    `ts` may be naïve or tz-aware datetime64[ns]; timezone is ignored.
-    """
-    nanos = ts.astype("int64", copy=False)
-    bins = nanos // (minutes * 60 * 1_000_000_000)
-    return ~pd.Series(bins, index=ts.index).duplicated(keep=keep)
-
-
-def downsample(df: pd.DataFrame,               
-               minutes= 1,
-               keep= "first",
+def downsample(df,
+               periods=1,
+               freq='min',
+               keep='first',
                traj_cols=None,
+               verbose=False,
                **kwargs):
     """
-    Return a view of *df* with at most one record per UTC *minutes* block.
+    Down-sample *df* so that each user contributes at most one row
+    in every consecutive ``periods × freq`` window.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        The input data.
+    periods : int, default 1
+        Size of the window expressed in multiples of *freq*; must be ≥ 1.
+    freq : {'s', 'min', 'h', 'd', 'w'}, default 'min'
+        Unit of the window: second, minute, hour, day, or week
+        (lower-case aliases).
+    keep : {'first', 'last', False}, default 'first'
+        Which duplicate inside each window to retain, matching
+        ``pandas.Series.duplicated`` semantics.
+    traj_cols : dict, optional
+        Mapping from the standard keys `'timestamp'`, `'datetime'`,
+        `'user_id'`, and `'tz_offset'` to the actual column names in *df*.
+        Any key may be absent if the corresponding column is not present.
+    verbose : bool, default False
+        When True, prints the fraction of rows removed and the window size.
+    **kwargs
+        Shorthand overrides for entries in *traj_cols* 
+
+    Returns
+    -------
+    pandas.DataFrame
+        A view of *df* containing the surviving rows.
+
+    Raises
+    ------
+    ValueError
+        If *periods* is not a positive integer or *freq* is invalid.
+    KeyError
+        If no suitable time column is found after parsing *traj_cols*.
     """
-    if minutes < 1:
-        raise ValueError("minutes must be ≥ 1")
-        
+    if not isinstance(periods, (int, np.integer)) or periods < 1:
+        raise ValueError("periods must be an integer ≥ 1")
+    freq = freq.lower()
+    if freq not in SEC_PER_UNIT:
+        raise ValueError("freq must be one of 's', 'min', 'h', 'd', 'w'")
+
+    t_key, use_dt = _fallback_time_cols_dt(df.columns, True, traj_cols, kwargs)
     traj_cols = loader._parse_traj_cols(df.columns, traj_cols, kwargs)
     loader._has_time_cols(df.columns, traj_cols)
 
-    multi_user = (traj_cols['user_id'] in df.columns) and (df[traj_cols['user_id']].nunique()>1)
+    uid = traj_cols['user_id']
+    multi = uid in df.columns and df[uid].nunique() > 1
 
-    if multi_user:
-        if traj_cols['timestamp'] in df.columns:
-            mask = df.groupby(traj_cols['user_id'])[traj_cols['timestamp']] \
-                     .transform(lambda x: _ds_epoch(x, minutes=minutes, keep=keep))
+    if use_dt:
+        window = f"{periods}{freq}"
+        if multi:
+            mask = df.groupby(uid)[traj_cols[t_key]].transform(
+                lambda s: ~s.dt.floor(window).duplicated(keep=keep))
         else:
-            mask = df.groupby(traj_cols['user_id'])[traj_cols['datetime']] \
-                     .transform(lambda x: _ds_dt(x, minutes=minutes, keep=keep))
+            mask = ~df[traj_cols[t_key]].dt.floor(window).duplicated(keep=keep)
     else:
-        if traj_cols['timestamp'] in df.columns:
-            mask = _ds_epoch(df[traj_cols['timestamp']], minutes=minutes, keep=keep)
+        sec = df[traj_cols[t_key]]
+        if traj_cols['tz_offset'] in df.columns:
+            sec = sec + df[traj_cols['tz_offset']]
+        if multi:
+            mask = sec.groupby(df[uid]).transform(
+                lambda s: _dup_per_freq_mask(s, periods, freq, keep))
         else:
-            mask = _ds_dt(df[traj_cols['datetime']], minutes=minutes, keep=keep)
+            mask = _dup_per_freq_mask(sec, periods, freq, keep)
+
+    if verbose:
+        pct = 100 * (1 - mask.sum() / len(mask))
+        print(f"{pct:.3f}% of rows removed by enforcing a {periods}{freq} window per user.")
 
     return df[mask]
 
@@ -452,7 +491,7 @@ def _in_geo(
     whether points are inside the polygon or not.
     """
     points = gpd.GeoSeries(gpd.points_from_xy(traj[input_x], traj[input_y]), crs=crs)
-    traj = traj.reset_index(drop=True)
+    traj = traj.reset_index(drop=True) # why?
     traj['in_geo'] = points.within(polygon)
 
     return traj
