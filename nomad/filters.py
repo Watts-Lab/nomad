@@ -45,11 +45,14 @@ def _timestamp_handling(
     if the timestamp is already timezone-aware, which correctly signals
     a caller error (e.g., providing a timezone for data that already has one).
     """
+    if ts is None: 
+        return None
+        
     if isinstance(ts, str):
         ts = pd.to_datetime(ts, errors="coerce")
     elif isinstance(ts, (pd.Timestamp, np.datetime64)):
         ts = pd.to_datetime(ts)
-    elif isinstance(ts, (int, float)):
+    elif isinstance(ts, (int, np.integer, float, np.floating)):
         ts = pd.to_datetime(ts, unit='s', errors="coerce")
     else:
         raise TypeError("Unsupported input type for timestamp conversion.")
@@ -130,7 +133,8 @@ def to_timestamp(datetime, tz_offset=None):
         f = np.frompyfunc(lambda x: x.timestamp(), 1, 1)
         return pd.Series(f(datetime).astype("int64"), index=datetime.index)
 
-def _dup_per_freq_mask(sec, periods=1, freq='min', keep='first'):  # one-row docstring
+def _dup_per_freq_mask(sec, periods=1, freq='min', keep='first'): 
+    
     if not isinstance(periods, (int, np.integer)) or periods < 1:
         raise ValueError("periods must be an integer ≥ 1")
     if freq not in SEC_PER_UNIT:
@@ -140,7 +144,13 @@ def _dup_per_freq_mask(sec, periods=1, freq='min', keep='first'):  # one-row doc
         return ~pd.Series(bins, index=sec.index).duplicated(keep=keep)
     return ~pd.Series(bins).duplicated(keep=keep).to_numpy()
 
-
+def _fmt_from_freq(f):
+    return {"s": "%Y-%m-%d %H:%M:%S",
+            "min": "%Y-%m-%d %H:%M",
+            "h": "%Y-%m-%d %H:00",
+            "d": "%Y-%m-%d",
+            "w": "%Y-%m-%d"}.get(f.lower(), "%Y-%m-%d %H:%M:%S")
+    
 def downsample(df,
                periods=1,
                freq='min',
@@ -612,171 +622,148 @@ def q_filter(df: pd.DataFrame,
 
     return filtered_users
 
-
-# the user can pass **kwargs with timestamp or datetime, then datetime can be created if needed
-def q_stats(df, traj_cols=None, **kwargs):
-    
+def coverage_matrix(data,
+                    periods=1,
+                    freq="h",
+                    start=None,
+                    end=None,
+                    offset_col=0,
+                    relative=False,
+                    str_from_time=False,
+                    traj_cols=None,
+                    **kwargs):
     """
-    Computes the q statistic for each user as the proportion of unique hours with pings 
-    over the total observed hours (last hour - first hour).
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        A DataFrame containing user IDs and timestamps.
-    traj_cols : dict
-        ...
-    Returns
-    -------
-    pd.DataFrame
-        A DataFrame containing each user and their respective q_stat.
+    Matrix of 0/1 flags; rows=user (or the single Series), columns=bucket start.
     """
+    if isinstance(data, pd.Series):
+        return _q_series(data, periods, freq, start, end, offset_col=offset_col)
+        
+    if isinstance(data, pd.Series):
+        hits = _q_series(data, periods, freq, start, end, offset_col=offset_col).astype(int)
+        if isinstance(hits.index, pd.DatetimeIndex) and str_from_time:
+            hits.index = hits.index.strftime(_fmt_from_freq(freq))
+        return hits
+
+    df = data
+    t_key, _ = loader._fallback_time_cols_dt(df.columns, traj_cols, kwargs)
     traj_cols = loader._parse_traj_cols(df.columns, traj_cols, kwargs)
-    
     loader._has_time_cols(df.columns, traj_cols)
-    loader._has_user_cols(df.columns, traj_cols)
 
-    u_key = traj_cols['user_id']
+    uid  = traj_cols["user_id"]
+    ts   = traj_cols[t_key]
+    off_name = traj_cols["tz_offset"]
+    if off_name in df.columns:
+        offset_col = df[off_name]
 
-    datetime_col = None
-    if traj_cols['datetime'] in df.columns:
-        datetime_col = traj_cols['datetime']
-    elif traj_cols['start_datetime'] in df.columns:
-        datetime_col = traj_cols['start_datetime']
-    elif traj_cols['timestamp'] in df.columns:
-        t_key = traj_cols['timestamp']
-    else:
-        t_key = traj_cols['start_timestamp']
+    if (start is not None) or (end is not None):
+        relative = False
+    if not relative and (start is None or end is None):
+        start = start or df[ts].min()
+        end   = end   or df[ts].max()
 
-    if not datetime_col:
-        df = df.copy()
-        datetime_col = traj_cols['datetime']
-        df[datetime_col] = pd.to_datetime(df[t_key], unit='s')          
+    hit_map = {}
+    for user, grp in df.groupby(uid, sort=False):
+        off = offset_col.loc[grp.index] if isinstance(offset_col, pd.Series) else offset_col
+        s = None if relative else start
+        e = None if relative else end
+        hit_map[user] = _q_series(grp[ts], periods, freq, s, e, offset_col=off)
+        
+    if not hit_map:                     # empty dataset edge-case
+        return pd.DataFrame(dtype=int)
 
-    q_stats = df.groupby(u_key).apply(
-        lambda group: _compute_q_stat(group, datetime_col)
-    ).reset_index(name='q_stat')
-
-    return q_stats
-
-
-def _compute_q_stat(user, datetime_col):
-    user['hour_period'] = user[datetime_col].dt.to_period('h')
-    unique_hours = user['hour_period'].nunique()
-
-    # Calculate total observed hours (difference between last and first hour)
-    first_hour = user[datetime_col].min()
-    last_hour = user[datetime_col].max()
-    total_hours = (last_hour - first_hour).total_seconds() / 3600
-
-    # Compute q as the proportion of unique hours to total hours
-    q_stat = unique_hours / total_hours if total_hours > 0 else 0
-    return q_stat
+    hit_df = pd.concat(hit_map, axis=1).T.astype(int)   # rows=user
+    if isinstance(hit_df.columns, pd.DatetimeIndex) and str_from_time:
+        hit_df.columns = hit_df.columns.strftime(_fmt_from_freq(freq))
+    return hit_df
 
 def completeness(data,
                  periods=1,
                  freq="h",
+                 *,
                  start=None,
                  end=None,
                  offset_col=0,
                  relative=False,
                  traj_cols=None,
+                 str_from_time=True,
+                 agg_freq=None,
                  **kwargs):
     """
-    Return completeness *q*: the share of (periods×freq) buckets that contain data.
+    Measure trajectory completeness as the fraction of expected time intervals
+    ('buckets') containing at least one observation.
 
     Parameters
     ----------
-    data : pandas.Series | pandas.DataFrame
-        Unix-second integers or datetime64 (Series) **or**
-        a frame with user/time columns; column names are resolved like in
-        `downsample`.
+    data : pandas.Series or pandas.DataFrame
+        Trajectory data containing timestamps, either as:
+        - A pandas Series of Unix-second integers or datetime64 values.
+        - A DataFrame, from which timestamp and user columns are identified
+          via `traj_cols` or default column naming conventions.
     periods : int, default 1
-        Bucket size expressed in multiples of *freq* (must be ≥ 1).
-    freq : {'s','min','h','d','w'}, default 'h'
-        Time unit of the bucket (seconds, minutes, hours, days, weeks).
+        Number of units of `freq` per bucket (must be ≥ 1). For example,
+        `periods=3, freq='h'` results in 3-hour buckets.
+    freq : {'s', 'min', 'h', 'd', 'w'}, default 'h'
+        Time resolution used to define buckets: seconds ('s'), minutes ('min'),
+        hours ('h'), days ('d'), or weeks ('w').
     start, end : scalar, optional
-        Optional bounds; if *relative* is False they apply globally, otherwise
-        they are ignored and each user’s own first/last timestamp is used.
+        Explicit time bounds to define the bucket range. If either is omitted,
+        the range is inferred from the data. Ignored if `relative=True`.
     relative : bool, default False
-        Measure completeness over each user’s span instead of the common span.
-    offset_col : pandas.Series | int, default 0
-        Offset from UTC in seconds. This is overridden if a `tz_offset`
-        column is found via `traj_cols` or `kwargs`.
+        If False, completeness is measured within a common time span shared
+        by all users. If True, each user's completeness is computed only within
+        their own individual time span (from their first to their last record).
+    offset_col : pandas.Series or int, default 0
+        Offset in seconds to apply to timestamps (useful for handling time zones).
+        If a `tz_offset` column is present in the data and indicated via
+        `traj_cols` or `kwargs`, this argument is ignored.
     traj_cols : dict, optional
-        Mapping of the standard keys 'timestamp', 'datetime', 'user_id',
-        'tz_offset' to the actual column names in *data*.
+        Mapping from standard keys ('timestamp', 'datetime', 'user_id',
+        'tz_offset') to column names in `data`. If omitted, defaults are used.
+    agg_freq : str, optional
+        Aggregation frequency (e.g., 'D' for daily, 'W' for weekly, 'M' for monthly).
+        If specified, returns completeness aggregated at this frequency instead
+        of overall completeness.
     **kwargs
-        Shorthand overrides for entries in *traj_cols*.
+        Shorthand overrides for entries in `traj_cols`.
 
     Returns
     -------
-    float
-        If *data* is a Series.
-    pandas.Series
-        Per-user completeness when *data* is a DataFrame.
-    """
-    if not isinstance(periods, (int, np.integer)) or periods < 1:
-        raise ValueError("periods ≥ 1 required")
-    freq = freq.lower()
-    if freq not in SEC_PER_UNIT:
-        raise ValueError("freq must be one of 's','min','h','d','w'")
+    float or pandas.Series or pandas.DataFrame
+        - If input is a single Series and `agg_freq=None`, returns a single float.
+        - If input is a DataFrame and `agg_freq=None`, returns a Series indexed by user_id.
+        - If `agg_freq` is specified, returns completeness aggregated by the specified
+          frequency, either as a Series (single user) or DataFrame (rows per user,
+          columns per aggregation bucket).
+    """    
+    hits = coverage_matrix(
+        data, periods, freq,
+        start=start, end=end,
+        offset_col=offset_col,
+        relative=relative,
+        traj_cols=traj_cols,
+        **kwargs
+    )
 
-    # ── Series path ────────────────────────────────────────────────────────
-    if isinstance(data, pd.Series):
-        # In the Series case, tz_offset column is not applicable.
-        # The provided offset_col is used directly.
-        hits = _q_series(data, periods, freq, start, end, offset_col=offset_col)
-        return hits.mean()
+    if agg_freq is None:
+        return hits.mean(axis=1) if isinstance(hits, pd.DataFrame) else hits.mean()
 
-    # ── DataFrame path ─────────────────────────────────────────────────────
-    df = data
-    t_key, use_dt = loader._fallback_time_cols_dt(df.columns, traj_cols, kwargs)
-    traj_cols = loader._parse_traj_cols(df.columns, traj_cols, kwargs)
-    loader._has_time_cols(df.columns, traj_cols)
+    if isinstance(hits.columns, pd.DatetimeIndex):
+        buckets = hits.columns.floor(agg_freq)
+    else:  # unix seconds (integers)
+        agg_step = SEC_PER_UNIT[agg_freq.lower()]
+        buckets = (hits.columns // agg_step) * agg_step
 
-    uid_col   = traj_cols["user_id"]
-    time_col  = traj_cols[t_key]
+    # Single series input
+    if isinstance(hits, pd.Series):
+        return hits.groupby(buckets).mean()
 
-    if traj_cols["tz_offset"] in df.columns:
-        offset_col = df[traj_cols["tz_offset"]]
-    # --------------------------------------------------------------------------
+    # DataFrame input
+    hits.columns = buckets
+    hit_df = hits.T.groupby(hits.columns).mean().T
 
-    # If start/end are given, they take precedence over 'relative'
-    if (start is not None) or (end is not None):
-        if relative:
-            warnings.warn("'relative' ignored: explicit start/end provided")
-        relative = False
-
-    if not relative and (start is None or end is None):
-        # Calculate global bounds once, before the loop
-        start = start or df[time_col].min()
-        end   = end   or df[time_col].max()
-
-    # Build per-user hit series
-    hit_map = {}
-    for user, grp in df.groupby(uid_col, sort=False):
-        offset_for_group = 0
-        if is_integer_dtype(grp[time_col]):
-            if isinstance(offset_col, pd.Series):
-                # Use the part of the offset Series corresponding to this group
-                offset_for_group = offset_col.loc[grp.index]
-            else:
-                # Use the scalar offset
-                offset_for_group = offset_col
-
-        s = None if relative else start
-        e = None if relative else end
-        # Renamed 'offset_col' to 'offset' in _q_series call for clarity
-        hit_map[user] = _q_series(grp[time_col], periods, freq, s, e, offset_col=offset_for_group)
-
-    # Assemble DataFrame from dict (more efficient than unstack)
-    if not hit_map:
-        return pd.Series(dtype=float)
-        
-    hit_df = pd.concat(hit_map, axis=1).T
-    return hit_df.mean(axis=1)
-
+    if isinstance(hit_df.columns, pd.DatetimeIndex) and str_from_time:
+        hit_df.columns = hit_df.columns.strftime(_fmt_from_freq(agg_freq))
+    return hit_df
 
 def _q_series(time_col, periods, freq, start=None, end=None, offset_col=0):
     """Return the per-bucket Boolean hits array for a single Series of timestamps."""
@@ -786,7 +773,7 @@ def _q_series(time_col, periods, freq, start=None, end=None, offset_col=0):
         sec   = time_col + offset_col                                  # offset may be scalar or vector
         s_min = _timestamp_handling(start, "unix") or int(sec.min())
         s_max = _timestamp_handling(end,   "unix") or int(sec.max())
-        return _q_array(sec.to_numpy(), s_min, s_max, periods, freq)
+        return _q_array(sec, s_min, s_max, periods, freq)
 
     # datetime64 path (tz-aware respected by .floor)
     tz     = getattr(time_col.dt, "tz", None)
