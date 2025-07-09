@@ -342,11 +342,11 @@ def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, dur_min=5, 
     # Check if user wants long and lat and datetime
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)
     # Load default col names
-    traj_cols = loader._parse_traj_cols(traj.columns, traj_cols, kwargs)
+    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     
     # Tests to check for spatial and temporal columns
-    loader._has_spatial_cols(traj.columns, traj_cols)
-    loader._has_time_cols(traj.columns, traj_cols)
+    loader._has_spatial_cols(data.columns, traj_cols)
+    loader._has_time_cols(data.columns, traj_cols)
 
     times = data[traj_cols[t_key]]
     valid_times = to_timestamp(times).values if use_datetime else times.values
