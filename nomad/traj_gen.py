@@ -766,6 +766,9 @@ class Agent:
         cache_traj : bool
             if True, empties the Agent's trajectory DataFrame.
         """
+        if not self.trajectory.timestamp.is_monotonic_increasing:
+            raise ValueError("The input trajectory is not sorted chronologically.")
+            
         result = sample_hier_nhpp(
             self.trajectory, 
             beta_start, 
@@ -781,6 +784,9 @@ class Agent:
             sparse_traj, burst_info = result
         else:
             sparse_traj = result
+
+        if not sparse_traj.timestamp.is_monotonic_increasing:
+            raise ValueError("The sampled trajectory is not sorted chronologically.")
             
         sparse_traj = sparse_traj.set_index('timestamp', drop=False)
 
@@ -788,6 +794,8 @@ class Agent:
             self.sparse_traj = sparse_traj
         else:
             self.sparse_traj = pd.concat([self.sparse_traj, sparse_traj], ignore_index=False)
+            if not self.sparse_traj.timestamp.is_monotonic_increasing:
+                raise ValueError("The aggregated sampled trajectory is not sorted chronologically.")
 
         if cache_traj:
             self.last_ping = self.trajectory.iloc[-1]

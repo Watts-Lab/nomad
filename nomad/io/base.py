@@ -16,11 +16,10 @@ import pyarrow.fs as pafs
 import pyarrow.types as pat
 import pathlib
 import pyarrow.csv as pc_csv
-from nomad.constants import DEFAULT_SCHEMA
+from nomad.constants import DEFAULT_SCHEMA, FILTER_OPERATORS
 import numpy as np
 import warnings
 import inspect
-from nomad.constants import FILTER_OPERATORS
 import pdb
 
 from shapely import wkt
@@ -60,7 +59,7 @@ def _fallback_time_cols_dt(col_names, traj_cols, kwargs):
     '''
     Helper to decide whether to use datetime vs timestamp in cases of ambiguity
     '''
-    traj_cols = loader._parse_traj_cols(col_names, traj_cols, kwargs, defaults={}, warn=False)
+    traj_cols = _parse_traj_cols(col_names, traj_cols, kwargs, defaults={}, warn=False)
     # check for explicit datetime usage
     t_keys = ['datetime', 'start_datetime', 'timestamp', 'start_timestamp']
     
@@ -71,8 +70,8 @@ def _fallback_time_cols_dt(col_names, traj_cols, kwargs):
         t_keys = t_keys[-2:] + t_keys[:2]
 
     # load defaults and check for time columns
-    traj_cols = loader._update_schema(constants.DEFAULT_SCHEMA, traj_cols)
-    loader._has_time_cols(col_names, traj_cols) # error if no columns
+    traj_cols = _update_schema(DEFAULT_SCHEMA, traj_cols)
+    _has_time_cols(col_names, traj_cols) # error if no columns
     
     for t_key in t_keys:
         if traj_cols[t_key] in col_names:
@@ -576,8 +575,6 @@ def _process_datetime_column(df, col, parse_dates, mixed_timezone_behavior, fixe
 
 
 def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_format=None):
-    df = df.copy() 
-
     # Datetime processing
     for key in ['datetime', 'start_datetime', 'end_datetime']:
         if key in traj_cols and traj_cols[key] in df:
@@ -591,7 +588,7 @@ def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_f
             )
 
     # Handle integer columns
-    for key in ['tz_offset', 'duration', 'timestamp']:
+    for key in ['tz_offset', 'duration', 'timestamp', 'start_timestamp', 'end_timestamp']:
         if key in traj_cols and traj_cols[key] in df:
             col = traj_cols[key]
             if df[col].dtype != "Int64":
@@ -624,6 +621,7 @@ def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_f
             col = traj_cols[key]
             if not is_string_dtype(df[col].dtype):
                 df[col] = df[col].astype("str")
+                
     return df
 
 def _process_filters(filters, col_names, use_pyarrow_dataset, traj_cols=None, schema=None):
@@ -808,16 +806,16 @@ def from_df(df, traj_cols=None, parse_dates=True, mixed_timezone_behavior="naive
     - If `mixed_timezone_behavior='naive'`, a separate column storing UTC offsets (in seconds) is added.
     """
     if not isinstance(df, (pd.DataFrame, gpd.GeoDataFrame)):
-        raise TypeError("Expected the data argument to be either a pandas DataFrame or a GeoPandas GeoDataFrame.")
-
+        raise TypeError("Expected the data argument to be either a pandas DataFrame or a GeoPandas GeoDataFrame.")   
     traj_cols = _parse_traj_cols(df.columns, traj_cols, kwargs)
 
     _has_spatial_cols(df.columns, traj_cols)
     _has_time_cols(df.columns, traj_cols)
-
-    return _cast_traj_cols(df, traj_cols, parse_dates=parse_dates,
+    
+    return _cast_traj_cols(df.copy(), traj_cols, parse_dates=parse_dates,
                            mixed_timezone_behavior=mixed_timezone_behavior,
                            fixed_format=fixed_format)
+    
 
 
 def from_file(filepath,
@@ -827,6 +825,7 @@ def from_file(filepath,
               fixed_format=None,
               sep=",",
               filters=None,
+              sort_times=False,
               traj_cols=None,
               **kwargs):
     """
@@ -930,7 +929,7 @@ def from_file(filepath,
             )
             df = df[mask_func(df)]
 
-    return _cast_traj_cols(
+    df = _cast_traj_cols(
         df,
         traj_cols=traj_cols,
         parse_dates=parse_dates,
@@ -938,6 +937,26 @@ def from_file(filepath,
         fixed_format=fixed_format,
     )
 
+    #sorting
+    t_keys = ['timestamp', 'start_timestamp', 'datetime', 'start_datetime']
+    ts_col = next((traj_cols[k] for k in t_keys if traj_cols[k] in df.columns), None)
+    uid_col = traj_cols['user_id']
+    
+    if uid_col in df.columns:
+        # Multi-user case: always safe to sort.
+        return df.sort_values(by=[uid_col, ts_col], ignore_index=True)
+
+    if sort_times:
+        warnings.warn(
+            f"Sorting by timestamp only, as user ID column '{uid_col}' was not found. If this is a multi-user "
+            f"dataset, map the correct user ID column to avoid mixing trajectories.",
+            UserWarning
+        )
+        return df.sort_values(by=[ts_col], ignore_index=True)
+    
+    return df
+
+    
 def sample_users(
     filepath,
     format="csv",
@@ -1133,6 +1152,7 @@ def sample_from_file(
     within=None,
     poly_crs=None,
     data_crs=None,
+    sort_times=False,
     traj_cols=None,
     **kwargs
 ):
@@ -1234,10 +1254,10 @@ def sample_from_file(
         elif isinstance(filters, list):
             filters = filters + bbox_specs
     
-    traj_cols_ = _parse_traj_cols(column_names, traj_cols, kwargs)
+    traj_cols = _parse_traj_cols(column_names, traj_cols, kwargs)
 
-    _has_spatial_cols(column_names, traj_cols_)
-    _has_time_cols(column_names, traj_cols_)
+    _has_spatial_cols(column_names, traj_cols)
+    _has_time_cols(column_names, traj_cols)
 
     use_pyarrow_dataset = (
         format == "parquet" or
@@ -1265,14 +1285,14 @@ def sample_from_file(
         arrow_flt = _process_filters(
             filters,
             col_names=column_names,
-            traj_cols=traj_cols_,
+            traj_cols=traj_cols,
             schema=schema,
             use_pyarrow_dataset=True
         )
 
         if users is not None:
             arrow_ids = pa.array(users)
-            user_expr = ds.field(traj_cols_['user_id']).isin(arrow_ids)
+            user_expr = ds.field(traj_cols['user_id']).isin(arrow_ids)
             arrow_flt = user_expr if arrow_flt is None else (arrow_flt & user_expr)
         
         df = dataset_obj.to_table(filter=arrow_flt,
@@ -1284,14 +1304,14 @@ def sample_from_file(
             mask = _process_filters(
                 filters,
                 col_names=df.columns,
-                traj_cols=traj_cols_,
+                traj_cols=traj_cols,
                 schema=schema,
                 use_pyarrow_dataset=False
             )(df)
             df = df[mask]
 
         if users is not None:
-            df = df[df[traj_cols_['user_id']].isin(users)]
+            df = df[df[traj_cols['user_id']].isin(users)]
 
     if poly is not None and not df.empty:
         pts = gpd.GeoSeries(
@@ -1301,7 +1321,7 @@ def sample_from_file(
     
     if (users is None) and frac_users:
         # build the user‐ID index
-        user_ids = df[traj_cols_['user_id']].drop_duplicates()
+        user_ids = df[traj_cols['user_id']].drop_duplicates()
         # integer count
         if isinstance(frac_users, int):
             n = min(frac_users, len(user_ids))
@@ -1312,18 +1332,37 @@ def sample_from_file(
         else:
             raise ValueError("frac_users must be an int ≥ 1 or a float in (0, 1].")
         # restrict df to those users
-        df = df[df[traj_cols_['user_id']].isin(chosen)]
+        df = df[df[traj_cols['user_id']].isin(chosen)]
 
     if (frac_records) and (0.0 < frac_records < 1.0):
         df = df.sample(frac=frac_records, random_state=seed)
         
-    return _cast_traj_cols(
+    df = _cast_traj_cols(
         df,
-        traj_cols=traj_cols_,
+        traj_cols=traj_cols,
         parse_dates=parse_dates,
         mixed_timezone_behavior=mixed_timezone_behavior,
         fixed_format=fixed_format,
     )
+
+    #sorting
+    t_keys = ['timestamp', 'start_timestamp', 'datetime', 'start_datetime']
+    ts_col = next((traj_cols[k] for k in t_keys if traj_cols[k] in df.columns), None)
+    uid_col = traj_cols['user_id']
+    
+    if uid_col in df.columns:
+        # Multi-user case: always safe to sort.
+        return df.sort_values(by=[uid_col, ts_col], ignore_index=True)
+
+    if sort_times:
+        warnings.warn(
+            f"Sorting by timestamp only, as user ID column '{uid_col}' was not found. If this is a multi-user "
+            f"dataset, map the correct user ID column to avoid mixing trajectories.",
+            UserWarning
+        )
+        return df.sort_values(by=[ts_col], ignore_index=True)
+    
+    return df
 
 def to_file(df, path, format="csv",
             traj_cols=None, output_traj_cols=None,

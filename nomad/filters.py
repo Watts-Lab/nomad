@@ -1,4 +1,5 @@
 import pandas as pd
+from pandas.api.types import is_integer_dtype
 import geopandas as gpd
 from shapely.geometry import Polygon, Point
 import warnings
@@ -11,12 +12,11 @@ from pyspark.sql.types import StructType, StructField, StringType, IntegerType, 
 
 import nomad.io.base as loader
 from nomad.constants import DEFAULT_SCHEMA, SEC_PER_UNIT
-from nomad.base import _fallback_time_cols_dt
 import warnings
 import numpy as np
 
 
-# Should this be deleted?
+
 def _timestamp_handling(
     ts,
     output_type,
@@ -28,16 +28,22 @@ def _timestamp_handling(
     Parameters
     ----------
     ts : str, int, float, pd.Timestamp, or np.datetime64
-    The input timestamp to be converted.
+        The input timestamp to be converted.
     output_type : str
-    Desired output type: "pd.timestamp" or "unix".
+        Desired output type: "pd.timestamp" or "unix".
     timezone : str, optional
-    Timezone to localize or convert the timestamp to. If None, no timezone conversion is applied.
+        Timezone to localize or convert the timestamp to. If None, no timezone conversion is applied.
 
     Returns
     -------
     pd.Timestamp or int
     Converted timestamp in the desired format.
+
+    Notes
+    ------
+    Using tz_localize is intentional. It will raise a TypeError
+    if the timestamp is already timezone-aware, which correctly signals
+    a caller error (e.g., providing a timezone for data that already has one).
     """
     if isinstance(ts, str):
         ts = pd.to_datetime(ts, errors="coerce")
@@ -185,7 +191,7 @@ def downsample(df,
     if freq not in SEC_PER_UNIT:
         raise ValueError("freq must be one of 's', 'min', 'h', 'd', 'w'")
 
-    t_key, use_dt = _fallback_time_cols_dt(df.columns, True, traj_cols, kwargs)
+    t_key, use_dt = loader._fallback_time_cols_dt(df.columns, traj_cols, kwargs)
     traj_cols = loader._parse_traj_cols(df.columns, traj_cols, kwargs)
     loader._has_time_cols(df.columns, traj_cols)
 
@@ -211,7 +217,7 @@ def downsample(df,
 
     if verbose:
         pct = 100 * (1 - mask.sum() / len(mask))
-        print(f"{pct:.3f}% of rows removed by enforcing a {periods}{freq} window per user.")
+        print(f"{pct:.3f}% of rows removed by downsampling to {periods}{freq} windows per user.")
 
     return df[mask]
 
@@ -666,3 +672,141 @@ def _compute_q_stat(user, datetime_col):
     # Compute q as the proportion of unique hours to total hours
     q_stat = unique_hours / total_hours if total_hours > 0 else 0
     return q_stat
+
+def completeness(data,
+                 periods=1,
+                 freq="h",
+                 start=None,
+                 end=None,
+                 offset_col=0,
+                 relative=False,
+                 traj_cols=None,
+                 **kwargs):
+    """
+    Return completeness *q*: the share of (periods×freq) buckets that contain data.
+
+    Parameters
+    ----------
+    data : pandas.Series | pandas.DataFrame
+        Unix-second integers or datetime64 (Series) **or**
+        a frame with user/time columns; column names are resolved like in
+        `downsample`.
+    periods : int, default 1
+        Bucket size expressed in multiples of *freq* (must be ≥ 1).
+    freq : {'s','min','h','d','w'}, default 'h'
+        Time unit of the bucket (seconds, minutes, hours, days, weeks).
+    start, end : scalar, optional
+        Optional bounds; if *relative* is False they apply globally, otherwise
+        they are ignored and each user’s own first/last timestamp is used.
+    relative : bool, default False
+        Measure completeness over each user’s span instead of the common span.
+    offset_col : pandas.Series | int, default 0
+        Offset from UTC in seconds. This is overridden if a `tz_offset`
+        column is found via `traj_cols` or `kwargs`.
+    traj_cols : dict, optional
+        Mapping of the standard keys 'timestamp', 'datetime', 'user_id',
+        'tz_offset' to the actual column names in *data*.
+    **kwargs
+        Shorthand overrides for entries in *traj_cols*.
+
+    Returns
+    -------
+    float
+        If *data* is a Series.
+    pandas.Series
+        Per-user completeness when *data* is a DataFrame.
+    """
+    if not isinstance(periods, (int, np.integer)) or periods < 1:
+        raise ValueError("periods ≥ 1 required")
+    freq = freq.lower()
+    if freq not in SEC_PER_UNIT:
+        raise ValueError("freq must be one of 's','min','h','d','w'")
+
+    # ── Series path ────────────────────────────────────────────────────────
+    if isinstance(data, pd.Series):
+        # In the Series case, tz_offset column is not applicable.
+        # The provided offset_col is used directly.
+        hits = _q_series(data, periods, freq, start, end, offset_col=offset_col)
+        return hits.mean()
+
+    # ── DataFrame path ─────────────────────────────────────────────────────
+    df = data
+    t_key, use_dt = loader._fallback_time_cols_dt(df.columns, traj_cols, kwargs)
+    traj_cols = loader._parse_traj_cols(df.columns, traj_cols, kwargs)
+    loader._has_time_cols(df.columns, traj_cols)
+
+    uid_col   = traj_cols["user_id"]
+    time_col  = traj_cols[t_key]
+
+    if traj_cols["tz_offset"] in df.columns:
+        offset_col = df[traj_cols["tz_offset"]]
+    # --------------------------------------------------------------------------
+
+    # If start/end are given, they take precedence over 'relative'
+    if (start is not None) or (end is not None):
+        if relative:
+            warnings.warn("'relative' ignored: explicit start/end provided")
+        relative = False
+
+    if not relative and (start is None or end is None):
+        # Calculate global bounds once, before the loop
+        start = start or df[time_col].min()
+        end   = end   or df[time_col].max()
+
+    # Build per-user hit series
+    hit_map = {}
+    for user, grp in df.groupby(uid_col, sort=False):
+        offset_for_group = 0
+        if is_integer_dtype(grp[time_col]):
+            if isinstance(offset_col, pd.Series):
+                # Use the part of the offset Series corresponding to this group
+                offset_for_group = offset_col.loc[grp.index]
+            else:
+                # Use the scalar offset
+                offset_for_group = offset_col
+
+        s = None if relative else start
+        e = None if relative else end
+        # Renamed 'offset_col' to 'offset' in _q_series call for clarity
+        hit_map[user] = _q_series(grp[time_col], periods, freq, s, e, offset_col=offset_for_group)
+
+    # Assemble DataFrame from dict (more efficient than unstack)
+    if not hit_map:
+        return pd.Series(dtype=float)
+        
+    hit_df = pd.concat(hit_map, axis=1).T
+    return hit_df.mean(axis=1)
+
+
+def _q_series(time_col, periods, freq, start=None, end=None, offset_col=0):
+    """Return the per-bucket Boolean hits array for a single Series of timestamps."""
+    if is_integer_dtype(time_col):                  # unix seconds path
+        if not time_col.is_monotonic_increasing:
+            raise ValueError("time_col must be sorted in ascending order.")        
+        sec   = time_col + offset_col                                  # offset may be scalar or vector
+        s_min = _timestamp_handling(start, "unix") or int(sec.min())
+        s_max = _timestamp_handling(end,   "unix") or int(sec.max())
+        return _q_array(sec.to_numpy(), s_min, s_max, periods, freq)
+
+    # datetime64 path (tz-aware respected by .floor)
+    tz     = getattr(time_col.dt, "tz", None)
+    start  = _timestamp_handling(start, "pd.timestamp", tz) or time_col.min()
+    end    = _timestamp_handling(end,   "pd.timestamp", tz) or time_col.max()
+    window = f"{periods}{freq}"
+    bucket_start = pd.date_range(start.floor(window), end, freq=window, inclusive="left")
+    hits = pd.Series(False, index=bucket_start)
+    active = time_col[(time_col >= start) & (time_col < end)].dt.floor(window).unique()
+    hits.loc[active] = True
+    return hits
+
+def _q_array(sec, start_timestamp, end_timestamp, periods=1, freq='h'):
+    """True/False array: one flag per (periods×freq) bucket."""
+    step = periods * SEC_PER_UNIT[freq]
+    first = (start_timestamp // step) * step
+    bin_starts = np.arange(first, end_timestamp, step)
+
+    pos  = np.searchsorted(sec, bin_starts, side='left')
+    all_pos = np.append(pos, len(sec))
+    # np.diff computes `pos[i+1] - pos[i]`. If > 0, the bucket had data.
+    hits = np.diff(all_pos) > 0
+    return pd.Series(hits, index=bin_starts) if isinstance(sec, pd.Series) else hits
