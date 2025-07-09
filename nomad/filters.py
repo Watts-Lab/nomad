@@ -130,7 +130,6 @@ def to_timestamp(datetime, tz_offset=None):
     return unix_s - tz_offset
 
 def _dup_per_freq_mask(sec, periods=1, freq='min', keep='first'): 
-        
     bins = sec // (periods * SEC_PER_UNIT[freq])
     if isinstance(sec, pd.Series):
         return ~pd.Series(bins, index=sec.index).duplicated(keep=keep)
@@ -552,7 +551,6 @@ def coverage_matrix(data,
             hit_df.columns = pd.to_datetime(hit_df.columns, unit='s')
         hit_df.columns = hit_df.columns.strftime(_fmt_from_freq(freq))
     return hit_df
-
 
 def completeness(data,
                  periods=1,
