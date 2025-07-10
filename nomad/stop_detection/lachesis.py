@@ -99,8 +99,6 @@ def _lachesis_labels(data, dt_max, delta_roam, dur_min=5, traj_cols=None, **kwar
 
     return pd.Series(labels, index=data.index, name='cluster')
 
-
-
 def lachesis(data, dt_max, delta_roam, dur_min=5, complete_output=False, traj_cols=None, **kwargs):
     """
     Detect stops with the sequential Lachesis algorithm and then summarize them.
@@ -127,7 +125,7 @@ def lachesis(data, dt_max, delta_roam, dur_min=5, complete_output=False, traj_co
     pd.DataFrame
         One row per stop, summarizing its medoid, duration, and optionally full stats.
     """
-    labels = lachesis_labels(
+    labels = _lachesis_labels(
         data=data,
         dur_min=dur_min,
         dt_max=dt_max,

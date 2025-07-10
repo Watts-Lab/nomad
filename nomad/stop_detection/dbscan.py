@@ -6,6 +6,7 @@ import warnings
 import nomad.io.base as loader
 import nomad.constants as constants
 from nomad.stop_detection import utils
+from nomad.filters import to_timestamp
 
 ##########################################
 ########         DBSCAN           ########
@@ -151,4 +152,3 @@ def ta_dbscan(data, time_thresh, dist_thresh, min_pts, traj_cols=None, complete_
             include_groups=False)
 
     return stop_table
-    # return labels_tadbscan, stop_table

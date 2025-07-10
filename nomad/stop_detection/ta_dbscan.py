@@ -341,17 +341,18 @@ def temporal_dbscan(data, time_thresh, dist_thresh, min_pts, traj_cols=None, com
         else:
             time_col_name = traj_cols['timestamp']
 
-    
-
     labels_tadbscan = _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, False, traj_cols, **kwargs) # see patch on 424
 
-    complete_data = data.join(labels_tadbscan)
-    complete_data = complete_data[complete_data['cluster'] != -1]
-    
-    stop_table = complete_data.groupby('cluster').apply(lambda group: _stop_metrics(group, long_lat, datetime, traj_cols, complete_output), include_groups=False)
-    
-    # return stop_table
-    return labels_tadbscan, stop_table
+    merged = data.join(labels_tadbscan)
+    merged = merged[merged.cluster != -1]
+
+    stop_table = merged.groupby('cluster', as_index=False).apply(lambda grp: utils.summarize_stop(grp,
+                                                                                                  complete_output=complete_output,
+                                                                                                  traj_cols=traj_cols,
+                                                                                                  keep_col_names=False,
+                                                                                                  **kwargs),
+                        include_groups=False)
+    return stop_table
 
 def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, return_cores=False, traj_cols=None, **kwargs):
     # Check if user wants long and lat
@@ -416,7 +417,7 @@ def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, return_core
     data_temp = data.copy()
     data_temp.index = valid_times        
 
-    output = pd.DataFrame({'cluster': -1, 'core': -1}, index=valid_times)
+    output = pd.DataFrame({'cluster': -1, 'core': -1}, index=valid_times, name='cluster')
 
     _process_clusters(data_temp, time_thresh, dist_thresh, min_pts, output, long_lat, datetime, traj_cols, min_duration=5)
 
@@ -426,99 +427,3 @@ def _temporal_dbscan_labels(data, time_thresh, dist_thresh, min_pts, return_core
     else:
         labels = output.cluster
         return labels.set_axis(data.index)
-
-def _stop_metrics(grouped_data, long_lat, datetime, traj_cols, complete_output):
-    # Coordinates array and distance metrics
-    if long_lat:
-        coords = grouped_data[[traj_cols['longitude'], traj_cols['latitude']]].to_numpy()
-        stop_medoid = utils._medoid(coords, metric='haversine')
-        diameter_m = utils._diameter(coords, metric='haversine')
-    else:
-        coords = grouped_data[[traj_cols['x'], traj_cols['y']]].to_numpy()
-        stop_medoid = utils._medoid(coords, metric='euclidean')
-        diameter_m = utils._diameter(coords, metric='euclidean')
-
-    # Compute duration and start and end time of stop
-    start_time_key = 'start_datetime' if datetime else 'start_timestamp'
-    end_time_key = 'end_datetime' if datetime else 'end_timestamp' 
-    
-    if datetime:
-        start_time = grouped_data[traj_cols['datetime']].min()
-        end_time = grouped_data[traj_cols['datetime']].max()
-        duration = (end_time - start_time).total_seconds() / 60.0
-    else:
-        start_time = grouped_data[traj_cols['timestamp']].min()
-        end_time = grouped_data[traj_cols['timestamp']].max()
-        
-        timestamp_length = len(str(start_time))
-
-        if timestamp_length > 10:
-            if timestamp_length == 13:
-                duration = ((end_time // 10 ** 3) - (start_time // 10 ** 3)) / 60.0
-            elif timestamp_length == 19:
-                duration = ((end_time // 10 ** 9) - (start_time // 10 ** 9)) / 60.0
-        else:
-            duration = (end_time - start_time) / 60.0
-                            
-    # Number of pings in stop
-    n_pings = len(grouped_data)
-    
-    # Compute max_gap between consecutive pings (in minutes)
-    if datetime:
-        times = pd.to_datetime(grouped_data[traj_cols['datetime']]).sort_values()
-        time_diffs = times.diff().dropna()
-        max_gap = int(time_diffs.max().total_seconds() / 60) if not time_diffs.empty else 0
-    else:
-        times = grouped_data[traj_cols['timestamp']].sort_values()
-        timestamp_length = len(str(times.iloc[0]))
-        
-        if timestamp_length == 13:
-            time_diffs = np.diff(times.values) // 1000
-        elif timestamp_length == 19:  # nanoseconds
-            time_diffs = np.diff(times.values) // 10**9
-        else:
-            time_diffs = np.diff(times.values)
-        
-        max_gap = int(np.max(time_diffs) / 60) if len(time_diffs) > 0 else 0
-
-    # Prepare data for the Series
-    if long_lat:
-        if complete_output:
-            stop_attr = {
-                start_time_key: start_time,
-                end_time_key: end_time,
-                traj_cols['longitude']: stop_medoid[0],
-                traj_cols['latitude']: stop_medoid[1],
-                'diameter': diameter_m,
-                'n_pings': n_pings,
-                'duration': duration,
-                'max_gap': max_gap
-            }
-        else:
-            stop_attr = {
-                start_time_key: start_time,
-                'duration': duration,
-                traj_cols['longitude']: stop_medoid[0],
-                traj_cols['latitude']: stop_medoid[1]
-            }
-    else:
-        if complete_output:
-            stop_attr = {
-                start_time_key: start_time,
-                end_time_key: end_time,
-                traj_cols['x']: stop_medoid[0],
-                traj_cols['y']: stop_medoid[1],
-                'diameter': diameter_m,
-                'n_pings': n_pings,
-                'duration': duration,
-                'max_gap': max_gap
-            }
-        else:
-            stop_attr = {
-                start_time_key: start_time,
-                'duration': duration,
-                traj_cols['x']: stop_medoid[0],
-                traj_cols['y']: stop_medoid[1]
-            }
-
-    return pd.Series(stop_attr)
