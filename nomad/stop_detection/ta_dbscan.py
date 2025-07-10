@@ -8,7 +8,7 @@ import nomad.constants as constants
 from nomad.stop_detection import utils
 
 ##########################################
-########         DBSCAN           ########
+########        TA-DBSCAN         ########
 ##########################################
 def _find_neighbors(data, time_thresh, dist_thresh, long_lat, datetime, traj_cols):
     """
