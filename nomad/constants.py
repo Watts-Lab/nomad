@@ -13,6 +13,8 @@ DEFAULT_SCHEMA = {
     "start_timestamp":"start_timestamp",
     "end_timestamp":"end_timestamp",
     "timestamp": "timestamp",
+    "date": "date",
+    "utc_date": "date",
     "x": "x",
     "y": "y",
     "geohash": "geohash",

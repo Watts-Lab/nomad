@@ -45,7 +45,7 @@ def _fallback_spatial_cols(col_names, traj_cols, kwargs):
     traj_cols = _parse_traj_cols(col_names, traj_cols, kwargs, defaults={}, warn=False)
     
     # check for sufficient spatial coords
-    _has_spatial_cols(col_names, traj_cols, exclusive=True) 
+    _has_spatial_cols(col_names, traj_cols, exclusive=True)
 
     use_lon_lat = ('latitude' in traj_cols and 'longitude' in traj_cols)
     if use_lon_lat:
@@ -587,6 +587,11 @@ def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_f
                 traj_cols
             )
 
+    for key in ['date', 'utc_date']:
+        if key in traj_cols and traj_cols[key] in df:
+            if parse_dates:
+                df[traj_cols[key]] = pd.to_datetime(df[traj_cols[key]]).dt.date
+                
     # Handle integer columns
     for key in ['tz_offset', 'duration', 'timestamp', 'start_timestamp', 'end_timestamp']:
         if key in traj_cols and traj_cols[key] in df:
@@ -1152,7 +1157,7 @@ def sample_from_file(
     within=None,
     poly_crs=None,
     data_crs=None,
-    sort_times=False,
+    sort_times=True,
     traj_cols=None,
     **kwargs
 ):

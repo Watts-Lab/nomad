@@ -1,20 +1,16 @@
+import numpy as np
 import pandas as pd
 from pandas.api.types import is_integer_dtype
-import geopandas as gpd
-from shapely.geometry import Polygon, Point
-import warnings
 
-import pyspark
-from pyspark.sql import SparkSession
-from pyspark.sql import SQLContext
-from pyspark.sql import functions as F
-from pyspark.sql.types import StructType, StructField, StringType, IntegerType, LongType, DoubleType
+import geopandas as gpd
+import pyproj
+from shapely.geometry import Polygon, Point
+from shapely import wkt
+import warnings
 
 import nomad.io.base as loader
 from nomad.constants import DEFAULT_SCHEMA, SEC_PER_UNIT
-import warnings
-import numpy as np
-
+import pdb
 
 
 def _timestamp_handling(
@@ -96,7 +92,7 @@ def to_timestamp(datetime, tz_offset=None):
         )
     
     if tz_offset is not None:
-        if not pd.api.types.is_integer_dtype(tz_offset):
+        if not is_integer_dtype(tz_offset):
             tz_offset = tz_offset.astype('int64')
 
     if isinstance(datetime.dtype, pd.DatetimeTZDtype):
@@ -134,11 +130,7 @@ def to_timestamp(datetime, tz_offset=None):
         return pd.Series(f(datetime).astype("int64"), index=datetime.index)
 
 def _dup_per_freq_mask(sec, periods=1, freq='min', keep='first'): 
-    
-    if not isinstance(periods, (int, np.integer)) or periods < 1:
-        raise ValueError("periods must be an integer ≥ 1")
-    if freq not in SEC_PER_UNIT:
-        raise ValueError("freq must be one of 's', 'min', 'h', 'd', 'w'")
+        
     bins = sec // (periods * SEC_PER_UNIT[freq])
     if isinstance(sec, pd.Series):
         return ~pd.Series(bins, index=sec.index).duplicated(keep=keep)
@@ -231,71 +223,6 @@ def downsample(df,
 
     return df[mask]
 
-def to_projection(
-    traj: pd.DataFrame,
-    input_crs = None,
-    output_crs = None,
-    spark_session: SparkSession = None,
-    **kwargs
-):
-    """
-    Projects coordinate columns from one Coordinate Reference System (CRS) to another.
-
-    This function takes a DataFrame containing coordinate columns and projects them from one CRS to another specified CRS. 
-    It supports both local and distributed computation using Spark. (TODO: SPARK)
-
-    If columns names are not specified in `kwargs`, the function will attempt to use default column names.
-
-    Parameters
-    ----------
-    traj : pd.DataFrame
-        Trajectory DataFrame containing coordinate columns.
-    input_crs : str, optional
-        EPSG code for the original CRS.
-    output_crs : str, optional
-        EPSG code for the target CRS.
-    spark_session : SparkSession, optional.
-        Spark session for distributed computation, if needed.
-    **kwargs :
-        Additional parameters to specify names of spatial columns to project from.
-        E.g., 'latitude', 'longitude' or 'x', 'y'.
-
-    Returns
-    -------
-    (pd.Series, pd.Series)
-        A pair of Series with the new projected coordinates.
-
-    Raises
-    ------
-    ValueError
-        If expected coordinate columns are missing.
-    """
-    # Check whether traj contains spatial columns
-    # Uncomment exclusive=True when the function is committed.
-    loader._has_spatial_cols(traj.columns, kwargs)#, exclusive=True)
-
-    # Check if user wants to project from x and y
-    if ('x' in kwargs and 'y' in kwargs):
-        input_x_col, input_y_col = kwargs['x'], kwargs['y']
-        if input_crs is None:
-            raise ValueError("input_crs not found in arguments.")
-        if output_crs is None:
-            output_crs = "EPSG:4326"
-            warnings.warn("output_crs not provided. Defaulting to EPSG:4326.")
-    else:
-        input_x_col, input_y_col = kwargs['longitude'], kwargs['latitude']
-        if input_crs is None:
-            input_crs = "EPSG:4326"
-            warnings.warn("input_crs not provided. Defaulting to EPSG:4326.")
-        if output_crs is None:
-            raise ValueError("output_crs not found in arguments.")
-
-    if spark_session:
-        return _to_projection_spark(traj, input_crs, output_crs, input_x_col, input_y_col, spark_session)
-    else:
-        return _to_projection(traj, input_crs, output_crs, input_x_col, input_y_col)
-
-
 def _to_projection(
     traj,
     input_crs,
@@ -309,121 +236,6 @@ def _to_projection(
     gdf = gpd.GeoSeries(gpd.points_from_xy(traj[input_x_col], traj[input_y_col]), crs=input_crs)
     projected = gdf.to_crs(output_crs)
     return projected.x, projected.y
-
-
-def _to_projection_spark(
-    traj, 
-    input_crs, 
-    output_crs, 
-    input_x_col, 
-    input_y_col, 
-    spark_session
-):
-    """
-    Helper function to project latitude/longitude columns to a new CRS using Spark.
-    """
-    from sedona.register import SedonaRegistrator
-    SedonaRegistrator.registerAll(spark_session)
-
-    spark_df = spark_session.createDataFrame(traj)
-    spark_df.createOrReplaceTempView("temp_view")
-
-    query = f"""
-        SELECT
-            ST_X(ST_Transform(ST_Point({input_x_col}, {input_y_col}), '{input_crs}', '{output_crs}')) AS x,
-            ST_Y(ST_Transform(ST_Point({input_x_col}, {input_y_col}), '{input_crs}', '{output_crs}')) AS y
-        FROM temp_view
-    """
-    
-    result_df = spark_session.sql(query)
-    pandas_df = result_df.toPandas()
-    return pandas_df['x'], pandas_df['y']
-
-
-def filter_users(
-    traj: pd.DataFrame,
-    start_time,
-    end_time,
-    timezone = None,
-    polygon = None,
-    min_active_days = 1,
-    min_pings_per_day = 1,
-    traj_cols = None,
-    crs = "EPSG:3857",
-    spark_session = None,
-    **kwargs):
-    '''
-    Subsets to users who have at least min_pings_per_day pings on min_active_days distinct days
-    in the polygon within the timeframe start_time to start_time.
-
-    Parameters
-    ----------
-    traj : pd.DataFrame
-        Trajectory DataFrame with latitude and longitude columns.
-    start_time
-        Start of the timeframe for filtering.
-    end_time
-        End of the timeframe for filtering.
-    polygon : shapely.geometry.Polygon
-        Polygon defining the area to retain points within.
-        If None, no spatial filtering is applied.
-    min_active_days, min_pings_per_day: int
-        User is retained if they have at least min_pings_per_day pings on min_active_days distinct days.
-        Defaults to 1.
-    traj_cols : dict, optional
-        A dictionary defining column mappings for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'.
-        If not provided, the function will attempt to use default column names or those provided in `kwargs`.
-    crs : str, optional
-        Coordinate Reference System (CRS) for the polygon.
-        Defaults to "EPSG:3857".
-    spark_session : SparkSession, optional
-        Spark session for distributed computation, if needed.
-    **kwargs :
-        Additional parameters like 'user_id', 'latitude', 'longitude', or 'datetime' column names.
-
-    Returns
-    -------
-    pd.DataFrame
-        Filtered DataFrame with points inside the polygon's bounds.
-    '''
-
-    traj_cols = loader._parse_traj_cols(traj.columns, traj_cols, kwargs)
-    loader._has_spatial_cols(traj.columns, traj_cols)#, exclusive=True)
-    loader._has_time_cols(traj.columns, traj_cols)
-
-    # Check which spatial columns to project from
-    if ('x' in kwargs and 'y' in kwargs):
-        input_x_col, input_y_col = traj_cols['x'], traj_cols['y']
-    else:
-        input_x_col, input_y_col = traj_cols['longitude'], traj_cols['latitude']
-
-    # Check which time column to use from
-    if ('datetime' in kwargs):
-        time_col = traj_cols['datetime']
-        start_time = _timestamp_handling(start_time, "pd.timestamp", timezone)
-        end_time = _timestamp_handling(end_time, "pd.timestamp", timezone)
-    else:  # defaults to unix timestamps
-        time_col = traj_cols['timestamp']
-        start_time = _timestamp_handling(start_time, "unix", timezone)
-        end_time = _timestamp_handling(end_time, "unix", timezone)
-
-    # Check if polygon is a valid Shapely Polygon object
-    if (polygon is not None) and (not isinstance(polygon, Polygon)):
-        raise TypeError("Polygon parameter must be a Shapely Polygon object.")
-    
-    # Filter to the desired time range
-    traj = traj[(traj[time_col] >= start_time) & (traj[time_col] <= end_time)].copy()
-
-    if spark_session:
-        return _filter_users_spark(
-            traj, start_time, end_time, polygon.wkt, min_active_days, min_pings_per_day, traj_cols, input_x_col, input_y_col, time_col, spark_session
-            )
-    else:
-        users = _filtered_users(
-            traj, start_time, end_time, polygon, min_active_days, min_pings_per_day, traj_cols, input_x_col, input_y_col, time_col, crs
-        )
-        return traj[traj[traj_cols['user_id']].isin(users)]
-
 
 def _filtered_users(
     traj,
@@ -494,94 +306,6 @@ def _filtered_users(
 
     return filtered_users
 
-
-def _in_geo(
-    traj,
-    input_x,
-    input_y,
-    polygon,
-    crs
-):
-    """
-    Helper function that adds a new column to the DataFrame indicating 
-    whether points are inside the polygon or not.
-    """
-    points = gpd.GeoSeries(gpd.points_from_xy(traj[input_x], traj[input_y]), crs=crs)
-    traj = traj.reset_index(drop=True) # why?
-    traj['in_geo'] = points.within(polygon)
-
-    return traj
-
-
-def _filter_users_spark(
-    traj,
-    bounding_wkt,
-    T0,
-    T1,
-    min_days,
-    min_pings,
-    traj_cols,
-    input_x,
-    input_y,
-    spark,
-):
-    """
-    Helper function that retains only users who have at least k distinct days 
-    with pings inside the geometry between T0 and T1.
-
-    TODO: I don't know if this works / if it could be more efficient
-    """
-    from sedona.register import SedonaRegistrator
-    SedonaRegistrator.registerAll(spark)
-
-    # Ensure timestamp column is proper type
-    traj = traj.withColumn(
-        traj_cols['timestamp'], 
-        F.to_timestamp(F.col(traj_cols['timestamp']))
-    )
-
-    # Time filter
-    traj_filtered = traj.filter(
-        (F.col(traj_cols['timestamp']) >= F.to_timestamp(F.lit(T0))) & 
-        (F.col(traj_cols['timestamp']) <= F.to_timestamp(F.lit(T1)))
-    )
-
-    # Add geometry point column
-    traj_filtered = traj_filtered.withColumn(
-        "coordinate", 
-        F.expr(f"ST_Point(CAST({input_x} AS DECIMAL(24,20)), CAST({input_y} AS DECIMAL(24,20)))")
-    )
-
-    # Spatial filter + extract date
-    traj_filtered.createOrReplaceTempView("temp_df")
-    query = f"""
-        SELECT *, DATE({traj_cols['timestamp']}) AS date
-        FROM temp_df
-        WHERE ST_Contains(ST_GeomFromWKT('{bounding_wkt}'), coordinate)
-    """
-
-    traj_inside = spark.sql(query)
-
-    # Count pings per user per day
-    daily_counts = traj_inside.groupBy(traj_cols['user_id'], "date").agg(
-        F.count("*").alias("ping_count")
-    )
-
-    # Keep only user-day combos with at least `min_pings`
-    filtered_days = daily_counts.filter(F.col("ping_count") >= min_pings)
-
-    # Count how many qualifying days each user has
-    qualifying_users = filtered_days.groupBy(traj_cols['user_id']).agg(
-        F.countDistinct("date").alias("qualified_days")
-    ).filter(
-        F.col("qualified_days") >= min_days
-    ).select(traj_cols['user_id'])
-
-    result_traj = traj_inside.join(qualifying_users, on=traj_cols['user_id'], how='inner')
-
-    return result_traj
-
-
 def q_filter(df: pd.DataFrame,
              qbar: float,
              traj_cols: dict = None,
@@ -622,6 +346,106 @@ def q_filter(df: pd.DataFrame,
 
     return filtered_users
 
+
+def within(
+    df,
+    within,
+    poly_crs=None,
+    data_crs=None,
+    traj_cols=None,
+    **kwargs
+):
+    """
+    Return a filtered DataFrame containing only rows within the given polygon.
+
+    All arguments are passed to is_within.
+    """
+    mask = is_within(
+        df,
+        within,
+        traj_cols=traj_cols,
+        poly_crs=poly_crs,
+        data_crs=data_crs,
+        **kwargs
+    )
+    return df.loc[mask]
+
+def is_within(
+    df,
+    within,
+    poly_crs=None,
+    data_crs=None,
+    traj_cols=None,
+    **kwargs,
+):
+    """
+    Filter a DataFrame to include only points within the given polygon.
+
+    Parameters
+    ----------
+    df : pd.DataFrame or GeoDataFrame
+        Trajectory data.
+    within : shapely Polygon/MultiPolygon or WKT string
+        Polygon defining the spatial filter.
+    traj_cols : dict, optional
+        Mapping of logical trajectory column names to actual columns.
+    poly_crs : CRS or str, optional
+        CRS of the polygon.
+    data_crs : CRS or str, optional
+        CRS of the DataFrame coordinates.
+    **kwargs
+        Additional parameters for trajectory columns resolution.
+
+    Returns
+    -------
+    pd.Series
+        Boolean mask for which points are in the polygon within
+    """
+    if within is None:
+        raise ValueError("A polygon or WKT string must be provided in 'within'.")
+
+    # Normalize polygon geometry
+    if isinstance(within, str):
+        poly = wkt.loads(within)
+    elif isinstance(within, Polygon):
+        poly = within
+    elif isinstance(within, gpd.GeoSeries):
+        poly = within.unary_union
+    elif isinstance(within, gpd.GeoDataFrame):
+        poly = within.geometry.unary_union
+    else:
+        raise TypeError("within must be WKT, shapely Polygon, GeoSeries or GeoDataFrame.")
+
+    # Determine coordinate columns
+    coord_key1, coord_key2, use_lat_lon = loader._fallback_spatial_cols(df.columns, traj_cols, kwargs)
+    traj_cols = loader._parse_traj_cols(df.columns, traj_cols, kwargs)
+
+    # Handle CRS defaults
+    if data_crs is None:
+        if use_lat_lon:
+            data_crs = "EPSG:4326"
+            warnings.warn("data_crs not provided; assuming EPSG:4326 for lon/lat.")
+        else:
+            raise ValueError(
+                "data_crs must be supplied for projected x/y columns or provide lat/lon instead."
+            )
+    data_crs = pyproj.CRS(data_crs)
+
+    poly_crs_final = getattr(within, "crs", None) or poly_crs
+
+    if poly_crs_final is not None:
+        src_crs = pyproj.CRS(poly_crs_final)
+        if not src_crs.equals(data_crs):
+            poly = gpd.GeoSeries([poly], crs=src_crs).to_crs(data_crs).iloc[0]
+    else:
+        warnings.warn("Polygon CRS unspecified; assuming it matches data_crs.")
+
+    # Construct GeoSeries of points from df coordinates
+    pts = gpd.GeoSeries(gpd.points_from_xy(df[coord_key1], df[coord_key2]), crs=data_crs)
+    
+    return pts.within(poly).set_axis(df.index)
+
+
 def coverage_matrix(data,
                     periods=1,
                     freq="h",
@@ -640,7 +464,9 @@ def coverage_matrix(data,
         
     if isinstance(data, pd.Series):
         hits = _q_series(data, periods, freq, start, end, offset_col=offset_col).astype(int)
-        if isinstance(hits.index, pd.DatetimeIndex) and str_from_time:
+        if str_from_time:
+            if is_integer_dtype(hits.index.dtype):
+                hits.index = pd.to_datetime(hits.index, unit='s')
             hits.index = hits.index.strftime(_fmt_from_freq(freq))
         return hits
 
@@ -672,9 +498,13 @@ def coverage_matrix(data,
         return pd.DataFrame(dtype=int)
 
     hit_df = pd.concat(hit_map, axis=1).T.astype(int)   # rows=user
-    if isinstance(hit_df.columns, pd.DatetimeIndex) and str_from_time:
+    
+    if str_from_time:
+        if is_integer_dtype(hit_df.columns.dtype):
+            hit_df.columns = pd.to_datetime(hit_df.columns, unit='s')
         hit_df.columns = hit_df.columns.strftime(_fmt_from_freq(freq))
     return hit_df
+
 
 def completeness(data,
                  periods=1,
@@ -761,7 +591,9 @@ def completeness(data,
     hits.columns = buckets
     hit_df = hits.T.groupby(hits.columns).mean().T
 
-    if isinstance(hit_df.columns, pd.DatetimeIndex) and str_from_time:
+    if str_from_time:
+        if is_integer_dtype(hit_df.columns.dtype):
+            hit_df.columns = pd.to_datetime(hit_df.columns, unit='s')
         hit_df.columns = hit_df.columns.strftime(_fmt_from_freq(agg_freq))
     return hit_df
 

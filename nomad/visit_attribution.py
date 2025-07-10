@@ -207,8 +207,9 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, location_id=None, tr
     else:
         raise TypeError("`data` must be a pandas DataFrame or a GeoDataFrame.")
 
-    if data_crs != pyproj.CRS(poi_table.crs):
-        raise ValueError("CRS for `data` does not match CRS for `poi_table`.")
+    if not data_crs.equals(pyproj.CRS(poi_table.crs)):
+        poi_table = poi_table.to_crs(data_crs)
+        warnings.warn("CRS for `poi_table` does not match crs for `data`. Reprojecting...")
 
     use_poi_idx = True
     if location_id is not None:
