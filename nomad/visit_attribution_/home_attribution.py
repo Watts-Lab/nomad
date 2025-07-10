@@ -159,6 +159,7 @@ def compute_candidate_homes(
         else:
             stops[end_t_key] = stops[traj_cols[t_key]] + stops[dur_col] * 60
 
+    # Nocturnal clipping
     stops_night = nocturnal_stops(
         stops,
         dusk_hour=dusk_hour,
