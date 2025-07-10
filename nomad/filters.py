@@ -514,9 +514,9 @@ def completeness(data,
                  end=None,
                  offset_col=0,
                  relative=False,
-                 traj_cols=None,
                  str_from_time=True,
                  agg_freq=None,
+                 traj_cols=None,
                  **kwargs):
     """
     Measure trajectory completeness as the fraction of expected time intervals
@@ -546,13 +546,13 @@ def completeness(data,
         Offset in seconds to apply to timestamps (useful for handling time zones).
         If a `tz_offset` column is present in the data and indicated via
         `traj_cols` or `kwargs`, this argument is ignored.
-    traj_cols : dict, optional
-        Mapping from standard keys ('timestamp', 'datetime', 'user_id',
-        'tz_offset') to column names in `data`. If omitted, defaults are used.
     agg_freq : str, optional
         Aggregation frequency (e.g., 'D' for daily, 'W' for weekly, 'M' for monthly).
         If specified, returns completeness aggregated at this frequency instead
         of overall completeness.
+    traj_cols : dict, optional
+        Mapping from standard keys ('timestamp', 'datetime', 'user_id',
+        'tz_offset') to column names in `data`. If omitted, defaults are used.
     **kwargs
         Shorthand overrides for entries in `traj_cols`.
 

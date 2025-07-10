@@ -18,7 +18,7 @@ from nomad.filters import to_timestamp
 ########        Lachesis          ########
 ##########################################
 
-def _lachesis_labels(data, dt_max, delta_roam, dur_min=5, traj_cols=None, **kwargs):
+def lachesis_labels(data, dt_max, delta_roam, dur_min=5, traj_cols=None, **kwargs):
     """
     Scan a trajectory and assign each ping to a stop‐cluster index or -1 for noise.
 
@@ -106,6 +106,7 @@ def lachesis(
     dur_min=5,
     complete_output=False,
     passthrough_cols=[],
+    keep_col_names=True,
     traj_cols=None,
     **kwargs
 ):
@@ -149,7 +150,7 @@ def lachesis(
     else:
         uid_col = None
 
-    labels = _lachesis_labels(
+    labels = lachesis_labels(
         data=data,
         dur_min=dur_min,
         dt_max=dt_max,
@@ -165,7 +166,7 @@ def lachesis(
             grp,
             complete_output=complete_output,
             traj_cols=traj_cols,
-            keep_col_names=True,
+            keep_col_names=keep_col_names,
             passthrough_cols=passthrough_cols,
             **kwargs
         ),
