@@ -131,6 +131,7 @@ def ta_dbscan(
     dur_min=5,
     complete_output=False,
     passthrough_cols=[],
+    keep_col_names=True,
     traj_cols=None,
     **kwargs
 ):
@@ -193,7 +194,7 @@ def ta_dbscan(
             grp,
             complete_output=complete_output,
             traj_cols=traj_cols,
-            keep_col_names=True,
+            keep_col_names=keep_col_names,
             passthrough_cols=passthrough_cols,
             **kwargs
         ),
