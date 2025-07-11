@@ -89,6 +89,7 @@ def to_timestamp(datetime, tz_offset=None):
     if tz_offset is not None and not is_integer_dtype(tz_offset):
         tz_offset = tz_offset.astype('int64')
 
+    # 1) tz-aware datetime64[ns, tz]
     if isinstance(datetime.dtype, pd.DatetimeTZDtype):
         # convert to UTC, drop tz, downcast to seconds, then int
         dt_utc = datetime.dt.tz_convert('UTC').dt.tz_localize(None)
