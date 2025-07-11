@@ -7,6 +7,7 @@ import itertools
 import os
 import nomad.io.base as loader
 import nomad.constants as constants
+from nomad.filters import to_timestamp
 import pdb
 
 def _diameter(coords, metric='euclidean'):

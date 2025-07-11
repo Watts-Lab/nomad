@@ -218,7 +218,7 @@ def _build_border_map(scale, core_distances, d_graph):
     
     return core_to_border
 
-def hdbscan(edges_sorted_df, core_distances, d_graph, min_cluster_size, dur_min=5):
+def hdbscan_hierarchy(edges_sorted_df, core_distances, d_graph, min_cluster_size, dur_min=5):
     """
     Builds a cluster hierarchy from a pre-computed Minimum Spanning Tree.
 
@@ -643,7 +643,7 @@ def hdbscan_labels(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min
     core_distances = pd.Series(core_distances).sort_index()
     core_distances.index.name = 'time'
 
-    label_history_df, hierarchy_df = hdbscan(
+    label_history_df, hierarchy_df = hdbscan_hierarchy(
         edges_sorted_df=edges_sorted,
         core_distances=core_distances,
         d_graph=d_graph,
