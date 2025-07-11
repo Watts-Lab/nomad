@@ -120,15 +120,12 @@ def grid_based(
         traj_cols=traj_cols,
         **kwargs
     )
-    
-    loc = loader._parse_traj_cols(data.columns, traj_cols, kwargs)['location_id'] # load defaults
-    passthrough_cols+=[loc]
-    
+       
     merged = data.join(labels)
     merged = merged[merged.cluster != -1]
 
     stop_table = merged.groupby('cluster', as_index=False, sort=False).apply(
-        lambda grp: utils.summarize_stop(
+        lambda grp: utils.summarize_stop_grid(
             grp,
             complete_output=complete_output,
             traj_cols=traj_cols,
@@ -139,6 +136,9 @@ def grid_based(
         include_groups=False
     )
 
+    if complete_output:
+        pass #implement diameter, centroid for location_id being an h3_cell
+        
     return stop_table
 
 def grid_based_per_user(

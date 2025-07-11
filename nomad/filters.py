@@ -10,8 +10,6 @@ import warnings
 
 import nomad.io.base as loader
 from nomad.constants import DEFAULT_SCHEMA, SEC_PER_UNIT
-import pdb
-
 
 def _timestamp_handling(
     ts,
@@ -63,12 +61,10 @@ def _timestamp_handling(
     else:
         raise ValueError("Invalid ts_output value. Use 'pd.timestamp' or 'unix'.")
 
-
-
 def to_timestamp(datetime, tz_offset=None):
     """
-    Convert a datetime series into UNIX timestamps (seconds).
-    
+    Convert a datetime Series into UNIX timestamps (seconds).
+
     Parameters
     ----------
     datetime : pd.Series
@@ -81,53 +77,57 @@ def to_timestamp(datetime, tz_offset=None):
     """
     # Validate input type
     if not (
-        
         pd.api.types.is_datetime64_any_dtype(datetime) or
         pd.api.types.is_string_dtype(datetime) or
         (pd.api.types.is_object_dtype(datetime) and loader._is_series_of_timestamps(datetime))
     ):
         raise TypeError(
-            f"Input must be of type datetime64, string, or an array of Timestamp objects, "
-            f"but it is of type {datetime.dtype}."
+            f"Input must be datetime64, string, or Series of Timestamps; got {datetime.dtype}."
         )
     
-    if tz_offset is not None:
-        if not is_integer_dtype(tz_offset):
-            tz_offset = tz_offset.astype('int64')
+    if tz_offset is not None and not is_integer_dtype(tz_offset):
+        tz_offset = tz_offset.astype('int64')
 
+    # 1) tz-aware datetime64[ns, tz]
     if isinstance(datetime.dtype, pd.DatetimeTZDtype):
-        return datetime.astype("int64") // 10**9
-    
-    # datetime without timezone
-    elif pd.api.types.is_datetime64_dtype(datetime):
-        if tz_offset is not None:
-            return datetime.astype("int64") // 10**9 - tz_offset
-        warnings.warn(
-                f"The input is timezone-naive. UTC will be assumed."
-                "Consider localizing to a timezone or passing a timezone offset column.")
-        return datetime.astype("int64") // 10**9
-    
-    # datetime as string
-    elif pd.api.types.is_string_dtype(datetime):
-        result = pd.to_datetime(datetime, errors="coerce", utc=True)
+        # convert to UTC, drop tz, downcast to seconds, then int
+        dt_utc = datetime.dt.tz_convert('UTC').dt.tz_localize(None)
+        unix_s = dt_utc.astype('datetime64[s]').astype('int64')
+        return unix_s if tz_offset is None else unix_s - tz_offset
 
-        # contains timezone e.g. '2024-01-01 12:29:00-02:00'
-        if datetime.str.contains(r'(?:Z|[+\-]\d{2}:\d{2})$', regex=True, na=False).any():
-            return result.astype('int64') // 10**9
-        else:
-            # naive e.g. "2024-01-01 12:29:00"
-            if tz_offset is not None and not tz_offset.empty:
-                return result.astype('int64') // 10**9 - tz_offset
-            else:
-                warnings.warn(
-                    f"The input is timezone-naive. UTC will be assumed."
-                    "Consider localizing to a timezone or passing a timezone offset column.")
-                return result.astype('int64') // 10**9
-                
-    # datetime is a series of pandas.Timestamp object. Always has unix timestamp in value
-    else:
-        f = np.frompyfunc(lambda x: x.timestamp(), 1, 1)
-        return pd.Series(f(datetime).astype("int64"), index=datetime.index)
+    # 2) tz-naive datetime64 (any unit)
+    if pd.api.types.is_datetime64_dtype(datetime):
+        # downcast any-unit to seconds, then int
+        unix_s = datetime.astype('datetime64[s]').astype('int64')
+        if tz_offset is None:
+            warnings.warn(
+                "Input is timezone-naive; assuming UTC. "
+                "Pass tz_offset or localize if needed."
+            )
+            return unix_s
+        return unix_s - tz_offset
+
+    # 3) strings
+    if pd.api.types.is_string_dtype(datetime):
+        parsed = pd.to_datetime(datetime, errors="coerce", utc=True)
+        # drop tz and downcast
+        dt_ns   = parsed.dt.tz_convert('UTC').dt.tz_localize(None)
+        unix_s  = dt_ns.astype('datetime64[s]').astype('int64')
+        has_tz = datetime.str.contains(r'(?:Z|[+\-]\d{2}:\d{2})$', regex=True, na=False).any()
+        if not has_tz and tz_offset is None:
+            warnings.warn(
+                "String datetimes appear timezone-naive; assuming UTC."
+            )
+        if tz_offset is None:
+            return unix_s
+        return unix_s - tz_offset
+
+    # 4) object dtype of pandas.Timestamp
+    f = np.frompyfunc(lambda x: int(x.timestamp()), 1, 1)
+    unix_s = pd.Series(f(datetime).astype('int64'), index=datetime.index)
+    if tz_offset is None:
+        return unix_s
+    return unix_s - tz_offset
 
 def _dup_per_freq_mask(sec, periods=1, freq='min', keep='first'): 
         
@@ -223,19 +223,68 @@ def downsample(df,
 
     return df[mask]
 
-def _to_projection(
-    traj,
-    input_crs,
-    output_crs,
-    input_x_col,
-    input_y_col
+def to_projection(
+    data,
+    crs_to,
+    data_crs=None,
+    traj_cols=None,
+    **kwargs
 ):
     """
-    Helper function to project latitude/longitude columns to a new CRS.
+    Project coordinates from data_crs to crs_to, with robust column handling.
+
+    Warns if coordinate columns and CRS type appear mismatched.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Data to project.
+    crs_to : str or CRS
+        Output CRS (required).
+    data_crs : str or CRS, optional
+        Source CRS (default: inferred).
+    traj_cols : dict, optional
+        Mapping of logical column names to actual columns.
+    **kwargs
+        Passed to trajectory column parsing.
+    
+    Returns
+    -------
+    pd.Series, pd.Series
+        Projected x and y as Series, aligned to data.index
+
+    Note
+    -------
+    To assign directly, use np.column_stack. For example
+    df[['lon','lat']] = np.column_stack(to_projection(...))
     """
-    gdf = gpd.GeoSeries(gpd.points_from_xy(traj[input_x_col], traj[input_y_col]), crs=input_crs)
-    projected = gdf.to_crs(output_crs)
-    return projected.x, projected.y
+    coord_key1, coord_key2, use_lon_lat = loader._fallback_spatial_cols(data.columns, traj_cols, kwargs)
+    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+
+    # CRS detection and warnings
+    if data_crs is None:
+        if use_lon_lat:
+            data_crs = "EPSG:4326"
+        else:
+            raise ValueError("data_crs must be specified for projected coordinates.")
+    crs_obj = pyproj.CRS(data_crs)
+    # Warn if mismatch between columns and CRS
+    if crs_obj.is_projected and use_lon_lat:
+        warnings.warn(
+            f"data_crs '{data_crs}' is projected but latitude/longitude columns were selected ({coord_key1}, {coord_key2})."
+        )
+    if crs_obj.is_geographic and not use_lon_lat:
+        warnings.warn(
+            f"data_crs '{data_crs}' is geographic (lat/lon) but x/y columns were selected ({coord_key1}, {coord_key2})."
+        )
+    if crs_to is None:
+        raise ValueError("crs_to must be specified.")
+
+    points = gpd.points_from_xy(data[traj_cols[coord_key1]], data[traj_cols[coord_key2]])
+    gseries = gpd.GeoSeries(points, crs=data_crs)
+    projected = gseries.to_crs(crs_to)
+    return pd.Series(projected.x, index=data.index), pd.Series(projected.y, index=data.index)
+    
 
 def _filtered_users(
     traj,
