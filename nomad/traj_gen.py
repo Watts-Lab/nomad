@@ -58,11 +58,12 @@ def sample_hier_nhpp(traj,
         simulated trajectory from simulate_traj
     beta_start: float
         scale parameter (mean) of Exponential distribution modeling burst inter-arrival times
+        where 1/beta_start is the rate of events (bursts) per minute.
     beta_durations: float
         scale parameter (mean) of Exponential distribution modeling burst durations
-        if beta_start and beta_durations are None, a single burst covering the whole trajectory is used.
     beta_ping: float
         scale parameter (mean) of Exponential distribution modeling ping inter-arrival times
+        within a burst, where 1/beta_ping is the rate of events (pings) per minute.
     ha: float
         Mean horizontal-accuracy radius *in 15 m blocks*. The actual per-ping accuracy is random: ha ≥ 8 m/15 m and follows a
         Pareto distribution with that mean.  For each ping the positional error (ε_x, ε_y) is drawn i.i.d. N(0, σ²) with σ = HA / 1.515 so that
@@ -168,7 +169,7 @@ def sample_hier_nhpp(traj,
     alpha = ha / (ha - x_m)
     n = len(sampled_traj)
     ha_realized = (rng.pareto(alpha, size=n) + 1) * x_m
-    np.minimum(ha_realized, 20, out=ha_realized) # no unrealistic ha (in blocks)
+    ha_realized = np.minimum(ha_realized, 20, out=ha_realized) # no unrealistic ha (in blocks)
     sampled_traj['ha'] = ha_realized    
     sigma = ha_realized / 1.515
     # spatial noise
@@ -765,6 +766,9 @@ class Agent:
         cache_traj : bool
             if True, empties the Agent's trajectory DataFrame.
         """
+        if not self.trajectory.timestamp.is_monotonic_increasing:
+            raise ValueError("The input trajectory is not sorted chronologically.")
+            
         result = sample_hier_nhpp(
             self.trajectory, 
             beta_start, 
@@ -780,6 +784,9 @@ class Agent:
             sparse_traj, burst_info = result
         else:
             sparse_traj = result
+
+        if not sparse_traj.timestamp.is_monotonic_increasing:
+            raise ValueError("The sampled trajectory is not sorted chronologically.")
             
         sparse_traj = sparse_traj.set_index('timestamp', drop=False)
 
@@ -787,6 +794,8 @@ class Agent:
             self.sparse_traj = sparse_traj
         else:
             self.sparse_traj = pd.concat([self.sparse_traj, sparse_traj], ignore_index=False)
+            if not self.sparse_traj.timestamp.is_monotonic_increasing:
+                raise ValueError("The aggregated sampled trajectory is not sorted chronologically.")
 
         if cache_traj:
             self.last_ping = self.trajectory.iloc[-1]

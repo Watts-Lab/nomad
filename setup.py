@@ -26,7 +26,8 @@ setup(
         'scipy',
         'pyarrow',
         's3fs',
-        'sedona'
+        'sedona',
+        'h3'
     ],
     package_data={'nomad': ['data/*', 'data/**/*']},
     classifiers=[

@@ -2,13 +2,22 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import matplotlib.cm as cm
 import geopandas as gpd
-from shapely.geometry import Point
+from shapely.geometry import Point, Polygon
+from shapely.affinity import scale
 import pandas as pd
 import numpy as np
 import nomad.io.base as loader
+import h3
 import pdb
 
 pd.plotting.register_matplotlib_converters()
+
+def h3_cell_to_polygon(cell):
+    """Return a shapely Polygon for the given H3 cell (lon/lat)."""
+    # h3.cell_to_boundary returns [(lat, lng), ...]
+    coords = h3.cell_to_boundary(cell)
+    lats, lons = zip(*coords)
+    return Polygon(zip(lons, lats))
 
 def adjust_zoom(x, y, ax, buffer=0.5):
     if buffer is not None:
@@ -26,7 +35,7 @@ def plot_pings(pings_df, ax, current_idx=None, radius=None, point_color='black',
     If no 'cluster', just plots points.
     """
     coord_key1, coord_key2, use_lon_lat = loader._fallback_spatial_cols(pings_df.columns, traj_cols, kwargs)
-    traj_cols = loader._parse_traj_cols(pings_df.columns, traj_cols, kwargs)
+    traj_cols = loader._parse_traj_cols(pings_df.columns, traj_cols, kwargs, warn=False)
 
     # For clarity in code and legend, these are not called x/y
     c1 = traj_cols[coord_key1]
@@ -58,34 +67,66 @@ def plot_pings(pings_df, ax, current_idx=None, radius=None, point_color='black',
             s=6, color=point_color, alpha=1
         )
 
-def plot_stops(stops, ax, cmap='Reds', traj_cols=None, **kwargs):
-    """
-    Plot stops as colored circles using 'diameter' when available and projected coordinates.
-    If coordinates are longitude/latitude or no diameter, falls back to scatter plot.
-    Handles all column/CRS variants robustly.
-    """
-    coord_key1, coord_key2, use_lon_lat = loader._fallback_spatial_cols(stops.columns, traj_cols, kwargs)
-    traj_cols = loader._parse_traj_cols(stops.columns, traj_cols, kwargs)
-    c1 = traj_cols[coord_key1]
-    c2 = traj_cols[coord_key2]
-    clusters = np.arange(len(stops)) if 'cluster' not in stops else stops['cluster']
-    n = len(stops)
-    colors = [plt.get_cmap(cmap)((c+1)/(n+1)) for c in clusters]
+def plot_stops(stops, ax, cmap='Reds', traj_cols=None, crs=None, stagger=True, **kwargs):
+    try:
+        coord_x, coord_y, use_lonlat = loader._fallback_spatial_cols(stops.columns, traj_cols, kwargs)
+        traj_cols = loader._parse_traj_cols(stops.columns, traj_cols, kwargs, warn=False)
+    except Exception:
+        coord_x = coord_y = None
+        use_lonlat = False
+        traj_cols = loader._parse_traj_cols(stops.columns, traj_cols, kwargs, warn=False)
 
-    # Only use GeoPandas buffers if using projected coordinates and diameter is present
-    if not use_lon_lat and 'diameter' in stops:
-        radii = stops['diameter'] / 2
-        buffers = [Point(val1, val2).buffer(r) for val1, val2, r in zip(
-            stops[c1], stops[c2], radii
-        )]
-        gdf = gpd.GeoDataFrame(stops.copy(), geometry=buffers, crs="EPSG:3857")
-        gdf.plot(ax=ax, color=colors, alpha=0.75, edgecolor='k', linewidth=0.5)
-    else:
-        # fallback: scatter, circles proportional to axis (not meters)
+    # simplified color logic
+    cmap_obj = plt.get_cmap(cmap)
+    clusters = stops['cluster'] if 'cluster' in stops else range(len(stops))
+    n = len(stops)
+    colors = [cmap_obj((int(c) + 1) / (n + 1)) for c in clusters]
+
+    # 1) diameter circles
+    if coord_x and coord_y and not use_lonlat and 'diameter' in stops:
+        geom = [
+            Point(x, y).buffer(d / 2)
+            for x, y, d in zip(
+                stops[traj_cols[coord_x]],
+                stops[traj_cols[coord_y]],
+                stops['diameter']
+            )
+        ]
+        gdf = gpd.GeoDataFrame(stops, geometry=geom, crs=crs or "EPSG:3857")
+        gdf.plot(ax=ax, facecolor=colors, edgecolor='k', linewidth=0.5, alpha=0.75)
+        return
+
+    # 2) H3 hexagons
+    loc = traj_cols['location_id']
+    if loc in stops.columns and stops[loc].apply(h3.is_valid_cell).all():
+        geom = stops[loc].map(h3_cell_to_polygon)
+        gdf = gpd.GeoDataFrame(stops, geometry=geom, crs="EPSG:4326")
+        if crs:
+            gdf = gdf.to_crs(crs)
+        # ----- stagger concentric hexes if duplicates -----
+        if stagger:
+            dup_mask = gdf.geometry.duplicated(keep=False)
+            if dup_mask.any():
+                wkt_series = gdf.geometry.apply(lambda g: g.wkt)
+                for wkt_val, idx in wkt_series[dup_mask].groupby(wkt_series):
+                    idx_mask = (wkt_series == wkt_val)
+                    k = idx_mask.sum()
+                    factors = np.linspace(1.0, 0.7, k)          # shrink 1.0 → 0.7
+                    gdf.loc[idx_mask, 'geometry'] = [
+                        scale(poly, xfact=f, yfact=f, origin=poly.centroid)
+                        for poly, f in zip(gdf.loc[idx_mask, 'geometry'], factors)
+                    ]
+
+        gdf.plot(ax=ax, facecolor=colors, edgecolor='k', linewidth=0.7, alpha=0.75)
+        return
+
+    # 3) fallback scatter
+    if coord_x and coord_y:
         ax.scatter(
-            stops[c1],
-            stops[c2],
-            s=60, c=colors, alpha=0.75, edgecolor='k', linewidth=0.5
+            stops[traj_cols[coord_x]],
+            stops[traj_cols[coord_y]],
+            c=colors, s=60,
+            edgecolor='k', linewidth=0.5, alpha=0.75
         )
 
 def plot_time_barcode(ts_series, ax, current_idx=None, set_xlim=True):
