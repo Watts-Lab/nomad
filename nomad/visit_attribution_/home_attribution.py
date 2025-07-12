@@ -3,13 +3,13 @@ import nomad.io.base as loader
 from nomad.stop_detection.utils import _fallback_time_cols
 from datetime import datetime, time, timedelta
 
-
 def nocturnal_stops(
     stops_table,
     dusk_hour=19,
     dawn_hour=6,
     start_datetime="start_datetime",
     end_datetime="end_datetime",
+    duration="duration"
 ):
     """
     Slice each stop so that only its *night-time* portion—defined by a daily
@@ -78,12 +78,11 @@ def nocturnal_stops(
     df[start_datetime] = df[[start_datetime, "_night_start"]].max(axis=1)
     df[end_datetime] = df[[end_datetime, "_night_end"]].min(axis=1)
 
-    df["duration"] = (
+    df[duration] = (
         (df[end_datetime] - df[start_datetime]).dt.total_seconds() // 60
     ).astype(int)
 
-    return df[df["duration"] > 0].drop(columns=["_night_start", "_night_end"])
-
+    return df[df[duration] > 0].drop(columns=["_night_start", "_night_end"])
 
 def compute_candidate_homes(
     stops_table,
@@ -160,7 +159,6 @@ def compute_candidate_homes(
         else:
             stops[end_t_key] = stops[traj_cols[t_key]] + stops[dur_col] * 60
 
-    # Nocturnal clipping
     stops_night = nocturnal_stops(
         stops,
         dusk_hour=dusk_hour,
@@ -169,11 +167,11 @@ def compute_candidate_homes(
         end_datetime=end_t_key,
     )
 
-    # Dates and ISO weeks (convert timestamps if needed)
-    if use_datetime:
-        dt = stops_night[traj_cols[t_key]]
-    else:
-        dt = pd.to_datetime(stops_night[traj_cols[t_key]], unit="s", utc=True)
+    dt = (
+        stops_night[traj_cols[t_key]]
+        if use_datetime
+        else pd.to_datetime(stops_night[traj_cols[t_key]], unit="s", utc=True)
+    )
 
     stops_night["_date"] = dt.dt.date
     stops_night["_iso_week"] = dt.dt.isocalendar().week
@@ -181,7 +179,7 @@ def compute_candidate_homes(
     out = (
         stops_night.groupby([traj_cols["user_id"], traj_cols["location_id"]], as_index=False)
         .agg(
-            num_nights=("_date", "nunique"),
+            num_work_days=("_date", "nunique"),
             num_weeks=("_iso_week", "nunique"),
             total_duration=(traj_cols["duration"], "sum"),
         )
@@ -198,10 +196,9 @@ def select_home(
     **kwargs,
 ):
     """
-    Pick **one** home location per user from pre-computed nightly aggregates.
-
-    The function filters *candidate_homes* by minimum presence thresholds,
-    ranks the surviving locations by
+    Choose the single most plausible *home* location for each user filtering
+    *candidate_homes* by minimum presence thresholds, and
+    ranking the remaining locations by
 
     1. number of nights (descending) and
     2. total night-time duration (descending),
@@ -225,7 +222,7 @@ def select_home(
     traj_cols : dict, optional
         Column mapping overrides, as in other NOMAD helpers.
     **kwargs
-        Additional ``<canonical>=<actual>`` column overrides.
+        Additional parameters
 
     Returns
     -------
@@ -236,12 +233,9 @@ def select_home(
 
     Notes
     -----
-    * Ties beyond the ranking rules are broken by **first occurrence** in
-      *candidate_homes* (i.e. deterministic given the input order).
-    * Users with no location meeting the thresholds are omitted from the
-      output.
+    * Ties beyond the ranking rules are broken by **first occurrence**
+    * Users with no location meeting the thresholds are omitted
     """
-
     traj_cols = loader._parse_traj_cols(candidate_homes.columns, traj_cols, kwargs)
 
     # Last observation date
@@ -267,11 +261,11 @@ def select_home(
 
     best = (
         filtered.drop_duplicates(traj_cols["user_id"], keep="first")
-        .assign(home_date=last_date)
+        .assign(date_last_active=last_date)
         .reset_index(drop=True)
     )
 
-    return best[[traj_cols["user_id"], traj_cols["location_id"], "home_date"]]
+    return best[[traj_cols["user_id"], traj_cols["location_id"], "date_last_active"]]
 
 def workday_stops(
     stops_table,
@@ -280,6 +274,7 @@ def workday_stops(
     include_weekends=False,
     start_datetime="start_datetime",
     end_datetime="end_datetime",
+    duration="duration"
 ):
     """
     Clip each stop to the daily work-hour window ``work_start_hour`` →
@@ -303,15 +298,25 @@ def workday_stops(
         Saturday or Sunday are dropped.
     start_datetime, end_datetime : str, optional
         Column names overriding the defaults.
-
+        
     Returns
     -------
     pandas.DataFrame
         Same schema as the input plus an updated integer-minute ``duration`` and
         only rows whose clipped duration is positive.
+
+    Notes
+    -----
+    * Night‑shift workplace detection (where *work_start_hour* ≥ *work_end_hour*)
+      is **not implemented** because it conflicts conceptually with the night‑
+      time logic used for home inference.  A dedicated routine should be
+      implemented for such cases.
     """
     if work_start_hour >= work_end_hour:
-        raise ValueError("work_start_hour must be < work_end_hour within the same day.")
+        raise ValueError(
+            "Night‑shift workplace detection is not implemented; "
+            "work_start_hour must be earlier than work_end_hour."
+        )
 
     df = stops_table.copy()
 
@@ -336,7 +341,7 @@ def workday_stops(
     df[start_datetime] = df[[start_datetime, "_work_start"]].max(axis=1)
     df[end_datetime] = df[[end_datetime, "_work_end"]].min(axis=1)
 
-    df["duration"] = (
+    df[duration] = (
         (df[end_datetime] - df[start_datetime]).dt.total_seconds() // 60
     ).astype(int)
 
@@ -344,12 +349,8 @@ def workday_stops(
     if not include_weekends:
         df = df[df[start_datetime].dt.dayofweek < 5]  # 0=Mon … 4=Fri
 
-    return df[df["duration"] > 0].drop(columns=["_work_start", "_work_end"])
+    return df[df[duration] > 0].drop(columns=["_work_start", "_work_end"])
 
-
-# ---------------------------------------------------------------------------
-# 2.  Aggregate daily work-presence statistics
-# ---------------------------------------------------------------------------
 def compute_candidate_workplaces(
     stops_table,
     work_start_hour=9,
@@ -359,18 +360,14 @@ def compute_candidate_workplaces(
     **kwargs,
 ):
     """
-    Build per-location daytime presence features for workplace inference.
+    Build per‑location daytime presence features for workplace inference.
 
-    The logic is identical to *compute_candidate_homes* but uses
-    :pyfunc:`workday_stops` to keep only weekday work-hour intervals.
+    Internally this calls :func:`workday_stops` to keep only weekday work‑hour
+    portions of the stops, then counts how many distinct workdays and ISO weeks
+    each user spent at each location.
 
-    Returns a table with the columns
-
-    * ``user_id``
-    * ``location_id``
-    * ``num_work_days``   – distinct workdays present at the location
-    * ``num_weeks``       – distinct ISO-weeks present
-    * ``total_duration``  – total minutes inside the work window
+    Returns a DataFrame with the columns
+    ``['user_id', 'location_id', 'num_work_days', 'num_weeks', 'total_duration']``.
     """
     stops = stops_table.copy()
 
@@ -394,7 +391,7 @@ def compute_candidate_workplaces(
         else:
             stops[end_t_key] = stops[traj_cols[t_key]] + stops[dur_col] * 60
 
-    # Daytime clipping
+    # Day‑time clipping
     stops_work = workday_stops(
         stops,
         work_start_hour=work_start_hour,
@@ -405,10 +402,11 @@ def compute_candidate_workplaces(
     )
 
     # Dates and ISO weeks
-    if use_datetime:
-        dt = stops_work[traj_cols[t_key]]
-    else:
-        dt = pd.to_datetime(stops_work[traj_cols[t_key]], unit="s", utc=True)
+    dt = (
+        stops_work[traj_cols[t_key]]
+        if use_datetime
+        else pd.to_datetime(stops_work[traj_cols[t_key]], unit="s", utc=True)
+    )
 
     stops_work["_date"] = dt.dt.date
     stops_work["_iso_week"] = dt.dt.isocalendar().week
@@ -424,10 +422,6 @@ def compute_candidate_workplaces(
 
     return out
 
-
-# ---------------------------------------------------------------------------
-# 3.  Select one workplace per user
-# ---------------------------------------------------------------------------
 def select_workplace(
     candidate_workplaces,
     stops_table,
@@ -437,13 +431,8 @@ def select_workplace(
     **kwargs,
 ):
     """
-    Choose the single most plausible workplace for each user.
-
-    Ranking is identical to *select_home*:
-
-    1. highest ``num_work_days``
-    2. highest ``total_duration``
-
+    Choose the single most plausible *workplace* for each user.
+    
     Parameters
     ----------
     candidate_workplaces : pandas.DataFrame
@@ -452,6 +441,19 @@ def select_workplace(
         Full stop table used only to derive the date of the last observation.
     min_days, min_weeks : int
         Presence thresholds.
+        
+    Returns
+    -------
+    pandas.DataFrame
+        Columns ``['user_id', 'location_id', 'work_date']`` with exactly one
+        row per user.  *work_date* equals the date (YYYY-MM-DD) of the most
+        recent stop in *stops_table*.    
+        
+    Notes
+    ----------
+    ``candidate_workplaces`` must contain
+    ``['user_id', 'location_id', 'num_work_days', 'num_weeks', 'total_duration']``
+    as produced by :func:`compute_candidate_workplaces`.
     """
     traj_cols = loader._parse_traj_cols(candidate_workplaces.columns, traj_cols, kwargs)
 
@@ -478,8 +480,8 @@ def select_workplace(
 
     best = (
         filtered.drop_duplicates(traj_cols["user_id"], keep="first")
-        .assign(workplace_date=last_date)
+        .assign(date_last_active=last_date)
         .reset_index(drop=True)
     )
 
-    return best[[traj_cols["user_id"], traj_cols["location_id"], "workplace_date"]]
+    return best[[traj_cols["user_id"], traj_cols["location_id"], "date_last_active"]]
