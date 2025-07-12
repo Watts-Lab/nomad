@@ -4,63 +4,192 @@ from functools import partial
 import nomad.stop_detection.utils as utils
 import nomad.stop_detection.grid_based as GRID_BASED 
 import nomad.io.base as loader
+from nomad.stop_detection.dbscan import _find_neighbors
+from nomad.filters import to_timestamp
+import nomad.stop_detection.hdbscan as HDBSCAN
+import nomad.stop_detection.lachesis as LACHESIS
+import nomad.stop_detection.dbscan as TADBSCAN
 
-def remove_overlaps(pred, time_thresh, dur_min, min_pts, method = 'polygon', traj_cols = None, **kwargs):
-        pred = pred.copy()
-        # load kwarg and traj_col args onto lean defaults
-        traj_cols = loader._parse_traj_cols(
-            pred.columns,
-            traj_cols,
-            kwargs,
-            defaults={'location_id':'location_id'},
-            warn=False) 
-    
-        summarize_stops_with_loc = partial(
-            utils.summarize_stop,
-            x=traj_cols['x'], # to do: what if it is lat, lon?
-            y=traj_cols['y'],
-            keep_col_names=False,
-            passthrough_cols = [traj_cols['location_id']])
-    
-        if  method == 'polygon':
-            if traj_cols['location_id'] not in pred.columns:
-                raise KeyError(
-                        f"Missing required `location_id` column for method `polygon`."
-                         " pass a column name for `location_id` in keyword arguments or traj_cols"
-                         " or use another method."
-                    )
-                
-            pred['temp_building_id'] = pred[traj_cols['location_id']].fillna("None-"+pred.cluster.astype(str))
-            traj_cols['location_id'] = 'temp_building_id'
+def remove_overlaps(pred, time_thresh=None, dur_min=None, min_pts=None, dist_thresh=None, method = 'polygon', traj_cols = None, **kwargs):
+    pred = pred.copy()
+    # load kwarg and traj_col args onto lean defaults
+    traj_cols = loader._parse_traj_cols(
+        pred.columns,
+        traj_cols,
+        kwargs,
+        defaults={'location_id':'location_id'},
+        warn=False) 
+
+    summarize_stops_with_loc = partial(
+        utils.summarize_stop,
+        x=traj_cols['x'], # to do: what if it is lat, lon?
+        y=traj_cols['y'],
+        keep_col_names=False,
+        passthrough_cols = [traj_cols['location_id']])
+
+    if  method == 'polygon':
+        if traj_cols['location_id'] not in pred.columns:
+            raise KeyError(
+                    f"Missing required `location_id` column for method `polygon`."
+                        " pass a column name for `location_id` in keyword arguments or traj_cols"
+                        " or use another method."
+                )
             
-            labels = GRID_BASED.grid_based_labels(
-                                    data=pred.loc[pred.cluster!=-1],
-                                    time_thresh=time_thresh,
-                                    dur_min=dur_min,
-                                    min_cluster_size=min_pts,
-                                    traj_cols=traj_cols)
-                    
-            pred.loc[pred.cluster!=-1, 'cluster'] = labels
-            pred = pred.drop('temp_building_id', axis=1)
-            # Consider returning just cluster labels, same as the input! 
-            stops = pred.loc[pred.cluster!=-1].groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
-    
-        elif method == 'cluster':
-            traj_cols['location_id'] = 'cluster'
-            labels = GRID_BASED.grid_based_labels(
-                                    data=pred.loc[pred.cluster!=-1],
-                                    time_thresh=time_thresh,
-                                    dur_min=dur_min,
-                                    min_cluster_size=min_pts,
-                                    traj_cols=traj_cols)
-            
-            pred.loc[pred.cluster!=-1, 'cluster'] = labels
-            stops = pred.groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
+        pred['temp_building_id'] = pred[traj_cols['location_id']].fillna("None-"+pred.cluster.astype(str))
+        traj_cols['location_id'] = 'temp_building_id'
         
-        elif method == 'recurse':
-            raise ValueError("Method `recurse` not implemented yet.")
+        labels = GRID_BASED.grid_based_labels(
+                                data=pred.loc[pred.cluster!=-1],
+                                time_thresh=time_thresh,
+                                dur_min=dur_min,
+                                min_cluster_size=min_pts,
+                                traj_cols=traj_cols)
+                
+        pred.loc[pred.cluster!=-1, 'cluster'] = labels
+        pred = pred.drop('temp_building_id', axis=1)
+        # Consider returning just cluster labels, same as the input! 
+        stops = pred.loc[pred.cluster!=-1].groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
+
+    elif method == 'cluster':
+        traj_cols['location_id'] = 'cluster'
+        labels = GRID_BASED.grid_based_labels(
+                                data=pred.loc[pred.cluster!=-1],
+                                time_thresh=time_thresh,
+                                dur_min=dur_min,
+                                min_cluster_size=min_pts,
+                                traj_cols=traj_cols)
+        
+        pred.loc[pred.cluster!=-1, 'cluster'] = labels
+        stops = pred.groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
     
-        return stops
+    elif method == 'recurse':
+        t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(pred.columns, traj_cols, kwargs)
+        times = pred[traj_cols[t_key]]
+        times = to_timestamp(times).values if use_datetime else times.values
+
+        data_temp = pred.copy()
+        data_temp.index = times
+        stops = pd.DataFrame({'cluster': -1, 'core': -1}, index=times)
+        _process_clusters(data_temp, time_thresh, dist_thresh, min_pts, stops, use_lon_lat, use_datetime, traj_cols, dur_min=dur_min)
+        stops.index = pred.index
+    
+    return stops
+
+def _process_clusters(data, time_thresh, dist_thresh, min_pts, output, use_lon_lat, use_datetime, traj_cols, 
+                     cluster_df=None, neighbor_dict=None, dur_min=5):
+    """
+    Recursively process spatiotemporal clusters from trajectory data to identify and refine valid clusters.
+    
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        Trajectory data containing spatial and temporal information.
+    time_thresh : int
+        Time threshold in minutes for identifying neighbors.
+    dist_thresh : float
+        Distance threshold for identifying neighbors.
+    min_pts : int
+        Minimum number of points required to form a dense region (core point).
+    output : pandas.DataFrame
+        Output DataFrame to store cluster and core labels for valid clusters.
+    use_lon_lat : bool
+        Whether to use longitude/latitude coordinates.
+    use_datetime : bool
+        Whether to cluster using time columns of type pandas.datetime64 if available.
+    traj_cols : dict
+        Dictionary mapping column names for trajectory attributes.
+    cluster_df : pandas.DataFrame, optional
+        DataFrame containing cluster and core labels from DBSCAN. If not provided,
+        it will be computed.
+    neighbor_dict : dict, optional
+        Precomputed dictionary of neighbors. If not provided, it will be computed.
+    dur_min : int, optional
+        Minimum duration (in minutes) required for a cluster to be considered valid (default is 4).
+    
+    Returns
+    -------
+    bool
+        True if at least one valid cluster is identified and processed, otherwise False.
+    """
+    if not neighbor_dict:
+        neighbor_dict = _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, traj_cols)
+    
+    if cluster_df is None:
+        cluster_df = TADBSCAN.dbscan(data, time_thresh, dist_thresh, min_pts, use_lon_lat, use_datetime, traj_cols, neighbor_dict=neighbor_dict)
+    
+    if len(cluster_df) < min_pts:
+        return False
+
+    cluster_df = cluster_df[cluster_df['cluster'] != -1]  # Remove noise pings
+
+    # All pings are in the same cluster
+    if len(cluster_df['cluster'].unique()) == 1:
+        # We rerun dbscan because possibly these points no longer hold their own
+        x = TADBSCAN.dbscan(data = data.loc[cluster_df.index], time_thresh = time_thresh, dist_thresh = dist_thresh,
+                   min_pts = min_pts, use_lon_lat = use_lon_lat, use_datetime = use_datetime, traj_cols = traj_cols, neighbor_dict = neighbor_dict)
+        
+        y = x.loc[x['cluster'] != -1]
+        z = x.loc[x['core'] != -1]
+
+        if len(y) > 0:
+            duration = int((y.index.max() - y.index.min()) // 60)
+
+            if duration > dur_min:
+                cid = max(output['cluster']) + 1 # Create new cluster id
+                output.loc[y.index, 'cluster'] = cid
+                output.loc[z.index, 'core'] = cid
+            
+            return True
+        elif len(y) == 0: # The points in df, despite originally being part of a cluster, no longer hold their own
+            return False
+
+    # There are no clusters
+    elif len(cluster_df['cluster'].unique()) == 0:
+        return False
+   
+    # There is more than one cluster
+    elif len(cluster_df['cluster'].unique()) > 1:
+        i, j = _extract_middle(cluster_df)  # Indices of the "middle" of the cluster
+        
+        # Recursively processes clusters
+        if _process_clusters(data, time_thresh, dist_thresh, min_pts, output, use_lon_lat, use_datetime, traj_cols, cluster_df = cluster_df[i:j], dur_min=dur_min):  # Valid cluster in the middle
+            _process_clusters(data, time_thresh, dist_thresh, min_pts, output,
+                             use_lon_lat, use_datetime, traj_cols, cluster_df = cluster_df[:i], dur_min=dur_min)  # Process the initial stub
+            _process_clusters(data, time_thresh, dist_thresh, min_pts, output,
+                             use_lon_lat, use_datetime, traj_cols, cluster_df = cluster_df[j:], dur_min=dur_min)  # Process the "tail"
+            return True
+        else:  # No valid cluster in the middle
+            return _process_clusters(data, time_thresh, dist_thresh, min_pts, output, use_lon_lat, use_datetime, traj_cols, pd.concat([cluster_df[:i], cluster_df[j:]]), dur_min=dur_min)
+
+def _extract_middle(data):
+    """
+    Extract the middle segment of a cluster within the provided data.
+    
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        Data containing a 'cluster' column.
+    
+    Returns
+    -------
+    tuple (i, j)
+        Indices marking the start (`i`) and end (`j`) of the middle segment
+        of the cluster. If the cluster does not reappear, returns indices marking
+        the tail of the data.
+    """
+    current = data.iloc[0]['cluster']
+    x = (data.cluster != current).values
+    if len(np.where(x)[0]) == 0:  # There is no inbetween
+        return (len(data), len(data))
+    else:
+        i = np.where(x)[0][
+            0]  # First index where the cluster is not the value of the first entry's cluster
+    if len(np.where(~x[i:])[
+               0]) == 0:  # There is no current again (i.e., the first cluster does not reappear, so the middle is actually the tail)
+        return (i, len(data))
+    else:  # Current reappears
+        j = i + np.where(~x[i:])[0][0]
+    return (i, j)
 
 def invalid_stops(stop_data, traj_cols=None, print_stops=False, **kwargs):
     """
