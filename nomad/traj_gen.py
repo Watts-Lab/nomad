@@ -169,7 +169,7 @@ def sample_hier_nhpp(traj,
     alpha = ha / (ha - x_m)
     n = len(sampled_traj)
     ha_realized = (rng.pareto(alpha, size=n) + 1) * x_m
-    np.minimum(ha_realized, 20, out=ha_realized) # no unrealistic ha (in blocks)
+    ha_realized = np.minimum(ha_realized, 20, out=ha_realized) # no unrealistic ha (in blocks)
     sampled_traj['ha'] = ha_realized    
     sigma = ha_realized / 1.515
     # spatial noise

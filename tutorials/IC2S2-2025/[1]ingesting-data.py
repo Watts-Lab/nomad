@@ -77,7 +77,7 @@ from shapely import Polygon
 def h3_cell_to_polygon(cell):
     coords = h3.cell_to_boundary(cell)
     lat, lon = zip(*coords)
-    return Polygon(zip(lon, lat))    
+    return Polygon(zip(lon, lat))
 
 # Cell for each row
 def row_to_h3_cell(row, res):
