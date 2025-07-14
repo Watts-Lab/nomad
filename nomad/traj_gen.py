@@ -194,59 +194,6 @@ def sample_hier_nhpp(traj,
     return sampled_traj
 
 
-def plot_sparse_clusters(
-    sparse_traj,
-    labels,
-    ax,
-    full_traj=None,
-    buffer=None,
-    cmap=cm.tab20c
-):
-    """
-    Plots trajectory with clusters.
-    
-    Parameters
-    ----------
-    sparse_traj : pd.DataFrame
-        Sparse trajectory DataFrame with columns 'x', 'y'.
-    labels : np.ndarray
-        Cluster labels for the sparse trajectory. Output of clustering algorithm, e.g., DBSCAN.
-    ax : matplotlib.axes.Axes
-        Matplotlib axes to plot on.
-    full_traj : pd.DataFrame, optional
-        Full trajectory DataFrame with columns 'x', 'y'.
-    buffer : float, optional
-        Padding for the plot bounding box.
-        # 0-1 = pad bbox by (1+buffer); None = no limits
-    cmap : matplotlib.colors.Colormap, optional
-        Colormap for the clusters.
-
-    Returns
-    -------
-    ax : matplotlib.axes.Axes
-        Matplotlib axes with the plotted clusters.
-    """
-    n_clusters = int(labels[labels >= 0].max() + 1) if (labels >= 0).any() else 0
-    for cid in range(n_clusters):
-        m = labels == cid
-        ax.scatter(sparse_traj.x[m], sparse_traj.y[m],
-                   s=80, color=cmap(cid / (n_clusters + 1)),
-                   zorder=2)
-    ax.scatter(sparse_traj.x, sparse_traj.y, s=6, color='black', zorder=2)
-    if full_traj is not None:
-        ax.plot(full_traj.x, full_traj.y, lw=1.2, color='blue', alpha=0.2, zorder=1)
-        if buffer is not None:
-            x0, x1 = full_traj.x.min(), full_traj.x.max()
-            y0, y1 = full_traj.y.min(), full_traj.y.max()
-            pad_x = (x1 - x0) * buffer / 2
-            pad_y = (y1 - y0) * buffer / 2
-            ax.set_xlim(x0 - pad_x, x1 + pad_x)
-            ax.set_ylim(y0 - pad_y, y1 + pad_y)
-    ax.set_xticks([]); ax.set_yticks([])
-    ax.set_aspect('equal', adjustable='box')
-    plt.tight_layout()
-    return ax
-
 # =============================================================================
 # AGENT CLASS
 # =============================================================================
@@ -610,9 +557,9 @@ class Agent:
             visit_freqs.loc[visit_freqs.type == 'park', 'freq'] = 5
 
             initial_locs = []
-            initial_locs += list(rng.choice(visit_freqs.loc[visit_freqs.type == 'retail'].index, size=npr.poisson(4)))
-            initial_locs += list(rng.choice(visit_freqs.loc[visit_freqs.type == 'work'].index, size=npr.poisson(2)))
-            initial_locs += list(rng.choice(visit_freqs.loc[visit_freqs.type == 'home'].index, size=npr.poisson(2)))
+            initial_locs += list(rng.choice(visit_freqs.loc[visit_freqs.type == 'retail'].index, size=rng.poisson(4)))
+            initial_locs += list(rng.choice(visit_freqs.loc[visit_freqs.type == 'work'].index, size=rng.poisson(2)))
+            initial_locs += list(rng.choice(visit_freqs.loc[visit_freqs.type == 'home'].index, size=rng.poisson(2)))
             visit_freqs.loc[initial_locs, 'freq'] += 2
 
         if self.destination_diary.empty:
@@ -637,11 +584,11 @@ class Agent:
             p_exp = rho*(S**(-gamma))
 
             # Stay
-            if (curr_type in allowed) & (npr.uniform() < stay_probs[curr_type]):
+            if (curr_type in allowed) & (rng.uniform() < stay_probs[curr_type]):
                 pass
 
             # Exploration
-            elif npr.uniform() < p_exp:
+            elif rng.uniform() < p_exp:
                 visit_freqs['p'] = self.city.gravity.xs(
                     self.city.buildings[curr].door, level=0).join(id2door, how='right').set_index('id')
                 y = visit_freqs.loc[(visit_freqs['type'].isin(allowed)) & (visit_freqs.freq == 0)]
@@ -746,7 +693,7 @@ class Agent:
             else:
                 loc_centroid = self.city.buildings[self.home].geometry.centroid
                 x_coord, y_coord = loc_centroid.x, loc_centroid.y
-                
+
             if _datetime_or_ts_col(kwargs.keys(), verbose) == "datetime":
                 datetime = kwargs['datetime']
                 if not isinstance(datetime, pd.Timestamp):
@@ -765,7 +712,7 @@ class Agent:
             else:
                 datetime = pd.to_datetime('2025-01-01 00:00Z')
                 unix_timestamp = int(datetime.timestamp())
-                
+
             self.last_ping = pd.Series({
                 'x': x_coord,
                 'y': y_coord,
@@ -773,7 +720,7 @@ class Agent:
                 'timestamp': unix_timestamp,
                 'identifier': self.identifier
                 })
-        
+
         else:
             if ('x' in kwargs)or('y' in kwargs)or('datetime'in kwargs)or('timestamp' in kwargs):
                 raise ValueError(
