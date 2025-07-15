@@ -3,6 +3,7 @@ import numpy as np
 from collections import defaultdict
 import pdb
 import warnings
+import geopandas as gpd
 import nomad.io.base as loader
 import nomad.constants as constants
 from nomad.stop_detection import utils
@@ -177,7 +178,7 @@ def ta_dbscan(
             raise ValueError("Multi-user data? Use ta_dbscan_per_user instead.")
         passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
 
-    labels = _temporal_dbscan_labels(
+    labels = ta_dbscan_labels(
         data=data,
         dist_thresh=dist_thresh,
         min_pts=min_pts,
