@@ -10,7 +10,15 @@ import nomad.stop_detection.hdbscan as HDBSCAN
 import nomad.stop_detection.lachesis as LACHESIS
 import nomad.stop_detection.dbscan as TADBSCAN
 
-def remove_overlaps(pred, time_thresh=None, dur_min=None, min_pts=None, dist_thresh=None, method = 'polygon', traj_cols = None, **kwargs):
+def remove_overlaps(pred=None,
+                    data=None,
+                    time_thresh=None,
+                    dur_min=None,
+                    min_pts=None,
+                    dist_thresh=None,
+                    method = 'polygon',
+                    traj_cols = None,
+                    **kwargs):
     pred = pred.copy()
     # load kwarg and traj_col args onto lean defaults
     traj_cols = loader._parse_traj_cols(
@@ -28,6 +36,8 @@ def remove_overlaps(pred, time_thresh=None, dur_min=None, min_pts=None, dist_thr
         passthrough_cols = [traj_cols['location_id']])
 
     if  method == 'polygon':
+        if pred is None:
+            raise ValueError("`pred` must be provided for method='polygon'")
         if traj_cols['location_id'] not in pred.columns:
             raise KeyError(
                     f"Missing required `location_id` column for method `polygon`."
@@ -63,20 +73,34 @@ def remove_overlaps(pred, time_thresh=None, dur_min=None, min_pts=None, dist_thr
         stops = pred.groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
     
     elif method == 'recurse':
-        t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(pred.columns, traj_cols, kwargs)
-        times = pred[traj_cols[t_key]]
+        if data is None:
+            raise ValueError("`data` must be provided for method='dbscan'")
+
+        t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)
+        times = data[traj_cols[t_key]]
         times = to_timestamp(times).values if use_datetime else times.values
 
-        data_temp = pred.copy()
+        data_temp = data.copy()
         data_temp.index = times
-        stops = pd.DataFrame({'cluster': -1, 'core': -1}, index=times)
-        _process_clusters(data_temp, time_thresh, dist_thresh, min_pts, stops, use_lon_lat, use_datetime, traj_cols, dur_min=dur_min)
-        stops.index = pred.index
-    
+        output = pd.Series(-1, index=times, name='cluster')
+        _process_clusters(data_temp, time_thresh, dist_thresh, min_pts, output, use_lon_lat, use_datetime, traj_cols, dur_min=dur_min)
+        output.index = data.index
+        stops = data.copy()
+        stops['cluster'] = output
+        stops = pred.loc[pred.cluster!=-1].groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
     return stops
 
-def _process_clusters(data, time_thresh, dist_thresh, min_pts, output, use_lon_lat, use_datetime, traj_cols, 
-                     cluster_df=None, neighbor_dict=None, dur_min=5):
+def _process_clusters(data,
+                      time_thresh,
+                      dist_thresh,
+                      min_pts,
+                      output,
+                      use_lon_lat,
+                      use_datetime,
+                      traj_cols,
+                      cluster_df=None,
+                      neighbor_dict=None,
+                      dur_min=5):
     """
     Recursively process spatiotemporal clusters from trajectory data to identify and refine valid clusters.
     
@@ -90,8 +114,8 @@ def _process_clusters(data, time_thresh, dist_thresh, min_pts, output, use_lon_l
         Distance threshold for identifying neighbors.
     min_pts : int
         Minimum number of points required to form a dense region (core point).
-    output : pandas.DataFrame
-        Output DataFrame to store cluster and core labels for valid clusters.
+    output : pandas.Series
+        Output Series to store cluster labels for valid clusters.
     use_lon_lat : bool
         Whether to use longitude/latitude coordinates.
     use_datetime : bool
@@ -99,7 +123,7 @@ def _process_clusters(data, time_thresh, dist_thresh, min_pts, output, use_lon_l
     traj_cols : dict
         Dictionary mapping column names for trajectory attributes.
     cluster_df : pandas.DataFrame, optional
-        DataFrame containing cluster and core labels from DBSCAN. If not provided,
+        DataFrame containing cluster labels from DBSCAN. If not provided,
         it will be computed.
     neighbor_dict : dict, optional
         Precomputed dictionary of neighbors. If not provided, it will be computed.
@@ -135,9 +159,8 @@ def _process_clusters(data, time_thresh, dist_thresh, min_pts, output, use_lon_l
             duration = int((y.index.max() - y.index.min()) // 60)
 
             if duration > dur_min:
-                cid = max(output['cluster']) + 1 # Create new cluster id
-                output.loc[y.index, 'cluster'] = cid
-                output.loc[z.index, 'core'] = cid
+                cid = output.max() + 1  # max cluster ID + 1
+                output.loc[y.index] = cid
             
             return True
         elif len(y) == 0: # The points in df, despite originally being part of a cluster, no longer hold their own
