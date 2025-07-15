@@ -115,7 +115,7 @@ ax3.set_title('max temporal gap per user')
 plt.show()
 
 # %% [markdown]
-# ## Data ingestion with `nomad` — a reusable pipeline
+# ## Data ingestion with `nomad` — default type casting and a reusable pipeline
 #
 # Here, we explore which advantages (if any) we can get from using `nomad` for the same preliminary analysis. In the case of reading a single csv file, the reader function `nomad.io.base.from_file` is basically a `pandas` wrapper, except that it facilitates the parsing of spatiotemporal columns which are known to follow specific formatting, for instance:
 #
@@ -139,7 +139,7 @@ DEFAULT_SCHEMA
 #
 # Let's replicate the previous analysis starting with `nomad`'s file reader on the partitioned dataset.
 
-# %%
+# %% jupyter={"source_hidden": true}
 # For the single csv dataset
 traj_cols = {"user_id": "identifier",
              "timestamp": "unix_timestamp",
@@ -176,7 +176,7 @@ print(df.dtypes)
 user = df[traj_cols['user_id']].iloc[0]
 user_df = df.loc[(df[traj_cols['user_id']] == user) & (df[traj_cols['date']] == '2024-01-04')]
 
-# Pings per cell geodataframe
+# Pings per cell geodataframe # TO DO: filters.to_h3
 df["cell"] = df.apply(
     lambda r: h3.latlng_to_cell(lat=r[traj_cols["latitude"]], lng=r[traj_cols["longitude"]], res=12),
     axis=1)
@@ -232,9 +232,10 @@ sample_df = loader.sample_from_file(file_path, users=users, format=fmt, frac_rec
 ## optionally try uncommenting this line
 # sample_df = loader.sample_from_file(file_path, users=users, format=fmt, frac_records=0.30, frac_users=0.12, seed=314)
 
-# persist
-loader.to_file(sample_df, "/tmp/nomad_sample", format=fmt, partition_by=["date"], existing_data_behavior='overwrite_or_ignore')
-round_trip = loader.from_file("/tmp/nomad_sample", format=fmt)
+# persist to parquet
+
+loader.to_file(sample_df, "/tmp/nomad_sample2/", format=fmt, partition_by=["date"], existing_data_behavior='overwrite_or_ignore')
+round_trip = loader.from_file("/tmp/nomad_sample2/", format=fmt)
 
 # %%
 print("- Value counts for sample of data:\n")
