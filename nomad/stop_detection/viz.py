@@ -123,10 +123,9 @@ def plot_stops(stops, ax, cmap='Reds', traj_cols=None, crs=None, stagger=True, *
     # 3) fallback scatter
     if coord_x and coord_y:
         ax.scatter(
-            stops[traj_cols[coord_x]],
-            stops[traj_cols[coord_y]],
-            c=colors, s=60,
-            edgecolor='k', linewidth=0.5, alpha=0.75
+            stops[c1],
+            stops[c2],
+            s=60, c=colors, alpha=0.75, edgecolor='k', linewidth=0.5
         )
 
 def plot_time_barcode(ts_series, ax, current_idx=None, set_xlim=True):
@@ -150,7 +149,7 @@ def plot_time_barcode(ts_series, ax, current_idx=None, set_xlim=True):
     ax.xaxis.set_major_formatter(formatter)
     ax.tick_params(axis='x', labelsize=10)
 
-def plot_stops_barcode(stops, ax, cmap='Reds', set_xlim=True, traj_cols=None, **kwargs):
+def plot_stops_barcode(stops, ax, cmap='Reds', stop_color=None, set_xlim=True, traj_cols=None, **kwargs):
     """
     Plot colored stop intervals as bars on ax using temporal columns and colors by cluster with cmap.
     If set_xlim is True, auto-sets x-axis to padded range.
@@ -172,7 +171,13 @@ def plot_stops_barcode(stops, ax, cmap='Reds', set_xlim=True, traj_cols=None, **
         
     clusters = np.arange(len(stops)) if 'cluster' not in stops else stops['cluster']
     n = len(stops)
-    colors = [plt.get_cmap(cmap)((c+1)/(n+1)) for c in clusters]
+    if stop_color:
+        colors = [stop_color for c in clusters]
+    elif cmap:
+        colors = [plt.get_cmap(cmap)((c+1)/(n+1)) for c in clusters]
+    else:
+        raise ValueError("Specify either a color map (cmap) or a solid color (stop_color).")
+        
     for s, e, color in zip(start, end, colors):
         ax.fill_betweenx([0, 1], s, e, color=color, alpha=0.75)
     if set_xlim:
