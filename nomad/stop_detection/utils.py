@@ -263,7 +263,9 @@ def summarize_stop(
     )
 
     # 2) parse full mapping
-    traj_cols = loader._parse_traj_cols(grouped_data.columns, traj_cols, kwargs)
+    traj_cols = loader._parse_traj_cols(grouped_data.columns, traj_cols, kwargs, warn=False)
+    if traj_cols['user_id'] in grouped_data:
+        passthrough_cols += [traj_cols['user_id']]
 
     # 3) decide output column names
     start_key = 'start_datetime' if use_datetime else 'start_timestamp'
@@ -288,7 +290,7 @@ def summarize_stop(
         traj_cols[coord_x]:     medoid[0],
         traj_cols[coord_y]:     medoid[1],
         traj_cols[start_key]:   start_ts,
-        'duration':        (end_ts - start_ts).total_seconds()//60 if use_datetime else (end_ts - start_ts)//60
+        'duration': (end_ts - start_ts).total_seconds()//60 if use_datetime else (end_ts - start_ts)//60
     }
 
     # 5) complete stats
@@ -308,7 +310,7 @@ def summarize_stop(
         if c in grouped_data.columns:
             out[c] = grouped_data[c].iloc[0]
 
-    return pd.Series(out, dtype='object')
+    return pd.Series(out)
 
 def summarize_stop_grid(
     grouped_data,
@@ -383,11 +385,7 @@ def summarize_stop_grid(
             int(diffs.max()//60) if len(diffs) else 0
         )
         out['max_gap']    = max_gap
-        out['duration'] = (
-            (end_ts - start_ts).total_seconds()//60
-            if use_datetime else
-            (end_ts - start_ts)//60
-        )
+        out['duration'] = (end_ts - start_ts).total_seconds()//60 if use_datetime else (end_ts - start_ts)//60
 
 
     # 5) always pass through location_id & geometry & any others
@@ -401,7 +399,7 @@ def summarize_stop_grid(
         if c in grouped_data.columns:
             out[c] = grouped_data[c].iloc[0]
 
-    return pd.Series(out, dtype='object')
+    return pd.Series(out)
 
 def pad_short_stops(stop_data, pad=5, dur_min=None, traj_cols = None, **kwargs):
     """

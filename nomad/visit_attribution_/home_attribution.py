@@ -3,7 +3,6 @@ import nomad.io.base as loader
 from nomad.stop_detection.utils import _fallback_time_cols
 from datetime import datetime, time, timedelta
 
-
 def nocturnal_stops(
     stops_table,
     dusk_hour=19,
@@ -68,7 +67,13 @@ def compute_candidate_homes(
     loader._has_time_cols(stops.columns, traj_cols)
 
     t_key, use_datetime = _fallback_time_cols(stops.columns, traj_cols, kwargs)
-    end_t_key = "end_datetime" if use_datetime else "end_timestamp"
+    if not use_datetime:
+        raise ValueError(
+            "zoned datetime column is required for home detection, "
+            "pass a datetime-like column in traj_cols or as a keyword argument"
+            )
+    
+    end_t_key = "end_datetime"
 
     # Ensure we can compute an end time
     end_col_present = loader._has_end_cols(stops.columns, traj_cols)
@@ -78,11 +83,8 @@ def compute_candidate_homes(
 
     if not end_col_present:
         dur_col = traj_cols["duration"]
-        if use_datetime:
-            stops[end_t_key] = stops[traj_cols[t_key]] + pd.to_timedelta(stops[dur_col], unit="m")
-        else:
-            stops[end_t_key] = stops[traj_cols[t_key]] + stops[dur_col] * 60
-
+        stops[end_t_key] = stops[traj_cols[t_key]] + pd.to_timedelta(stops[dur_col], unit="m")
+        
     # Nocturnal clipping
     stops_night = nocturnal_stops(
         stops,
@@ -93,10 +95,8 @@ def compute_candidate_homes(
     )
 
     # Dates and ISO weeks (convert timestamps if needed)
-    if use_datetime:
-        dt = stops_night[traj_cols[t_key]]
-    else:
-        dt = pd.to_datetime(stops_night[traj_cols[t_key]], unit="s", utc=True)
+    dt = stops_night[traj_cols[t_key]]
+
 
     stops_night["_date"] = dt.dt.date
     stops_night["_iso_week"] = dt.dt.isocalendar().week
@@ -116,9 +116,10 @@ def compute_candidate_homes(
 
 def select_home(
     candidate_homes,
-    stops_table,
     min_days,
     min_weeks,
+    last_date=None,
+    stops_table=None,
     traj_cols=None,
     **kwargs,
 ):
@@ -127,13 +128,20 @@ def select_home(
     traj_cols = loader._parse_traj_cols(candidate_homes.columns, traj_cols, kwargs)
 
     # Last observation date
-    t_key, use_datetime = _fallback_time_cols(stops_table.columns, traj_cols, kwargs)
-    dt_series = (
-        stops_table[traj_cols[t_key]]
-        if use_datetime
-        else pd.to_datetime(stops_table[traj_cols[t_key]], unit="s", utc=True)
-    )
-    last_date = dt_series.dt.date.max()
+    if not last_date and stops_table:
+        t_key, use_datetime = _fallback_time_cols(stops_table.columns, traj_cols, kwargs)
+        dt_series = (
+            stops_table[traj_cols[t_key]]
+            if use_datetime
+            else pd.to_datetime(stops_table[traj_cols[t_key]], unit="s", utc=True)
+        )
+        last_date = dt_series.dt.date.max()
+    elif last_date:
+        pass
+    else:
+        raise ValueError(
+            "One of last_date or stops_table must be passed."
+            )
 
     # Filter and rank
     filtered = (

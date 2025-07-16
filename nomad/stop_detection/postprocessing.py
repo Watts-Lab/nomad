@@ -10,33 +10,27 @@ import nomad.stop_detection.hdbscan as HDBSCAN
 import nomad.stop_detection.lachesis as LACHESIS
 import nomad.stop_detection.dbscan as TADBSCAN
 
-def remove_overlaps(pred, time_thresh=None, dur_min=None, min_pts=None, dist_thresh=None, method = 'polygon', traj_cols = None, **kwargs):
-    pred = pred.copy()
-    # load kwarg and traj_col args onto lean defaults
-    traj_cols = loader._parse_traj_cols(
-        pred.columns,
-        traj_cols,
-        kwargs,
-        defaults={'location_id':'location_id'},
-        warn=False) 
+def remove_overlaps(data, time_thresh, dur_min=5, min_pts=2, dist_thresh=None, method = 'polygon', traj_cols = None, **kwargs):
+    pred = data.copy()
 
-    summarize_stops_with_loc = partial(
-        utils.summarize_stop,
-        x=traj_cols['x'], # to do: what if it is lat, lon?
-        y=traj_cols['y'],
-        keep_col_names=False,
-        passthrough_cols = [traj_cols['location_id']])
+    # load kwarg and traj_col args onto lean defaults
+    traj_cols_temp = loader._parse_traj_cols(pred.columns, traj_cols, kwargs, defaults={'location_id':'location_id', 'cluster':'cluster'}, warn=False) 
 
     if  method == 'polygon':
-        if traj_cols['location_id'] not in pred.columns:
+        if traj_cols_temp['location_id'] not in pred.columns:
             raise KeyError(
                     f"Missing required `location_id` column for method `polygon`."
                         " pass a column name for `location_id` in keyword arguments or traj_cols"
                         " or use another method."
                 )
             
-        pred['temp_building_id'] = pred[traj_cols['location_id']].fillna("None-"+pred.cluster.astype(str))
-        traj_cols['location_id'] = 'temp_building_id'
+        pred['temp_building_id'] = pred[traj_cols_temp['location_id']].fillna("None-"+pred.cluster.astype(str))
+
+        if traj_cols:
+            traj_cols = dict(traj_cols)
+            traj_cols['location_id'] = 'temp_building_id'
+        else:
+            traj_cols = {'location_id':'temp_building_id'}
         
         labels = GRID_BASED.grid_based_labels(
                                 data=pred.loc[pred.cluster!=-1],
@@ -47,11 +41,32 @@ def remove_overlaps(pred, time_thresh=None, dur_min=None, min_pts=None, dist_thr
                 
         pred.loc[pred.cluster!=-1, 'cluster'] = labels
         pred = pred.drop('temp_building_id', axis=1)
-        # Consider returning just cluster labels, same as the input! 
+        # Consider returning just cluster labels, same as the input!
+
+        traj_cols['location_id'] = traj_cols_temp['location_id']
+        summarize_stops_with_loc = partial(
+            utils.summarize_stop,
+            x=traj_cols['x'], # to do: what if it is lat, lon?
+            y=traj_cols['y'],
+            keep_col_names=False,
+            passthrough_cols = [traj_cols['location_id']])
+
         stops = pred.loc[pred.cluster!=-1].groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
 
     elif method == 'cluster':
-        traj_cols['location_id'] = 'cluster'
+        if traj_cols_temp['cluster'] not in pred.columns:
+            raise KeyError(
+                    f"Missing required `cluster` column for method `cluster`."
+                        " pass a column name for `cluster` in keyword arguments or traj_cols"
+                        " or use another method."
+                )
+            
+        if traj_cols:
+            traj_cols = dict(traj_cols)
+            traj_cols['location_id'] = traj_cols_temp['cluster']
+        else:
+            traj_cols = {'location_id':'cluster'}
+
         labels = GRID_BASED.grid_based_labels(
                                 data=pred.loc[pred.cluster!=-1],
                                 time_thresh=time_thresh,
@@ -60,7 +75,15 @@ def remove_overlaps(pred, time_thresh=None, dur_min=None, min_pts=None, dist_thr
                                 traj_cols=traj_cols)
         
         pred.loc[pred.cluster!=-1, 'cluster'] = labels
-        stops = pred.groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
+
+        summarize_stops_with_loc = partial(
+            utils.summarize_stop,
+            keep_col_names=True,
+            complete_output=True,
+            traj_cols=traj_cols,
+            passthrough_cols = [traj_cols['location_id']])
+
+        stops = pred.loc[pred.cluster!=-1].groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
     
     elif method == 'recurse':
         t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(pred.columns, traj_cols, kwargs)

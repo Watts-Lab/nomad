@@ -10,6 +10,7 @@ import warnings
 
 import nomad.io.base as loader
 from nomad.constants import DEFAULT_SCHEMA, SEC_PER_UNIT
+import pdb
 
 def _timestamp_handling(
     ts,
@@ -258,6 +259,7 @@ def to_projection(
     To assign directly, use np.column_stack. For example
     df[['lon','lat']] = np.column_stack(to_projection(...))
     """
+
     coord_key1, coord_key2, use_lon_lat = loader._fallback_spatial_cols(data.columns, traj_cols, kwargs)
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
 

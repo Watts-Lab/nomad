@@ -621,7 +621,7 @@ def _build_hdbscan_graphs(coords, ts_idx, neighbors, core_dist, use_lon_lat):
     )
     return edges_sorted_df, d_graph
 
-def hdbscan_labels(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min=5, traj_cols=None, **kwargs):
+def st_hdbscan_labels(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min=5, traj_cols=None, **kwargs):
     """
     Compute HDBSCAN cluster labels for trajectory data, with core/border assignment.
 
@@ -655,7 +655,7 @@ def hdbscan_labels(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     
     if traj_cols['user_id'] in data.columns:
-        uid_col = data[traj_cols_temp['user_id']]
+        uid_col = data[traj_cols['user_id']]
         arr = uid_col.values
         first = arr[0]
         if any(x != first for x in arr[1:]):
@@ -777,7 +777,7 @@ def st_hdbscan(
         Stop table
     """
     traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
-    if 'user_id' in traj_cols_temp and traj_cols_temp['user_id'] in data.columns:
+    if traj_cols_temp['user_id'] in data.columns:
         uid_col = data[traj_cols_temp['user_id']]
         arr = uid_col.values
         first = arr[0]
@@ -787,7 +787,7 @@ def st_hdbscan(
     else:
         uid_col = None
         
-    labels_hdbscan = hdbscan_labels(
+    labels_hdbscan = st_hdbscan_labels(
         data=data,
         time_thresh=time_thresh,
         min_pts=min_pts,
