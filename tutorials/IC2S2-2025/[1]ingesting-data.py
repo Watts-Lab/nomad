@@ -13,6 +13,9 @@
 #     name: daphme
 # ---
 
+# %%
+# !pip install git+https://github.com/Watts-Lab/nomad.git@IC2S2-tutorial
+
 # %% [markdown]
 # # **Tutorial 1: Loading and Sampling Trajectory Data**
 #
