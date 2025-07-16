@@ -230,7 +230,7 @@ users = loader.sample_users(file_path, format=fmt, size=12, seed=314) # change i
 sample_df = loader.sample_from_file(file_path, users=users, format=fmt, frac_records=0.30, seed=314)
 
 ## optionally try uncommenting this line
-# sample_df = loader.sample_from_file(file_path, users=users, format=fmt, frac_records=0.30, frac_users=0.12, seed=314)
+# sample_df = loader.sample_from_file(file_path, frac_users=0.2, format=fmt, frac_records=0.30, frac_users=0.12, seed=314)
 
 # persist to parquet
 
