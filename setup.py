@@ -26,7 +26,6 @@ setup(
         'scipy',
         'pyarrow',
         's3fs',
-        'sedona',
         'h3',
         'pydeck'
     ],
