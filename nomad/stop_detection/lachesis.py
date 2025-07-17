@@ -156,7 +156,6 @@ def lachesis(traj, dur_min, dt_max, delta_roam, traj_cols=None, complete_output=
                 j_final = j - 1
                 break
             d_start = d_update
-            print(d_start)
         else:
             j_final = n - 1
 

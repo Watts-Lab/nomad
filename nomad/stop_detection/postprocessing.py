@@ -5,62 +5,65 @@ import nomad.stop_detection.utils as utils
 import nomad.stop_detection.grid_based as GRID_BASED 
 import nomad.io.base as loader
 
+
 def remove_overlaps(pred, time_thresh, dur_min, min_pts, method = 'polygon', traj_cols = None, **kwargs):
-        pred = pred.copy()
-        # load kwarg and traj_col args onto lean defaults
-        traj_cols = loader._parse_traj_cols(
-            pred.columns,
-            traj_cols,
-            kwargs,
-            defaults={'location_id':'location_id'},
-            warn=False) 
-    
-        summarize_stops_with_loc = partial(
-            utils.summarize_stop,
-            x=traj_cols['x'], # to do: what if it is lat, lon?
-            y=traj_cols['y'],
-            keep_col_names=False,
-            passthrough_cols = [traj_cols['location_id']])
-    
-        if  method == 'polygon':
-            if traj_cols['location_id'] not in pred.columns:
-                raise KeyError(
-                        f"Missing required `location_id` column for method `polygon`."
-                         " pass a column name for `location_id` in keyword arguments or traj_cols"
-                         " or use another method."
-                    )
-                
-            pred['temp_building_id'] = pred[traj_cols['location_id']].fillna("None-"+pred.cluster.astype(str))
-            traj_cols['location_id'] = 'temp_building_id'
-            
-            labels = GRID_BASED.grid_based_labels(
-                                    data=pred.loc[pred.cluster!=-1],
-                                    time_thresh=time_thresh,
-                                    dur_min=dur_min,
-                                    min_cluster_size=min_pts,
-                                    traj_cols=traj_cols)
-                    
-            pred.loc[pred.cluster!=-1, 'cluster'] = labels
-            pred = pred.drop('temp_building_id', axis=1)
-            # Consider returning just cluster labels, same as the input! 
-            stops = pred.loc[pred.cluster!=-1].groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
-    
-        elif method == 'cluster':
-            traj_cols['location_id'] = 'cluster'
-            labels = GRID_BASED.grid_based_labels(
-                                    data=pred.loc[pred.cluster!=-1],
-                                    time_thresh=time_thresh,
-                                    dur_min=dur_min,
-                                    min_cluster_size=min_pts,
-                                    traj_cols=traj_cols)
-            
-            pred.loc[pred.cluster!=-1, 'cluster'] = labels
-            stops = pred.groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
-        
-        elif method == 'recurse':
-            raise ValueError("Method `recurse` not implemented yet.")
-    
-        return stops
+    pred = pred.copy()
+    # load kwarg and traj_col args onto lean defaults
+    traj_cols = loader._parse_traj_cols(
+        pred.columns,
+        traj_cols,
+        kwargs,
+        defaults={'location_id': 'location_id'},
+        warn=False)
+
+    summarize_stops_with_loc = partial(
+        utils.summarize_stop,
+        x=traj_cols['x'], # to do: what if it is lat, lon?
+        y=traj_cols['y'],
+        keep_col_names=False,
+        passthrough_cols = [traj_cols['location_id']])
+
+    if method == 'polygon':
+        if traj_cols['location_id'] not in pred.columns:
+            raise KeyError(
+                    f"Missing required `location_id` column for method `polygon`."
+                     " pass a column name for `location_id` in keyword arguments or traj_cols"
+                     " or use another method."
+                )
+
+        pred['temp_building_id'] = pred[traj_cols['location_id']].fillna("None-"+pred.cluster.astype(str))
+        traj_cols['location_id'] = 'temp_building_id'
+
+        labels = GRID_BASED.grid_based_labels(
+                                data=pred.loc[pred.cluster!=-1],
+                                time_thresh=time_thresh,
+                                dur_min=dur_min,
+                                min_cluster_size=min_pts,
+                                traj_cols=traj_cols)
+
+        pred.loc[pred.cluster!=-1, 'cluster'] = labels
+        pred = pred.drop('temp_building_id', axis=1)
+        # Consider returning just cluster labels, same as the input! 
+        stops = pred.loc[pred.cluster!=-1].groupby(
+            'cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
+
+    elif method == 'cluster':
+        traj_cols['location_id'] = 'cluster'
+        labels = GRID_BASED.grid_based_labels(
+                                data=pred.loc[pred.cluster!=-1],
+                                time_thresh=time_thresh,
+                                dur_min=dur_min,
+                                min_cluster_size=min_pts,
+                                traj_cols=traj_cols)
+
+        pred.loc[pred.cluster!=-1, 'cluster'] = labels
+        stops = pred.groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
+
+    elif method == 'recurse':
+        raise ValueError("Method `recurse` not implemented yet.")
+
+    return stops
+
 
 def invalid_stops(stop_data, traj_cols=None, print_stops=False, **kwargs):
     """
@@ -125,7 +128,13 @@ def invalid_stops(stop_data, traj_cols=None, print_stops=False, **kwargs):
 
     return False
 
+
 def fill_timestamp_gaps(first_time, last_time, stop_table):
+
+    # if stop_table is empty, return empty DataFrame with same columns
+    if stop_table.empty:
+        return pd.DataFrame(columns=stop_table.columns)
+
     new_rows = []
 
     # fill initial gap
