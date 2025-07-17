@@ -1,4 +1,4 @@
-from shapely.geometry import box, Polygon, LineString, MultiLineString
+from shapely.geometry import box, Polygon, LineString, MultiLineString, Point, MultiPoint, MultiPolygon, GeometryCollection
 from shapely.affinity import scale
 from shapely.ops import unary_union
 import pickle
@@ -8,15 +8,11 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from matplotlib import cm
 import networkx as nx
-
-
-import pdb
-
+import warnings
 
 # =============================================================================
 # STREET CLASS
 # =============================================================================
-
 
 class Street:
     """
@@ -112,7 +108,7 @@ class Building:
                  door: tuple, 
                  city,
                  blocks: list = None, 
-                 bbox: Polygon = None):
+                 geometry: (Polygon | MultiPolygon) = None):
 
         self.building_type = building_type
         self.door = door
@@ -120,30 +116,75 @@ class Building:
 
         self.id = f'{building_type[0]}-x{door[0]}-y{door[1]}'
 
-        # Calculate the bounding box of the building
         if blocks:
-            min_x = min([block[0] for block in blocks])
-            min_y = min([block[1] for block in blocks])
-            max_x = max([block[0]+1 for block in blocks])
-            max_y = max([block[1]+1 for block in blocks])
-            bbox = box(min_x, min_y, max_x, max_y)
-        elif bbox:
-            blocks = []
-            for x in range(int(bbox.bounds[0]), int(bbox.bounds[2])):
-                for y in range(int(bbox.bounds[1]), int(bbox.bounds[3])):
-                    blocks += [(x, y)]
+            self.blocks = blocks
+            block_polygons = [box(x, y, x + 1, y + 1) for x, y in blocks]
+            self.geometry = unary_union(block_polygons)
+            if not isinstance(self.geometry, (Polygon, MultiPolygon)):
+                # This can happen if blocks are disjoint, forming a GeometryCollection.
+                raise ValueError(f"Building geometry formed from blocks is a {type(self.geometry)}, not a Polygon or MultiPolygon. Ensure blocks are contiguous.")
+
+        elif geometry:
+            self.geometry = geometry
+            self.blocks = []
+            min_x, min_y, max_x, max_y = geometry.bounds
+            for x in range(int(min_x), int(max_x)):
+                for y in range(int(min_y), int(max_y)):
+                    block_square = box(x, y, x + 1, y + 1)
+                    if geometry.intersects(block_square):
+                        self.blocks.append((x, y))
+
+            if not self.blocks:
+                raise ValueError(f"Provided geometry {geometry} does not intersect any integer blocks.")
+
         else:
             raise ValueError(
-                "Either blocks spanned or bounding box must be provided."
+                "Either 'blocks' (list of tuples for block-based building) or 'geometry' (Shapely object) must be provided."
             )
 
-        self.blocks = blocks
-        self.geometry = bbox
-
         # Compute door centroid
-        door = self.geometry.intersection(self.city.streets[self.door].geometry)
-        self.door_centroid = ((door.coords[0][0] + door.coords[1][0]) / 2,
-                              (door.coords[0][1] + door.coords[1][1]) / 2)
+        door_centroid = self._compute_door_centroid()
+        if door_centroid is not None:
+            self.door_centroid = door_centroid
+        else:
+            raise ValueError(
+                f"Invalid door for building '{self.id}'."
+            )
+        
+    def _compute_door_centroid(self):
+        """
+        Computes the centroid of the intersection between the building's geometry
+        and the associated street's geometry, representing the 'door' location.
+        """
+        # Ensure self.geometry is a valid Shapely object before proceeding
+        if not hasattr(self, 'geometry') or self.geometry is None:
+            warnings.warn(f"Building geometry not set for building type '{self.building_type}'. Cannot compute door centroid.")
+            return None
+
+        # Retrieve the street geometry. Assume city.streets[self.door].geometry is a Shapely object.
+        if self.door not in self.city.streets:
+            warnings.warn(f"Street '{self.door}' not found in city.streets for building type '{self.building_type}'. Cannot compute door centroid.")
+            return None
+
+        street_geometry = self.city.streets[self.door].geometry
+
+        # Calculate the intersection between the building's geometry and the street's geometry
+        intersection_result = self.geometry.intersection(street_geometry)
+
+        if intersection_result.is_empty:
+            warnings.warn(f"No valid intersection found for door '{self.door}' on building type '{self.building_type}'. Intersection is empty.")
+            return None
+        elif isinstance(intersection_result, (Point, LineString, Polygon)):
+            return (intersection_result.centroid.x, intersection_result.centroid.y)
+        elif isinstance(intersection_result, (MultiPoint, MultiLineString, MultiPolygon, GeometryCollection)):
+            if not intersection_result.is_empty:
+                return (intersection_result.centroid.x, intersection_result.centroid.y)
+            else:
+                warnings.warn(f"Empty GeometryCollection for door '{self.door}' on building type '{self.building_type}'.")
+                return None
+        else:
+            warnings.warn(f"Unexpected geometry type for intersection result: {type(intersection_result)} for door '{self.door}' on building type '{self.building_type}'. Cannot compute door centroid.")
+            return None
 
 
 # =============================================================================
@@ -191,7 +232,20 @@ class City:
     """
 
     def __init__(self,
-                 dimensions: tuple = (0,0)):
+                 dimensions: tuple = (0,0),
+                 manual_streets: bool = False):
+        
+        """
+        Initializes the City object with given dimensions and optionally manual streets.
+
+        Parameters
+        ----------
+        dimensions : tuple
+            A tuple representing the dimensions of the city (width, height).
+        manual_streets : bool
+            If True, streets must be manually added to the city. 
+            If False, all blocks are initialized as streets until it is populated with a building.
+        """
 
         self.buildings = {}
         self.streets = {}
@@ -199,21 +253,36 @@ class City:
         self.address_book = {}
         self.building_types = pd.DataFrame(columns=["id", "type"])
 
+        self.manual_streets = manual_streets
+
         if not (isinstance(dimensions, tuple) and len(dimensions) == 2
                 and all(isinstance(d, int) for d in dimensions)):
             raise ValueError("Dimensions must be a tuple of two integers.")
         self.city_boundary = box(0, 0, dimensions[0], dimensions[1])
 
-        for x in range(0, dimensions[0]):
-            for y in range(0, dimensions[1]):
-                self.streets[(x, y)] = Street((x, y))
+        if not self.manual_streets:
+            for x in range(0, dimensions[0]):
+                for y in range(0, dimensions[1]):
+                    self.add_street((x, y))
         self.dimensions = dimensions
+
+    def add_street(self, coords):
+        """
+        Adds a street to the city at the specified (x, y) coordinates.
+        """
+        x, y = coords
+        if (x, y) in self.streets:
+            warnings.warn(f"Street already exists at coordinates ({x}, {y}).")
+            return
+
+        street = Street((x, y))
+        self.streets[(x, y)] = street
 
     def add_building(self,
                      building_type,
                      door,
                      blocks=None,
-                     bbox=None):
+                     geometry=None):
         """
         Adds a building to the city.
 
@@ -225,20 +294,20 @@ class City:
             The coordinates of the door of the building.
         blocks : list
             A list of blocks that the building spans.
-        bbox : shapely.geometry.polygon.Polygon
-            A polygon representing the bounding box of the building.
+        geometry : shapely.geometry.polygon.Polygon
+            A polygon representing the geometry of the building.
         """
 
-        if blocks is None and bbox is None:
+        if blocks is None and geometry is None:
             raise ValueError(
-                "Either blocks spanned or bounding box must be provided."
+                "Either blocks spanned or geometry must be provided."
             )
 
         building = Building(building_type=building_type,
                             door=door,
                             city=self,
                             blocks=blocks, 
-                            bbox=bbox)
+                            geometry=geometry)
 
         combined_plot = unary_union([building.geometry, self.streets[door].geometry])
         if self.buildings_outline.contains(combined_plot) or self.buildings_outline.overlaps(combined_plot):
@@ -247,7 +316,7 @@ class City:
             )
 
         if not check_adjacent(building.geometry, self.streets[door].geometry):
-            raise ValueError(f"Door {door} must be adjacent to new building.")
+            raise ValueError(f"Door {door} must be adjacent to new building (Geometry: {building.geometry}).")
 
         # add building
         self.buildings[building.id] = building
@@ -260,7 +329,8 @@ class City:
         # blocks are no longer streets
         for block in building.blocks:
             self.address_book[block] = building
-            del self.streets[block]
+            if block in self.streets:
+                del self.streets[block]
 
         # expand city boundary if necessary
         buffered_building_geom = building.geometry.buffer(1)
@@ -274,7 +344,8 @@ class City:
                 for y in range(miny, maxy+1):
                     if (x, y) not in self.streets:
                         # Initialize new Street objects for the expanded city area
-                        self.streets[(x, y)] = Street((x, y))
+                        if not self.manual_streets:
+                            self.add_street((x, y))
 
     def get_block(self, coordinates):
         """
@@ -380,12 +451,21 @@ class City:
         # Define colors for different building types
         if colors is None:
             colors = {
+                'street': 'white',
                 'home': 'skyblue',
                 'work': '#C9A0DC',
                 'retail': 'lightgrey',
-                'park': 'lightgreen'
+                'park': 'lightgreen',
+                'default': 'lightcoral'
             }
 
+        # Plot streets
+        for street in self.streets.values():
+            x, y = street.geometry.exterior.xy
+            ax.fill(x, y, facecolor=colors['street'],
+                    linewidth=0.5, label='Street', zorder=zorder)
+
+        # Plot buildings
         if heatmap_agent is not None:
             weights = heatmap_agent.diary.groupby('location').duration.sum()
             norm = Normalize(vmin=0, vmax=max(weights)/2)
@@ -426,17 +506,47 @@ class City:
 
         else:
             for building in self.buildings.values():
-                x, y = building.geometry.exterior.xy
-                ax.fill(x, y, facecolor=colors[building.building_type],
-                        edgecolor='black', linewidth=0.5,
-                        label=building.building_type.capitalize(), zorder=zorder)
+                if isinstance(building.geometry, Polygon):
+                    x, y = building.geometry.exterior.xy
+                    ax.fill(x, y, facecolor=colors.get(building.building_type, colors['default']),
+                            edgecolor='black', linewidth=0.5,
+                            label=building.building_type.capitalize(),
+                            zorder=zorder)
+                    # Plot interior rings (holes) if any
+                    for interior_ring in building.geometry.interiors:
+                        x_int, y_int = interior_ring.xy
+                        ax.plot(x_int, y_int, color='black', linewidth=0.5, zorder=zorder + 1)
+                        ax.fill(x_int, y_int, facecolor='white', zorder=zorder + 1)
+
+                elif isinstance(building.geometry, MultiPolygon):
+                    for single_polygon in building.geometry.geoms:
+                        x, y = single_polygon.exterior.xy
+                        ax.fill(x, y, facecolor=colors.get(building.building_type, colors['default']),
+                                edgecolor='black', linewidth=0.5,
+                                label=building.building_type.capitalize(),
+                                zorder=zorder)
+                        # Plot interior rings (holes) for each sub-polygon
+                        for interior_ring in single_polygon.interiors:
+                            x_int, y_int = interior_ring.xy
+                            ax.plot(x_int, y_int, color='black', linewidth=0.5, zorder=zorder + 1)
+                            ax.fill(x_int, y_int, facecolor='white', zorder=zorder + 1)
+
+                else:
+                    # Handle unexpected geometry types (e.g., if a Building somehow got a Point or LineString geometry)
+                    warnings.warn(f"Building '{building.id}' has an unexpected geometry type: {type(building.geometry)}. Skipping plot.")
 
                 # Plot doors
                 if doors:
                     door_line = building.geometry.intersection(self.streets[building.door].geometry)
                     scaled_door_line = scale(door_line, xfact=0.25, yfact=0.25, origin=door_line.centroid)
-                    dx, dy = scaled_door_line.xy
-                    ax.plot(dx, dy, linewidth=2, color='white', zorder=zorder)
+                    
+                    if isinstance(scaled_door_line, LineString):
+                        dx, dy = scaled_door_line.xy
+                        ax.plot(dx, dy, linewidth=2, color='white', zorder=zorder + 2)
+                    elif isinstance(scaled_door_line, MultiLineString):
+                        for single_line in scaled_door_line.geoms:
+                            dx, dy = single_line.xy
+                            ax.plot(dx, dy, linewidth=2, color='white', zorder=zorder + 2)
 
                 if address:
                     door_coord = building.door
@@ -475,4 +585,6 @@ def save(city, filename):
 
 def check_adjacent(geom1, geom2):
     intersection = geom1.intersection(geom2)
+    if intersection.is_empty:
+        return False
     return isinstance(intersection, (LineString, MultiLineString))
