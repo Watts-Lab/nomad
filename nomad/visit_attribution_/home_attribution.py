@@ -179,7 +179,7 @@ def compute_candidate_homes(
     out = (
         stops_night.groupby([traj_cols["user_id"], traj_cols["location_id"]], as_index=False)
         .agg(
-            num_work_days=("_date", "nunique"),
+            num_nights=("_date", "nunique"),
             num_weeks=("_iso_week", "nunique"),
             total_duration=(traj_cols["duration"], "sum"),
         )
