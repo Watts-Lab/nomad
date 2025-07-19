@@ -1047,8 +1047,10 @@ def sample_users(
         
         minx, miny, maxx, maxy = poly.bounds
         bbox_specs = [
-            (coord_key1, ">=", minx), (coord_key1, "<=", maxx),
-            (coord_key2, ">=", miny), (coord_key2, "<=", maxy),
+            (traj_cols[coord_key1], ">=", minx),
+            (traj_cols[coord_key1], "<=", maxx),
+            (traj_cols[coord_key2], ">=", miny),
+            (traj_cols[coord_key2], "<=", maxy),
         ]
         if filters is None:
             filters = bbox_specs
@@ -1094,9 +1096,9 @@ def sample_users(
                                      schema=schema,
                                      use_pyarrow_dataset=use_pyarrow_dataset) # What happens with timezones??
         if within is not None:
-            table = dataset_obj.to_table(columns=[uid_col, coord_key1, coord_key2], filter=arrow_flt)
+            table = dataset_obj.to_table(columns=[uid_col, traj_cols[coord_key1], traj_cols[coord_key2]], filter=arrow_flt)
             df = table.to_pandas()
-            pts = gpd.GeoSeries(gpd.points_from_xy(df[coord_key1], df[coord_key2]),
+            pts = gpd.GeoSeries(gpd.points_from_xy(df[traj_cols[coord_key1]], df[traj_cols[coord_key2]]),
                                  crs=data_crs)
             user_ids = df.loc[pts.within(poly), uid_col].drop_duplicates()
         else:
@@ -1124,7 +1126,7 @@ def sample_users(
             df = df[mask_func(df)]
     
         if within is not None:
-            pts = gpd.GeoSeries(gpd.points_from_xy(df[coord_key1], df[coord_key2]),
+            pts = gpd.GeoSeries(gpd.points_from_xy(df[traj_cols[coord_key1]], df[traj_cols[coord_key2]]),
                                      crs=data_crs)
             user_ids = df.loc[pts.within(poly), uid_col].drop_duplicates()
         else:
@@ -1241,10 +1243,10 @@ def sample_from_file(
 
         minx, miny, maxx, maxy = poly.bounds
         bbox_specs = [
-            (coord_key1, ">=", minx),
-            (coord_key1, "<=", maxx),
-            (coord_key2, ">=", miny),
-            (coord_key2, "<=", maxy),
+            (traj_cols[coord_key1], ">=", minx),
+            (traj_cols[coord_key1], "<=", maxx),
+            (traj_cols[coord_key2], ">=", miny),
+            (traj_cols[coord_key2], "<=", maxy),
         ]
         if filters is None:
             filters = bbox_specs
@@ -1314,7 +1316,7 @@ def sample_from_file(
 
     if poly is not None and not df.empty:
         pts = gpd.GeoSeries(
-            gpd.points_from_xy(df[coord_key1], df[coord_key2]), crs=data_crs
+            gpd.points_from_xy(df[traj_cols[coord_key1]], df[traj_cols[coord_key2]]), crs=data_crs
         )
         df = df[pts.within(poly)]
     

@@ -159,7 +159,6 @@ def compute_candidate_homes(
         else:
             stops[end_t_key] = stops[traj_cols[t_key]] + stops[dur_col] * 60
 
-    # Nocturnal clipping
     stops_night = nocturnal_stops(
         stops,
         dusk_hour=dusk_hour,
@@ -190,9 +189,10 @@ def compute_candidate_homes(
 
 def select_home(
     candidate_homes,
-    stops_table,
     min_days,
     min_weeks,
+    stops_table=None,
+    last_date=None,
     traj_cols=None,
     **kwargs,
 ):
@@ -240,13 +240,16 @@ def select_home(
     traj_cols = loader._parse_traj_cols(candidate_homes.columns, traj_cols, kwargs)
 
     # Last observation date
-    t_key, use_datetime = _fallback_time_cols(stops_table.columns, traj_cols, kwargs)
-    dt_series = (
-        stops_table[traj_cols[t_key]]
-        if use_datetime
-        else pd.to_datetime(stops_table[traj_cols[t_key]], unit="s", utc=True)
-    )
-    last_date = dt_series.dt.date.max()
+    if not last_date and stops_table:
+        t_key, use_datetime = _fallback_time_cols(stops_table.columns, traj_cols, kwargs)
+        dt_series = (
+            stops_table[traj_cols[t_key]]
+            if use_datetime
+            else pd.to_datetime(stops_table[traj_cols[t_key]], unit="s", utc=True)
+        )
+        last_date = dt_series.dt.date.max()
+    elif not last_date and not stops_table:
+        raise ValueError("One of 'last_date' or 'stops_table' needs to be provided")
 
     # Filter and rank
     filtered = (
@@ -425,9 +428,10 @@ def compute_candidate_workplaces(
 
 def select_workplace(
     candidate_workplaces,
-    stops_table,
     min_days,
     min_weeks,
+    stops_table=None,
+    last_date=None,
     traj_cols=None,
     **kwargs,
 ):
@@ -458,14 +462,19 @@ def select_workplace(
     """
     traj_cols = loader._parse_traj_cols(candidate_workplaces.columns, traj_cols, kwargs)
 
+    if not last_date and stops_table:
     # Last observation date
-    t_key, use_datetime = _fallback_time_cols(stops_table.columns, traj_cols, kwargs)
-    dt_series = (
-        stops_table[traj_cols[t_key]]
-        if use_datetime
-        else pd.to_datetime(stops_table[traj_cols[t_key]], unit="s", utc=True)
-    )
-    last_date = dt_series.dt.date.max()
+        t_key, use_datetime = _fallback_time_cols(stops_table.columns, traj_cols, kwargs)
+        dt_series = (
+            stops_table[traj_cols[t_key]]
+            if use_datetime
+            else pd.to_datetime(stops_table[traj_cols[t_key]], unit="s", utc=True)
+        )
+        last_date = dt_series.dt.date.max()
+
+    
+    elif not last_date and not stops_table:
+        raise ValueError("One of 'last_date' or 'stops_table' needs to be provided")
 
     # Filter and rank
     filtered = (
