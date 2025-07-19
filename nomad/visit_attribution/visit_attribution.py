@@ -9,9 +9,12 @@ import pyproj
 import pdb
 
 # TO DO: change to stops_to_poi
-def point_in_polygon(data, poi_table, method='centroid', max_distance = 1, data_crs = None,
-                     cluster_label = None, traj_cols = None, **kwargs):
-	"""
+def point_in_polygon(data, poi_table, method='centroid', data_crs=None, max_distance=0,
+                     cluster_label=None, location_id=None, traj_cols=None, **kwargs):
+    """
+    Assign each stop or cluster of pings in `data` to a polygon in `poi_table`, 
+    either by the cluster’s centroid location or by the most frequent polygon hit.
+
     Parameters
     ----------
     data : pd.DataFrame or gpd.GeoDataFrame
@@ -43,11 +46,9 @@ def point_in_polygon(data, poi_table, method='centroid', max_distance = 1, data_
         Points or clusters that fall outside every polygon or beyond `max_distance`
         are set to NaN.
     """
-    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, defaults={})
-    traj_cols_w_deflts = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
-        
     # check if it is stop table
-    end_col_present = loader._has_end_cols(data.columns, traj_cols)
+    traj_cols_w_deflts = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    end_col_present = loader._has_end_cols(data.columns, traj_cols_w_deflts)
     duration_col_present = loader._has_duration_cols(data.columns, traj_cols_w_deflts)
     is_stop_table = (end_col_present or duration_col_present)
 
@@ -127,27 +128,6 @@ def point_in_polygon(data, poi_table, method='centroid', max_distance = 1, data_
 
     return None
     
-def majority_poi(traj, labels, poi_table, traj_cols, is_datetime, is_long_lat):
-    if labels.empty:
-        return pd.Series(dtype='object')
-    
-    # merge labels with data
-    traj_with_labels = traj.copy()
-    time_col = traj_cols['datetime'] if is_datetime else traj_cols['timestamp']
-    traj_with_labels = traj_with_labels.merge(labels, left_on=time_col, right_index=True, how='left')
-
-    # compute the location for each cluster
-    space_cols = [traj_cols['longitude'], traj_cols['latitude']] if is_long_lat else [traj_cols['x'], traj_cols['y']]
-    pings_df = traj_with_labels[space_cols].copy()
-    
-    traj_with_labels["building_id"] = poi_map(traj=pings_df,
-                                              poi_table=poi_table,
-                                              traj_cols=traj_cols)
-
-    locations = traj_with_labels.groupby('cluster')['building_id'].agg(lambda x: x.mode().iloc[0] if not x.mode().empty else None)
-
-    return locations
-
 # change to point_in_polygon, move to filters.py
 def poi_map(data, poi_table, max_distance=0, data_crs=None, location_id=None, traj_cols=None, **kwargs):
     """
@@ -227,8 +207,9 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, location_id=None, tr
     else:
         raise TypeError("`data` must be a pandas DataFrame or a GeoDataFrame.")
 
-    if data_crs != pyproj.CRS(poi_table.crs):
-        raise ValueError("CRS for `data` does not match CRS for `poi_table`.")
+    if not data_crs.equals(pyproj.CRS(poi_table.crs)):
+        poi_table = poi_table.to_crs(data_crs)
+        warnings.warn("CRS for `poi_table` does not match crs for `data`. Reprojecting...")
 
     use_poi_idx = True
     if location_id is not None:
@@ -344,13 +325,114 @@ def slice_datetimes_interval_fast(start, end):
     if full_days >= 0:
         day_parts = [(start.time(), time.max), (time.min, end.time())]
     else:
-        use_datetime = True 
+        full_days = 0
+        day_parts = [(start.time(), end.time()), (start.time(), start.time())]
+    return full_days, day_parts
 
-    # TO DO: Check the same thing for true_visits start, and duration/end
-    # TO DO: Conversion of everything to UTC
-    # Loop through ground truth and numpy timestamps diff
+def duration_at_night_fast(start, end, dawn_hour = 6, dusk_hour = 19):
+    full_days, (part1, part2) = slice_datetimes_interval_fast(start, end)
+    total_dawn_time = dawn_time(part1, dawn_hour)+dawn_time(part2, dawn_hour)
+    total_dusk_time = dusk_time(part1, dusk_hour)+dusk_time(part2, dusk_hour)
+    return int(total_dawn_time + total_dusk_time + full_days*(dawn_hour + (24-dusk_hour))*60)
+
+def clip_stays_date(traj, dates, dawn_hour = 6, dusk_hour = 19):
+    start = pd.to_datetime(traj['start_datetime'])
+    duration = traj['duration']
+
+    # Ensure timezone-aware clipping bounds
+    tz = start.dt.tz
+    date_0 = pd.Timestamp(parse(dates[0]), tz=tz)
+    date_1 = pd.Timestamp(parse(dates[1]), tz=tz)
+
+    end = start + pd.to_timedelta(duration, unit='m')
+
+    # Clip to date range
+    start_clipped = start.clip(lower=date_0, upper=date_1)
+    end_clipped = end.clip(lower=date_0, upper=date_1)
+
+    # Recompute durations
+    duration_clipped = ((end_clipped - start_clipped).dt.total_seconds() // 60).astype(int)
+    duration_night = [duration_at_night_fast(s, e, dawn_hour, dusk_hour) for s, e in zip(start_clipped, end_clipped)]
+
+    return pd.DataFrame({
+        'id': traj['id'].values,
+        'start': start_clipped,
+        'duration': duration_clipped,
+        'duration_night': duration_night,
+        'location': traj['location']
+    })
+
+def count_nights(usr_polygon, dawn_hour = 6, dusk_hour = 19, min_dwell = 10):   
+    nights = set()
+    weeks = set()
+
+    for _, row in usr_polygon.iterrows():
+        d = row['start']
+        d = pd.to_datetime(d)
+        full_days, (part1, part2) = slice_datetimes_interval_fast(d, d + pd.to_timedelta(row['duration'], unit='m'))
+
+        dawn1 = dawn_time(part1, dawn_hour)
+        dusk1 = dusk_time(part1, dusk_hour)
+        dawn2 = dawn_time(part2, dawn_hour)
+        dusk2 = dusk_time(part2, dusk_hour)
+
+        if full_days == 0:
+            if dawn1 >= min_dwell:
+                night = d - timedelta(days=1)
+                nights.add(night.date())
+                weeks.add((night - timedelta(days=night.weekday())).date())
+
+            if (dusk1 + dawn2) >= min_dwell:
+                night = d
+                nights.add(night.date())
+                weeks.add((night - timedelta(days=night.weekday())).date())
+
+            if dusk2 >= min_dwell:
+                night = d + timedelta(days=1)
+                nights.add(night.date())
+                weeks.add((night - timedelta(days=night.weekday())).date())
+        else:
+            if dawn1 >= min_dwell:
+                night = d - timedelta(days=1)
+                nights.add(night.date())
+                weeks.add((night - timedelta(days=night.weekday())).date())
+
+            for t in range(full_days + 1):
+                night = d + timedelta(days=t)
+                nights.add(night.date())
+                weeks.add((night - timedelta(days=night.weekday())).date())
+
+            if dusk2 >= min_dwell:
+                night = d + timedelta(days=full_days + 1)
+                nights.add(night.date())
+                weeks.add((night - timedelta(days=night.weekday())).date())
+
+    identifier = usr_polygon['id'].iloc[0]
+    location = usr_polygon['location'].iloc[0]
+
+    return pd.DataFrame([{
+        'id': identifier,
+        'location': location,
+        'night_count': len(nights),
+        'week_count': len(weeks)
+    }])
+
+
+def night_stops(stop_table, user='user', dawn_hour = 6, dusk_hour = 19, min_dwell = 10):
+    # Date range
+    start_date = str(stop_table['start_datetime'].min().date())
+    weeks = stop_table['start_datetime'].dt.strftime('%Y-%U')
+    num_weeks = weeks.nunique()
+
+    # turn dates to datetime
+    stop_table['start_datetime'] = pd.to_datetime(stop_table['start_datetime'])
+
+    if 'id' not in stop_table.columns:
+        stop_table['id'] = user
+
+    end_date = (parse(start_date) + timedelta(weeks=num_weeks)).date().isoformat()
+    dates = (start_date, end_date)
+    df_clipped = clip_stays_date(stop_table, dates, dawn_hour, dusk_hour)
+    df_clipped = df_clipped[(df_clipped['duration'] > 0) & (df_clipped['duration_night'] >= 15)]
     
-    # Check whether to use timestamp or datetime columns
-    is_long_lat = 'latitude' in kwargs and 'longitude' in kwargs and kwargs['latitude'] in traj.columns and kwargs['longitude'] in traj.columns
-    
-    return location_ids
+    return df_clipped.groupby(['id', 'location'], group_keys=False).apply(count_nights(dawn_hour, dusk_hour, min_dwell)).reset_index(drop=True)
