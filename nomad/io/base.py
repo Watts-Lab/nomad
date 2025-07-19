@@ -134,7 +134,7 @@ def _offset_string_hrs(offset_seconds):
     return offset_seconds.map(mapping)
 
 def naive_datetime_from_unix_and_offset(utc_timestamps, timezone_offset):
-    return pd.to_datetime(utc_timestamps + timezone_offset, unit='s')
+    return pd.to_datetime(utc_timestamps + timezone_offset, unit='s').astype('datetime64[ns]')
 
 # this should change in Spark, since parsing only allows naive datetimes
 def _naive_to_localized_str(naive_dt, timezone_offset):
@@ -671,6 +671,9 @@ def _process_filters(filters, col_names, use_pyarrow_dataset, traj_cols=None, sc
                     if pat.is_timestamp(pa_type) and isinstance(val, str):
                         warnings.warn(f"Coercing filter value {val!r} to pandas.Timestamp for column {col!r}")
                         val = pd.Timestamp(val)
+                    elif pat.is_date32(pa_type) and isinstance(val,str):
+                        warnings.warn(f"Coercing filter value {val!r} to pandas.Timestamp for column {col!r}")
+                        val = pd.Timestamp(val)                  
                     elif pat.is_string(pa_type) and isinstance(val, (pd.Timestamp, np.datetime64)):
                         val = pd.Timestamp(val).isoformat()
                         warnings.warn(f"Coercing filter datetime {val!r} to ISO string {val} for column {col!r}")

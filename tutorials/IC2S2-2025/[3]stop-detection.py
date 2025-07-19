@@ -14,15 +14,15 @@
 # ---
 
 # %%
-# !pip install -q git+https://github.com/Watts-Lab/nomad.git@IC2S2-tutorial
+# # !pip install -q git+https://github.com/Watts-Lab/nomad.git@IC2S2-tutorial
 
-import gdown
-gdown.cached_download(
-    "https://drive.google.com/uc?id=1wk3nrNsmAiBoTtWznHjjjPkmWAZfxk0P",
-    path="IC2S2_2025.zip",
-    quiet=False,
-    postprocess=gdown.extractall,  # auto-unzip
-)
+# import gdown
+# gdown.cached_download(
+#     "https://drive.google.com/uc?id=1wk3nrNsmAiBoTtWznHjjjPkmWAZfxk0P",
+#     path="IC2S2_2025.zip",
+#     quiet=False,
+#     postprocess=gdown.extractall,  # auto-unzip
+# )
 
 # %% [markdown]
 # # **Tutorial 3: Stop detection in trajectories**
@@ -224,11 +224,7 @@ traj[['longitude','latitude']] = np.column_stack(
 )
 
 traj['zoned_datetime'] = pd.to_datetime(traj['unix_ts'], unit='s', utc=True).dt.tz_convert('Etc/GMT-1')
-
-traj['h3_cell'] = traj.apply(
-    lambda row: h3.latlng_to_cell(lat=row['latitude'], lng=row['longitude'], res=11),
-    axis=1)
-
+traj['h3_cell'] = filters.to_tessellation(traj, index="h3", res=10, latitude='latitude', longitude='longitude')
 
 # Alternate datasets 
 traj_geog = traj[['latitude', 'longitude', 'zoned_datetime']]
@@ -392,16 +388,8 @@ plt.show()
 # %%
 traj = loader.sample_from_file(filepath_root, frac_users=0.1, format='parquet', traj_cols=tc, seed=10) # try frac_users = 0.1
 
-# We add H3 cells for benchmarking
-# TO DO: Replace with single filters.to_tesselation(traj, x='x', y='y', data_crs='EPSG:3857', tesselation='h3')
-traj[['longitude','latitude']] = np.column_stack(
-    filters.to_projection(traj, x='dev_x', y='dev_y', data_crs='EPSG:3857', crs_to='EPSG:4326')
-)
-
-traj['h3_cell'] = traj.apply(
-    lambda row: h3.latlng_to_cell(lat=row['latitude'], lng=row['longitude'], res=10),
-    axis=1)
-
+# H3 cells for grid_based stop detection method
+traj['h3_cell'] = filters.to_tessellation(traj, index="h3", res=10, x='dev_x', y='dev_y', data_crs='EPSG:3857')
 pings_per_user = traj['gc_identifier'].value_counts()
 
 # %%
@@ -443,19 +431,14 @@ for user, n_pings in tqdm(pings_per_user.items(), total=len(pings_per_user)):
     results += [pd.Series({'user':user, 'algo':'hdbscan', 'execution_time':execution_time, 'total_dwell':stops_hdb.duration.sum(), 'avg_diameter':stops_hdb.diameter.mean(), 'n_pings':n_pings})]
 
 results = pd.DataFrame(results)
-results.head(10)
 
 # %% [markdown]
-# Of course, total dwell time might be misleading given that there users with less data. We can use the **completeness to normalize**
+# ### Use **completeness to normalize** ('hrs with data' / 'total hrs')
 
 # %%
-# completeness, for rescaling
 completeness_per_user = filters.completeness(traj, timestamp='unix_ts', user_id='gc_identifier')
 dwell_scaling = 1/completeness_per_user
 dwell_scaling.name = 'dwell_scaling'
-
-# Rescaling using 1/completeness, effectively does
-# (total_hours_stopping / total_hours_with_data ) * whole_period_in_hours
 
 metrics = pd.merge(results, dwell_scaling, left_on='user', right_index=True)
 metrics['rescaled_total_dwell'] = (metrics['total_dwell']/60)*metrics['dwell_scaling'] # in hours
@@ -494,10 +477,7 @@ plt.show()
 # %%time
 # takes approximately 6 min
 traj = loader.from_file(filepath_root, format='parquet', traj_cols=tc)
-all_stops = LACHESIS.lachesis_per_user(traj, delta_roam=30, dt_max=240, complete_output=True, keep_col_names=False, traj_cols=tc)
 
-# %%
-all_stops
+all_stops = LACHESIS.lachesis_per_user(traj, delta_roam=30, dt_max=240, complete_output=True, keep_col_names=False, passthrough_cols=['tz_offset'], traj_cols=tc)
 
-# %%
 loader.to_file(all_stops, "gc_data_stops/", format="parquet", partition_by=["gc_identifier"], existing_data_behavior='overwrite_or_ignore', user_id='gc_identifier')
