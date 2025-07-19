@@ -35,6 +35,7 @@ from shapely.geometry import Polygon, box, Point
 import matplotlib.pyplot as plt
 
 import nomad.io.base as loader
+from nomad import filters
 from nomad.stop_detection.viz import plot_pings
 
 # %%
@@ -60,7 +61,7 @@ poi_table.plot(ax=ax, color=poi_table["type"].map(color_map), edgecolor="black")
 
 plot_pings(traj, ax=ax, point_color='black',
            radius="ha", circle_alpha=0.06, circle_color="red", # for horizontal accuracy
-           s=5, alpha=0.4, # <<<<<< for pings
+           s=5, alpha=0.4, # for pings
            traj_cols=tc)
 
 [plt.plot([],[], marker="s", ls="", color=color_map[t], label=t) for t in color_map]
@@ -72,8 +73,6 @@ plt.show()
 
 # %%
 import numpy as np
-import pandas as pd
-pd.set_option("mode.copy_on_write", True)
 from nomad import filters
 
 
@@ -82,11 +81,8 @@ stops = loader.sample_from_file("gc_data_stops/",
                                 users=['confident_aryabhata'], # <<<< single user
                                 user_id="gc_identifier")
 
-stops['datetime'] = pd.to_datetime(stops['start_timestamp'], unit='s', utc=True).dt.tz_convert('Etc/GMT-1')
-
-# %%
-start_datetime, end_datetime = pd.Timestamp('2024-01-05', tz='Etc/GMT-1'), pd.Timestamp('2024-01-07', tz='Etc/GMT-1')
-stops_sample = stops.query('@start_datetime <= datetime <=@end_datetime')
+stops['datetime'] = filters.to_zoned_datetime(stops['start_timestamp'], stops['tz_offset'])
+stops_sample = stops.query("'2024-01-05T00-0400' <= datetime <='2024-01-07T00-0400'")
 
 # %% [markdown]
 # ## Attribute visits from centroid of stops
@@ -141,7 +137,7 @@ stops_maj.location_id.value_counts().head(15)
 
 # %%
 stops = loader.from_file("gc_data_stops/", format='parquet', user_id="gc_identifier")
-stops['datetime'] = pd.to_datetime(stops['start_timestamp'], unit='s', utc=True).dt.tz_convert('Etc/GMT-1')
+stops['datetime'] = filters.to_zoned_datetime(stops['start_timestamp'], stops['tz_offset'])
 
 stops["location_id"] = visits.point_in_polygon(
                          data=stops,
@@ -168,11 +164,11 @@ plt.title("Total visit time (h) by building")
 plt.show()
 
 # %% [markdown]
-# Homes can be estimated from attributed stops by identifying **recurrent night time locations**. Naturally, we need a zoned datetime to reason about "nighttime"
+# ### Homes ~ **most recurrent night time location** (don't use unix!)
 
 # %%
-stops['start_datetime'] = pd.to_datetime(stops['start_timestamp'], unit='s', utc=True).dt.tz_convert('Etc/GMT-1')
-stops['end_datetime'] = pd.to_datetime(stops['end_timestamp'], unit='s', utc=True).dt.tz_convert('Etc/GMT-1')
+stops['start_datetime'] = filters.to_zoned_datetime(stops['start_timestamp'], stops['tz_offset'])
+stops['end_datetime'] = filters.to_zoned_datetime(stops['end_timestamp'], stops['tz_offset'])
 stops.drop(['start_timestamp', 'end_timestamp'], axis=1, inplace=True)
 
 # %%
@@ -208,22 +204,12 @@ print(f"{100*(home_table.location_id.str[0] == 'h').sum()/len(stops.gc_identifie
 # ## Work locations and OD matrix
 
 # %%
-homes.workday_stops(stops, work_start_hour=11,
-    work_end_hour=13).query("gc_identifier == 'admiring_cray'").groupby('location_id').duration.sum().sort_values()
-
-# %%
-stops_work = homes.workday_stops(stops)
-
-# %%
-stops_work.query("datetime < start_datetime")
-
-# %%
-cand_works =homes.compute_candidate_workplaces(stops,
+cand_works = homes.compute_candidate_workplaces(stops,
                                                datetime="datetime",
                                                location_id="location_id",
                                                user_id="gc_identifier",
-                                               work_start_hour=10,
-                                               work_end_hour=12,
+                                               work_start_hour=8,
+                                               work_end_hour=18,
                                                include_weekends=False)
 
 work_table = homes.select_workplace(cand_works, last_date=last_date, min_days=3,min_weeks=2, user_id='gc_identifier')
@@ -235,6 +221,8 @@ print(f"{100*(work_table.location_id.str[0] == 'w').sum()/len(stops.gc_identifie
 # ## Visualization of network from home to work using pydeck
 
 # %%
+import pandas as pd
+
 origin = home_table.set_index('gc_identifier').location_id
 origin.name = "origin"
 
@@ -243,10 +231,6 @@ destination.name = "destination"
 
 od = (pd.DataFrame([origin,destination]).T).dropna()
 od = od.groupby(by=['origin', 'destination']).size().reset_index(name='count')
-
-# %%
-# %load_ext autoreload
-# %autoreload 2
 
 # %%
 from nomad.visit_attribution.viz import plot_od_map
@@ -264,12 +248,9 @@ plot_od_map(od_df=od,
    origin_col="origin",
    dest_col="destination",
    weight_col="count",
-   edge_alpha=0.85,
+   edge_alpha=0.8,
    edge_cmap="Reds", # try Reds, viridis, plasma
-   w_min=1, # try 2
+   w_min=3, # try 1 or 3
    background_gdf=background)
-
-# %%
-od.loc[od["count"]>2]
 
 # %%

@@ -103,7 +103,7 @@ def plot_od_map(
 
     # 3. Arc Layer
     max_w = od_df[weight_col].max()
-    od_df["width"] = 2 + np.sqrt(od_df[weight_col] / max_w) * 18
+    od_df["width"] = 1 + np.sqrt(od_df[weight_col] / max_w) * 15
     if edge_cmap:
         cmap = cm.get_cmap(edge_cmap) if isinstance(edge_cmap, str) else edge_cmap
         norm = mcolors.Normalize(od_df[weight_col].min(), max_w)
