@@ -21,6 +21,18 @@ import inspect
 from nomad.constants import FILTER_OPERATORS
 from nomad.io.base import _fallback_spatial_cols, _parse_traj_cols
 
+def table_columns(path, include_schema=False, spark=None):
+    """
+    Return column names or full schema of a parquet dataset (including partition columns).
+    """
+    if spark is None:
+        from pyspark.sql import SparkSession
+        spark = SparkSession.builder.getOrCreate()
+    df = spark.read.format("parquet").load(path)
+    schema = df.schema
+    return schema if include_schema else [f.name for f in schema.fields]
+
+
 def _is_traj_df_spark(df, traj_cols=None, **kwargs):
     if not isinstance(df, psp.sql.dataframe.DataFrame):
         return False

@@ -29,3 +29,5 @@ __pycache__/
 dist/
 build/
 **/*.json
+pip
+tutorials/IC2S2-2025/tutorial-sample/_SUCCESS
