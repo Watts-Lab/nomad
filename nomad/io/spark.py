@@ -5,16 +5,8 @@ import pyproj
 from functools import partial
 import re
 from pyspark.sql import SparkSession
-import sys
-import os
-# --------- Delete? ---------------
-import pyarrow.parquet as pq
-import pyarrow.compute as pc
-import pyarrow as pa
-import pyarrow.fs as pafs
-import pyarrow.types as pat
-import pyarrow.csv as pc_csv
-# ----------------------------------
+
+from pyspark.sql import functions as F
 from nomad.constants import DEFAULT_SCHEMA
 import warnings
 import inspect
@@ -26,12 +18,21 @@ def table_columns(path, include_schema=False, spark=None):
     Return column names or full schema of a parquet dataset (including partition columns).
     """
     if spark is None:
-        from pyspark.sql import SparkSession
         spark = SparkSession.builder.getOrCreate()
     df = spark.read.format("parquet").load(path)
     schema = df.schema
     return schema if include_schema else [f.name for f in schema.fields]
 
+def sample_users(data, frac_users=0.1, user_id="user_id"):
+    """
+    Return a sample of users using hashing without shuffle
+    """    
+    sampled_users = (
+        data.withColumn("bucket", F.abs(F.xxhash64("user_id")) % 1000)
+          .filter(F.col("bucket") <= frac_users*1000)          # ≈ 1 % of users, no shuffle yet
+          .select("user_id").distinct()        # one small shuffle
+    )
+    return sampled_users.toPandas()
 
 def _is_traj_df_spark(df, traj_cols=None, **kwargs):
     if not isinstance(df, psp.sql.dataframe.DataFrame):
