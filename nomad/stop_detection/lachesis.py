@@ -161,6 +161,19 @@ def lachesis(
     merged = data.join(labels)
     merged = merged[merged.cluster != -1]
 
+    if merged.empty:
+        # produce an *empty* stop_table with the *correct* columns
+        # we derive the column set from a one-row dummy call to summarize_stop
+        dummy_cols = utils.summarize_stop(
+            data.iloc[[0]],                 # any single row is fine
+            complete_output=complete_output,
+            traj_cols=traj_cols,
+            keep_col_names=keep_col_names,
+            passthrough_cols=passthrough_cols,
+            **kwargs
+        ).index
+        return pd.DataFrame(columns=dummy_cols, dtype=object)
+
     stop_table = merged.groupby('cluster', as_index=False, sort=False).apply(
         lambda grp: utils.summarize_stop(
             grp,

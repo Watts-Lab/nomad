@@ -46,7 +46,7 @@ def rog_spark(stops, agg_freq='D', weighted=True, traj_cols=None, **kwargs):
     else:
         step = SEC_PER_UNIT[agg_freq.lower()]
         stops = stops.withColumn(
-            'period', (F.col(traj_cols[t_key]) // F.lit(step) * F.lit(step)).cast('long')
+            'period', (F.floor(F.col(traj_cols[t_key]) / F.lit(step)) * F.lit(step)).cast('long')
         )
         schema = "period long, {} string, rog double".format(uid_key)
 
