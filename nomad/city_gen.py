@@ -366,15 +366,34 @@ class City:
         x, y = coordinates
         bx, by = self.dimensions
 
-        if (x < 0 or x >= bx or y < 0 or y >= bx):
-            x = max(0, min(x, bx-1))
-            y = max(0, min(y, by-1))
+        clamped_x = max(0, min(int(x), bx - 1))
+        clamped_y = max(0, min(int(y), by - 1))
 
-        new_coords = (int(x), int(y))
-        if new_coords in self.address_book:
-            return self.address_book[new_coords]
+        current_check_coords = (clamped_x, clamped_y)
+
+        if current_check_coords in self.address_book:
+            return self.address_book[current_check_coords]
+        elif current_check_coords in self.streets:
+            return self.streets[current_check_coords]
         else:
-            return self.streets[new_coords]
+            # If the clamped coordinates don't yield a block,
+            # try the block immediately to the left, ensuring it's within bounds
+            left_coords = (clamped_x - 1, clamped_y)
+            if 0 <= left_coords[0] < bx and 0 <= left_coords[1] < by:
+                if left_coords in self.address_book:
+                    return self.address_book[left_coords]
+                elif left_coords in self.streets:
+                    return self.streets[left_coords]
+
+            # Try the block immediately below, ensuring it's within bounds
+            below_coords = (clamped_x, clamped_y - 1)
+            if 0 <= below_coords[0] < bx and 0 <= below_coords[1] < by:
+                if below_coords in self.address_book:
+                    return self.address_book[below_coords]
+                elif below_coords in self.streets:
+                    return self.streets[below_coords]
+
+            return None # If no block found at the original, left, or below coordinates
 
     def get_street_graph(self):
         """

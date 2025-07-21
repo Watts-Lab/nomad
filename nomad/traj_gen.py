@@ -359,17 +359,17 @@ class Agent:
             The building ID if the step is a stay, or `None` if the step is a move.
         """
         city = self.city
-    
+
         start_block = np.floor(start_point)
         start_geometry = city.get_block(tuple(start_block))
-    
+
         curr = np.array(start_point)
-    
+
         if start_geometry == dest_building or start_point == dest_building.door_centroid:
             location = dest_building.id
             p = self.still_probs[dest_building.building_type]
             sigma = self.speeds[dest_building.building_type]
-    
+
             if rng.uniform() < p:
                 coord = curr
             else: # Draw until coord falls inside building
