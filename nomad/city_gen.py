@@ -424,7 +424,7 @@ class City:
         with open(filename, 'wb') as file:
             pickle.dump(self, file)
 
-    def plot_city(self, ax, doors=True, address=True, zorder=1, heatmap_agent=None, colors=None):
+    def plot_city(self, ax, doors=True, address=True, zorder=1, heatmap_agent=None, colors=None, alpha=1):
         """
         Plots the city on a given matplotlib axis.
 
@@ -509,7 +509,7 @@ class City:
                 if isinstance(building.geometry, Polygon):
                     x, y = building.geometry.exterior.xy
                     ax.fill(x, y, facecolor=colors.get(building.building_type, colors['default']),
-                            edgecolor='black', linewidth=0.5,
+                            edgecolor='black', linewidth=0.5, alpha=alpha,
                             label=building.building_type.capitalize(),
                             zorder=zorder)
                     # Plot interior rings (holes) if any
@@ -522,7 +522,7 @@ class City:
                     for single_polygon in building.geometry.geoms:
                         x, y = single_polygon.exterior.xy
                         ax.fill(x, y, facecolor=colors.get(building.building_type, colors['default']),
-                                edgecolor='black', linewidth=0.5,
+                                edgecolor='black', linewidth=0.5, alpha=alpha,
                                 label=building.building_type.capitalize(),
                                 zorder=zorder)
                         # Plot interior rings (holes) for each sub-polygon
