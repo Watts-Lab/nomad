@@ -79,8 +79,7 @@ def plot_pings(pings_df, ax, current_idx=None, point_color='black', cmap=None,
 
     # if no radius or geographic coords: simple scatter
     if radius is None or use_lon_lat:
-        ax.scatter( pings_df[xcol], pings_df[ycol], s=s, color=point_color, marker=marker, alpha=alpha)
-        return
+        return ax.scatter(pings_df[xcol], pings_df[ycol], s=s, color=point_color, marker=marker, alpha=alpha, zorder=2)
 
     # otherwise draw circles + scatter
     # resolve radius: scalar or per‐point
@@ -120,10 +119,12 @@ def plot_pings(pings_df, ax, current_idx=None, point_color='black', cmap=None,
 
     # plot circles
     gdf.geometry = geoms
-    gdf.plot(ax=ax, color=colors, alpha=circle_alpha, linewidth=0.5, edgecolor=point_color)
-
+    circles = gdf.plot(ax=ax, color=colors, alpha=circle_alpha, linewidth=0.5, edgecolor=point_color, zorder=2)
+    circles = circles.collections[-1]
     # plot point centers
-    gdf_pings.plot(ax=ax, color=point_color, markersize=s, marker=marker, linewidth=0, alpha=alpha)
+    last_point = gdf_pings.plot(ax=ax, color=point_color, markersize=s, marker=marker, linewidth=0, alpha=alpha, zorder=3)
+    last_point = last_point.collections[-1]
+    return circles, last_point
 
 def plot_stops(stops, ax, cmap='Reds', traj_cols=None, crs=None, stagger=True, edge_only=False, **kwargs):
     try:
@@ -192,7 +193,7 @@ def plot_stops(stops, ax, cmap='Reds', traj_cols=None, crs=None, stagger=True, e
             edgecolor='k', linewidth=0.5, alpha=0.75
         )
 
-def plot_time_barcode(ts_series, ax, current_idx=None, set_xlim=True):
+def plot_time_barcode(ts_series, ax, current_idx=None, color=None, set_xlim=True):
     """
     Plot a barcode of timestamps on ax. Optionally highlight current_idx in red.
     If set_xlim is True, auto-sets x-axis to padded timestamp range.
@@ -201,17 +202,18 @@ def plot_time_barcode(ts_series, ax, current_idx=None, set_xlim=True):
     if set_xlim:
         pad = pd.Timedelta(minutes=20)
         ax.set_xlim(ts_dt.min() - pad, ts_dt.max() + pad)
-    ax.vlines(ts_dt, 0.2, 0.8, colors='black', lw=0.5)
+    vlines = ax.vlines(ts_dt, 0.2, 0.8, colors='black', lw=0.5)
     if current_idx is not None:
         ax.vlines(ts_dt.iloc[current_idx], 0, 1, colors='red', lw=1.5)
     ax.set_yticks([])
     ax.set_yticklabels([])
     ax.set_ylim(0, 1)
-    locator = mdates.AutoDateLocator(minticks=2, maxticks=4)
+    locator = mdates.AutoDateLocator(minticks=2, maxticks=12)
     formatter = mdates.DateFormatter('%I %p')
     ax.xaxis.set_major_locator(locator)
     ax.xaxis.set_major_formatter(formatter)
     ax.tick_params(axis='x', labelsize=10)
+    return vlines
 
 def plot_stops_barcode(stops, ax, cmap='Reds', stop_color=None, set_xlim=True, traj_cols=None, **kwargs):
     """
