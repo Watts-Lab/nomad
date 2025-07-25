@@ -1,3 +1,4 @@
+from random import seed
 import pandas as pd
 import numpy as np
 import numpy.random as npr
@@ -60,7 +61,8 @@ def sample_hier_nhpp(traj,
         scale parameter (mean) of Exponential distribution modeling burst inter-arrival times
         where 1/beta_start is the rate of events (bursts) per minute.
     beta_durations: float
-        scale parameter (mean) of Exponential distribution modeling burst durations
+        scale parameter (mean) of Exponential distribution modeling burst durations.
+        if beta_start and beta_durations are None, a single burst covering the whole trajectory is used.
     beta_ping: float
         scale parameter (mean) of Exponential distribution modeling ping inter-arrival times
         within a burst, where 1/beta_ping is the rate of events (pings) per minute.
@@ -102,6 +104,14 @@ def sample_hier_nhpp(traj,
         burst_durations = rng.exponential(scale=beta_durations,
                                           size=burst_start_points.size)
         burst_end_points = burst_start_points + burst_durations
+
+        # handle cases where no bursts are generated
+        if burst_end_points.size == 0:
+            empty_traj = pd.DataFrame(columns=traj.columns)
+            empty_burst_info = pd.DataFrame(columns=['start_time','end_time'])
+            if output_bursts:
+                return empty_traj, empty_burst_info
+            return empty_traj
 
         # forbid overlap: each burst_end ≤ next burst_start
         burst_end_points[:-1] = np.minimum(burst_end_points[:-1], burst_start_points[1:])
@@ -249,15 +259,15 @@ class Agent:
             Time step duration.
         """
 
-        npr.seed(seed)
+        rng = npr.default_rng(seed)
         
         self.identifier = identifier
         self.city = city
 
         if home is None:
-            home = city.building_types[city.building_types['type'] == 'home'].sample(n=1)['id'].iloc[0]
+            home = city.building_types[city.building_types['type'] == 'home'].sample(n=1, random_state=rng)['id'].iloc[0]
         if workplace is None:
-            workplace = city.building_types[city.building_types['type'] == 'work'].sample(n=1)['id'].iloc[0]
+            workplace = city.building_types[city.building_types['type'] == 'work'].sample(n=1, random_state=rng)['id'].iloc[0]
 
         self.home = home
         self.workplace = workplace
@@ -326,7 +336,7 @@ class Agent:
             ax.scatter(self.trajectory.x, self.trajectory.y, s=6, color=color, alpha=alpha, zorder=2)
             self.city.plot_city(ax, doors=doors, address=address, zorder=1)
 
-    def _sample_step(self, start_point, dest_building, dt):
+    def _sample_step(self, start_point, dest_building, dt, rng):
         """
         From a destination diary, generates (x, y) pings.
 
@@ -338,6 +348,8 @@ class Agent:
             The destination building of the agent.
         dt : float
             The time step duration.
+        rng : numpy.random.generator
+            random number generator for reproducibility.
 
         Returns
         -------
@@ -347,22 +359,22 @@ class Agent:
             The building ID if the step is a stay, or `None` if the step is a move.
         """
         city = self.city
-    
+
         start_block = np.floor(start_point)
         start_geometry = city.get_block(tuple(start_block))
-    
+
         curr = np.array(start_point)
-    
+
         if start_geometry == dest_building or start_point == dest_building.door_centroid:
             location = dest_building.id
             p = self.still_probs[dest_building.building_type]
             sigma = self.speeds[dest_building.building_type]
-    
-            if npr.uniform() < p:
+
+            if rng.uniform() < p:
                 coord = curr
             else: # Draw until coord falls inside building
                 while True:
-                    coord = np.random.normal(loc=curr, scale=sigma*np.sqrt(dt), size=2)
+                    coord = rng.normal(loc=curr, scale=sigma*np.sqrt(dt), size=2)
                     if dest_building.geometry.contains(Point(coord)):
                         break
         else: # Agent travels to building along the streets
@@ -394,7 +406,7 @@ class Agent:
 
             while True:
                 # Step in transformed (path-based) space
-                step = np.random.normal(loc=[heading_drift, 0], scale=sigma * np.sqrt(dt), size=2)
+                step = rng.normal(loc=[heading_drift, 0], scale=sigma * np.sqrt(dt), size=2)
                 path_coord = (path_coord[0] + step[0], 0.7 * path_coord[1] + step[1])
 
                 if path_coord[0] > path_length:
@@ -409,7 +421,7 @@ class Agent:
         return coord, location
 
 
-    def _traj_from_dest_diary(self, dt):
+    def _traj_from_dest_diary(self, dt, seed=0):
         """
         Simulate a trajectory and give agent true travel diary attribute.
 
@@ -423,6 +435,7 @@ class Agent:
         None (updates self.trajectory, self.diary)
         """
 
+        rng = np.random.default_rng(seed) # random generator for steps
         city = self.city
         destination_diary = self.destination_diary
 
@@ -449,7 +462,7 @@ class Agent:
                 dest_building = city.buildings[building_id]
                 unix_timestamp = prev_ping['timestamp'] + tick_secs
                 datetime = prev_ping['datetime'] + timedelta(seconds=tick_secs)               
-                coord, location = self._sample_step(start_point, dest_building, dt)
+                coord, location = self._sample_step(start_point, dest_building, dt, rng)
                 ping = {'x': coord[0], 
                         'y': coord[1],
                         'datetime': datetime,
@@ -488,12 +501,12 @@ class Agent:
         self.destination_diary = destination_diary.drop(destination_diary.index)
 
     def _generate_dest_diary(self, 
-                             end_time: pd.Timestamp, 
-                             epr_time_res: int = 15,
-                             stay_probs: dict = DEFAULT_STAY_PROBS,
-                             rho: float = 0.4, 
-                             gamma: float = 0.3, 
-                             seed: int = 0):
+                             end_time, 
+                             epr_time_res = 15,
+                             stay_probs = DEFAULT_STAY_PROBS,
+                             rho = 0.4, 
+                             gamma = 0.3, 
+                             seed = 0):
         """
         Exploration and preferential return.
 
@@ -513,7 +526,7 @@ class Agent:
         seed : int
             Random seed for reproducibility.
         """
-        npr.seed(seed)
+        rng = npr.default_rng(seed)
 
         id2door = pd.DataFrame([[s, b.door] for s, b in self.city.buildings.items()],
                                columns=['id', 'door']).set_index('door')  # could this be a field of city?
@@ -544,9 +557,9 @@ class Agent:
             visit_freqs.loc[visit_freqs.type == 'park', 'freq'] = 5
 
             initial_locs = []
-            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'retail'].index, size=npr.poisson(4)))
-            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'work'].index, size=npr.poisson(2)))
-            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'home'].index, size=npr.poisson(2)))
+            initial_locs += list(rng.choice(visit_freqs.loc[visit_freqs.type == 'retail'].index, size=rng.poisson(4)))
+            initial_locs += list(rng.choice(visit_freqs.loc[visit_freqs.type == 'work'].index, size=rng.poisson(2)))
+            initial_locs += list(rng.choice(visit_freqs.loc[visit_freqs.type == 'home'].index, size=rng.poisson(2)))
             visit_freqs.loc[initial_locs, 'freq'] += 2
 
         if self.destination_diary.empty:
@@ -571,26 +584,26 @@ class Agent:
             p_exp = rho*(S**(-gamma))
 
             # Stay
-            if (curr_type in allowed) & (npr.uniform() < stay_probs[curr_type]):
+            if (curr_type in allowed) & (rng.uniform() < stay_probs[curr_type]):
                 pass
 
             # Exploration
-            elif npr.uniform() < p_exp:
+            elif rng.uniform() < p_exp:
                 visit_freqs['p'] = self.city.gravity.xs(
                     self.city.buildings[curr].door, level=0).join(id2door, how='right').set_index('id')
                 y = visit_freqs.loc[(visit_freqs['type'].isin(allowed)) & (visit_freqs.freq == 0)]
 
                 if not y.empty and y['p'].sum() > 0:
-                    curr = npr.choice(y.index, p=y['p']/y['p'].sum())
+                    curr = rng.choice(y.index, p=y['p']/y['p'].sum())
                 else:
                     # If there are no more buildings to explore, then preferential return
-                    curr = npr.choice(x.index, p=x['freq']/x['freq'].sum())
+                    curr = rng.choice(x.index, p=x['freq']/x['freq'].sum())
 
                 visit_freqs.loc[curr, 'freq'] += 1
 
             # Preferential return
             else:
-                curr = npr.choice(x.index, p=x['freq']/x['freq'].sum())
+                curr = rng.choice(x.index, p=x['freq']/x['freq'].sum())
                 visit_freqs.loc[curr, 'freq'] += 1
 
             # Update destination diary
@@ -615,11 +628,12 @@ class Agent:
         return None
 
     def generate_trajectory(self,
-                            destination_diary: pd.DataFrame = None,
-                            end_time: pd.Timestamp=None, 
-                            epr_time_res: int=15,
-                            dt: float=1,
-                            seed: int=0,
+                            destination_diary= None,
+                            end_time=None, 
+                            epr_time_res=15,
+                            dt=1,
+                            seed=0,
+                            step_seed=None,
                             verbose=False,
                             **kwargs):
         """
@@ -645,11 +659,10 @@ class Agent:
         None (updates self.trajectory)
         """
 
-        npr.seed(seed)
         if self.dt is None:
             self.dt = dt
         if self.dt != dt:
-            raise ValueError(f"dt ({dt}) does not match the agent's dt ({self.dt}).")            
+            raise ValueError(f"dt ({dt}) does not match the agent's dt ({self.dt}).")
 
         # handle destination diary
         if destination_diary is not None:
@@ -680,7 +693,7 @@ class Agent:
             else:
                 loc_centroid = self.city.buildings[self.home].geometry.centroid
                 x_coord, y_coord = loc_centroid.x, loc_centroid.y
-                
+
             if _datetime_or_ts_col(kwargs.keys(), verbose) == "datetime":
                 datetime = kwargs['datetime']
                 if not isinstance(datetime, pd.Timestamp):
@@ -699,7 +712,7 @@ class Agent:
             else:
                 datetime = pd.to_datetime('2025-01-01 00:00Z')
                 unix_timestamp = int(datetime.timestamp())
-                
+
             self.last_ping = pd.Series({
                 'x': x_coord,
                 'y': y_coord,
@@ -707,7 +720,7 @@ class Agent:
                 'timestamp': unix_timestamp,
                 'identifier': self.identifier
                 })
-        
+
         else:
             if ('x' in kwargs)or('y' in kwargs)or('datetime'in kwargs)or('timestamp' in kwargs):
                 raise ValueError(
@@ -725,7 +738,10 @@ class Agent:
                                       epr_time_res=epr_time_res,
                                       seed=seed)
 
-        self._traj_from_dest_diary(dt=dt)
+        if step_seed:
+            self._traj_from_dest_diary(dt=dt, seed=step_seed)
+        else:
+            self._traj_from_dest_diary(dt=dt, seed=seed)
 
         return None
 
@@ -983,13 +999,17 @@ class Population:
         """
         Generates N agents, with randomized attributes.
         """
-
+        master_rng = np.random.default_rng(seed)
+        
+        name_seed = int(master_rng.integers(0, 2**32))
         generator = funkybob.UniqueRandomNameGenerator(members=name_count, seed=seed)
+
         for i in range(N):
+            agent_seed = int(master_rng.integers(0, 2**32))
             identifier = generator[i]
             agent = Agent(identifier=identifier,
                           city=self.city,
-                          seed=seed+i)
+                          seed=agent_seed)
             self.add_agent(agent)
 
     def save_pop(self,
