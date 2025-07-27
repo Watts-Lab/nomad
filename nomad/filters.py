@@ -7,6 +7,7 @@ import pyproj
 from shapely.geometry import Polygon, Point
 from shapely import wkt
 import warnings
+import h3
 
 import nomad.io.base as loader
 from nomad.constants import DEFAULT_SCHEMA, SEC_PER_UNIT
