@@ -21,6 +21,7 @@ DEFAULT_SCHEMA = {
     "tz_offset": "tz_offset",
     "duration" : "duration",
     "ha":"ha",
+    "h3_cell":"h3_cell",
     "location_id" : "location_id"}
 
 SEC_PER_UNIT = {'s': 1, 'min': 60, 'h': 3_600, 'd': 86_400, 'w': 604_800}
