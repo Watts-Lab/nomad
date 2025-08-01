@@ -240,7 +240,7 @@ def select_home(
     traj_cols = loader._parse_traj_cols(candidate_homes.columns, traj_cols, kwargs)
 
     # Last observation date
-    if not last_date and stops_table:
+    if not last_date and stops_table is not None:
         t_key, use_datetime = _fallback_time_cols(stops_table.columns, traj_cols, kwargs)
         dt_series = (
             stops_table[traj_cols[t_key]]
@@ -248,7 +248,7 @@ def select_home(
             else pd.to_datetime(stops_table[traj_cols[t_key]], unit="s", utc=True)
         )
         last_date = dt_series.dt.date.max()
-    elif not last_date and not stops_table:
+    elif not last_date and stops_table is None:
         raise ValueError("One of 'last_date' or 'stops_table' needs to be provided")
 
     # Filter and rank
@@ -462,7 +462,7 @@ def select_workplace(
     """
     traj_cols = loader._parse_traj_cols(candidate_workplaces.columns, traj_cols, kwargs)
 
-    if not last_date and stops_table:
+    if not last_date and stops_table is not None:
     # Last observation date
         t_key, use_datetime = _fallback_time_cols(stops_table.columns, traj_cols, kwargs)
         dt_series = (
@@ -473,7 +473,7 @@ def select_workplace(
         last_date = dt_series.dt.date.max()
 
     
-    elif not last_date and not stops_table:
+    elif not last_date and stops_table is None:
         raise ValueError("One of 'last_date' or 'stops_table' needs to be provided")
 
     # Filter and rank

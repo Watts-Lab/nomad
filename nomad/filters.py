@@ -6,6 +6,7 @@ import geopandas as gpd
 import pyproj
 from shapely.geometry import Polygon, Point
 from shapely import wkt
+import h3
 import warnings
 
 import nomad.io.base as loader
@@ -252,7 +253,7 @@ def to_tessellation(
         Mapping of logical column names to actual columns.
     **kwargs
         Passed to trajectory column parsing.
-    """
+    """   
     coord_key1, coord_key2, use_lon_lat = loader._fallback_spatial_cols(data.columns, traj_cols, kwargs)
     if not use_lon_lat:
         if data_crs is None:
