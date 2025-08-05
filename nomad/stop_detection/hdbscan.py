@@ -622,10 +622,44 @@ def _build_hdbscan_graphs(coords, ts_idx, neighbors, core_dist, use_lon_lat):
     return edges_sorted_df, d_graph
 
 def hdbscan_labels(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min=5, traj_cols=None, **kwargs):
+    """
+    Compute HDBSCAN cluster labels for trajectory data, with core/border assignment.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Input trajectory data.
+    time_thresh : int
+        Maximum allowed time gap (minutes) for temporal neighbors.
+    min_pts : int, optional
+        Minimum neighbors for a core point (default: 2).
+    min_cluster_size : int, optional
+        Minimum cluster size for a valid stop (default: 1).
+    dur_min : int, optional
+        Minimum duration (minutes) for a stop (default: 5).
+    passthrough_cols : list, optional
+        Columns to propagate for later stop summarization.
+    traj_cols : dict, optional
+        Mapping for key columns.
+    **kwargs
+        Passed to internal helpers.
+
+    Returns
+    -------
+    pd.Series
+        Cluster label for each row; –1 for noise.
+    """
     # Check if user wants long and lat and datetime
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)
     # Load default col names
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    
+    if traj_cols['user_id'] in data.columns:
+        uid_col = data[traj_cols_temp['user_id']]
+        arr = uid_col.values
+        first = arr[0]
+        if any(x != first for x in arr[1:]):
+            raise ValueError("Multi-user data? Groupby or use hdbscan_per_user instead.")
     
     # Tests to check for spatial and temporal columns
     loader._has_spatial_cols(data.columns, traj_cols)
@@ -702,19 +736,120 @@ def hdbscan_labels(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min
     
     return final_labels
 
-def st_hdbscan(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min=5, complete_output = False, traj_cols=None, **kwargs):
-    labels_hdbscan = hdbscan_labels(data=data, time_thresh=time_thresh, min_pts = min_pts,
-                                        min_cluster_size = min_cluster_size, dur_min=dur_min, traj_cols=traj_cols, **kwargs)
+def st_hdbscan(
+    data,
+    time_thresh,
+    min_pts=2,
+    min_cluster_size=1,
+    dur_min=5,
+    complete_output=False,
+    passthrough_cols=[],
+    traj_cols=None,
+    **kwargs
+):
+    """
+    HDBSCAN-based stop detection.
 
-    merged_data_hdbscan = data.join(labels_hdbscan)
-    merged_data_hdbscan = merged_data_hdbscan[merged_data_hdbscan.cluster != -1]
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Input trajectory data.
+    time_thresh : int
+        Maximum allowed time gap (minutes) for temporal neighbors.
+    min_pts : int, optional
+        Minimum neighbors for a core point (default: 2).
+    min_cluster_size : int, optional
+        Minimum cluster size for a valid stop (default: 1).
+    dur_min : int, optional
+        Minimum duration (minutes) for a stop (default: 5).
+    complete_output : bool, optional
+        If True, include extra stats.
+    passthrough_cols : list, optional
+        Columns to passthrough to final stop table
+    traj_cols : dict, optional
+        Mapping for key columns.
+    **kwargs
+        Passed to internal helpers.
 
-    stop_table = merged_data_hdbscan.groupby('cluster', as_index=False).apply(
-            lambda grouped_data: utils.summarize_stop(grouped_data,
-                                           complete_output=complete_output,
-                                           traj_cols=traj_cols,
-                                           keep_col_names=False,   # match old behaviour
-                                           **kwargs),
-            include_groups=False)
-                
+    Returns
+    -------
+    pd.DataFrame
+        Stop table
+    """
+    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    if 'user_id' in traj_cols_temp and traj_cols_temp['user_id'] in data.columns:
+        uid_col = data[traj_cols_temp['user_id']]
+        arr = uid_col.values
+        first = arr[0]
+        if any(x != first for x in arr[1:]):
+            raise ValueError("Multi-user data? Use lachesis_per_user instead.")
+        passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
+    else:
+        uid_col = None
+        
+    labels_hdbscan = hdbscan_labels(
+        data=data,
+        time_thresh=time_thresh,
+        min_pts=min_pts,
+        min_cluster_size=min_cluster_size,
+        dur_min=dur_min,
+        passthrough_cols=passthrough_cols,
+        traj_cols=traj_cols,
+        **kwargs
+    )
+
+    merged = data.join(labels_hdbscan)
+    merged = merged[merged.cluster != -1]
+
+    stop_table = merged.groupby('cluster', as_index=False, sort=False).apply(
+        lambda grouped_data: utils.summarize_stop(
+            grouped_data,
+            complete_output=complete_output,
+            traj_cols=traj_cols,
+            keep_col_names=True,
+            passthrough_cols=passthrough_cols,
+            **kwargs
+        ),
+        include_groups=False
+    )
+
     return stop_table
+
+def st_hdbscan_per_user(
+    data,
+    time_thresh,
+    min_pts=2,
+    min_cluster_size=1,
+    dur_min=5,
+    complete_output=False,
+    passthrough_cols=[],
+    traj_cols=None,
+    **kwargs
+):
+    """
+    Run HDBSCAN-based stop detection on each user separately, then concatenate results.
+    Raises if 'user_id' not in traj_cols or missing from data.
+    """
+
+    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    if 'user_id' not in traj_cols_temp or traj_cols_temp['user_id'] not in data.columns:
+        raise ValueError("st_hdbscan_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
+    uid = traj_cols_temp['user_id']
+
+    pt_cols = passthrough_cols + [uid]
+
+    results = [
+        st_hdbscan(
+            data=group,
+            time_thresh=time_thresh,
+            min_pts=min_pts,
+            min_cluster_size=min_cluster_size,
+            dur_min=dur_min,
+            complete_output=complete_output,
+            passthrough_cols=pt_cols,
+            traj_cols=traj_cols,
+            **kwargs
+        )
+        for _, group in data.groupby(uid, sort=False)
+    ]
+    return pd.concat(results, ignore_index=True)
