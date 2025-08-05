@@ -308,7 +308,7 @@ def summarize_stop(
         if c in grouped_data.columns:
             out[c] = grouped_data[c].iloc[0]
 
-    return pd.Series(out)
+    return pd.Series(out, dtype='object')
 
 def summarize_stop_grid(
     grouped_data,
@@ -401,7 +401,7 @@ def summarize_stop_grid(
         if c in grouped_data.columns:
             out[c] = grouped_data[c].iloc[0]
 
-    return pd.Series(out)
+    return pd.Series(out, dtype='object')
 
 def pad_short_stops(stop_data, pad=5, dur_min=None, traj_cols = None, **kwargs):
     """

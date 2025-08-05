@@ -65,7 +65,7 @@ def _timestamp_handling(
 def to_timestamp(datetime, tz_offset=None):
     """
     Convert a datetime Series into UNIX timestamps (seconds).
-
+  
     Parameters
     ----------
     datetime : pd.Series
@@ -130,8 +130,13 @@ def to_timestamp(datetime, tz_offset=None):
         return unix_s
     return unix_s - tz_offset
 
+def to_zoned_datetime(utc_timestamps, timezone_offset):
+    naive_dt = loader.naive_datetime_from_unix_and_offset(utc_timestamps, timezone_offset)
+    zoned_str = loader._naive_to_localized_str(naive_dt, timezone_offset)
+    # mixed timezones 
+    return pd.to_datetime(zoned_str, utc=False, errors='raise')    
+
 def _dup_per_freq_mask(sec, periods=1, freq='min', keep='first'): 
-        
     bins = sec // (periods * SEC_PER_UNIT[freq])
     if isinstance(sec, pd.Series):
         return ~pd.Series(bins, index=sec.index).duplicated(keep=keep)
@@ -224,6 +229,59 @@ def downsample(df,
 
     return df[mask]
 
+def to_tessellation(
+    data,
+    index,
+    res,
+    data_crs=None,
+    traj_cols=None,
+    **kwargs
+):
+    """
+    Project coordinates from data_crs to crs_to, with robust column handling.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Data to project.
+    index : str
+        One of 'h3', 'geohash', or 's2'.
+    data_crs : str or CRS, optional
+        Source CRS (default: inferred).
+    traj_cols : dict, optional
+        Mapping of logical column names to actual columns.
+    **kwargs
+        Passed to trajectory column parsing.
+    """
+    coord_key1, coord_key2, use_lon_lat = loader._fallback_spatial_cols(data.columns, traj_cols, kwargs)
+    if not use_lon_lat:
+        if data_crs is None:
+            raise ValueError("data_crs must be specified for projected coordinates.")
+        lon_col, lat_col = to_projection(data, crs_to="EPSG:4326", data_crs=data_crs, traj_cols=traj_cols, **kwargs)
+    else:
+        traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+        lon_col, lat_col = data[traj_cols['longitude']], data[traj_cols['latitude']]
+
+    if index == "h3":
+        out = pd.concat([lat_col, lon_col], axis=1)
+        out.columns = ["latitude", "longitude"]
+        h3_cell = out.apply(lambda row: h3.latlng_to_cell(lat=row['latitude'], lng=row['longitude'], res=res), axis=1)
+        h3_cell.name = "h3_cell"
+        return h3_cell
+        
+    elif index == "geohash":
+        out = pd.concat([lat_col, lon_col], axis=1)
+        out.columns = ["latitude", "longitude"]
+        geohash_cell = out.apply(lambda row: pygeohash.encode(row['latitude'], row['longitude'], precision=res), axis=1)
+        geohash_cell.name = "geohash_cell"
+        return geohash_cell
+        
+    elif index == "s2":
+        # S2 support needs an external package (e.g., s2sphere)
+        raise NotImplementedError("S2 tessellation is not implemented.")
+    else:
+        raise ValueError(f"Unknown tessellation index: {index}")
+
 def to_projection(
     data,
     crs_to,
@@ -284,8 +342,7 @@ def to_projection(
     points = gpd.points_from_xy(data[traj_cols[coord_key1]], data[traj_cols[coord_key2]])
     gseries = gpd.GeoSeries(points, crs=data_crs)
     projected = gseries.to_crs(crs_to)
-    return pd.Series(projected.x, index=data.index), pd.Series(projected.y, index=data.index)
-    
+    return pd.Series(projected.x, name=out_coord_1), pd.Series(projected.y, name=out_coord_2)
 
 def _filtered_users(
     traj,
