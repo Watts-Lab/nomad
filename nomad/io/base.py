@@ -4,9 +4,7 @@ import geopandas as gpd
 import pyproj
 from functools import partial
 import multiprocessing
-from multiprocessing import Pool
 import re
-from pyspark.sql import SparkSession
 import sys
 import os
 import pyarrow.compute as pc
@@ -20,7 +18,6 @@ from nomad.constants import DEFAULT_SCHEMA, FILTER_OPERATORS
 import numpy as np
 import warnings
 import inspect
-import pdb
 
 from shapely import wkt
 import shapely.geometry as sh_geom
@@ -137,7 +134,7 @@ def _offset_string_hrs(offset_seconds):
     return offset_seconds.map(mapping)
 
 def naive_datetime_from_unix_and_offset(utc_timestamps, timezone_offset):
-    return pd.to_datetime(utc_timestamps + timezone_offset, unit='s')
+    return pd.to_datetime(utc_timestamps + timezone_offset, unit='s').astype('datetime64[ns]')
 
 # this should change in Spark, since parsing only allows naive datetimes
 def _naive_to_localized_str(naive_dt, timezone_offset):
@@ -626,7 +623,6 @@ def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_f
             col = traj_cols[key]
             if not is_string_dtype(df[col].dtype):
                 df[col] = df[col].astype("str")
-                
     return df
 
 def _process_filters(filters, col_names, use_pyarrow_dataset, traj_cols=None, schema=None):
@@ -675,6 +671,9 @@ def _process_filters(filters, col_names, use_pyarrow_dataset, traj_cols=None, sc
                     if pat.is_timestamp(pa_type) and isinstance(val, str):
                         warnings.warn(f"Coercing filter value {val!r} to pandas.Timestamp for column {col!r}")
                         val = pd.Timestamp(val)
+                    elif pat.is_date32(pa_type) and isinstance(val,str):
+                        warnings.warn(f"Coercing filter value {val!r} to pandas.Timestamp for column {col!r}")
+                        val = pd.Timestamp(val)                  
                     elif pat.is_string(pa_type) and isinstance(val, (pd.Timestamp, np.datetime64)):
                         val = pd.Timestamp(val).isoformat()
                         warnings.warn(f"Coercing filter datetime {val!r} to ISO string {val} for column {col!r}")
@@ -753,7 +752,6 @@ def table_columns(filepath, format="csv", include_schema=False, sep=","):
         isinstance(filepath, (list, tuple)) or
         _is_directory(filepath)
     )
-
     if use_pyarrow_dataset:
         file_format_obj = "parquet"
         if format == "csv":
@@ -820,7 +818,6 @@ def from_df(df, traj_cols=None, parse_dates=True, mixed_timezone_behavior="naive
     return _cast_traj_cols(df.copy(), traj_cols, parse_dates=parse_dates,
                            mixed_timezone_behavior=mixed_timezone_behavior,
                            fixed_format=fixed_format)
-    
 
 
 def from_file(filepath,
@@ -1053,8 +1050,10 @@ def sample_users(
         
         minx, miny, maxx, maxy = poly.bounds
         bbox_specs = [
-            (coord_key1, ">=", minx), (coord_key1, "<=", maxx),
-            (coord_key2, ">=", miny), (coord_key2, "<=", maxy),
+            (traj_cols[coord_key1], ">=", minx),
+            (traj_cols[coord_key1], "<=", maxx),
+            (traj_cols[coord_key2], ">=", miny),
+            (traj_cols[coord_key2], "<=", maxy),
         ]
         if filters is None:
             filters = bbox_specs
@@ -1100,9 +1099,9 @@ def sample_users(
                                      schema=schema,
                                      use_pyarrow_dataset=use_pyarrow_dataset) # What happens with timezones??
         if within is not None:
-            table = dataset_obj.to_table(columns=[uid_col, coord_key1, coord_key2], filter=arrow_flt)
+            table = dataset_obj.to_table(columns=[uid_col, traj_cols[coord_key1], traj_cols[coord_key2]], filter=arrow_flt)
             df = table.to_pandas()
-            pts = gpd.GeoSeries(gpd.points_from_xy(df[coord_key1], df[coord_key2]),
+            pts = gpd.GeoSeries(gpd.points_from_xy(df[traj_cols[coord_key1]], df[traj_cols[coord_key2]]),
                                  crs=data_crs)
             user_ids = df.loc[pts.within(poly), uid_col].drop_duplicates()
         else:
@@ -1130,7 +1129,7 @@ def sample_users(
             df = df[mask_func(df)]
     
         if within is not None:
-            pts = gpd.GeoSeries(gpd.points_from_xy(df[coord_key1], df[coord_key2]),
+            pts = gpd.GeoSeries(gpd.points_from_xy(df[traj_cols[coord_key1]], df[traj_cols[coord_key2]]),
                                      crs=data_crs)
             user_ids = df.loc[pts.within(poly), uid_col].drop_duplicates()
         else:
@@ -1247,10 +1246,10 @@ def sample_from_file(
 
         minx, miny, maxx, maxy = poly.bounds
         bbox_specs = [
-            (coord_key1, ">=", minx),
-            (coord_key1, "<=", maxx),
-            (coord_key2, ">=", miny),
-            (coord_key2, "<=", maxy),
+            (traj_cols[coord_key1], ">=", minx),
+            (traj_cols[coord_key1], "<=", maxx),
+            (traj_cols[coord_key2], ">=", miny),
+            (traj_cols[coord_key2], "<=", maxy),
         ]
         if filters is None:
             filters = bbox_specs
@@ -1320,7 +1319,7 @@ def sample_from_file(
 
     if poly is not None and not df.empty:
         pts = gpd.GeoSeries(
-            gpd.points_from_xy(df[coord_key1], df[coord_key2]), crs=data_crs
+            gpd.points_from_xy(df[traj_cols[coord_key1]], df[traj_cols[coord_key2]]), crs=data_crs
         )
         df = df[pts.within(poly)]
     

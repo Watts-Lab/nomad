@@ -9,7 +9,6 @@ import numpy as np
 import nomad.io.base as loader
 import h3
 import pdb
-
 pd.plotting.register_matplotlib_converters()
 
 def h3_cell_to_polygon(cell):
@@ -28,46 +27,106 @@ def adjust_zoom(x, y, ax, buffer=0.5):
         ax.set_xlim(x0 - pad_x, x1 + pad_x)
         ax.set_ylim(y0 - pad_y, y1 + pad_y)
 
-def plot_pings(pings_df, ax, current_idx=None, radius=None, point_color='black', cmap='twilight', traj_cols=None, **kwargs):
+def plot_pings(pings_df, ax, current_idx=None, point_color='black', cmap=None,
+               radius=None, s=6, marker='o', alpha=1, circle_color=None, circle_alpha=None, traj_cols=None, **kwargs):
     """
-    Plot pings as true-radius circles (projected CRS only) and point centers.
-    If 'cluster' exists, colors by cluster (noise/cluster==-1 transparent).
-    If no 'cluster', just plots points.
+    Plot pings as true‐radius circles (projected CRS only) and point centers.
+    If `radius` is None or using lon/lat, falls back to a simple scatter.
+    If `radius` is provided (float or column), draws buffered circles.
+    If `cluster` exists and CRS is projected, colors circles by cluster
+    (noise/cluster==-1 transparent); otherwise uses `point_color`.
+
+    Parameters
+    ----------
+    pings_df : pandas.DataFrame
+        Trajectory points, with spatial columns (x/y or lon/lat) and optional 'cluster'.
+    ax : matplotlib.axes.Axes
+        Axis to draw on.
+    current_idx : int, optional
+        Index of ping to highlight (not used here).
+    radius : float or str, default None
+        If float, all circles use this constant radius (CRS units).
+        If str, treated as a column name or canonical key: first looks in
+        pings_df[radius], then in traj_cols[radius].
+        If None, no circles are drawn and only a scatter is shown.
+    point_color : color, default 'black'
+        Marker color for points (and circles if no cluster).
+    cmap : str or Colormap, default 'twilight'
+        Colormap for mapping cluster IDs to circle colors.
+    traj_cols : dict, optional
+        Mapping of canonical keys to actual column names.
+    s : float or array-like, default 6
+        Marker size for scatter points.
+    marker : str or MarkerStyle, default 'o'
+        Marker style for scatter points.
+    alpha : float, default 1
+        Opacity for point markers (and for circles if circle_alpha is None).
+    circle_alpha : float, optional
+        Opacity for circle fills; if None, uses the same value as `alpha`.
     """
-    coord_key1, coord_key2, use_lon_lat = loader._fallback_spatial_cols(pings_df.columns, traj_cols, kwargs)
-    traj_cols = loader._parse_traj_cols(pings_df.columns, traj_cols, kwargs, warn=False)
+    # determine columns for plotting
+    coord_key1, coord_key2, use_lon_lat = loader._fallback_spatial_cols(
+        pings_df.columns, traj_cols, kwargs
+    )
+    traj_cols = loader._parse_traj_cols(
+        pings_df.columns, traj_cols, kwargs, warn=False
+    )
+    xcol, ycol = traj_cols[coord_key1], traj_cols[coord_key2]
 
-    # For clarity in code and legend, these are not called x/y
-    c1 = traj_cols[coord_key1]
-    c2 = traj_cols[coord_key2]
+    # default circle alpha to point alpha
+    if circle_alpha is None:
+        circle_alpha = alpha
 
-    # Only plot true-radius circles if projected coordinates (not lat/lon) and cluster exists
-    if 'cluster' in pings_df and not use_lon_lat:
-        if radius is None:
-            radius = 1  # default 1 meter
-        gdf = gpd.GeoDataFrame(
-            pings_df.copy(),
-            geometry=[Point(val1, val2) for val1, val2 in zip(pings_df[c1], pings_df[c2])],
-            crs="EPSG:3857"
-        )
-        valid = gdf['cluster'] != -1
-        n = gdf.loc[valid, 'cluster'].nunique() or 1
-        def color_func(c):
-            if c == -1:
-                return (0,0,0,0)
-            return plt.get_cmap(cmap)((c+1)/(n+1))
-        colors = gdf['cluster'].map(color_func)
-        gdf.geometry.buffer(radius).plot(ax=ax, color=colors, alpha=0.8, linewidth=0)
-        gdf.plot(ax=ax, color=point_color, markersize=3, linewidth=0)
+    # if no radius or geographic coords: simple scatter
+    if radius is None or use_lon_lat:
+        return ax.scatter(pings_df[xcol], pings_df[ycol], s=s, color=point_color, marker=marker, alpha=alpha, zorder=2)
+
+    # otherwise draw circles + scatter
+    # resolve radius: scalar or per‐point
+    if isinstance(radius, str):
+        if radius in pings_df.columns:
+            r = pings_df[radius]
+        else:
+            r = pings_df[traj_cols.get(radius, radius)]
     else:
-        # fallback: always use scatter for lat/lon or if no cluster column
-        ax.scatter(
-            pings_df[c1],
-            pings_df[c2],
-            s=6, color=point_color, alpha=1
-        )
+        r = radius
 
-def plot_stops(stops, ax, cmap='Reds', traj_cols=None, crs=None, stagger=True, **kwargs):
+    # build GeoDataFrame in projected CRS
+    gdf_pings = gpd.GeoDataFrame(
+        pings_df,
+        geometry=[Point(x, y) for x, y in zip(pings_df[xcol], pings_df[ycol])],
+        crs="EPSG:3857"
+    )
+
+    # choose circle colors
+    gdf = gdf_pings.copy()
+    if circle_color:
+        colors= circle_color
+    elif 'cluster' in pings_df and cmap:
+        gdf = gdf_pings.loc[gdf['cluster']!=-1]
+        n = gdf['cluster'].nunique() or 1
+        colors = gdf['cluster'].map(
+            lambda c: plt.get_cmap(cmap)((c + 1) / (n + 1))
+        )
+    else:
+        colors = "gray"
+
+    # buffer geometries
+    if np.isscalar(r):
+        geoms = [pt.buffer(r) for pt in gdf.geometry]
+    else:
+        geoms = [pt.buffer(rv) for pt, rv in zip(gdf.geometry, r)]
+
+    # plot circles
+    gdf.geometry = geoms
+    circles = gdf.plot(ax=ax, color=colors, alpha=circle_alpha, linewidth=0.5, edgecolor=point_color, zorder=2)
+    circles = circles.collections[-1]
+    # plot point centers
+    last_point = gdf_pings.plot(ax=ax, color=point_color, markersize=s, marker=marker, linewidth=0, alpha=alpha, zorder=3)
+    last_point = last_point.collections[-1]
+    return circles, last_point
+
+def plot_stops(stops, ax, cmap='Reds', traj_cols=None, crs=None, stagger=True, edge_only=False, **kwargs):
     try:
         coord_x, coord_y, use_lonlat = loader._fallback_spatial_cols(stops.columns, traj_cols, kwargs)
         traj_cols = loader._parse_traj_cols(stops.columns, traj_cols, kwargs, warn=False)
@@ -93,7 +152,10 @@ def plot_stops(stops, ax, cmap='Reds', traj_cols=None, crs=None, stagger=True, *
             )
         ]
         gdf = gpd.GeoDataFrame(stops, geometry=geom, crs=crs or "EPSG:3857")
-        gdf.plot(ax=ax, facecolor=colors, edgecolor='k', linewidth=0.5, alpha=0.75)
+        if edge_only:
+            gdf.plot(ax=ax, facecolor="none", edgecolor=colors, linewidth=4, alpha=0.8)
+        else:
+            gdf.plot(ax=ax, facecolor=colors, edgecolor='k', linewidth=0.75, alpha=0.8)
         return
 
     # 2) H3 hexagons
@@ -116,8 +178,10 @@ def plot_stops(stops, ax, cmap='Reds', traj_cols=None, crs=None, stagger=True, *
                         scale(poly, xfact=f, yfact=f, origin=poly.centroid)
                         for poly, f in zip(gdf.loc[idx_mask, 'geometry'], factors)
                     ]
-
-        gdf.plot(ax=ax, facecolor=colors, edgecolor='k', linewidth=0.7, alpha=0.75)
+        if edge_only:
+            gdf.plot(ax=ax, facecolor="none", edgecolor=colors, linewidth=4, alpha=0.8)
+        else:
+            gdf.plot(ax=ax, facecolor=colors, edgecolor='k', linewidth=0.75, alpha=0.8)
         return
 
     # 3) fallback scatter
@@ -129,7 +193,7 @@ def plot_stops(stops, ax, cmap='Reds', traj_cols=None, crs=None, stagger=True, *
             edgecolor='k', linewidth=0.5, alpha=0.75
         )
 
-def plot_time_barcode(ts_series, ax, current_idx=None, set_xlim=True):
+def plot_time_barcode(ts_series, ax, current_idx=None, color=None, set_xlim=True):
     """
     Plot a barcode of timestamps on ax. Optionally highlight current_idx in red.
     If set_xlim is True, auto-sets x-axis to padded timestamp range.
@@ -138,19 +202,20 @@ def plot_time_barcode(ts_series, ax, current_idx=None, set_xlim=True):
     if set_xlim:
         pad = pd.Timedelta(minutes=20)
         ax.set_xlim(ts_dt.min() - pad, ts_dt.max() + pad)
-    ax.vlines(ts_dt, 0.2, 0.8, colors='black', lw=0.5)
+    vlines = ax.vlines(ts_dt, 0.2, 0.8, colors='black', lw=0.5)
     if current_idx is not None:
         ax.vlines(ts_dt.iloc[current_idx], 0, 1, colors='red', lw=1.5)
     ax.set_yticks([])
     ax.set_yticklabels([])
     ax.set_ylim(0, 1)
-    locator = mdates.AutoDateLocator(minticks=2, maxticks=4)
+    locator = mdates.AutoDateLocator(minticks=2, maxticks=12)
     formatter = mdates.DateFormatter('%I %p')
     ax.xaxis.set_major_locator(locator)
     ax.xaxis.set_major_formatter(formatter)
     ax.tick_params(axis='x', labelsize=10)
+    return vlines
 
-def plot_stops_barcode(stops, ax, cmap='Reds', set_xlim=True, traj_cols=None, **kwargs):
+def plot_stops_barcode(stops, ax, cmap='Reds', stop_color=None, set_xlim=True, traj_cols=None, **kwargs):
     """
     Plot colored stop intervals as bars on ax using temporal columns and colors by cluster with cmap.
     If set_xlim is True, auto-sets x-axis to padded range.
@@ -172,7 +237,13 @@ def plot_stops_barcode(stops, ax, cmap='Reds', set_xlim=True, traj_cols=None, **
         
     clusters = np.arange(len(stops)) if 'cluster' not in stops else stops['cluster']
     n = len(stops)
-    colors = [plt.get_cmap(cmap)((c+1)/(n+1)) for c in clusters]
+    if stop_color:
+        colors = [stop_color for c in clusters]
+    elif cmap:
+        colors = [plt.get_cmap(cmap)((c+1)/(n+1)) for c in clusters]
+    else:
+        raise ValueError("Specify either a color map (cmap) or a solid color (stop_color).")
+        
     for s, e, color in zip(start, end, colors):
         ax.fill_betweenx([0, 1], s, e, color=color, alpha=0.75)
     if set_xlim:

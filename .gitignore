@@ -17,6 +17,9 @@ __pycache__/
 # Exclude images
 **/*.png
 
+# …but re‑include anything under tutorials/
+!/tutorials/**/*.png
+
 # macOS system file
 .DS_Store
 
@@ -25,3 +28,6 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+**/*.json
+pip
+tutorials/IC2S2-2025/tutorial-sample/_SUCCESS

@@ -3,9 +3,11 @@ import numpy as np
 import nomad.io.base as loader
 import nomad.constants as constants
 from nomad.filters import to_timestamp
+from nomad.stop_detection import utils
 from nomad.stop_detection.utils import _fallback_time_cols
+import pdb
 
-def grid_based_labels(data, time_thresh=np.inf, min_cluster_size=0, dur_min=0, traj_cols=None, **kwargs):
+def grid_based_labels(data, time_thresh=np.inf, min_cluster_size=1, dur_min=0, traj_cols=None, **kwargs):
     """
     Detects stops in trajectory data based on time and each ping's location.
 
@@ -32,9 +34,16 @@ def grid_based_labels(data, time_thresh=np.inf, min_cluster_size=0, dur_min=0, t
     t_key, use_datetime = _fallback_time_cols(data.columns, traj_cols, kwargs)
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs) # load defaults
     if traj_cols['location_id'] not in data.columns:
-            raise ValueError(f"Missing {traj_cols[location_id]} column in {true_visits.columns}."
+            raise ValueError(f"Missing {traj_cols['location_id']} column in {data.columns}."
                             "pass `location_id` as keyword argument or in traj_cols."
                             )
+
+    if traj_cols['user_id'] in data.columns:
+        arr = data[traj_cols['user_id']].values
+        first = arr[0]
+        if any(x != first for x in arr[1:]):
+            raise ValueError("grid_based cannot be run on multi-user data. Use grid_based_per_user instead.")
+
     ts = to_timestamp(data[traj_cols[t_key]]) if use_datetime else data[traj_cols[t_key]]
     loc = data[traj_cols['location_id']]
         
@@ -67,3 +76,106 @@ def grid_based_labels(data, time_thresh=np.inf, min_cluster_size=0, dur_min=0, t
         i = j
     
     return labels
+
+def grid_based(
+    data,
+    time_thresh=120,
+    min_cluster_size=2,
+    dur_min=5,
+    complete_output=False,
+    passthrough_cols=[],
+    traj_cols=None,
+    **kwargs
+):
+    """
+    Detect stops in trajectory data using a grid/location-based segmentation, then summarize them.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Input trajectory data with temporal and location columns.
+    time_thresh : int, optional
+        Maximum allowed time gap (in minutes) between consecutive pings within a stop. Default is 5.
+    min_cluster_size : int, optional
+        Minimum number of points required to form a stop. Default is 2.
+    dur_min : int, optional
+        Minimum duration in minutes for a valid stop. Default is 5.
+    complete_output : bool, optional
+        If True, include additional stop statistics in the output.
+    traj_cols : dict, optional
+        Mapping for 'timestamp', 'datetime', or 'location_id' column names.
+    **kwargs
+        Passed through to helper functions for flexible column mapping.
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per stop, summarizing its centroid/medoid, duration, and optionally full stats.
+    """
+    labels = grid_based_labels(
+        data,
+        time_thresh=time_thresh,
+        min_cluster_size=min_cluster_size,
+        dur_min=dur_min,
+        traj_cols=traj_cols,
+        **kwargs
+    )
+       
+    merged = data.join(labels)
+    merged = merged[merged.cluster != -1]
+
+    stop_table = merged.groupby('cluster', as_index=False, sort=False).apply(
+        lambda grp: utils.summarize_stop_grid(
+            grp,
+            complete_output=complete_output,
+            traj_cols=traj_cols,
+            keep_col_names=True,
+            passthrough_cols=passthrough_cols,
+            **kwargs
+        ),
+        include_groups=False
+    )
+
+    if complete_output:
+        pass #implement diameter, centroid for location_id being an h3_cell
+        
+    return stop_table
+
+def grid_based_per_user(
+    data,
+    time_thresh=120,
+    min_cluster_size=2,
+    dur_min=5,
+    complete_output=False,
+    passthrough_cols=[], 
+    traj_cols=None,
+    **kwargs
+):
+    """
+    Run grid_based stop detection on each user separately, then concatenate results.
+    Raises an error if 'user_id' is not in traj_cols or kwargs.
+    """
+    # Parse user_id
+    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    if traj_cols_temp['user_id'] not in data.columns:
+        raise ValueError(f"No 'user_id' column found in Index {data.columns} or specified in traj_cols or kwargs.")
+
+    uid = traj_cols_temp['user_id']
+    passthrough_cols += [uid, traj_cols_temp['date']]
+    
+    results = []
+    for _, group in data.groupby(uid, sort=False):
+
+        stop_table = grid_based(
+            group,
+            time_thresh=time_thresh,
+            min_cluster_size=min_cluster_size,
+            dur_min=dur_min,
+            complete_output=complete_output,
+            passthrough_cols=passthrough_cols,
+            traj_cols=traj_cols,
+            **kwargs
+        )
+        results.append(stop_table)
+        
+    return pd.concat(results, ignore_index=True)
