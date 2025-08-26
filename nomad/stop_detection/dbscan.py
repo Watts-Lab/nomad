@@ -1,12 +1,10 @@
 import pandas as pd
-from scipy.spatial.distance import pdist, cdist
 import numpy as np
 from collections import defaultdict
 import nomad.io.base as loader
 import warnings
 import geopandas as gpd
 import nomad.io.base as loader
-import nomad.constants as constants
 from nomad.stop_detection import utils
 from nomad.filters import to_timestamp
 

@@ -10,7 +10,7 @@ from pyspark.sql import SparkSession
 from pathlib import Path
 import nomad.io.base as loader
 from nomad.io.base import _unix_offset_to_str, _is_traj_df, from_df
-from nomad.filters import to_projection, filter_users, _in_geo, to_timestamp
+from nomad.filters import to_projection, to_timestamp
 
 @pytest.fixture(scope="module")
 def spark():
