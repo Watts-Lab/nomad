@@ -49,7 +49,7 @@ def _centroid(coords, metric='euclidean', weight=None):
     else:
         return np.sum(coords * weight[:, None], axis=0)
 
-def rog(stops, agg_freq='D', weighted=True, traj_cols=None, **kwargs):
+def rog(stops, agg_freq='D', weighted=True, traj_cols=None, time_weights=None, weight_freq='D', **kwargs):
     """
     Compute radius of gyration per bucket (and per user, if present).
 
@@ -62,6 +62,10 @@ def rog(stops, agg_freq='D', weighted=True, traj_cols=None, **kwargs):
         If True, weight by duration; else unweighted.
     traj_cols : dict, optional
         Mapping for x/y (or lon/lat), timestamp/datetime, duration, user_id.
+    time_weights : dict, optional
+        Mapping from period (date or hour) to weight for de-biasing.
+    weight_freq : str, optional
+        'D' for daily, 'H' for hourly weights. Default is 'D'.
 
     Returns
     -------
@@ -82,9 +86,22 @@ def rog(stops, agg_freq='D', weighted=True, traj_cols=None, **kwargs):
     # 2) time buckets
     if use_datetime:
         df['period'] = df[traj_cols[t_key]].dt.to_period(agg_freq).dt.to_timestamp()
+        if weight_freq == 'H':
+            df['period_weight'] = df[traj_cols[t_key]].dt.strftime('%Y-%m-%d %H')
+        else:
+            df['period_weight'] = df[traj_cols[t_key]].dt.strftime('%Y-%m-%d')
     else:
         step = SEC_PER_UNIT[agg_freq.lower()]
-        df['period'] = (df[traj_cols[t_key]] // step) * step
+        # Ensure timestamp is integer seconds
+        if np.issubdtype(df[traj_cols[t_key]].dtype, np.datetime64):
+            ts_seconds = df[traj_cols[t_key]].astype('int64') // 10**9
+        else:
+            ts_seconds = df[traj_cols[t_key]]
+        df['period'] = (ts_seconds // step) * step
+        if weight_freq == 'H':
+            df['period_weight'] = pd.to_datetime(ts_seconds, unit='s').dt.strftime('%Y-%m-%d %H')
+        else:
+            df['period_weight'] = pd.to_datetime(ts_seconds, unit='s').dt.strftime('%Y-%m-%d')
 
     # 3) grouping keys
     keys = ['period']
@@ -100,10 +117,17 @@ def rog(stops, agg_freq='D', weighted=True, traj_cols=None, **kwargs):
             pts = g[[traj_cols['latitude'], traj_cols['longitude']]].to_numpy()
         else:
             pts = g[[coord_x, coord_y]].to_numpy()
-        w = g[dur_key].to_numpy() if weighted else None
+        # Use time_weights if provided, else duration if weighted, else None
+        if time_weights is not None:
+            tw = g['period_weight'].map(time_weights).fillna(1.0).to_numpy()
+            w = tw
+        elif weighted:
+            w = g[dur_key].to_numpy()
+        else:
+            w = None
         return _centroid(pts, metric=metric, weight=w)
 
-    cent = df.groupby(keys).apply(_group_centroid)
+    cent = df.groupby(keys).apply(_group_centroid, include_groups=False)
     # unpack into DataFrame
     cent_df = pd.DataFrame(
         cent.tolist(),
@@ -127,9 +151,17 @@ def rog(stops, agg_freq='D', weighted=True, traj_cols=None, **kwargs):
         df['d2'] = dx*dx + dy*dy
 
     # 6) aggregate into rog
-    if weighted:
+    if time_weights is not None:
+        # Use time_weights for aggregation
         rog = df.groupby(keys).apply(
-            lambda g: np.sqrt((g['d2'] * g[dur_key]).sum() / g[dur_key].sum())
+            lambda g: np.sqrt((g['d2'] * g['period_weight'].map(time_weights).fillna(1.0)).sum() /
+                              g['period_weight'].map(time_weights).fillna(1.0).sum()),
+                              include_groups=False
+        )
+    elif weighted:
+        rog = df.groupby(keys).apply(
+            lambda g: np.sqrt((g['d2'] * g[dur_key]).sum() / g[dur_key].sum()),
+            include_groups=False
         )
     else:
         rog = np.sqrt(df.groupby(keys)['d2'].mean())

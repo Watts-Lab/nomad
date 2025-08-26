@@ -3,12 +3,9 @@ import numpy as np
 import heapq
 from collections import defaultdict
 import warnings
-from scipy.stats import norm
 import nomad.io.base as loader
-import nomad.constants as constants
 from nomad.stop_detection import utils
 from nomad.filters import to_timestamp
-from nomad.constants import DEFAULT_SCHEMA
 import pdb
 
 def _find_temp_neighbors(times, time_thresh, use_datetime):
@@ -140,6 +137,7 @@ def _mst(mrd_graph):
         heapq.heappush(heap, (0.0, start, start))
 
     seed(next(iter(graph)))
+
     while len(visited) < len(graph):
         if not heap:                              # start next component
             seed(next(t for t in graph if t not in visited))
@@ -218,7 +216,7 @@ def _build_border_map(scale, core_distances, d_graph):
     
     return core_to_border
 
-def hdbscan(edges_sorted_df, core_distances, d_graph, min_cluster_size, dur_min=5):
+def cluster_hierarchy(edges_sorted_df, core_distances, d_graph, min_cluster_size, dur_min=5):
     """
     Builds a cluster hierarchy from a pre-computed Minimum Spanning Tree.
 
@@ -319,10 +317,10 @@ def hdbscan(edges_sorted_df, core_distances, d_graph, min_cluster_size, dur_min=
     hierarchy_df = _build_cluster_lineage(hierarchy)
     return label_history_df, hierarchy_df
 
-def compute_cluster_duration(cluster):
-    max_time = max(cluster)
-    min_time = min(cluster)
-    return (max_time - min_time) * 60
+# def compute_cluster_duration(cluster):
+#     max_time = max(cluster)
+#     min_time = min(cluster)
+#     return (max_time - min_time) * 60
 
 def _build_cluster_lineage(hierarchy):
     """
@@ -401,26 +399,26 @@ def _base_cdf(eps):
     
     return res
 
-def _piecewise_linear_cdf(eps):
-    """
-    Example of a custom, piecewise CDF for stability calculations.
-    """
-    x = np.asarray(eps)
-    y = np.zeros_like(x, dtype=float)
+# def _piecewise_linear_cdf(eps):
+#     """
+#     Example of a custom, piecewise CDF for stability calculations.
+#     """
+#     x = np.asarray(eps)
+#     y = np.zeros_like(x, dtype=float)
 
-    m = (x >= 5)  & (x <= 20)
-    y[m] = 2 * (x[m] - 5)
+#     m = (x >= 5)  & (x <= 20)
+#     y[m] = 2 * (x[m] - 5)
 
-    m = (x > 20) & (x <= 80)
-    y[m] = 30 + 1.5 * (x[m] - 20)
+#     m = (x > 20) & (x <= 80)
+#     y[m] = 30 + 1.5 * (x[m] - 20)
 
-    m = (x > 80) & (x <= 200)
-    y[m] = 120 + (x[m] - 80)
+#     m = (x > 80) & (x <= 200)
+#     y[m] = 120 + (x[m] - 80)
 
-    m = x > 200
-    y[x > 200] = 240
+#     m = x > 200
+#     y[x > 200] = 240
 
-    return y/240
+#     return y/240
 
 def compute_cluster_stability(label_history_df, cdf_function=_base_cdf):
     """
@@ -494,11 +492,15 @@ def compute_cluster_stability(label_history_df, cdf_function=_base_cdf):
     return final_stability.reset_index().rename(columns={'stability_term': 'cluster_stability'})
 
 def select_most_stable_clusters(hierarchy_df, cluster_stability_df):
+    # handles error of not finding any parent in the data: returns empty set of selected clusters
+    if 'parent' not in hierarchy_df.columns or 'child' not in hierarchy_df.columns or 'scale' not in hierarchy_df.columns:
+        return set()
+    
     hierarchy = [
         (group['scale'].iloc[0], parent, list(group['child']))
         for parent, group in hierarchy_df.groupby('parent')
     ]
-    
+
     # Build tree of clusters
     children = defaultdict(list)
     parent = {}
@@ -580,7 +582,6 @@ def _build_hdbscan_graphs(coords, ts_idx, neighbors, core_dist, use_lon_lat):
             v_list.append(v)
             d_list.append(dist)
 
-
     idx = pd.MultiIndex.from_arrays([u_list, v_list], names=["from", "to"])
     d_graph_part = pd.Series(d_list, index=idx)
     
@@ -588,11 +589,10 @@ def _build_hdbscan_graphs(coords, ts_idx, neighbors, core_dist, use_lon_lat):
     rev.index = rev.index.swaplevel(0, 1)
     d_graph = pd.concat([d_graph_part, rev])
 
-
-    # --- Build MST from MRD graph ---
+    # Build MST from MRD graph
     mst_arr = _mst(mrd_graph)
 
-    # --- Extend and sort MST with self-loops ---
+    # Extend and sort MST with self-loops
     self_loops_items = list(core_dist.items())
     if not self_loops_items:
         self_loops_full = np.empty(0, dtype=mst_arr.dtype)
@@ -655,7 +655,7 @@ def hdbscan_labels(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     
     if traj_cols['user_id'] in data.columns:
-        uid_col = data[traj_cols_temp['user_id']]
+        uid_col = data[traj_cols['user_id']]
         arr = uid_col.values
         first = arr[0]
         if any(x != first for x in arr[1:]):
@@ -677,7 +677,7 @@ def hdbscan_labels(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min
     core_distances = pd.Series(core_distances).sort_index()
     core_distances.index.name = 'time'
 
-    label_history_df, hierarchy_df = hdbscan(
+    label_history_df, hierarchy_df = cluster_hierarchy(
         edges_sorted_df=edges_sorted,
         core_distances=core_distances,
         d_graph=d_graph,
