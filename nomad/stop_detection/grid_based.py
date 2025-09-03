@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 import nomad.io.base as loader
-import nomad.constants as constants
 from nomad.filters import to_timestamp
 from nomad.stop_detection import utils
 from nomad.stop_detection.utils import _fallback_time_cols
@@ -50,7 +49,7 @@ def grid_based_labels(data, time_thresh=np.inf, min_cluster_size=1, dur_min=0, t
     labels = pd.Series(-1, index=data.index)
     labels.name = 'cluster'
     
-    i= 0 # numerical index to traverse data
+    i= 0 # index to traverse data
     c = 0 # cluster label counter
     n = len(data)
 

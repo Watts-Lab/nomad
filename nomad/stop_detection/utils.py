@@ -2,14 +2,18 @@ import pandas as pd
 from scipy.spatial.distance import pdist, cdist
 import numpy as np
 import datetime as dt
-from datetime import timedelta
 import itertools
 import os
 import nomad.io.base as loader
 import nomad.constants as constants
 import h3
 #import dtoolkit.geoaccessor
+import warnings
 import pdb
+from datetime import datetime, time, timedelta
+from nomad.filters import to_timestamp
+
+
 
 def _diameter(coords, metric='euclidean'):
     """
@@ -448,3 +452,70 @@ def pad_short_stops(stop_data, pad=5, dur_min=None, traj_cols = None, **kwargs):
             stop_data[traj_cols[end_t_key]] = np.maximum(stop_data[traj_cols[end_t_key]],
                                                          stop_data[traj_cols[t_key]] + stop_data[traj_cols['duration']]*60)   
     return stop_data
+
+def explode_stops(stops, agg_freq="d", start_col="start_datetime", end_col="end_datetime", use_datetime=True):
+    """
+    Explode each stop into one row per time bucket (day or week) based on agg_freq.
+
+    Parameters
+    ----------
+    stops : pd.DataFrame
+    agg_freq : str
+        "d" for daily, "w" for weekly.
+    start_col, end_col : str
+        Column names for start and end times.
+    use_datetime : bool
+        If False, converts start/end columns from unix seconds to datetime.
+
+    Returns
+    -------
+    pd.DataFrame
+        Exploded table with updated start/end/duration per bucket.
+    """
+    stops = stops.copy()
+    stops.drop(columns=["n_pings", "diameter", "max_gap", "identifier"], errors="ignore", inplace=True)
+
+    # Convert to datetime if needed
+    if not use_datetime:
+        stops[start_col] = pd.to_datetime(stops[start_col], unit='s')
+        stops[end_col] = pd.to_datetime(stops[end_col], unit='s')
+
+    if agg_freq.lower() == "d":
+        # Daily buckets
+        stops["_bucket_start"] = stops.apply(
+            lambda r: [
+                pd.Timestamp(datetime.combine(d, time(0)), tz=r[start_col].tzinfo)
+                for d in pd.date_range(r[start_col].date(), r[end_col].date(), freq="D")
+                if pd.Timestamp(datetime.combine(d, time(0)), tz=r[start_col].tzinfo) < r[end_col]
+            ],
+            axis=1,
+        )
+        stops = stops.explode("_bucket_start", ignore_index=True)
+        stops["_bucket_end"] = stops["_bucket_start"] + timedelta(days=1)
+    elif agg_freq.lower() == "w":
+        # Weekly buckets (start on Monday)
+        stops["_bucket_start"] = stops.apply(
+            lambda r: [
+                pd.Timestamp(d, tz=r[start_col].tzinfo)
+                for d in pd.date_range(
+                    r[start_col].date() - timedelta(days=r[start_col].weekday()),
+                    r[end_col].date(),
+                    freq="W-MON"
+                )
+                if pd.Timestamp(d, tz=r[start_col].tzinfo) < r[end_col]
+            ],
+            axis=1,
+        )
+        stops = stops.explode("_bucket_start", ignore_index=True)
+        stops["_bucket_end"] = stops["_bucket_start"] + timedelta(days=7)
+    else:
+        raise ValueError("agg_freq must be 'd' (day) or 'w' (week)")
+
+    # Clip the stop to the bucket interval
+    stops[start_col] = stops[[start_col, "_bucket_start"]].max(axis=1)
+    stops[end_col] = stops[[end_col, "_bucket_end"]].min(axis=1)
+    stops["duration"] = (
+        (stops[end_col] - stops[start_col]).dt.total_seconds() // 60
+    ).astype(int)
+
+    return stops[stops["duration"] > 0].drop(columns=["_bucket_start", "_bucket_end"])
