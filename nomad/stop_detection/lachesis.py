@@ -1,7 +1,6 @@
 import pandas as pd
 from scipy.spatial.distance import pdist, cdist
 import numpy as np
-import math
 import datetime as dt
 from datetime import timedelta
 import matplotlib.pyplot as plt
@@ -10,7 +9,6 @@ from collections import defaultdict
 import warnings
 import geopandas as gpd
 import nomad.io.base as loader
-import nomad.constants as constants
 from nomad.stop_detection import utils
 from nomad.filters import to_timestamp
 
@@ -59,8 +57,7 @@ def lachesis_labels(data, dt_max, delta_roam, dur_min=5, traj_cols=None, **kwarg
     
     # Parse if necessary
     time_series = to_timestamp(data[traj_cols[t_key]]) if use_datetime else data[traj_cols[t_key]]
-  
-    stops = []
+
     i = 0
     n = len(data)
     
