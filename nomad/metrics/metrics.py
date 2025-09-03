@@ -4,6 +4,7 @@ from nomad.constants import SEC_PER_UNIT
 from nomad.stop_detection import utils
 import nomad.io.base as loader
 import warnings
+import pdb
 
 def _centroid(coords, metric='euclidean', weight=None):
     """
@@ -114,24 +115,13 @@ def rog(stops, agg_freq='d', weighted=True, traj_cols=None, time_weights=None, e
     
     # 2) time buckets
     if use_datetime:
-        if agg_freq.upper() == 'W':
-            stops['period'] = stops[traj_cols[t_key]].apply(
-                lambda x: f"{x.isocalendar()[0]}-{x.isocalendar()[1]}"  # year-week format
-            )
-        else:
-            stops['period'] = stops[traj_cols[t_key]].dt.strftime('%Y-%m-%d')
+        temp_dt = stops[traj_cols[t_key]]
     else:
-        if np.issubdtype(stops[traj_cols[t_key]].dtype, np.datetime64):
-            temp_dt = pd.to_datetime(stops[traj_cols[t_key]])
-        else:
-            temp_dt = pd.to_datetime(stops[traj_cols[t_key]], unit='s')
-            
-        if agg_freq.upper() == 'W':
-            stops['period'] = temp_dt.apply(
-                lambda x: f"{x.isocalendar()[0]}-{x.isocalendar()[1]}"  # year-week format
-            )
-        else:
-            stops['period'] = temp_dt.dt.strftime('%Y-%m-%d')
+        temp_dt = pd.to_datetime(stops[traj_cols[t_key]], unit='s') 
+    if agg_freq == "W":
+        agg_freq = "W-MON"
+
+    stops['period'] = temp_dt.dt.to_period(agg_freq).dt.start_time
 
     # 3) grouping keys
     keys = ['period']
