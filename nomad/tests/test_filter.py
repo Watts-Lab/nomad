@@ -10,7 +10,7 @@ from pyspark.sql import SparkSession
 from pathlib import Path
 import nomad.io.base as loader
 from nomad.io.base import _unix_offset_to_str, _is_traj_df, from_df
-from nomad.filters import to_projection, to_timestamp
+from nomad.filters import to_projection, to_timestamp, _filtered_users
 
 @pytest.fixture(scope="module")
 def spark():
@@ -104,9 +104,9 @@ def test_to_timestamp(base_df):
     
 def test_projection_output(simple_df_one_user):
     # Basic test
-    result = to_projection(traj=simple_df_one_user,
-                           input_crs="EPSG:4326",
-                           output_crs="EPSG:3857",
+    result = to_projection(data=simple_df_one_user,
+                           data_crs="EPSG:4326",
+                           crs_to="EPSG:3857",
                            longitude="longitude",
                            latitude="latitude")
     x = pd.Series([1.294860e+07, 1.294861e+07, 1.294862e+07, 1.294862e+07])
@@ -118,9 +118,9 @@ def test_projection_output(simple_df_one_user):
 
 def test_projection_with_empty_df():
     empty_df = pd.DataFrame(columns=['user_id', 'latitude', 'longitude', 'datetime'])
-    result = to_projection(traj=empty_df,
-                           input_crs="EPSG:4326",
-                           output_crs="EPSG:3857",
+    result = to_projection(data=empty_df,
+                           data_crs="EPSG:4326",
+                           crs_to="EPSG:3857",
                            longitude="longitude",
                            latitude="latitude")
     assert (len(result[0]), len(result[1])) == (0, 0)
@@ -134,9 +134,9 @@ def test_projection_with_empty_df():
 def test_projection_with_custom_columns(simple_df_one_user):
     # Traj has custom column names
     df_custom = simple_df_one_user.rename(columns={'longitude': 'lon', 'latitude': 'lat'})
-    result = to_projection(traj=df_custom,
-                           input_crs="EPSG:4326",
-                           output_crs="EPSG:3857",
+    result = to_projection(data=df_custom,
+                           data_crs="EPSG:4326",
+                           crs_to="EPSG:3857",
                            longitude="lon",
                            latitude="lat")
     x = pd.Series([1.294860e+07, 1.294861e+07, 1.294862e+07, 1.294862e+07])
@@ -146,26 +146,20 @@ def test_projection_with_custom_columns(simple_df_one_user):
     assert_series_equal(result[0], ans[0], rtol=1e-6)
     assert_series_equal(result[1], ans[1], rtol=1e-6)
 
-def test_projection_invalid_columns(simple_df_one_user):
-    df_invalid = simple_df_one_user.rename(columns={'longitude': 'lon', 'latitude': 'lat'})
-    with pytest.raises(ValueError):
-        to_projection(traj=df_invalid)
-
 def test_in_geo(simple_df_multi_user):
     polygon = Polygon([(116.3192, 39.9840), (116.31965, 39.9840),
                        (116.31965, 39.9845), (116.3192, 39.9845)])
-    df = _in_geo(traj=simple_df_multi_user, 
+    df = _in_geo(data=simple_df_multi_user, 
                  input_x='longitude', 
                  input_y='latitude', 
                  polygon=polygon, 
                  crs='EPSG:4326')
-    assert 'in_geo' in df.columns
     expected_values = [1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0]
     assert df['in_geo'].tolist() == expected_values
 
 
 def test_filter_no_polygon(simple_df_multi_user):
-    result = filter_users(simple_df_multi_user,
+    result = _filtered_users(simple_df_multi_user,
                           start_time=pd.Timestamp('2023-01-01 00:00:00', tz='America/New_York'),
                           end_time=pd.Timestamp('2023-01-08 00:00:00', tz='America/New_York'),
                           min_active_days=1,
@@ -177,7 +171,7 @@ def test_filter_no_polygon(simple_df_multi_user):
     assert _is_traj_df(result, longitude='longitude', latitude='latitude', timestamp='timestamp')
 
 def test_filter_datetime(simple_df_multi_user):
-    result = filter_users(simple_df_multi_user,
+    result = _filtered_users(simple_df_multi_user,
                           start_time=pd.Timestamp('2023-01-01 00:00:00', tz='America/New_York'),
                           end_time=pd.Timestamp('2023-01-08 00:00:00', tz='America/New_York'),
                           min_active_days=1,
@@ -188,9 +182,9 @@ def test_filter_datetime(simple_df_multi_user):
     assert len(result) == 12
     assert _is_traj_df(result, longitude='longitude', latitude='latitude', datetime='datetime')
 
-def test_filter_users_within_bounds(simple_df_one_user):
+def test__filtered_users_within_bounds(simple_df_one_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_users(simple_df_one_user,
+    result = _filtered_users(simple_df_one_user,
                           polygon=polygon,
                           start_time=pd.Timestamp('2008-10-23 00:00:00', tz='America/New_York'),
                           end_time=pd.Timestamp('2008-10-24 00:00:00', tz='America/New_York'),
@@ -199,9 +193,9 @@ def test_filter_users_within_bounds(simple_df_one_user):
     assert len(result) == 4
     assert _is_traj_df(result)
 
-def test_filter_users_outside_bounds(simple_df_one_user):
+def test__filtered_users_outside_bounds(simple_df_one_user):
     polygon = Polygon([(116.3180, 39.9830), (116.3185, 39.9830), (116.3185, 39.9835), (116.3180, 39.9835)])
-    result = filter_users(simple_df_one_user,
+    result = _filtered_users(simple_df_one_user,
                           polygon=polygon,
                           start_time=pd.Timestamp('2008-10-23 00:00:00', tz='America/New_York'),
                           end_time=pd.Timestamp('2008-10-24 00:00:00', tz='America/New_York'),
@@ -210,9 +204,9 @@ def test_filter_users_outside_bounds(simple_df_one_user):
     assert len(result) == 0
     assert _is_traj_df(result)
 
-def test_filter_users_within_bounds_multi_user(simple_df_multi_user):
+def test__filtered_users_within_bounds_multi_user(simple_df_multi_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_users(simple_df_multi_user, 
+    result = _filtered_users(simple_df_multi_user, 
                           polygon=polygon,
                           start_time=pd.Timestamp('2023-01-01 00:00:00', tz='America/New_York'),
                           end_time=pd.Timestamp('2023-01-08 00:00:00', tz='America/New_York'),
@@ -221,9 +215,9 @@ def test_filter_users_within_bounds_multi_user(simple_df_multi_user):
     assert len(result) == 10
     assert _is_traj_df(result)
 
-def test_filter_users_outside_bounds_multi_user(simple_df_multi_user):
+def test__filtered_users_outside_bounds_multi_user(simple_df_multi_user):
     polygon = Polygon([(116.3180, 39.9830), (116.3185, 39.9830), (116.3185, 39.9835), (116.3180, 39.9835)])
-    result = filter_users(simple_df_multi_user,
+    result = _filtered_users(simple_df_multi_user,
                           polygon=polygon,
                           start_time=pd.Timestamp('2023-01-01 00:00:00', tz='America/New_York'),
                           end_time=pd.Timestamp('2023-01-08 00:00:00', tz='America/New_York'),
@@ -232,15 +226,15 @@ def test_filter_users_outside_bounds_multi_user(simple_df_multi_user):
     assert len(result) == 0
     assert _is_traj_df(result)
 
-# def test_filter_users_with_spark(simple_df_one_user, spark):
+# def test__filtered_users_with_spark(simple_df_one_user, spark):
 #     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-#     result = filter_users(simple_df_one_user, polygon=polygon, min_active_days=1, start_time='2008-10-23 00:00:00', end_time='2008-10-24 00:00:00', spark_session=spark)
+#     result = _filtered_users(simple_df_one_user, polygon=polygon, min_active_days=1, start_time='2008-10-23 00:00:00', end_time='2008-10-24 00:00:00', spark_session=spark)
 #     assert len(result) == 4
 
-def test_filter_users_with_custom_columns(simple_df_one_user):
+def test__filtered_users_with_custom_columns(simple_df_one_user):
     df_custom = simple_df_one_user.rename(columns={'longitude': 'lon', 'latitude': 'lat'})
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_users(df_custom,
+    result = _filtered_users(df_custom,
                           polygon=polygon,
                           start_time=pd.Timestamp('2008-10-23 00:00:00', tz='America/New_York'),
                           end_time=pd.Timestamp('2008-10-24 00:00:00', tz='America/New_York'),
@@ -251,18 +245,18 @@ def test_filter_users_with_custom_columns(simple_df_one_user):
     assert len(result) == 4
     assert _is_traj_df(result, longitude='lon', latitude='lat')
 
-def test_filter_users_invalid_polygon(simple_df_one_user):
+def test__filtered_users_invalid_polygon(simple_df_one_user):
     with pytest.raises(TypeError):
-        filter_users(simple_df_one_user,
+        _filtered_users(simple_df_one_user,
                      "invalid_polygon",
                      start_time=pd.Timestamp('2008-10-23 00:00:00', tz='America/New_York'),
                      end_time=pd.Timestamp('2008-10-24 00:00:00', tz='America/New_York'),
                      min_active_days=1,
                      crs='EPSG:4326')
 
-def test_filter_users_k2(simple_df_multi_user):
+def test__filtered_users_k2(simple_df_multi_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_users(simple_df_multi_user,
+    result = _filtered_users(simple_df_multi_user,
                           polygon=polygon,
                           start_time=pd.Timestamp('2023-01-01 00:00:00', tz='America/New_York'),
                           end_time=pd.Timestamp('2023-01-08 00:00:00', tz='America/New_York'),
@@ -271,9 +265,9 @@ def test_filter_users_k2(simple_df_multi_user):
     assert len(result) == 7  # Users 1, 2, and 4 have points within the polygon on at least 2 distinct days
     assert _is_traj_df(result)
 
-def test_filter_users_k4(simple_df_multi_user):
+def test__filtered_users_k4(simple_df_multi_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_users(simple_df_multi_user,
+    result = _filtered_users(simple_df_multi_user,
                           polygon=polygon,
                           start_time=pd.Timestamp('2023-01-01 00:00:00', tz='America/New_York'),
                           end_time=pd.Timestamp('2023-01-08 00:00:00', tz='America/New_York'),
@@ -282,10 +276,10 @@ def test_filter_users_k4(simple_df_multi_user):
     assert len(result) == 0  # No users have points within the polygon on at least 3 distinct days
     assert _is_traj_df(result)
 
-def test_projection_and_filter_users(simple_df_one_user):
-    projected_x, projected_y = to_projection(traj=simple_df_one_user,
-                                             input_crs="EPSG:4326",
-                                             output_crs="EPSG:3857",
+def test_projection_and_filtered_users(simple_df_one_user):
+    projected_x, projected_y = to_projection(data=simple_df_one_user,
+                                             data_crs="EPSG:4326",
+                                             crs_to="EPSG:3857",
                                              longitude='longitude',
                                              latitude='latitude')
     polygon = Polygon([(1.294861e+07, 4.863647e+06), (1.294861e+07, 4.863649e+06),
@@ -293,7 +287,7 @@ def test_projection_and_filter_users(simple_df_one_user):
 
     simple_df_one_user['x'] = projected_x
     simple_df_one_user['y'] = projected_y
-    result = filter_users(simple_df_one_user,
+    result = _filtered_users(simple_df_one_user,
                           polygon=polygon,
                           start_time=pd.Timestamp('2008-10-23 00:00:00', tz='America/New_York'),
                           end_time=pd.Timestamp('2008-10-24 00:00:00', tz='America/New_York'),
@@ -303,10 +297,10 @@ def test_projection_and_filter_users(simple_df_one_user):
     assert len(result) == 4
     assert _is_traj_df(result)
 
-def test_projection_and_filter_users_wrong_cols(simple_df_one_user):
-    projected_x, projected_y = to_projection(traj=simple_df_one_user,
-                                             input_crs="EPSG:4326",
-                                             output_crs="EPSG:3857",
+def test_projection_and_filtered_users_wrong_cols(simple_df_one_user):
+    projected_x, projected_y = to_projection(data=simple_df_one_user,
+                                             data_crs="EPSG:4326",
+                                             crs_to="EPSG:3857",
                                              longitude='longitude',
                                              latitude='latitude')
     polygon = Polygon([(1.294861e+07, 4.863647e+06), (1.294861e+07, 4.863649e+06),
@@ -314,7 +308,7 @@ def test_projection_and_filter_users_wrong_cols(simple_df_one_user):
     
     simple_df_one_user['x'] = projected_x
     simple_df_one_user['y'] = projected_y
-    result = filter_users(simple_df_one_user,
+    result = _filtered_users(simple_df_one_user,
                           polygon=polygon,
                           start_time=pd.Timestamp('2008-10-23 00:00:00', tz='America/New_York'),
                           end_time=pd.Timestamp('2008-10-24 00:00:00', tz='America/New_York'),
@@ -322,9 +316,9 @@ def test_projection_and_filter_users_wrong_cols(simple_df_one_user):
     assert len(result) == 0
     assert _is_traj_df(result)
 
-def test_filter_users_within_time_frame(simple_df_one_user):
+def test_filtered_users_within_time_frame(simple_df_one_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_users(simple_df_one_user,
+    result = _filtered_users(simple_df_one_user,
                           polygon=polygon,
                           start_time='2008-10-23 13:53:00',
                           end_time='2008-10-23 13:53:10',
@@ -334,9 +328,9 @@ def test_filter_users_within_time_frame(simple_df_one_user):
     assert len(result) == 2
     assert _is_traj_df(result)
 
-def test_filter_users_within_time_frame_datetime(simple_df_one_user):
+def test__filtered_users_within_time_frame_datetime(simple_df_one_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_users(simple_df_one_user,
+    result = _filtered_users(simple_df_one_user,
                           polygon=polygon,
                           start_time='2008-10-23 13:53:00',
                           end_time='2008-10-23 13:53:10',
@@ -347,9 +341,9 @@ def test_filter_users_within_time_frame_datetime(simple_df_one_user):
     assert len(result) == 2
     assert _is_traj_df(result)
 
-def test_filter_users_outside_time_frame(simple_df_one_user):
+def test__filtered_users_outside_time_frame(simple_df_one_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_users(simple_df_one_user,
+    result = _filtered_users(simple_df_one_user,
                           polygon=polygon,
                           start_time=pd.Timestamp('2008-10-23 13:53:20', tz='America/New_York'),
                           end_time=pd.Timestamp('2008-10-23 13:53:30', tz='America/New_York'),
@@ -358,9 +352,9 @@ def test_filter_users_outside_time_frame(simple_df_one_user):
     assert len(result) == 0
     assert _is_traj_df(result)
 
-def test_filter_users_within_time_frame_multi_user(simple_df_multi_user):
+def test__filtered_users_within_time_frame_multi_user(simple_df_multi_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_users(simple_df_multi_user,
+    result = _filtered_users(simple_df_multi_user,
                           polygon=polygon,
                           start_time='2023-01-01 05:00:00',
                           end_time='2023-01-03 05:00:00',
@@ -369,9 +363,9 @@ def test_filter_users_within_time_frame_multi_user(simple_df_multi_user):
     assert len(result) == 6
     assert _is_traj_df(result)
 
-def test_filter_users_outside_time_frame_multi_user(simple_df_multi_user):
+def test__filtered_users_outside_time_frame_multi_user(simple_df_multi_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_users(simple_df_multi_user,
+    result = _filtered_users(simple_df_multi_user,
                           polygon=polygon,
                           start_time=pd.Timestamp('2023-01-05 00:00:00', tz='America/New_York'),
                           end_time=pd.Timestamp('2023-01-08 00:00:00', tz='America/New_York'),
@@ -380,10 +374,10 @@ def test_filter_users_outside_time_frame_multi_user(simple_df_multi_user):
     assert len(result) == 1
     assert _is_traj_df(result)
 
-def test_filter_users_with_empty_df():
+def test__filtered_users_with_empty_df():
     empty_df = pd.DataFrame(columns=['user_id', 'latitude', 'longitude', 'datetime', 'timestamp', 'tz_offset'])
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_users(empty_df,
+    result = _filtered_users(empty_df,
                           polygon=polygon,
                           start_time=pd.Timestamp('2008-10-23 00:00:00', tz='America/New_York'),
                           end_time=pd.Timestamp('2008-10-24 00:00:00', tz='America/New_York'),

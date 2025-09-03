@@ -342,6 +342,14 @@ def to_projection(
     points = gpd.points_from_xy(data[traj_cols[coord_key1]], data[traj_cols[coord_key2]])
     gseries = gpd.GeoSeries(points, crs=data_crs)
     projected = gseries.to_crs(crs_to)
+
+    if pyproj.CRS(crs_to).is_projected:
+        out_coord_1 = "x"
+        out_coord_2 = "y"
+    else:
+        out_coord_1 = "longitude"
+        out_coord_2 = "latitude"  
+        
     return pd.Series(projected.x, name=out_coord_1), pd.Series(projected.y, name=out_coord_2)
 
 def _filtered_users(

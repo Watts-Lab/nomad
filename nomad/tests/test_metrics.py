@@ -101,6 +101,7 @@ def test_rog_single_stop_straddling_days_and_weeks():
         use_datetime=True,
         exploded=True
     )
+    print(out_weekly)
 
     assert len(out_weekly) == 2
 
