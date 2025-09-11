@@ -13,6 +13,7 @@ import pdb
 from nomad.io import base as loader
 from nomad.filters import to_timestamp
 from nomad import constants
+import skmob
 
 # Define the keys explicitly for parametrization
 _col_variation_keys = [
@@ -207,6 +208,19 @@ def test_from_df_name_handling(base_df, col_variations, variation):
 
     assert loader._is_traj_df(result, traj_cols=traj_cols, parse_dates=True), "from_df() output is not a valid trajectory DataFrame"
 
+def test_from_df_skmob_geopandas(base_df):
+    indices, names, keys = ([0, 5, 6, 7, 2], ["user", "event_zoned_datetime", "device_x", "device_y", "offset"],
+                            ["user_id", "datetime", "x", "y", "tz_offset"])
+    df_subset = base_df.iloc[:, indices].copy()
+    df_subset.columns = names
+    df_skmob = skmob.TrajectoryDataFrame(df_subset, timestamp=False, 
+                                         user_id="user", latitude="device_y", 
+                                         longitude="device_x", datetime="event_zoned_datetime", crs="EPSG:3857")
+    traj_cols = dict(zip(keys, names)) if keys else None
+
+    result = loader.from_df(df_skmob, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior='naive')
+
+    assert loader._is_traj_df(result, traj_cols=traj_cols, parse_dates=True), "from_df() output is not a valid trajectory DataFrame"
 
 # Correctly handles names when importing stops
 @pytest.mark.parametrize("variation_name", _stop_col_variation_keys)
@@ -432,3 +446,5 @@ def test_sample_users_within(io_sources, park_polygons, idx, poly_variant):
     truth_ids = df_full.loc[pts.within(poly_shape), "uid"].drop_duplicates()
 
     assert set(ids_reader) == set(truth_ids)
+
+    # load first dataset in 

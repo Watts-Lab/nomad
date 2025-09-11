@@ -455,13 +455,13 @@ def pad_short_stops(stop_data, pad=5, dur_min=None, traj_cols = None, **kwargs):
 
 def explode_stops(stops, agg_freq="d", start_col="start_datetime", end_col="end_datetime", use_datetime=True):
     """
-    Explode each stop into one row per time bucket (day or week) based on agg_freq.
+    Explode each stop into one row per time bucket (day, week, or hour) based on agg_freq.
 
     Parameters
     ----------
     stops : pd.DataFrame
     agg_freq : str
-        "d" for daily, "w" for weekly.
+        "d" for daily, "w" for weekly, "h" for hourly.
     start_col, end_col : str
         Column names for start and end times.
     use_datetime : bool
@@ -508,8 +508,22 @@ def explode_stops(stops, agg_freq="d", start_col="start_datetime", end_col="end_
         )
         stops = stops.explode("_bucket_start", ignore_index=True)
         stops["_bucket_end"] = stops["_bucket_start"] + timedelta(days=7)
+    elif agg_freq.lower() == "h":
+        # Hourly buckets
+        stops["_bucket_start"] = stops.apply(
+            lambda r: [
+                pd.Timestamp(datetime.combine(d, time(h, 0)), tz=r[start_col].tzinfo)
+                for d in pd.date_range(r[start_col].date(), r[end_col].date(), freq="D")
+                for h in range(24)
+                if pd.Timestamp(datetime.combine(d, time(h, 0)), tz=r[start_col].tzinfo) < r[end_col]
+                and pd.Timestamp(datetime.combine(d, time(h, 0)), tz=r[start_col].tzinfo) >= r[start_col]
+            ],
+            axis=1,
+        )
+        stops = stops.explode("_bucket_start", ignore_index=True)
+        stops["_bucket_end"] = stops["_bucket_start"] + timedelta(hours=1)
     else:
-        raise ValueError("agg_freq must be 'd' (day) or 'w' (week)")
+        raise ValueError("agg_freq must be 'd' (day), 'w' (week), or 'h' (hour)")
 
     # Clip the stop to the bucket interval
     stops[start_col] = stops[[start_col, "_bucket_start"]].max(axis=1)

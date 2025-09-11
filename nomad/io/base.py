@@ -808,8 +808,15 @@ def from_df(df, traj_cols=None, parse_dates=True, mixed_timezone_behavior="naive
     - Spatial columns are validated, and datetime columns are processed based on `parse_dates` and `mixed_timezone_behavior`.
     - If `mixed_timezone_behavior='naive'`, a separate column storing UTC offsets (in seconds) is added.
     """
+    try:
+        from skmob import TrajDataFrame
+        if TrajDataFrame is not None and isinstance(df, TrajDataFrame):
+            df = df.to_geodataframe()
+    except ImportError:
+        pass
+
     if not isinstance(df, (pd.DataFrame, gpd.GeoDataFrame)):
-        raise TypeError("Expected the data argument to be either a pandas DataFrame or a GeoPandas GeoDataFrame.")   
+        raise TypeError("Expected the data argument to be either a pandas DataFrame, a GeoPandas GeoDataFrame, or a scikit-mobility TrajDataFrame.")   
     traj_cols = _parse_traj_cols(df.columns, traj_cols, kwargs)
 
     _has_spatial_cols(df.columns, traj_cols)
@@ -1092,7 +1099,6 @@ def sample_users(
         else:
             dataset_obj = ds.dataset(filepath, format=file_format_obj, partitioning="hive")
 
-        # Apply filters at scan time
         arrow_flt = _process_filters(filters,
                                      col_names=column_names,
                                      traj_cols=traj_cols,
