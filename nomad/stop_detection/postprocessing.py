@@ -4,7 +4,7 @@ from functools import partial
 import nomad.stop_detection.utils as utils
 import nomad.stop_detection.grid_based as GRID_BASED 
 import nomad.io.base as loader
-from nomad.stop_detection.dbscan import _find_neighbors
+from nomad.stop_detection.preprocessing import _find_neighbors
 from nomad.filters import to_timestamp
 import nomad.stop_detection.hdbscan as HDBSCAN
 import nomad.stop_detection.lachesis as LACHESIS
@@ -69,12 +69,12 @@ def remove_overlaps(pred, time_thresh=None, dur_min=None, min_pts=None, dist_thr
         data_temp = pred.copy()
         data_temp.index = times
         stops = pd.DataFrame({'cluster': -1, 'core': -1}, index=times)
-        _process_clusters(data_temp, time_thresh, dist_thresh, min_pts, stops, use_lon_lat, use_datetime, traj_cols, dur_min=dur_min)
+        _recursion(data_temp, time_thresh, dist_thresh, min_pts, stops, use_lon_lat, use_datetime, traj_cols, dur_min=dur_min)
         stops.index = pred.index
     
     return stops
 
-def _process_clusters(data, time_thresh, dist_thresh, min_pts, output, use_lon_lat, use_datetime, traj_cols, 
+def _recursion(data, time_thresh, dist_thresh, min_pts, output, use_lon_lat, use_datetime, traj_cols, 
                      cluster_df=None, neighbor_dict=None, dur_min=5):
     """
     Recursively process spatiotemporal clusters from trajectory data to identify and refine valid clusters.
@@ -151,14 +151,14 @@ def _process_clusters(data, time_thresh, dist_thresh, min_pts, output, use_lon_l
         i, j = _extract_middle(cluster_df)  # Indices of the "middle" of the cluster
         
         # Recursively processes clusters
-        if _process_clusters(data, time_thresh, dist_thresh, min_pts, output, use_lon_lat, use_datetime, traj_cols, cluster_df = cluster_df[i:j], dur_min=dur_min):  # Valid cluster in the middle
-            _process_clusters(data, time_thresh, dist_thresh, min_pts, output,
+        if _recursion(data, time_thresh, dist_thresh, min_pts, output, use_lon_lat, use_datetime, traj_cols, cluster_df = cluster_df[i:j], dur_min=dur_min):  # Valid cluster in the middle
+            _recursion(data, time_thresh, dist_thresh, min_pts, output,
                              use_lon_lat, use_datetime, traj_cols, cluster_df = cluster_df[:i], dur_min=dur_min)  # Process the initial stub
-            _process_clusters(data, time_thresh, dist_thresh, min_pts, output,
+            _recursion(data, time_thresh, dist_thresh, min_pts, output,
                              use_lon_lat, use_datetime, traj_cols, cluster_df = cluster_df[j:], dur_min=dur_min)  # Process the "tail"
             return True
         else:  # No valid cluster in the middle
-            return _process_clusters(data, time_thresh, dist_thresh, min_pts, output, use_lon_lat, use_datetime, traj_cols, pd.concat([cluster_df[:i], cluster_df[j:]]), dur_min=dur_min)
+            return _recursion(data, time_thresh, dist_thresh, min_pts, output, use_lon_lat, use_datetime, traj_cols, pd.concat([cluster_df[:i], cluster_df[j:]]), dur_min=dur_min)
 
 def _extract_middle(data):
     """

@@ -7,39 +7,7 @@ import nomad.io.base as loader
 from nomad.stop_detection import utils
 from nomad.filters import to_timestamp
 import pdb
-
-def _find_temp_neighbors(times, time_thresh, use_datetime):
-    """
-    Find timestamp pairs that are within time threshold.
-
-    Parameters
-    ----------
-    times : array of timestamps.
-    time_thresh : time threshold for finding what timestamps are close in time.
-    use_datetime : Whether to process timestamps as datetime objects.
-
-    Returns
-    -------
-    time_pairs : list of tuples of timestamps [(t1, t2), ...] that are close in time given time_thresh.
-
-    TC: O(n^2)
-    """
-    # getting times based on whether they are datetime values or timestamps, changed to seconds for calculations
-    times = to_timestamp(times).values if use_datetime else times.values
-        
-    # Pairwise time differences
-    # times[:, np.newaxis]: from shape (n,) -> to shape (n, 1) – a column vector
-    time_diffs = np.abs(times[:, np.newaxis] - times)
-    time_diffs = time_diffs.astype(int)
-    
-    # Filter by time threshold
-    within_time_thresh = np.triu(time_diffs <= (time_thresh * 60), k=1) # keep upper triangle
-    i_idx, j_idx = np.where(within_time_thresh)
-    
-    # Return a list of (timestamp1, timestamp2) tuples
-    time_pairs = [(times[i], times[j]) for i, j in zip(i_idx, j_idx)]
-    
-    return time_pairs, times
+from nomad.stop_detection import preprocessing as pp
 
 def _build_neighbor_graph(time_pairs, times):
     # Build neighbor map from time_pairs
@@ -665,7 +633,7 @@ def hdbscan_labels(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min
     loader._has_spatial_cols(data.columns, traj_cols)
     loader._has_time_cols(data.columns, traj_cols)
 
-    time_pairs, times = _find_temp_neighbors(data[traj_cols[t_key]], time_thresh, use_datetime)
+    time_pairs, times = pp._find_temp_neighbors(data[traj_cols[t_key]], time_thresh, use_datetime)
 
     neighbors = _build_neighbor_graph(time_pairs, times)
     ts_idx = {ts: i for i, ts in enumerate(times)}
