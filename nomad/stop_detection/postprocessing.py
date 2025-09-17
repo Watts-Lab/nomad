@@ -10,7 +10,7 @@ import nomad.stop_detection.hdbscan as HDBSCAN
 import nomad.stop_detection.lachesis as LACHESIS
 import nomad.stop_detection.dbscan as TADBSCAN
 
-def remove_overlaps(pred, time_thresh=None, dur_min=None, min_pts=None, dist_thresh=None, method = 'polygon', traj_cols = None, **kwargs):
+def remove_overlaps(pred, time_thresh=None, dur_min=None, min_pts=None, dist_thresh=None, method = 'polygon', algorithm = 'dbscan', traj_cols = None, **kwargs):
     pred = pred.copy()
     # load kwarg and traj_col args onto lean defaults
     traj_cols = loader._parse_traj_cols(
@@ -63,19 +63,36 @@ def remove_overlaps(pred, time_thresh=None, dur_min=None, min_pts=None, dist_thr
     
     elif method == 'recurse':
         t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(pred.columns, traj_cols, kwargs)
-        times = pred[traj_cols[t_key]]
-        times = to_timestamp(times).values if use_datetime else times.values
+        times = to_timestamp(pred[traj_cols[t_key]]).values if use_datetime else pred[traj_cols[t_key]].values
 
         data_temp = pred.copy()
         data_temp.index = times
         stops = pd.DataFrame({'cluster': -1, 'core': -1}, index=times)
-        _recursion(data_temp, time_thresh, dist_thresh, min_pts, stops, use_lon_lat, use_datetime, traj_cols, dur_min=dur_min)
+        _recursion(data=data_temp,
+                   algorithm=algorithm,
+                   time_thresh=time_thresh,
+                   dist_thresh=dist_thresh,
+                   min_pts=min_pts,
+                   output=stops,
+                   use_lon_lat=use_lon_lat,
+                   use_datetime=use_datetime,
+                   traj_cols=traj_cols,
+                   dur_min=dur_min)
         stops.index = pred.index
     
     return stops
 
-def _recursion(data, time_thresh, dist_thresh, min_pts, output, use_lon_lat, use_datetime, traj_cols, 
-                     cluster_df=None, neighbor_dict=None, dur_min=5):
+def _recursion(data,
+               algorithm,
+               time_thresh,
+               dist_thresh,
+               min_pts,
+               output,
+               use_lon_lat,
+               use_datetime,
+               traj_cols,
+               cluster_df=None,
+               dur_min=5):
     """
     Recursively process spatiotemporal clusters from trajectory data to identify and refine valid clusters.
     
@@ -110,11 +127,11 @@ def _recursion(data, time_thresh, dist_thresh, min_pts, output, use_lon_lat, use
     bool
         True if at least one valid cluster is identified and processed, otherwise False.
     """
-    if not neighbor_dict:
-        neighbor_dict = _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, traj_cols)
-    
     if cluster_df is None:
-        cluster_df = TADBSCAN.dbscan(data, time_thresh, dist_thresh, min_pts, use_lon_lat, use_datetime, traj_cols, neighbor_dict=neighbor_dict)
+        if algorithm == 'dbscan':
+            cluster_df = TADBSCAN.ta_dbscan(data, time_thresh, dist_thresh, min_pts, use_lon_lat, use_datetime, traj_cols)
+        elif algorithm == 'hdbscan':
+            cluster_df =  HDBSCAN.st_hdbscan(data, time_thresh)
     
     if len(cluster_df) < min_pts:
         return False
@@ -124,9 +141,12 @@ def _recursion(data, time_thresh, dist_thresh, min_pts, output, use_lon_lat, use
     # All pings are in the same cluster
     if len(cluster_df['cluster'].unique()) == 1:
         # We rerun dbscan because possibly these points no longer hold their own
-        x = TADBSCAN.dbscan(data = data.loc[cluster_df.index], time_thresh = time_thresh, dist_thresh = dist_thresh,
-                   min_pts = min_pts, use_lon_lat = use_lon_lat, use_datetime = use_datetime, traj_cols = traj_cols, neighbor_dict = neighbor_dict)
-        
+        if algorithm == 'dbscan':
+            x = TADBSCAN.ta_dbscan(data = data.loc[cluster_df.index], time_thresh = time_thresh, dist_thresh = dist_thresh,
+                   min_pts = min_pts, use_lon_lat = use_lon_lat, use_datetime = use_datetime, traj_cols = traj_cols)
+        elif algorithm == 'hdbscan':
+            x = HDBSCAN.st_hdbscan(data = data.loc[cluster_df.index], time_thresh = time_thresh)
+
         y = x.loc[x['cluster'] != -1]
         z = x.loc[x['core'] != -1]
 
@@ -151,14 +171,12 @@ def _recursion(data, time_thresh, dist_thresh, min_pts, output, use_lon_lat, use
         i, j = _extract_middle(cluster_df)  # Indices of the "middle" of the cluster
         
         # Recursively processes clusters
-        if _recursion(data, time_thresh, dist_thresh, min_pts, output, use_lon_lat, use_datetime, traj_cols, cluster_df = cluster_df[i:j], dur_min=dur_min):  # Valid cluster in the middle
-            _recursion(data, time_thresh, dist_thresh, min_pts, output,
-                             use_lon_lat, use_datetime, traj_cols, cluster_df = cluster_df[:i], dur_min=dur_min)  # Process the initial stub
-            _recursion(data, time_thresh, dist_thresh, min_pts, output,
-                             use_lon_lat, use_datetime, traj_cols, cluster_df = cluster_df[j:], dur_min=dur_min)  # Process the "tail"
+        if _recursion(data, algorithm, time_thresh, dist_thresh, min_pts, output, use_lon_lat, use_datetime, traj_cols, cluster_df = cluster_df[i:j], dur_min=dur_min):  # Valid cluster in the middle
+            _recursion(data, algorithm, time_thresh, dist_thresh, min_pts, output, use_lon_lat, use_datetime, traj_cols, cluster_df = cluster_df[:i], dur_min=dur_min)  # Process the initial stub
+            _recursion(data, algorithm, time_thresh, dist_thresh, min_pts, output, use_lon_lat, use_datetime, traj_cols, cluster_df = cluster_df[j:], dur_min=dur_min)  # Process the "tail"
             return True
         else:  # No valid cluster in the middle
-            return _recursion(data, time_thresh, dist_thresh, min_pts, output, use_lon_lat, use_datetime, traj_cols, pd.concat([cluster_df[:i], cluster_df[j:]]), dur_min=dur_min)
+            return _recursion(data, algorithm, time_thresh, dist_thresh, min_pts, output, use_lon_lat, use_datetime, traj_cols, pd.concat([cluster_df[:i], cluster_df[j:]]), dur_min=dur_min)
 
 def _extract_middle(data):
     """

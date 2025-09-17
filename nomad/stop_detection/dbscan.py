@@ -23,9 +23,16 @@ def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False
     loader._has_time_cols(data.columns, traj_cols)
 
     valid_times = to_timestamp(data[traj_cols[t_key]]) if use_datetime else data[traj_cols[t_key]]
-    
-    neighbor_dict = pp._find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, traj_cols)
+    valid_coords = data[traj_cols[[coord_key1, coord_key2]]]
 
+    neighbor_dict = pp._cache_neighbors(times = valid_times,
+                                        coords = valid_coords,
+                                        time_thresh = time_thresh,
+                                        dist_thresh = dist_thresh,
+                                        use_lon_lat = use_lon_lat,
+                                        use_datetime = use_datetime,
+                                        traj_cols = traj_cols)
+    
     cluster_df = pd.Series(-2, index=valid_times, name='cluster')
     core_df = pd.Series(-3, index=valid_times, name='core')
     # Initialize cluster label

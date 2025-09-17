@@ -633,7 +633,9 @@ def hdbscan_labels(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min
     loader._has_spatial_cols(data.columns, traj_cols)
     loader._has_time_cols(data.columns, traj_cols)
 
-    time_pairs, times = pp._find_temp_neighbors(data[traj_cols[t_key]], time_thresh, use_datetime)
+    time_pairs, times = pp._cache_neighbors(times=data[traj_cols[t_key]],
+                                            time_thresh=time_thresh,
+                                            use_datetime=use_datetime)
 
     neighbors = _build_neighbor_graph(time_pairs, times)
     ts_idx = {ts: i for i, ts in enumerate(times)}
