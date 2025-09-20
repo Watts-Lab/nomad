@@ -11,6 +11,8 @@ import h3
 
 import nomad.io.base as loader
 from nomad.constants import DEFAULT_SCHEMA, SEC_PER_UNIT
+from nomad.stop_detection.hdbscan import _compute_core_distance, _find_temp_neighbors
+from nomad.stop_detection import utils
 
 def _timestamp_handling(
     ts,
@@ -744,3 +746,49 @@ def _q_array(sec, start_timestamp, end_timestamp, periods=1, freq='h'):
     # np.diff computes `pos[i+1] - pos[i]`. If > 0, the bucket had data.
     hits = np.diff(all_pos) > 0
     return pd.Series(hits, index=bin_starts) if isinstance(sec, pd.Series) else hits
+
+def _avg_density(data, use_lon_lat, traj_cols, min_pts=2, time_thresh=240, **kwargs):
+    """
+    Calculate the average density of points in data based on core distances.
+    
+    First finds the distance to the min_pts-th closest neighbor for each ping,
+    then takes the median of all those distances, and returns 1/median
+    as the average density.
+    
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Input trajectory data.
+    time_thresh : int
+        Maximum allowed time gap (minutes) for temporal neighbors.
+    use_lon_lat : bool
+        Whether to use geographic coordinates.
+    traj_cols : dict
+        Mapping for key trajectory columns.
+    min_pts : int, optional
+        Number of neighbors to consider for core distance, default=2.
+        
+    Returns
+    -------
+    float
+        Average density, calculated as 1/(median of core distances).
+    """
+    t_key, coord_key1, coord_key2, use_datetime, _ = utils._fallback_st_cols(data.columns, traj_cols, kwargs)
+    
+    # Time pairs
+    time_pairs, times = _find_temp_neighbors(data[traj_cols[t_key]], time_thresh, use_datetime)
+    
+    # Core distances
+    core_distances, _ = _compute_core_distance(data, time_pairs, times, use_lon_lat, traj_cols, min_pts)
+
+    if not core_distances:
+        return 0.0
+    
+    # Median of core distances
+    core_dist_values = list(core_distances.values())
+    median_dist = np.median(core_dist_values)
+    
+    if median_dist == 0 or np.isnan(median_dist):
+        return float('inf')
+    
+    return 1.0 / median_dist
