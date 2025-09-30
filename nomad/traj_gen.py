@@ -13,7 +13,8 @@ import s3fs
 from nomad.city_gen import *
 import nomad.io.base as loader 
 from nomad.constants import DEFAULT_SPEEDS, FAST_SPEEDS, SLOW_SPEEDS, DEFAULT_STILL_PROBS
-from nomad.constants import FAST_STILL_PROBS, SLOW_STILL_PROBS, ALLOWED_BUILDINGS, DEFAULT_STAY_PROBS
+# CHANGE
+from nomad.constants import FAST_STILL_PROBS, SLOW_STILL_PROBS, ALLOWED_BUILDINGS, DEFAULT_STAY_PROBS, VISITED_LOCATIONS
 
 import pdb
 
@@ -445,12 +446,12 @@ class Agent:
             self.diary = pd.concat([self.diary, pd.DataFrame(entry_update)], ignore_index=True)
         self.destination_diary = destination_diary.drop(destination_diary.index)
 
-    def _generate_dest_diary(self, 
+    def _generate_dest_diary(self,
                              end_time: pd.Timestamp, 
                              epr_time_res: int = 15,
                              stay_probs: dict = DEFAULT_STAY_PROBS,
                              rho: float = 0.6, 
-                             gamma: float = 0.2, 
+                             gamma: float = 0.2,
                              seed: int = 0):
         """
         Exploration and preferential return.
@@ -496,17 +497,19 @@ class Agent:
                 'p': 0
             }).set_index('id')
 
+            # CHANGE
+            
             # Initializes past counts randomly
-            visit_freqs.loc[self.home, 'freq'] = 25
-            visit_freqs.loc[self.workplace, 'freq'] = 25
-            visit_freqs.loc[visit_freqs.type == 'park', 'freq'] = 3  # Agents love to comeback to park
+            visit_freqs.loc[self.home, 'freq'] = VISITED_LOCATIONS['init_home_freq']
+            visit_freqs.loc[self.workplace, 'freq'] = VISITED_LOCATIONS['init_work_freq']
+            visit_freqs.loc[visit_freqs.type == 'park', 'freq'] = VISITED_LOCATIONS['init_park_freq']  # Agents love to comeback to park
             # ALTERNATIVELY: start with 1 at home and 1 at work, and do a burnout period of 2 weeks. 
 
             initial_locs = []
-            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'retail'].index, size=npr.poisson(8)))
-            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'work'].index, size=npr.poisson(4)))
-            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'home'].index, size=npr.poisson(4)))
-            visit_freqs.loc[initial_locs, 'freq'] += 1
+            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'retail'].index, size=npr.poisson(VISITED_LOCATIONS['retail_lambda'])))
+            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'work'].index, size=npr.poisson(VISITED_LOCATIONS['work_lambda'])))
+            initial_locs += list(npr.choice(visit_freqs.loc[visit_freqs.type == 'home'].index, size=npr.poisson(VISITED_LOCATIONS['home_lambda'])))
+            visit_freqs.loc[initial_locs, 'freq'] += VISITED_LOCATIONS['init_increment']
 
         if self.destination_diary.empty:
             start_time_local = self.last_ping['local_timestamp']

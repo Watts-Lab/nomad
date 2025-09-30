@@ -64,3 +64,13 @@ DEFAULT_STAY_PROBS = {'park': 1-((1/1)/4),
                       'retail': 1-((1/0.5)/4),
                       'work': 1-((1/7)/4),
                       'home': 1-((1/14)/4)}
+
+VISITED_LOCATIONS = {'init_home_freq': 25,
+                     'init_work_freq': 25,
+                     'init_park_freq': 3,
+                     'retail_lambda': 8,
+                     'work_lambda': 4,
+                     'home_lambda': 4,
+                     'init_increment': 1}
+
+GRAVITY_EXP = 2

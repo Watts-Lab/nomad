@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from matplotlib import cm
 import networkx as nx
+from nomad.constants import GRAVITY_EXP
 
 
 import pdb
@@ -332,8 +333,9 @@ class City:
         sp = dict(nx.all_pairs_shortest_path(G))
         self.shortest_paths = {node: paths for node, paths in sp.items()}
 
+        # CHANGE
         data = [
-            {'origin': origin, 'dest': dest, 'gravity': (1 / (len(path) - 1) ** 2 if len(path) > 1 else 0)}
+            {'origin': origin, 'dest': dest, 'gravity': (1 / (len(path) - 1) ** GRAVITY_EXP if len(path) > 1 else 0)}
             for origin, paths in sp.items()
             for dest, path in paths.items()
         ]
