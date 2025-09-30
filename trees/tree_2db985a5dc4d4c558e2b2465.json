@@ -1,0 +1,48 @@
+{
+  "name": "Paper",
+  "value": "A Data Mining Approach to Assess Privacy Risk in Human Mobility Data",
+  "children": [
+    {
+      "name": "Experiments",
+      "value": "Research Experiments",
+      "children": [
+        {
+          "name": "Domain",
+          "value": "unspecified",
+          "children": []
+        },
+        {
+          "name": "Description",
+          "value": "31A Data Mining Approachto Assess PrivacyRisk in Human\nMobility Data\nROBERTOPELLUNGRINI ,Department ...",
+          "children": []
+        }
+      ]
+    },
+    {
+      "name": "Metadata",
+      "value": "Paper Information",
+      "children": [
+        {
+          "name": "Paper ID",
+          "value": "2db985a5dc4d4c558e2b2465",
+          "children": []
+        },
+        {
+          "name": "Version",
+          "value": "1",
+          "children": []
+        },
+        {
+          "name": "Created At",
+          "value": "2025-09-30 17:23:24",
+          "children": []
+        },
+        {
+          "name": "Result ID",
+          "value": "913d91f0144142ffa908b3f4",
+          "children": []
+        }
+      ]
+    }
+  ]
+}

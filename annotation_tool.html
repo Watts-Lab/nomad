@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nomadica Annotation Tool</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f7fb;
+            min-height: 100vh;
+            color: #1f2937;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 28px 32px;
+            margin-bottom: 24px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+        }
+
+        .header h1 {
+            color: #2c3e50;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+
+        .header p {
+            color: #7f8c8d;
+            text-align: center;
+            font-size: 1.1em;
+        }
+
+        .search-section {
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 24px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+        }
+
+        .search-container {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+            position: relative;
+        }
+
+        .search-input {
+            flex: 1;
+            min-width: 300px;
+            padding: 15px 20px;
+            border: 1px solid #d1d5db;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            background: white;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #6366f1;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+        }
+
+        /* Typeahead dropdown */
+        .typeahead {
+            position: absolute;
+            top: 58px;
+            left: 0;
+            right: 220px; /* leave space for buttons */
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+            max-height: 320px;
+            overflow-y: auto;
+            z-index: 20;
+            display: none;
+        }
+
+        .typeahead.show { display: block; }
+
+        .typeahead-item {
+            padding: 12px 14px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .typeahead-item:hover, .typeahead-item.active {
+            background: #f3f4f6;
+        }
+
+        .typeahead-title {
+            color: #111827;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .typeahead-id {
+            color: #6b7280;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+            font-size: 12px;
+        }
+
+        .search-button {
+            padding: 15px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+        }
+
+        .search-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .random-button {
+            padding: 15px 25px;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+        }
+
+        .random-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(240, 147, 251, 0.4);
+        }
+
+        .results-section {
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 24px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+            display: none;
+        }
+
+        .results-section.show {
+            display: block;
+        }
+
+        .paper-list {
+            display: grid;
+            gap: 15px;
+        }
+
+        .paper-item {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .paper-item::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(102, 126, 234, 0.1), transparent);
+            transition: left 0.5s ease;
+        }
+
+        .paper-item:hover::before {
+            left: 100%;
+        }
+
+        .paper-item:hover {
+            border-color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .paper-title {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 8px;
+        }
+
+        .paper-id {
+            font-size: 0.9em;
+            color: #7f8c8d;
+            font-family: 'Courier New', monospace;
+        }
+
+        .visualization-section {
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+        }
+
+        .visualization-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .current-paper {
+            font-size: 1.3em;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .control-button {
+            padding: 10px 20px;
+            background: #f8f9fa;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .control-button:hover {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .canvas-container {
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            overflow: auto;
+            background: white;
+            position: relative;
+            max-height: 70vh;
+        }
+
+        #treeCanvas {
+            display: block;
+            cursor: grab;
+        }
+
+        #treeCanvas:active {
+            cursor: grabbing;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+            color: #7f8c8d;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .no-results {
+            text-align: center;
+            padding: 40px;
+            color: #7f8c8d;
+            font-size: 1.1em;
+        }
+
+        .annotation-panel {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 25px;
+            margin-top: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+            display: none;
+        }
+
+        .annotation-panel.show {
+            display: block;
+        }
+
+        .annotation-form {
+            display: grid;
+            gap: 20px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .form-label {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .form-input, .form-textarea {
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-input:focus, .form-textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .submit-button {
+            padding: 15px 30px;
+            background: linear-gradient(135deg, #56ab2f 0%, #a8e6cf 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .submit-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(86, 171, 47, 0.4);
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .search-container {
+                flex-direction: column;
+            }
+            
+            .search-input {
+                min-width: auto;
+            }
+            
+            .visualization-header {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .controls {
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Nomadica Annotation Tool</h1>
+            <p>Search and annotate paper trees for the Atlas project</p>
+        </div>
+
+        <div class="search-section">
+            <div class="search-container">
+                <input type="text" id="searchInput" class="search-input" placeholder="Search papers by title...">
+                <button id="searchButton" class="search-button">Search</button>
+                <button id="randomButton" class="random-button">Random</button>
+                <label for="uploadJson" class="control-button" title="Upload JSON list of records">Upload JSON</label>
+                <input type="file" id="uploadJson" accept="application/json" style="display:none" />
+                <label for="uploadPdf" class="control-button" title="Upload research paper PDF">Upload PDF</label>
+                <input type="file" id="uploadPdf" accept="application/pdf" style="display:none" />
+                <div id="typeahead" class="typeahead"></div>
+            </div>
+        </div>
+
+        <div id="resultsSection" class="results-section">
+            <h3>Search Results</h3>
+            <div id="paperList" class="paper-list"></div>
+        </div>
+
+        <div class="loading" id="loadingIndicator">
+            <div class="spinner"></div>
+            <p>Loading tree visualization...</p>
+        </div>
+
+        <div id="visualizationSection" class="visualization-section">
+            <div class="visualization-header">
+                <div id="currentPaper" class="current-paper">Select a paper to visualize</div>
+                <div class="controls">
+                    <button id="resetView" class="control-button">Reset View</button>
+                    <button id="zoomIn" class="control-button">Zoom In</button>
+                    <button id="zoomOut" class="control-button">Zoom Out</button>
+                    <button id="annotateButton" class="control-button">Annotate</button>
+                </div>
+            </div>
+            <div class="canvas-container">
+                <canvas id="treeCanvas"></canvas>
+            </div>
+        </div>
+
+        <div id="annotationPanel" class="annotation-panel">
+            <h3>Annotation Form</h3>
+            <form id="annotationForm" class="annotation-form">
+                <div class="form-group">
+                    <label for="annotatorId" class="form-label">Annotator ID:</label>
+                    <input type="text" id="annotatorId" class="form-input" placeholder="Enter your annotator ID" required>
+                </div>
+                <div class="form-group">
+                    <label for="annotationType" class="form-label">Annotation Type:</label>
+                    <select id="annotationType" class="form-input">
+                        <option value="incorrect_subtree">Incorrect Subtree</option>
+                        <option value="missing_subtree">Missing Subtree</option>
+                        <option value="general_feedback">General Feedback</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="annotationNotes" class="form-label">Notes:</label>
+                    <textarea id="annotationNotes" class="form-textarea" placeholder="Describe the issue or provide feedback..."></textarea>
+                </div>
+                <button type="submit" class="submit-button">Save Annotation</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="tree-visualizer.js"></script>
+    <script>
+        class AnnotationTool {
+            constructor() {
+                this.papersData = null;
+                this.currentPaperId = null;
+                this.visualizer = null;
+                this.suggestions = [];
+                this.activeSuggestion = -1;
+                this.initializeElements();
+                this.setupEventListeners();
+                this.loadPapersData();
+            }
+
+            initializeElements() {
+                this.searchInput = document.getElementById('searchInput');
+                this.searchButton = document.getElementById('searchButton');
+                this.randomButton = document.getElementById('randomButton');
+                this.typeahead = document.getElementById('typeahead');
+                this.resultsSection = document.getElementById('resultsSection');
+                this.paperList = document.getElementById('paperList');
+                this.loadingIndicator = document.getElementById('loadingIndicator');
+                this.visualizationSection = document.getElementById('visualizationSection');
+                this.currentPaper = document.getElementById('currentPaper');
+                this.resetViewButton = document.getElementById('resetView');
+                this.zoomInButton = document.getElementById('zoomIn');
+                this.zoomOutButton = document.getElementById('zoomOut');
+                this.annotateButton = document.getElementById('annotateButton');
+                this.annotationPanel = document.getElementById('annotationPanel');
+                this.annotationForm = document.getElementById('annotationForm');
+                this.uploadJson = document.getElementById('uploadJson');
+                this.uploadPdf = document.getElementById('uploadPdf');
+            }
+
+            setupEventListeners() {
+                this.searchButton.addEventListener('click', () => this.searchPapers());
+                this.randomButton.addEventListener('click', () => this.loadRandomPaper());
+                this.searchInput.addEventListener('input', () => this.onInputChanged());
+                this.searchInput.addEventListener('keydown', (e) => this.onSearchKeyDown(e));
+                this.searchInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') e.preventDefault(); });
+                this.resetViewButton.addEventListener('click', () => this.resetView());
+                this.zoomInButton.addEventListener('click', () => this.zoomIn());
+                this.zoomOutButton.addEventListener('click', () => this.zoomOut());
+                this.annotateButton.addEventListener('click', () => this.toggleAnnotationPanel());
+                this.annotationForm.addEventListener('submit', (e) => this.submitAnnotation(e));
+                this.uploadJson.addEventListener('change', (e) => this.handleJsonUpload(e));
+                this.uploadPdf.addEventListener('change', (e) => this.handlePdfUpload(e));
+
+                document.addEventListener('click', (e) => {
+                    if (!this.searchInput.contains(e.target) && !this.typeahead.contains(e.target)) {
+                        this.hideTypeahead();
+                    }
+                });
+            }
+
+            async loadPapersData() {
+                try {
+                    const response = await fetch('trees/papers_summary.json');
+                    if (response.ok) {
+                        this.papersData = await response.json();
+                        console.log('Loaded papers data:', this.papersData);
+                    } else {
+                        console.warn('Could not load papers summary, using fallback');
+                        this.papersData = {};
+                    }
+                } catch (error) {
+                    console.error('Error loading papers data:', error);
+                    this.papersData = {};
+                }
+            }
+
+            async handleJsonUpload(e) {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const form = new FormData();
+                form.append('file', file);
+                try {
+                    this.searchButton.disabled = true;
+                    const res = await fetch('/api/upload', { method: 'POST', body: form });
+                    if (!res.ok) {
+                        const err = await res.json().catch(() => ({ error: res.statusText }));
+                        alert(`Upload failed: ${err.error || res.statusText}`);
+                        return;
+                    }
+                    const data = await res.json();
+                    // Reload papers summary
+                    await this.loadPapersData();
+                    alert(`Uploaded successfully. Generated ${Object.keys(data.generated||{}).length} tree(s).`);
+                } catch (err) {
+                    console.error(err);
+                    alert('Upload failed. See console for details.');
+                } finally {
+                    this.searchButton.disabled = false;
+                    e.target.value = '';
+                }
+            }
+
+            async handlePdfUpload(e) {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const form = new FormData();
+                form.append('file', file);
+                try {
+                    this.searchButton.disabled = true;
+                    const res = await fetch('/api/upload_pdf', { method: 'POST', body: form });
+                    if (!res.ok) {
+                        const err = await res.json().catch(() => ({ error: res.statusText }));
+                        alert(`PDF upload failed: ${err.error || res.statusText}`);
+                        return;
+                    }
+                    const data = await res.json();
+                    await this.loadPapersData();
+                    const count = Object.keys(data.generated||{}).length;
+                    alert(`PDF processed. Generated ${count} tree(s).`);
+                } catch (err) {
+                    console.error(err);
+                    alert('PDF upload failed. See console for details.');
+                } finally {
+                    this.searchButton.disabled = false;
+                    e.target.value = '';
+                }
+            }
+
+            onInputChanged() {
+                const query = this.searchInput.value.trim().toLowerCase();
+                if (!query) {
+                    this.hideTypeahead();
+                    return;
+                }
+
+                const entries = Object.entries(this.papersData || {});
+                const matches = entries
+                    .filter(([paperId, data]) => (data.title || '').toLowerCase().includes(query))
+                    .slice(0, 8)
+                    .map(([paperId, data]) => ({ paperId, title: data.title }));
+
+                this.renderTypeahead(matches);
+            }
+
+            renderTypeahead(matches) {
+                this.typeahead.innerHTML = '';
+                this.suggestions = matches;
+                this.activeSuggestion = -1;
+
+                if (matches.length === 0) {
+                    this.hideTypeahead();
+                    return;
+                }
+
+                matches.forEach((m, idx) => {
+                    const item = document.createElement('div');
+                    item.className = 'typeahead-item';
+                    item.setAttribute('data-index', String(idx));
+                    item.innerHTML = `
+                        <div class="typeahead-title">${m.title}</div>
+                        <div class="typeahead-id">${m.paperId}</div>
+                    `;
+                    item.addEventListener('mouseenter', () => this.setActiveSuggestion(idx));
+                    item.addEventListener('click', () => this.selectSuggestion(idx));
+                    this.typeahead.appendChild(item);
+                });
+
+                this.typeahead.classList.add('show');
+            }
+
+            setActiveSuggestion(index) {
+                const items = Array.from(this.typeahead.children);
+                items.forEach(el => el.classList.remove('active'));
+                if (index >= 0 && index < items.length) {
+                    items[index].classList.add('active');
+                    this.activeSuggestion = index;
+                }
+            }
+
+            onSearchKeyDown(e) {
+                if (!this.typeahead.classList.contains('show')) return;
+                const max = this.suggestions.length - 1;
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    const next = Math.min(max, this.activeSuggestion + 1);
+                    this.setActiveSuggestion(next);
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    const prev = Math.max(0, this.activeSuggestion - 1);
+                    this.setActiveSuggestion(prev);
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (this.activeSuggestion >= 0) {
+                        this.selectSuggestion(this.activeSuggestion);
+                    }
+                } else if (e.key === 'Escape') {
+                    this.hideTypeahead();
+                }
+            }
+
+            hideTypeahead() {
+                this.typeahead.classList.remove('show');
+                this.typeahead.innerHTML = '';
+                this.suggestions = [];
+                this.activeSuggestion = -1;
+            }
+
+            selectSuggestion(index) {
+                const sel = this.suggestions[index];
+                if (!sel) return;
+                this.searchInput.value = sel.title;
+                this.hideTypeahead();
+                this.loadPaper(sel.paperId);
+            }
+
+            searchPapers() {
+                const query = this.searchInput.value.trim().toLowerCase();
+                if (!query) {
+                    this.resultsSection.classList.remove('show');
+                    return;
+                }
+
+                const results = Object.entries(this.papersData)
+                    .filter(([paperId, data]) => 
+                        data.title.toLowerCase().includes(query)
+                    )
+                    .map(([paperId, data]) => ({ paperId, ...data }));
+
+                this.displaySearchResults(results);
+            }
+
+            displaySearchResults(results) {
+                this.paperList.innerHTML = '';
+
+                if (results.length === 0) {
+                    this.paperList.innerHTML = '<div class="no-results">No papers found matching your search.</div>';
+                } else {
+                    results.forEach(result => {
+                        const paperItem = document.createElement('div');
+                        paperItem.className = 'paper-item';
+                        paperItem.innerHTML = `
+                            <div class="paper-title">${result.title}</div>
+                            <div class="paper-id">ID: ${result.paperId}</div>
+                        `;
+                        paperItem.addEventListener('click', () => this.loadPaper(result.paperId));
+                        this.paperList.appendChild(paperItem);
+                    });
+                }
+
+                this.resultsSection.classList.add('show');
+            }
+
+            async loadRandomPaper() {
+                const paperIds = Object.keys(this.papersData);
+                if (paperIds.length === 0) {
+                    alert('No papers available. Please run the Python script to generate tree files first.');
+                    return;
+                }
+
+                const randomId = paperIds[Math.floor(Math.random() * paperIds.length)];
+                await this.loadPaper(randomId);
+            }
+
+            async loadPaper(paperId) {
+                this.currentPaperId = paperId;
+                this.showLoading(true);
+                this.resultsSection.classList.remove('show');
+
+                try {
+                    const response = await fetch(`trees/tree_${paperId}.json`);
+                    if (!response.ok) {
+                        throw new Error(`Failed to load tree for paper ${paperId}`);
+                    }
+
+                    const treeData = await response.json();
+                    this.currentPaper.textContent = this.papersData[paperId]?.title || `Paper ${paperId}`;
+
+                    // Initialize visualizer if not already done
+                    if (!this.visualizer) {
+                        this.visualizer = new TreeVisualizer('treeCanvas');
+                    }
+
+                    // Load the tree data
+                    this.visualizer.loadTreeData(treeData);
+                    this.showLoading(false);
+
+                } catch (error) {
+                    console.error('Error loading paper:', error);
+                    alert(`Error loading paper: ${error.message}`);
+                    this.showLoading(false);
+                }
+            }
+
+            showLoading(show) {
+                this.loadingIndicator.classList.toggle('show', show);
+                this.visualizationSection.style.display = show ? 'none' : 'block';
+            }
+
+            resetView() {
+                if (this.visualizer) {
+                    this.visualizer.resetView();
+                }
+            }
+
+            zoomIn() {
+                if (this.visualizer) {
+                    const newScale = Math.min(this.visualizer.maxScale, this.visualizer.scale * 1.3);
+                    if (newScale !== this.visualizer.scale) {
+                        this.visualizer.scale = newScale;
+                        this.visualizer.draw();
+                    }
+                }
+            }
+
+            zoomOut() {
+                if (this.visualizer) {
+                    const newScale = Math.max(this.visualizer.minScale, this.visualizer.scale * 0.7);
+                    if (newScale !== this.visualizer.scale) {
+                        this.visualizer.scale = newScale;
+                        this.visualizer.draw();
+                    }
+                }
+            }
+
+            toggleAnnotationPanel() {
+                this.annotationPanel.classList.toggle('show');
+            }
+
+            async submitAnnotation(e) {
+                e.preventDefault();
+
+                const annotatorId = document.getElementById('annotatorId').value;
+                const annotationType = document.getElementById('annotationType').value;
+                const annotationNotes = document.getElementById('annotationNotes').value;
+
+                if (!annotatorId.trim()) {
+                    alert('Please enter your annotator ID');
+                    return;
+                }
+
+                if (!this.currentPaperId) {
+                    alert('No paper selected for annotation');
+                    return;
+                }
+
+                const annotation = {
+                    paper_id: this.currentPaperId,
+                    annotator_id: annotatorId,
+                    annotation_type: annotationType,
+                    notes: annotationNotes,
+                    timestamp: new Date().toISOString(),
+                    selected_node: this.visualizer?.selectedNode?.name || null
+                };
+
+                try {
+                    // Save annotation to local storage (in a real app, this would go to a server)
+                    const annotations = JSON.parse(localStorage.getItem('annotations') || '[]');
+                    annotations.push(annotation);
+                    localStorage.setItem('annotations', JSON.stringify(annotations));
+
+                    alert('Annotation saved successfully!');
+                    this.annotationForm.reset();
+                    this.annotationPanel.classList.remove('show');
+
+                } catch (error) {
+                    console.error('Error saving annotation:', error);
+                    alert('Error saving annotation. Please try again.');
+                }
+            }
+        }
+
+        // Initialize the application when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new AnnotationTool();
+        });
+    </script>
+</body>
+</html>

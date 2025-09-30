@@ -1,0 +1,130 @@
+{
+  "name": "Paper",
+  "value": "Analyzing Large-Scale Human Mobility Data",
+  "children": [
+    {
+      "name": "Data Sample",
+      "value": "Dataset Information",
+      "children": [
+        {
+          "name": "Dataset Type",
+          "value": "mobility",
+          "children": []
+        },
+        {
+          "name": "Provider",
+          "value": "social_media",
+          "children": []
+        },
+        {
+          "name": "Filters",
+          "value": "1 filters",
+          "children": [
+            {
+              "name": "Filter 1",
+              "value": "temporal: duration",
+              "children": [
+                {
+                  "name": "Expression",
+                  "value": "(\"duration\",\"==\",\"6 months\")",
+                  "children": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Completeness Statistics",
+          "value": "1 statistics",
+          "children": [
+            {
+              "name": "coverage",
+              "value": "85%",
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Experiments",
+      "value": "Research Experiments",
+      "children": [
+        {
+          "name": "Domain",
+          "value": "pattern analysis",
+          "children": []
+        },
+        {
+          "name": "Description",
+          "value": "Analysis of human mobility patterns using social media check-ins to identify urban hotspots and move...",
+          "children": []
+        },
+        {
+          "name": "Code Location",
+          "value": "https://github.com/example/repo",
+          "children": []
+        },
+        {
+          "name": "Mobility Metrics",
+          "value": "Analysis Metrics",
+          "children": [
+            {
+              "name": "Metric 1",
+              "value": "visit frequency",
+              "children": [
+                {
+                  "name": "Temporal Aggregation",
+                  "value": "week",
+                  "children": []
+                },
+                {
+                  "name": "Spatial Aggregation",
+                  "value": "city",
+                  "children": []
+                },
+                {
+                  "name": "Processing Steps",
+                  "value": "Data Processing",
+                  "children": [
+                    {
+                      "name": "aggregate visits",
+                      "value": "aggregation",
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Metadata",
+      "value": "Paper Information",
+      "children": [
+        {
+          "name": "Paper ID",
+          "value": "68b60f5e2f80a4e82c86e284",
+          "children": []
+        },
+        {
+          "name": "Version",
+          "value": "3",
+          "children": []
+        },
+        {
+          "name": "Created At",
+          "value": "2025-09-08 15:30:00",
+          "children": []
+        },
+        {
+          "name": "Result ID",
+          "value": "68beebb02f80a4e82c86e28b",
+          "children": []
+        }
+      ]
+    }
+  ]
+}

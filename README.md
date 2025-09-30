@@ -1,40 +1,170 @@
-# Nomad: Network for Open Mobility Analysis and Data
-This repository hosts the open‑source software library of the NSF-funded NOMAD research‑infrastructure project (nomad.seas.upenn.edu). The code base supports end‑to‑end processing of large‑scale GPS mobility data: ingestion, quality control, spatial‑temporal transformation, derivation of mobility metrics, and synthetic trajectory generation. All functions are implemented in Python with parallel equivalents in PySpark, enabling the same analysis notebook to run on a workstation or a Spark cluster without API changes.
+# Nomadica Annotation Tool
 
-NOMAD builds on previous software resources—like *scikit‑mobility*, *mobilkit*, and *trackintel*—with the goal of providing a single, production‑ready library that covers the entire processing pipeline in a form suitable for analysis of massive datasets and to aid in the replicability of existing research.
+A web-based tool for visualizing and annotating hierarchical tree structures generated from Atlas paper data.
 
-## Modules 
+## Overview
 
-| Module | Description |
-|-------|---------|
-| Data ingestion | Read CSV, Parquet, GeoJSON, and partitioned datasets; validation of data types; return Pandas or Spark DataFrames |
-| Filtering & completeness | Quantify hourly/daily/weekly coverage, filtering according to completeness, geography, and time window; handles spatial projections and timezones|
-| Tessellation | Map pings to H3, S2, or custom grids for grid-based algorithms |
-| Stop / trip detection | Density-based algorithms and sequential algorithm (_Project Lachesis_) |
-| Home / workplace inference | Frequency‑ and time‑window heuristics to assign residential and workplace locations |
-| Mobility metrics | Radius of gyration, travel distance, time at home, entropy, and related indicators |
-| Co‑location & contact networks | Build proximity graphs from POI visits or spatial–temporal proximity |
-| POI attribution & generation | Match stops to existing POIs or cluster frequent stops to obtain unsupervised POI datasets|
-| Aggregation & debiasing | differential‑privacy preserving aggregated metrics, and weights for debiasing and post‑stratification |
-| Trajectory simulation | Exploration and Preferential Return models; Point process samplers to generate sparse signals |
+This tool processes flattened JSON data from the Atlas project and generates hierarchical tree visualizations for each paper. Users can search for papers, visualize their tree structures, and annotate them for quality control.
 
-Unit tests currently cover data ingestion, filtering, stop detection, and trajectory simulation.
+## Files Structure
 
-## Installation
-```bash
-# install directly from GitHub
-pip install git+https://github.com/Watts-Lab/nomad.git
-
-# Spark extras (optional)
-pip install git+https://github.com/Watts-Lab/nomad.git#egg=nomad[spark]
+```
+nomad/
+├── generate_trees.py          # Python script to process data and generate trees
+├── example_data.py           # Sample data for testing
+├── tree-visualizer.js        # JavaScript tree visualization engine
+├── annotation_tool.html     # Main web interface
+├── trees/                    # Generated tree files
+│   ├── tree_<PAPER_ID>.json # Individual tree files
+│   └── papers_summary.json  # Summary of all papers
+└── README.md                # This file
 ```
 
-## Examples
-The examples/ folder contains notebooks and small sample datasets that demonstrate loading partitioned data, measuring completeness, detecting stops, computing mobility metrics, and generating synthetic trajectories. Notebooks run unchanged in local Python or on Spark.
+## Quick Start
 
-## Contribute 
-For development clone the repository and ensure unit tests, located in `nomad\tests\' are passed before submitting a pull request.
-## License 
-MIT © University of Pennsylvania 2025.
+### 1. Generate Tree Files
 
-Further information on the NOMAD Trusted Research Environment, data catalog, and community resources will be available at [https://nomad.seas.upenn.edu](https://nomad.seas.upenn.edu).
+First, run the Python script to process your data and generate tree files:
+
+```bash
+python generate_trees.py
+```
+
+This will:
+- Process the example data from `example_data.py`
+- Generate individual tree files in the `trees/` folder
+- Create a summary file with paper metadata
+
+### 2. Open the Web Interface
+
+Open `annotation_tool.html` in your web browser to access the annotation tool.
+
+### 3. Using the Interface
+
+- **Search**: Use the search bar to find papers by title
+- **Random Paper**: Click "Random Paper" to load a random tree
+- **Visualize**: Click on any paper from search results to visualize its tree
+- **Navigate**: Use mouse to pan and zoom the tree visualization
+- **Annotate**: Click "Annotate" to open the annotation form
+
+## Customizing for Your Data
+
+### Using Your Own Data
+
+1. Replace the data in `example_data.py` with your actual Atlas results
+2. Modify `generate_trees.py` if you need different tree structures
+3. Run the generation script to create your tree files
+
+### Data Format
+
+Your input data should be a list of dictionaries with flattened keys like:
+```python
+[
+    {
+        'paper title': 'Your Paper Title',
+        'paper data_sample dataset_type': 'mobility',
+        'paper data_sample provider_name': 'carrier',
+        'paper experiments domain': 'analysis',
+        'paper experiments description': 'Your experiment description',
+        '_paper_id': 'unique_paper_id',
+        '_version': 1,
+        'created_at': '2025-01-01 12:00:00'
+    }
+]
+```
+
+## Features
+
+### Tree Visualization
+- Interactive tree layout with pan and zoom
+- Color-coded nodes by type (Paper, Data, Experiments, Metadata)
+- Hover effects and node selection
+- Responsive design for different screen sizes
+
+### Search Functionality
+- Search papers by title
+- Real-time filtering
+- Random paper selection
+
+### Annotation System
+- Form-based annotation interface
+- Support for different annotation types:
+  - Incorrect Subtree
+  - Missing Subtree
+  - General Feedback
+- Local storage of annotations (extend to server-side as needed)
+
+## Technical Details
+
+### Tree Structure
+
+Each generated tree follows this hierarchy:
+```
+Paper (Root)
+├── Data Sample
+│   ├── Dataset Type
+│   ├── Provider
+│   ├── Filters
+│   └── Completeness Statistics
+├── Experiments
+│   ├── Domain
+│   ├── Description
+│   ├── Code Location
+│   └── Mobility Metrics
+│       ├── Metric Name
+│       ├── Temporal Aggregation
+│       ├── Spatial Aggregation
+│       └── Processing Steps
+└── Metadata
+    ├── Paper ID
+    ├── Version
+    ├── Created At
+    └── Result ID
+```
+
+### Browser Compatibility
+
+The tool works in modern browsers that support:
+- HTML5 Canvas
+- ES6 JavaScript features
+- CSS Grid and Flexbox
+
+## Extending the Tool
+
+### Adding New Node Types
+
+1. Update the `getNodeColor()` method in `tree-visualizer.js`
+2. Add corresponding colors to the `colors` object
+3. Modify the tree generation logic in `generate_trees.py`
+
+### Server Integration
+
+To save annotations to a server:
+1. Replace the localStorage code in `annotation_tool.html`
+2. Add API endpoints for saving/loading annotations
+3. Implement user authentication if needed
+
+### Custom Styling
+
+Modify the CSS in `annotation_tool.html` to match your design requirements.
+
+## Troubleshooting
+
+### No Trees Generated
+- Check that your input data has the correct format
+- Ensure `_paper_id` fields are present
+- Verify the Python script runs without errors
+
+### Trees Not Loading in Browser
+- Check browser console for JavaScript errors
+- Ensure tree files are in the `trees/` folder
+- Verify file permissions
+
+### Search Not Working
+- Check that `papers_summary.json` exists
+- Verify the summary file has the correct format
+
+## Contributing
+
+This is a simple, straightforward implementation designed for the Atlas project. Feel free to extend and modify as needed for your specific requirements.
+

@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+"""
+Example data for testing the tree generation system.
+This simulates the flattened JSON data you would get from Atlas.
+"""
+
+example_data = [
+    {
+        'paper title': 'Temporal understanding of human mobility: A multi-time scale analysis',
+        'paper data_sample dataset_type': 'mobility',
+        'paper data_sample provider_name': 'carrier',
+        'paper data_sample filters filter_type': 'geographical',
+        'paper data_sample filters filter_expression': '("city","==","Xi\'an")',
+        'paper data_sample filters filter_key': 'city',
+        'paper data_sample completeness_statistic completeness_statistic_name': 'sampling rate',
+        'paper data_sample completeness_statistic completeness_statistic_value': 'mean,188s',
+        'paper experiments domain': 'data validation',
+        'paper experiments code_location': '',
+        'paper experiments description': 'Comparison of MFR and CDR data sets to validate MFR as a finer-grained proxy for human mobility by analyzing distributions of daily records, interevent times, and interevent distances.',
+        'paper experiments mobility_metric temporal_aggregation': 'day',
+        'paper experiments mobility_metric spatial_aggregation': 'cell_tower',
+        'paper experiments mobility_metric metric_name': 'daily number of records',
+        'paper experiments mobility_metric processing_step name': 'count',
+        'paper experiments mobility_metric processing_step type': 'aggregation',
+        'created_at': '2025-09-08 14:44:00',
+        '_version': 5,
+        '_is_latest': True,
+        '_result_id': '68beebb02f80a4e82c86e28a',
+        '_paper_id': '68b60f5e2f80a4e82c86e283'
+    },
+    {
+        'paper title': 'Temporal understanding of human mobility: A multi-time scale analysis',
+        'paper data_sample dataset_type': 'mobility',
+        'paper data_sample provider_name': 'carrier',
+        'paper data_sample filters filter_type': 'geographical',
+        'paper data_sample filters filter_expression': '("city","==","Xi\'an")',
+        'paper data_sample filters filter_key': 'city',
+        'paper data_sample completeness_statistic completeness_statistic_name': 'sampling rate',
+        'paper data_sample completeness_statistic completeness_statistic_value': 'mean,188s',
+        'paper experiments domain': 'data validation',
+        'paper experiments code_location': '',
+        'paper experiments description': 'Comparison of MFR and CDR data sets to validate MFR as a finer-grained proxy for human mobility by analyzing distributions of daily records, interevent times, and interevent distances.',
+        'paper experiments mobility_metric temporal_aggregation': 'event',
+        'paper experiments mobility_metric spatial_aggregation': 'cell_tower',
+        'paper experiments mobility_metric metric_name': 'interevent time distribution',
+        'paper experiments mobility_metric processing_step name': 'compute interevent time',
+        'paper experiments mobility_metric processing_step type': 'noise removal',
+        'created_at': '2025-09-08 14:44:00',
+        '_version': 5,
+        '_is_latest': True,
+        '_result_id': '68beebb02f80a4e82c86e28a',
+        '_paper_id': '68b60f5e2f80a4e82c86e283'
+    },
+    {
+        'paper title': 'Temporal understanding of human mobility: A multi-time scale analysis',
+        'paper data_sample dataset_type': 'mobility',
+        'paper data_sample provider_name': 'carrier',
+        'paper data_sample filters filter_type': 'geographical',
+        'paper data_sample filters filter_expression': '("city","==","Xi\'an")',
+        'paper data_sample filters filter_key': 'city',
+        'paper data_sample completeness_statistic completeness_statistic_name': 'sampling rate',
+        'paper data_sample completeness_statistic completeness_statistic_value': 'mean,188s',
+        'paper experiments domain': 'data validation',
+        'paper experiments code_location': '',
+        'paper experiments description': 'Comparison of MFR and CDR data sets to validate MFR as a finer-grained proxy for human mobility by analyzing distributions of daily records, interevent times, and interevent distances.',
+        'paper experiments mobility_metric temporal_aggregation': 'event',
+        'paper experiments mobility_metric spatial_aggregation': 'cell_tower',
+        'paper experiments mobility_metric metric_name': 'interevent distance distribution',
+        'paper experiments mobility_metric processing_step name': 'compute interevent distance',
+        'paper experiments mobility_metric processing_step type': 'noise removal',
+        'created_at': '2025-09-08 14:44:00',
+        '_version': 5,
+        '_is_latest': True,
+        '_result_id': '68beebb02f80a4e82c86e28a',
+        '_paper_id': '68b60f5e2f80a4e82c86e283'
+    },
+    {
+        'paper title': 'Temporal understanding of human mobility: A multi-time scale analysis',
+        'paper data_sample dataset_type': 'mobility',
+        'paper data_sample provider_name': 'carrier',
+        'paper data_sample filters filter_type': 'geographical',
+        'paper data_sample filters filter_expression': '("city","==","Xi\'an")',
+        'paper data_sample filters filter_key': 'city',
+        'paper data_sample completeness_statistic completeness_statistic_name': 'sampling rate',
+        'paper data_sample completeness_statistic completeness_statistic_value': 'mean,188s',
+        'paper experiments domain': 'model fitting',
+        'paper experiments code_location': '',
+        'paper experiments description': 'Multi-time scale analysis of human mobility metrics—displacement, radius of gyration, waiting time, and moving speed—using MFR under sampling intervals from 7.5min to 32h, fitting power-law/truncated power-law models and investigating parameter variation.',
+        'paper experiments mobility_metric temporal_aggregation': 'sampling_interval',
+        'paper experiments mobility_metric spatial_aggregation': 'cell_tower',
+        'paper experiments mobility_metric metric_name': 'displacement',
+        'paper experiments mobility_metric processing_step name': 'resampling',
+        'paper experiments mobility_metric processing_step type': 'aggregation',
+        'created_at': '2025-09-08 14:44:00',
+        '_version': 5,
+        '_is_latest': True,
+        '_result_id': '68beebb02f80a4e82c86e28a',
+        '_paper_id': '68b60f5e2f80a4e82c86e283'
+    },
+    {
+        'paper title': 'Analyzing Large-Scale Human Mobility Data',
+        'paper data_sample dataset_type': 'mobility',
+        'paper data_sample provider_name': 'social_media',
+        'paper data_sample filters filter_type': 'temporal',
+        'paper data_sample filters filter_expression': '("duration","==","6 months")',
+        'paper data_sample filters filter_key': 'duration',
+        'paper data_sample completeness_statistic completeness_statistic_name': 'coverage',
+        'paper data_sample completeness_statistic completeness_statistic_value': '85%',
+        'paper experiments domain': 'pattern analysis',
+        'paper experiments code_location': 'https://github.com/example/repo',
+        'paper experiments description': 'Analysis of human mobility patterns using social media check-ins to identify urban hotspots and movement trends.',
+        'paper experiments mobility_metric temporal_aggregation': 'week',
+        'paper experiments mobility_metric spatial_aggregation': 'city',
+        'paper experiments mobility_metric metric_name': 'visit frequency',
+        'paper experiments mobility_metric processing_step name': 'aggregate visits',
+        'paper experiments mobility_metric processing_step type': 'aggregation',
+        'created_at': '2025-09-08 15:30:00',
+        '_version': 3,
+        '_is_latest': True,
+        '_result_id': '68beebb02f80a4e82c86e28b',
+        '_paper_id': '68b60f5e2f80a4e82c86e284'
+    }
+]
+
+if __name__ == "__main__":
+    print(f"Example data contains {len(example_data)} records")
+    print("Paper IDs:", set(item['_paper_id'] for item in example_data))
+

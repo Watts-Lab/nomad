@@ -1,0 +1,125 @@
+{
+  "name": "Paper",
+  "value": "Temporal understanding of human mobility: A multi-time scale analysis",
+  "children": [
+    {
+      "name": "Data Sample",
+      "value": "Dataset Information",
+      "children": [
+        {
+          "name": "Dataset Type",
+          "value": "mobility",
+          "children": []
+        },
+        {
+          "name": "Provider",
+          "value": "carrier",
+          "children": []
+        },
+        {
+          "name": "Filters",
+          "value": "1 filters",
+          "children": [
+            {
+              "name": "Filter 1",
+              "value": "geographical: city",
+              "children": [
+                {
+                  "name": "Expression",
+                  "value": "(\"city\",\"==\",\"Xi'an\")",
+                  "children": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Completeness Statistics",
+          "value": "1 statistics",
+          "children": [
+            {
+              "name": "sampling rate",
+              "value": "mean,188s",
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Experiments",
+      "value": "Research Experiments",
+      "children": [
+        {
+          "name": "Domain",
+          "value": "data validation",
+          "children": []
+        },
+        {
+          "name": "Description",
+          "value": "Comparison of MFR and CDR data sets to validate MFR as a finer-grained proxy for human mobility by a...",
+          "children": []
+        },
+        {
+          "name": "Mobility Metrics",
+          "value": "Analysis Metrics",
+          "children": [
+            {
+              "name": "Metric 1",
+              "value": "daily number of records",
+              "children": [
+                {
+                  "name": "Temporal Aggregation",
+                  "value": "day",
+                  "children": []
+                },
+                {
+                  "name": "Spatial Aggregation",
+                  "value": "cell_tower",
+                  "children": []
+                },
+                {
+                  "name": "Processing Steps",
+                  "value": "Data Processing",
+                  "children": [
+                    {
+                      "name": "count",
+                      "value": "aggregation",
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Metadata",
+      "value": "Paper Information",
+      "children": [
+        {
+          "name": "Paper ID",
+          "value": "68b60f5e2f80a4e82c86e283",
+          "children": []
+        },
+        {
+          "name": "Version",
+          "value": "5",
+          "children": []
+        },
+        {
+          "name": "Created At",
+          "value": "2025-09-08 14:44:00",
+          "children": []
+        },
+        {
+          "name": "Result ID",
+          "value": "68beebb02f80a4e82c86e28a",
+          "children": []
+        }
+      ]
+    }
+  ]
+}
