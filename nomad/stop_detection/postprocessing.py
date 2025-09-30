@@ -10,7 +10,7 @@ import nomad.stop_detection.hdbscan as HDBSCAN
 import nomad.stop_detection.lachesis as LACHESIS
 import nomad.stop_detection.dbscan as TADBSCAN
 
-def remove_overlaps(pred, time_thresh=None, dur_min=None, min_pts=None, dist_thresh=None, method = 'polygon', traj_cols = None, **kwargs):
+def remove_overlaps(pred, time_thresh=None, dur_min=None, min_pts=None, min_cluster_size=None, dist_thresh=None, method = 'polygon', traj_cols = None, **kwargs):
     pred = pred.copy()
     # load kwarg and traj_col args onto lean defaults
     traj_cols = loader._parse_traj_cols(
@@ -42,7 +42,7 @@ def remove_overlaps(pred, time_thresh=None, dur_min=None, min_pts=None, dist_thr
                                 data=pred.loc[pred.cluster!=-1],
                                 time_thresh=time_thresh,
                                 dur_min=dur_min,
-                                min_cluster_size=min_pts,
+                                min_cluster_size=min_cluster_size,
                                 traj_cols=traj_cols)
                 
         pred.loc[pred.cluster!=-1, 'cluster'] = labels
@@ -56,7 +56,7 @@ def remove_overlaps(pred, time_thresh=None, dur_min=None, min_pts=None, dist_thr
                                 data=pred.loc[pred.cluster!=-1],
                                 time_thresh=time_thresh,
                                 dur_min=dur_min,
-                                min_cluster_size=min_pts,
+                                min_cluster_size=min_cluster_size,
                                 traj_cols=traj_cols)
         pred.loc[pred.cluster!=-1, 'cluster'] = labels
         stops = pred.groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
