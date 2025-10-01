@@ -7,6 +7,8 @@ import nomad.io.base as loader
 from nomad.stop_detection.utils import _fallback_time_cols
 import pyproj
 import pdb
+from dateutil.parser import parse
+from datetime import datetime, time, timedelta
 
 # TO DO: change to stops_to_poi
 def point_in_polygon(data, poi_table, method='centroid', data_crs=None, max_distance=0,
