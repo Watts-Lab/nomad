@@ -10,6 +10,9 @@ import numpy as np
 import pdb
 
 def overlapping_visits(left, right, match_location=False, traj_cols=None, **kwargs):
+    if len(left) == 0 or len(right) == 0:
+        return pd.DataFrame()
+    
     left = left.copy()
     right = right.copy()
     _ = loader._parse_traj_cols(right.columns, traj_cols, kwargs) # for warning

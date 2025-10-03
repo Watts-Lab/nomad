@@ -379,7 +379,6 @@ def _connected_components(graph):
 
     return components
 
-
 def _base_cdf(eps):
     """
     The standard HDBSCAN stability CDF, equivalent to (1 - 1/eps).
@@ -400,27 +399,6 @@ def _base_cdf(eps):
     # This is already handled by np.zeros_like initialization
     
     return res
-
-def _piecewise_linear_cdf(eps):
-    """
-    Example of a custom, piecewise CDF for stability calculations.
-    """
-    x = np.asarray(eps)
-    y = np.zeros_like(x, dtype=float)
-
-    m = (x >= 5)  & (x <= 20)
-    y[m] = 2 * (x[m] - 5)
-
-    m = (x > 20) & (x <= 80)
-    y[m] = 30 + 1.5 * (x[m] - 20)
-
-    m = (x > 80) & (x <= 200)
-    y[m] = 120 + (x[m] - 80)
-
-    m = x > 200
-    y[x > 200] = 240
-
-    return y/240
 
 def compute_cluster_stability(label_history_df, cdf_function=_base_cdf):
     """

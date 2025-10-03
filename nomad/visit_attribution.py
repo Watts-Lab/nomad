@@ -277,7 +277,6 @@ def oracle_map(data, true_visits, traj_cols=None, **kwargs):
     # determine temporal columns to use
     t_key_l, use_datetime_l = _fallback_time_cols(data.columns, traj_cols, kwargs)
     t_key_r, use_datetime_r = _fallback_time_cols(true_visits.columns, traj_cols, kwargs)
-
     
     traj_cols = loader._parse_traj_cols(true_visits.columns, traj_cols, kwargs) #load defaults
     if use_datetime_l != use_datetime_r:
@@ -290,17 +289,18 @@ def oracle_map(data, true_visits, traj_cols=None, **kwargs):
         raise ValueError("Missing required (end or duration) temporal columns for true_visits dataframe.")
 
     if traj_cols['location_id'] not in true_visits.columns:
-        raise ValueError(f"Missing {traj_cols[location_id]} column in {true_visits.columns}."
+        raise ValueError(f"Missing {traj_cols['location_id']} column in {true_visits.columns}."
                         "pass `location_id` as keyword argument or in traj_cols."
                         )
     
     end_t_key = 'end_datetime' if use_datetime_r else 'end_timestamp'
+
     if not end_col_present:
         if use_datetime_r:
             true_visits[end_t_key] = true_visits[traj_cols[t_key_r]] + pd.to_timedelta(true_visits[traj_cols['duration']]*60, unit='s')
         else:
             true_visits[end_t_key] = true_visits[traj_cols[t_key_r]] + true_visits[traj_cols['duration']]*60
-
+    
     
     # t_key_l and t_key_r match in type, and end_t_key exists
     data[traj_cols['location_id']] = pd.NA
