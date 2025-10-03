@@ -521,7 +521,7 @@ def explode_stops(stops, agg_freq="d", start_col="start_datetime", end_col="end_
     return stops[stops["duration"] > 0].drop(columns=["_bucket_start", "_bucket_end"])
 
 
-def clip_stops_datetime(traj, start_datetime, end_datetime):
+def clip_stops_datetime(stops, start_datetime, end_datetime):
     """
     Clip each stop to a specific datetime range.
     
@@ -530,7 +530,7 @@ def clip_stops_datetime(traj, start_datetime, end_datetime):
     
     Parameters
     ----------
-    traj : pandas.DataFrame
+    stops : pandas.DataFrame
         Stop table with at least start_datetime, end_datetime, and duration columns
     start_datetime : str or pandas.Timestamp
         Start of the datetime range to clip to
@@ -543,28 +543,53 @@ def clip_stops_datetime(traj, start_datetime, end_datetime):
         Clipped stop table with updated start/end times and durations.
         Only includes stops that intersect the specified datetime range.
     """
-    start = pd.to_datetime(traj['start_datetime'])
-    duration = traj['duration']
-
+    stops = stops.copy()
+    stops.drop(columns=["n_pings", "diameter", "max_gap", "identifier"], errors="ignore", inplace=True)
+    t_key, use_datetime = _fallback_time_cols(stop_data.columns, traj_cols, kwargs)
+    end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
+    
+    # Load default col names
+    traj_cols = loader._parse_traj_cols(stop_data.columns, traj_cols, kwargs)   
+    
+    # check is diary table
+    end_col_present = loader._has_end_cols(stop_data.columns, traj_cols)
+    duration_col_present = loader._has_duration_cols(stop_data.columns, traj_cols)
+    #ensure end_column exists
+    if not (end_col_present or duration_col_present):
+        raise ValueError("Missing required (end or duration) temporal columns for stop_table dataframe.")
+    elif not end_col_present:
+        if use_datetime:
+            stops[end_t_key] = stops[t_key] + pd.to_timedelta(stops[traj_cols["duration"]], unit="min")
+        else:
+            stops[end_t_key] = stops[t_key] + 60*stops[traj_cols["duration"]]
+        
     # Ensure timezone-aware clipping bounds
-    tz = start.dt.tz
+    if use_datetime:
+        tz = start.dt.tz
+    else:
+        tz = None
+        
     start_dt = pd.Timestamp(start_datetime, tz=tz)
     end_dt = pd.Timestamp(end_datetime, tz=tz)
-
-    end = start + pd.to_timedelta(duration, unit='m')
+    
+    if not use_datetime:
+        start_dt = (np.datetime64(start_dt).astype('datetime64[s]')).astype('int64')
+        end_dt = (np.datetime64(start_dt).astype('datetime64[s]')).astype('int64')
 
     # Clip to datetime range
-    start_clipped = start.clip(lower=start_dt, upper=end_dt)
-    end_clipped = end.clip(lower=start_dt, upper=end_dt)
+    stops[t_key] = stops[t_key].clip(lower=start_dt, upper=end_dt)
+    stops[end_t_key] = stops[end_t_key].clip(lower=start_dt, upper=end_dt)
 
     # Recompute durations
-    duration_clipped = ((end_clipped - start_clipped).dt.total_seconds() // 60).astype(int)
+    if use_datetime:
+        stops[traj_cols["duration"]] = (stops[end_t_key] - stops[t_key]).dt.total_seconds() // 60
+    else:
+        stops[traj_cols["duration"]] = (stops[end_t_key] - stops[t_key])//60
 
     # Update the dataframe
-    traj = traj.copy()
-    traj['start_datetime'] = start_clipped
-    traj['end_datetime'] = end_clipped
-    traj['duration'] = duration_clipped
+    stops['start_datetime'] = start_clipped
+    stops['end_datetime'] = end_clipped
+    stops['duration'] = duration_clipped
 
     # Return only stops that have positive duration after clipping
-    return traj[traj['duration'] > 0]
+    return stops[stops['duration'] > 0]
