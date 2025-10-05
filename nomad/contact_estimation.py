@@ -88,6 +88,7 @@ def overlapping_visits(left, right, match_location=False, traj_cols=None, **kwar
     
     if keep_uid and same_id:
         merged[uid_key] = uid
+
     return merged.reset_index(drop=True)
 
 def compute_visitation_errors(overlaps, true_visits, traj_cols=None, **kwargs):

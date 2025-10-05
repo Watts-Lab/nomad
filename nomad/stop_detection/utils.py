@@ -9,6 +9,83 @@ import nomad.io.base as loader
 import nomad.constants as constants
 import pdb
 
+def clip_stops_datetime(stops, start_datetime, end_datetime, traj_cols=None, **kwargs):
+    """
+    Clip each stop to a specific datetime range.
+    
+    This function takes a stop table and clips each stop to the specified datetime range,
+    recomputing durations and dropping stops that don't intersect the range.
+    
+    Parameters
+    ----------
+    stops : pandas.DataFrame
+        Stop table with at least start_datetime, end_datetime, and duration columns
+    start_datetime : str or pandas.Timestamp
+        Start of the datetime range to clip to
+    end_datetime : str or pandas.Timestamp  
+        End of the datetime range to clip to
+        
+    Returns
+    -------
+    pandas.DataFrame
+        Clipped stop table with updated start/end times and durations.
+        Only includes stops that intersect the specified datetime range.
+    """
+    stops = stops.copy()
+    stops.drop(columns=["n_pings", "diameter", "max_gap", "identifier"], errors="ignore", inplace=True)
+    t_key, use_datetime = _fallback_time_cols(stops.columns, traj_cols, kwargs)
+    end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
+    
+    # Load default col names
+    traj_cols = loader._parse_traj_cols(stops.columns, traj_cols, kwargs)   
+    
+    # check is diary table
+    end_col_present = loader._has_end_cols(stops.columns, traj_cols)
+    duration_col_present = loader._has_duration_cols(stops.columns, traj_cols)
+    #ensure end_column exists
+    if not (end_col_present or duration_col_present):
+        raise ValueError("Missing required (end or duration) temporal columns for stop_table dataframe.")
+    elif not end_col_present:
+        if use_datetime:
+            # stops[end_t_key] = stops[t_key] + pd.to_timedelta(stops[traj_cols["duration"]], unit="min")
+            stops[end_t_key] = stops[t_key] + pd.to_timedelta(stops[traj_cols["duration"]], unit="min")
+        else:
+            stops[end_t_key] = stops[t_key] + 60*stops[traj_cols["duration"]]
+        
+    # Ensure timezone-aware clipping bounds
+    if use_datetime:
+        # tz = stops[t_key].dt.tz
+        tz = stops[t_key].dt.tz if stops[t_key].dt.tz is not None else None
+
+    else:
+        tz = None
+        
+    start_dt = pd.Timestamp(start_datetime, tz=tz)
+    end_dt = pd.Timestamp(end_datetime, tz=tz)
+    
+    if not use_datetime:
+        start_dt = (np.datetime64(start_dt).astype('datetime64[s]')).astype('int64')
+        end_dt = (np.datetime64(end_dt).astype('datetime64[s]')).astype('int64')
+
+    # Filter rows that overlap with the specified range
+    stops = stops[(stops[end_t_key] > start_dt) & (stops[t_key] < end_dt)]
+    print("Stops after filtering for overlap:")
+    print(stops)
+
+    # Clip to datetime range
+    stops[t_key] = stops[t_key].clip(lower=start_dt, upper=end_dt)
+    stops[end_t_key] = stops[end_t_key].clip(lower=start_dt, upper=end_dt)
+
+    # Recompute durations
+    if use_datetime:
+        stops[traj_cols["duration"]] = (stops[end_t_key] - stops[t_key]).dt.total_seconds()//60
+    else:
+        stops[traj_cols["duration"]] = (stops[end_t_key] - stops[t_key])//60
+
+    # Return only stops that have positive duration after clipping
+    return stops[stops['duration'] > 0]
+
+
 def _diameter(coords, metric='euclidean'):
     """
     Calculate the diameter of a set of coordinates, defined as the maximum pairwise distance.

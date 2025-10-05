@@ -134,6 +134,12 @@ def _mst(mrd_graph):
         graph[u].append((v, w))
         graph[v].append((u, w))
 
+    # Handle empty graph
+    if not graph:
+        # warnings.warn("MRD graph is empty. Returning an empty MST.")
+        return np.array([], dtype=[('from', 'int64'), ('to', 'int64'), ('weight', 'float64')])
+
+
     visited, mst, heap = set(), [], []
 
     def seed(start):
@@ -472,6 +478,9 @@ def compute_cluster_stability(label_history_df, cdf_function=_base_cdf):
     return final_stability.reset_index().rename(columns={'stability_term': 'cluster_stability'})
 
 def select_most_stable_clusters(hierarchy_df, cluster_stability_df):
+    if 'parent' not in hierarchy_df.columns or 'child' not in hierarchy_df.columns or 'scale' not in hierarchy_df.columns:
+        return set()
+
     hierarchy = [
         (group['scale'].iloc[0], parent, list(group['child']))
         for parent, group in hierarchy_df.groupby('parent')
@@ -614,7 +623,11 @@ def hdbscan_labels(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min
     neighbors = _build_neighbor_graph(time_pairs, times)
     ts_idx = {ts: i for i, ts in enumerate(times)}
 
+    # print(data[data['timestamp'].duplicated(keep=False)])
+
     core_distances, coords = _compute_core_distance(data, time_pairs, times, use_lon_lat, traj_cols, min_pts)
+    # print(len(core_distances))
+    # print(len(data))
 
     edges_sorted, d_graph = _build_hdbscan_graphs(coords, ts_idx, neighbors, core_distances, use_lon_lat)
     

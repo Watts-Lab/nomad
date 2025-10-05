@@ -87,6 +87,7 @@ def invalid_stops(stop_data, traj_cols=None, print_stops=False, **kwargs):
         If at least one pair of stops overlaps.  The message shows the
         first offending pair.
     """
+    
     # determine start-time key and whether it's datetime
     t_key, use_datetime = utils._fallback_time_cols(stop_data.columns, traj_cols, kwargs)
     end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
@@ -96,6 +97,7 @@ def invalid_stops(stop_data, traj_cols=None, print_stops=False, **kwargs):
     end_col_present  = loader._has_end_cols(stop_data.columns, traj_cols)
     duration_col_present  = loader._has_duration_cols(stop_data.columns, traj_cols)
     if not (end_col_present or duration_col_present):
+        print(stop_data.head())
         raise ValueError("Missing required (end or duration) temporal columns for stop_table dataframe.")
 
     # compute a uniform '_end_time' column
