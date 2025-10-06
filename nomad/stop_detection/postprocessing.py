@@ -11,6 +11,9 @@ import nomad.stop_detection.lachesis as LACHESIS
 import nomad.stop_detection.dbscan as TADBSCAN
 
 def remove_overlaps(pred, time_thresh=None, dur_min=None, min_pts=None, min_cluster_size=None, dist_thresh=None, method = 'polygon', traj_cols = None, **kwargs):
+    if pred.empty:
+        return pred
+        
     pred = pred.copy()
     # load kwarg and traj_col args onto lean defaults
     traj_cols = loader._parse_traj_cols(
