@@ -14,11 +14,8 @@
 # Exclude pycache
 __pycache__/
 
-# Exclude images
-**/*.png
-
-# …but re‑include anything under tutorials/
-!/tutorials/**/*.png
+# Exclude images from research folder only
+examples/research/**/*.png
 
 # macOS system file
 .DS_Store
