@@ -6,6 +6,9 @@ import nomad.stop_detection.grid_based as GRID_BASED
 import nomad.io.base as loader
 
 def remove_overlaps(pred, time_thresh, dur_min, min_pts, method = 'polygon', traj_cols = None, **kwargs):
+        if len(pred)==0:
+                return pred
+                
         pred = pred.copy()
         # load kwarg and traj_col args onto lean defaults
         traj_cols = loader._parse_traj_cols(
@@ -17,8 +20,7 @@ def remove_overlaps(pred, time_thresh, dur_min, min_pts, method = 'polygon', tra
     
         summarize_stops_with_loc = partial(
             utils.summarize_stop,
-            x=traj_cols['x'], # to do: what if it is lat, lon?
-            y=traj_cols['y'],
+            traj_cols=traj_cols,
             keep_col_names=False,
             passthrough_cols = [traj_cols['location_id']])
     
