@@ -1,0 +1,13 @@
+map:
+        read: garden_city.geojson       # geojson file to read
+        load: garden-city.pkl           # pkl file to load
+trajectory:
+        full: False                     # generate full trajectories
+        sparse: True                    # generate sparse trajectories
+        diaries: True                   # generate agent diaries
+randomization:
+        seed: 1                         # seed for reproducibility
+agents:
+        n: 200                          # number of agents to generate trajectories for
+        name_count: 2                   # number of components of randomly generated names for agents
+        
