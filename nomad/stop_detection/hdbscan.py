@@ -267,7 +267,6 @@ def hdbscan(edges_sorted_df, core_distances, d_graph, min_cluster_size, dur_min=
 
     # Iteratively process edges grouped by weight (scale)
     for scale, edges_to_remove in edges_sorted_df.groupby(edges_sorted_df, sort=False):
-
         border_map = _build_border_map(scale, core_distances, d_graph) # can be computed without thinking of edges
         idx_from = edges_to_remove.index.get_level_values('from')
         affected_clusters = set(label_map.loc[idx_from].unique())
@@ -286,12 +285,31 @@ def hdbscan(edges_sorted_df, core_distances, d_graph, min_cluster_size, dur_min=
             
             non_spurious = []
 
-            for comp in components:
-                # Look up this component's borders in the global map
+            start_times = [c[0] for c in components]
+
+            import bisect
+
+            while components:
+                comp = components.pop(0)
+                start_times.pop(0)
+                cut_time = min(start_times) if start_times else np.inf
+                idx = bisect.bisect_left(comp, cut_time)
+                comp, new_comp = comp[:idx], comp[idx:]
+
+                if new_comp:
+                    components.append(new_comp)
+                    start_times.append(new_comp[0])
+
+                if not comp:
+                    continue
+
                 comp_borders = set().union(*(border_map.get(ts, set()) for ts in comp))
+                comp_borders = {b for b in comp_borders if b < cut_time}
                 full_cluster = set(comp).union(comp_borders)
+                
                 if ((max(full_cluster) - min(full_cluster)) >= dur_min * 60) and (len(comp) >= min_cluster_size):
                     non_spurious.append(comp)
+                
                     
             if not non_spurious:
                 pass # cluster has disappeared
@@ -392,9 +410,9 @@ def _connected_components(graph):
                 seen.add(n)
                 comp.append(int(n))
                 stack.extend(graph[n] - seen)
-        components.append(comp)
+        components.append(sorted(comp))
 
-    return components
+    return sorted(components)
 
 def _base_cdf(eps):
     """
@@ -653,6 +671,9 @@ def hdbscan_labels(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min
         d_graph=d_graph,
         min_cluster_size=min_cluster_size,
         dur_min=dur_min)
+    
+    # with pd.option_context('display.max_rows', None):
+    #     print(label_history_df)
     
     cluster_stability_df = compute_cluster_stability(label_history_df) # default old func
     selected_clusters = select_most_stable_clusters(hierarchy_df, cluster_stability_df)
