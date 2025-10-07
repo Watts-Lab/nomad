@@ -270,17 +270,19 @@ def hdbscan(edges_sorted_df, core_distances, d_graph, min_cluster_size, dur_min=
 
         border_map = _build_border_map(scale, core_distances, d_graph) # can be computed without thinking of edges
         idx_from = edges_to_remove.index.get_level_values('from')
-        affected_clusters = set(label_map.loc[idx_from].unique()) 
+        affected_clusters = set(label_map.loc[idx_from].unique())
 
         for cluster_id in affected_clusters:
             if cluster_id == -1:
                 continue
- 
+            
             members = label_map.index[label_map == cluster_id]
             remaining_members = set(members)
             
             G = _build_graph_pd(members, edges_sorted_df, edges_to_remove)
+            # print(G)
             components = _connected_components(G)
+            # print(components)
             
             non_spurious = []
 
@@ -299,6 +301,11 @@ def hdbscan(edges_sorted_df, core_distances, d_graph, min_cluster_size, dur_min=
                 component = non_spurious[0]
                 label_map.loc[list(component)] = cluster_id
                 remaining_members = remaining_members.difference(component)
+                
+                if current_label_id == 1:
+                    label_map.loc[list(component)] = 1
+                    hierarchy.append((scale, 0, [1]))
+                    current_label_id += 1
 
             # true cluster split: multiple valid subclusters
             else:
@@ -311,7 +318,7 @@ def hdbscan(edges_sorted_df, core_distances, d_graph, min_cluster_size, dur_min=
                     current_label_id += 1
 
                 hierarchy.append((scale, cluster_id, new_ids))
-
+                
             label_map.loc[list(remaining_members)] = -1
 
         # log label map after this scale
@@ -321,7 +328,10 @@ def hdbscan(edges_sorted_df, core_distances, d_graph, min_cluster_size, dur_min=
         
     # combine label history into one DataFrame
     label_history_df = pd.concat(label_history, ignore_index=True)
+    
     # build cluster lineage for all clusters
+    # print("Hierarchy:")
+    # print(hierarchy)
     hierarchy_df = _build_cluster_lineage(hierarchy)
     return label_history_df, hierarchy_df
 
@@ -335,6 +345,7 @@ def _build_cluster_lineage(hierarchy):
     Returns a DataFrame with columns: child, parent, scale
     """
     lineage = []
+
     for scale, parent, children in hierarchy:
         for child in children:
             lineage.append({
@@ -428,10 +439,12 @@ def compute_cluster_stability(label_history_df, cdf_function=_base_cdf):
     pd.DataFrame
         A DataFrame with ['cluster_id', 'cluster_stability'] for each valid cluster.
     """
-
+    MAX_EPSILON = 100  # Prevent very low density clusters (high epsilon)
+    
     df = label_history_df[
         (label_history_df['cluster_id'] > 0) &
-        (label_history_df['dendogram_scale'].notna())
+        (label_history_df['dendogram_scale'].notna()) &
+        (label_history_df['dendogram_scale'] < MAX_EPSILON)
     ].copy()
 
     if df.empty:
@@ -642,7 +655,6 @@ def hdbscan_labels(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min
         dur_min=dur_min)
     
     cluster_stability_df = compute_cluster_stability(label_history_df) # default old func
-    # cluster_stability_df = compute_cluster_stability(label_history_df, cdf_function=_piecewise_linear_cdf)
     selected_clusters = select_most_stable_clusters(hierarchy_df, cluster_stability_df)
 
     final_labels = pd.Series(-1, index=core_distances.index, name='cluster', dtype=int)
@@ -655,6 +667,8 @@ def hdbscan_labels(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min
     cluster_info_df = label_history_df[label_history_df['cluster_id'].isin(selected_clusters)]
     birth_scales = cluster_info_df.groupby('cluster_id')['dendogram_scale'].max()
     cluster_info = birth_scales.sort_values(ascending=True).reset_index().rename(columns={'dendogram_scale': 'scale'})
+    # death_scales = cluster_info_df.groupby('cluster_id')['dendogram_scale'].min()
+    # cluster_info = death_scales.sort_values(ascending=True).reset_index().rename(columns={'dendogram_scale': 'scale'})
 
     claimed_points = set()
     for _, row in cluster_info.iterrows():
