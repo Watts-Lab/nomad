@@ -74,6 +74,7 @@ def point_in_polygon(data, poi_table, method='centroid', data_crs=None, max_dist
             raise ValueError(f"Method {method} not among implemented methods: `centroid' and `majority'")
 
     else:
+        pdb.set_trace()
         # is labeled pings
         if not cluster_label: #try defaults and raise
             if 'cluster_label' in data.columns:

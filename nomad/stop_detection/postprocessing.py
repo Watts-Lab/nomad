@@ -47,7 +47,16 @@ def remove_overlaps(pred, time_thresh=None, min_pts=None, dist_thresh=None, dur_
         pred.loc[pred.cluster!=-1, 'cluster'] = labels
         pred = pred.drop('temp_building_id', axis=1)
         # Consider returning just cluster labels, same as the input! 
-        stops = pred.loc[pred.cluster!=-1].groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
+        filtered_pred = pred.loc[pred.cluster!=-1]
+        if filtered_pred.empty:
+            # Get column names by calling summarize function on dummy data
+            cols = utils._get_empty_stop_columns(
+                complete_output=False, passthrough_cols=[traj_cols['location_id']], 
+                traj_cols=traj_cols, keep_col_names=False, is_grid_based=False, **kwargs
+            )
+            stops = pd.DataFrame(columns=cols, dtype=object)
+        else:
+            stops = filtered_pred.groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
 
     elif method == 'cluster':
         traj_cols['location_id'] = 'cluster'
@@ -58,7 +67,16 @@ def remove_overlaps(pred, time_thresh=None, min_pts=None, dist_thresh=None, dur_
                                 min_cluster_size=min_cluster_size,
                                 traj_cols=traj_cols)
         pred.loc[pred.cluster!=-1, 'cluster'] = labels
-        stops = pred.groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
+        filtered_pred = pred.loc[pred.cluster!=-1]
+        if filtered_pred.empty:
+            # Get column names by calling summarize function on dummy data
+            cols = utils._get_empty_stop_columns(
+                complete_output=False, passthrough_cols=[traj_cols['location_id']], 
+                traj_cols=traj_cols, keep_col_names=False, is_grid_based=False, **kwargs
+            )
+            stops = pd.DataFrame(columns=cols, dtype=object)
+        else:
+            stops = filtered_pred.groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
     
     elif method == 'recurse':
         t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(pred.columns, traj_cols, kwargs)

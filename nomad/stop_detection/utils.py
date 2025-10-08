@@ -294,7 +294,7 @@ def _fallback_st_cols(col_names, traj_cols, kwargs):
 
 def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_col_names = True, passthrough_cols= [], traj_cols=None, **kwargs):
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = _fallback_st_cols(grouped_data.columns, traj_cols, kwargs)
-    traj_cols = loader._parse_traj_cols(grouped_data.columns, traj_cols, kwargs)
+    traj_cols = loader._parse_traj_cols(grouped_data.columns, traj_cols, kwargs, warn=False)
     metric = 'haversine' if use_lon_lat else 'euclidean'    
     start_t_key = 'start_datetime' if use_datetime else 'start_timestamp'
     end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
@@ -393,7 +393,7 @@ def summarize_stop_grid(
     t_key, use_datetime = _fallback_time_cols(grouped_data.columns, traj_cols, kwargs)
 
     # 2) parse full mapping
-    cols = loader._parse_traj_cols(grouped_data.columns, traj_cols, kwargs)
+    cols = loader._parse_traj_cols(grouped_data.columns, traj_cols, kwargs, warn=False)
 
     # 3) decide output key names
     start_key = 'start_datetime' if use_datetime else 'start_timestamp'
@@ -453,6 +453,81 @@ def summarize_stop_grid(
             out[c] = grouped_data[c].iloc[0]
 
     return pd.Series(out, dtype='object')
+
+def _get_empty_stop_columns(complete_output, passthrough_cols, traj_cols, keep_col_names, is_grid_based=False, has_geometry=False, **kwargs):
+    """
+    Get the column names for an empty stop DataFrame by calling the summarize function on dummy data.
+    This ensures we get the exact same column names that would be produced by the actual summarize function.
+    
+    Parameters
+    ----------
+    complete_output : bool
+        Whether complete output columns should be included
+    passthrough_cols : list
+        Additional columns to passthrough
+    traj_cols : dict
+        Column mapping dictionary
+    keep_col_names : bool
+        Whether to keep original column names
+    is_grid_based : bool
+        Whether this is for grid-based summarization
+    has_geometry : bool
+        Whether geometry column should be included
+    **kwargs
+        Additional arguments passed to summarize function
+    
+    Returns
+    -------
+    list
+        List of column names for empty DataFrame
+    """
+    if passthrough_cols is None:
+        passthrough_cols = []
+    
+    # Create minimal dummy data with required columns
+    if is_grid_based:
+        dummy_data = pd.DataFrame({
+            'timestamp': [0],
+            'location_id': ['dummy']
+        })
+        if has_geometry:
+            dummy_data['geometry'] = [None]
+        # Add any passthrough columns that might be expected
+        for col in passthrough_cols:
+            if col not in dummy_data.columns:
+                dummy_data[col] = [None]
+        
+        # Call the actual summarize function to get column names
+        result = summarize_stop_grid(
+            dummy_data,
+            complete_output=complete_output,
+            keep_col_names=keep_col_names,
+            passthrough_cols=passthrough_cols,
+            traj_cols=traj_cols,
+            **kwargs
+        )
+    else:
+        dummy_data = pd.DataFrame({
+            'timestamp': [0],
+            'longitude': [0.0],
+            'latitude': [0.0]
+        })
+        # Add any passthrough columns that might be expected
+        for col in passthrough_cols:
+            if col not in dummy_data.columns:
+                dummy_data[col] = [None]
+        
+        # Call the actual summarize function to get column names
+        result = summarize_stop(
+            dummy_data,
+            complete_output=complete_output,
+            keep_col_names=keep_col_names,
+            passthrough_cols=passthrough_cols,
+            traj_cols=traj_cols,
+            **kwargs
+        )
+    
+    return list(result.index)
 
 def pad_short_stops(stop_data, pad=5, dur_min=None, traj_cols = None, **kwargs):
     """
