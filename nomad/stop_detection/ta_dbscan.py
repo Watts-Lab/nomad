@@ -15,87 +15,11 @@ import warnings
 from nomad.filters import to_timestamp
 from nomad.stop_detection import utils
 import nomad.constants as constants
+from nomad.stop_detection.preprocessing import _find_neighbors
 
 ##########################################
 ########         DBSCAN           ########
 ##########################################
-def _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, traj_cols):
-    """
-    Compute neighbors within specified time and distance thresholds for a trajectory dataset.
-    
-    Parameters
-    ----------
-    data : pandas.DataFrame
-        Trajectory data containing spatial and temporal information.
-    traj_cols : dict
-        Dictionary mapping column names for trajectory attributes.
-    time_thresh : int
-        Time threshold in minutes for considering neighboring points.
-    dist_thresh : float
-        Distance threshold for considering neighboring points.
-    use_lon_lat : bool
-        Whether to use longitude/latitude coordinates.
-    use_datetime : bool
-        Whether to cluster using time columns of type pandas.datetime64 if available.
-    
-    Returns
-    -------
-    dict
-        A dictionary where keys are timestamps, and values are sets of neighboring
-        timestamps that satisfy both time and distance thresholds.
-    """
-    # getting coordinates based on whether they are geographic coordinates (lon, lat) or catesian (x,y)
-    if use_lon_lat:
-        coords = np.radians(data[[traj_cols['latitude'], traj_cols['longitude']]].values)
-    else:
-        coords = data[[traj_cols['x'], traj_cols['y']]].values
-    
-    # getting times based on whether they are use_datetime values or timestamps, changed to seconds for calculations
-    if use_datetime:
-        times = pd.to_datetime(data[traj_cols['datetime']])
-        times = times.dt.tz_convert('UTC').dt.tz_localize(None)
-        times = times.astype('int64') // 10**9
-        times = times.values
-        
-    else:
-        # if timestamps, we change the values to seconds
-        first_timestamp = data[traj_cols['timestamp']].iloc[0]
-        timestamp_length = len(str(first_timestamp))
-    
-        if timestamp_length > 10:
-            if timestamp_length == 13:
-                times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 3
-            elif timestamp_length == 19:
-                times = data[traj_cols['timestamp']].values.view('int64') // 10 ** 9   
-        else:
-            times = data[traj_cols['timestamp']].values
-      
-    # Pairwise time differences
-    time_diffs = np.abs(times[:, np.newaxis] - times)
-    time_diffs = time_diffs.astype(int)
-  
-    # Filter by time threshold
-    within_time_thresh = np.triu(time_diffs <= (time_thresh * 60), k=1)
-    time_pairs = np.where(within_time_thresh)
-  
-    # Distance calculation
-    if use_lon_lat:
-        distances = np.array([utils._haversine_distance(coords[i], coords[j]) for i, j in zip(*time_pairs)])
-    else:
-        distances_sq = (coords[time_pairs[0], 0] - coords[time_pairs[1], 0])**2 + (coords[time_pairs[0], 1] - coords[time_pairs[1], 1])**2
-        distances = np.sqrt(distances_sq)
-
-    # Filter by distance threshold
-    neighbor_pairs = distances < dist_thresh
-  
-    # Building the neighbor dictionary
-    neighbor_dict = defaultdict(set)
-  
-    for i, j in zip(time_pairs[0][neighbor_pairs], time_pairs[1][neighbor_pairs]):
-        neighbor_dict[times[i]].add(times[j])
-        neighbor_dict[times[j]].add(times[i])
-
-    return neighbor_dict
 
 def _extract_middle(data):
     """

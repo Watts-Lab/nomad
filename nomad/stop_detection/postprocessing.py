@@ -4,7 +4,7 @@ from functools import partial
 import nomad.stop_detection.utils as utils
 import nomad.stop_detection.grid_based as GRID_BASED 
 import nomad.io.base as loader
-from nomad.stop_detection.dbscan import _find_neighbors
+from nomad.stop_detection.preprocessing import _find_neighbors
 from nomad.filters import to_timestamp
 import nomad.stop_detection.hdbscan as HDBSCAN
 import nomad.stop_detection.lachesis as LACHESIS
