@@ -4,11 +4,17 @@
 
 import nomad.io.base as loader
 import nomad.stop_detection.hdbscan as HDBSCAN
+import nomad.stop_detection.utils as utils
 import pandas as pd
+import numpy as np
 import pdb
 
 def overlapping_visits(left, right, match_location=False, traj_cols=None, **kwargs):
-    # Handle column names
+    if len(left) == 0 or len(right) == 0:
+        return pd.DataFrame()
+    
+    left = left.copy()
+    right = right.copy()
     _ = loader._parse_traj_cols(right.columns, traj_cols, kwargs) # for warning
     traj_cols = loader._parse_traj_cols(left.columns, traj_cols, kwargs)
 
@@ -34,15 +40,10 @@ def overlapping_visits(left, right, match_location=False, traj_cols=None, **kwar
                 "Could not find required location column in {}. The dataset must contain or map to "
                 "a location column'.".format(list(df.columns)))
 
-    # Non-na locations and end_timestamp on copy    
-    left = left.loc[~left[loc_key].isna()].copy()
-    right = right.loc[~right[loc_key].isna()].copy()
-            
     keep_uid = (uid_key in left.columns and uid_key in right.columns )
     if keep_uid:
         same_id = (left[uid_key].iloc[0] == right[uid_key].iloc[0])
         uid = left[uid_key].iloc[0]
-   
     # Possibly different start time keys are valid
     t_keys = []
     for df in [left, right]:
@@ -64,9 +65,9 @@ def overlapping_visits(left, right, match_location=False, traj_cols=None, **kwar
         df.drop([col for col in df.columns if col not in cols], axis=1, inplace=True)
 
     # rename timekeys for now to avoid conflict
-    right.rename({t_keys[1]:t_keys[0]}, axis=1, inplace=True)
-    t_key = t_keys[0]
-    
+    left.rename({t_keys[0]:t_keys[1]}, axis=1, inplace=True)
+    t_key = t_keys[1] # keep the t_key in right
+
     if match_location:
         merged = left.merge(right, on=loc_key, suffixes=('_left','_right'))
     else:
@@ -91,87 +92,74 @@ def overlapping_visits(left, right, match_location=False, traj_cols=None, **kwar
     return merged.reset_index(drop=True)
 
 def compute_visitation_errors(overlaps, true_visits, traj_cols=None, **kwargs):
-    '''
-    Assumes that the columns with the suffix '_right' in the overlaps dataframe correspond
-    to columns from true_visits dataframe.
-    ''' 
+    """
+    Return missed / merged / split fractions for a set of ground-truth stops
+    and an overlap table produced by `overlapping_visits`.
+
+    The start-timestamp column in `true_visits` *must* be unique; if not,
+    a ValueError is raised.  No gap filling is performed here: the caller
+    must supply already-filled tables where appropriate.
+    """
+
+    # 0 – make sure ground truth rows are valid
     true_visits = true_visits.dropna()
-    
-    stripped_col_names = [s.removesuffix('_left').removesuffix('_right') for s in overlaps.columns]
-    
-    _ = loader._parse_traj_cols(stripped_col_names, traj_cols, kwargs)
-    traj_cols = loader._parse_traj_cols(true_visits.columns, traj_cols, kwargs)
+        
+    # 1 – decide the canonical start-time column once
+    t_key, _ = utils._fallback_time_cols(true_visits.columns, traj_cols, kwargs)
 
-    loader._has_time_cols(true_visits.columns, traj_cols)
-    if traj_cols['timestamp'] in true_visits.columns:
-        t_key = traj_cols['timestamp']
-    elif traj_cols['start_timestamp'] in true_visits.columns:
-        t_key = traj_cols['start_timestamp']
-    n_truth = true_visits[t_key].nunique()
+    # 2 – check uniqueness of that column in truth
+    if true_visits[t_key].duplicated().any():
+        dup_ts = true_visits.loc[true_visits[t_key].duplicated(), t_key].unique()
+        raise ValueError(
+            "Ground-truth stops share the same start time(s), which violates the "
+            "per-stop key assumption.  Duplicated timestamps: " + repr(dup_ts)
+        )
+    n_truth = len(true_visits)
 
-    loader._has_time_cols(stripped_col_names, traj_cols)
-    if traj_cols['timestamp'] in stripped_col_names:
-        t_key_l = traj_cols['timestamp']+'_left'
-        t_key_r = traj_cols['timestamp']+'_right'
-    elif traj_cols['start_timestamp'] in stripped_col_names:
-        t_key_l = traj_cols['start_timestamp']+'_left'
-        t_key_r = traj_cols['start_timestamp']+'_right'
+    # 3 – determine the canonical location column
+    loc_key = loader._parse_traj_cols(true_visits.columns, traj_cols, kwargs)['location_id']
 
-    loc_key_l = traj_cols['location_id']+'_left'
-    loc_key_r = traj_cols['location_id']+'_right'
+    # 4 – required column names in the overlap table
+    t_left   = f"{t_key}_left"
+    t_right  = f"{t_key}_right"
+    loc_left = f"{loc_key}_left"
+    loc_right = f"{loc_key}_right"
 
-    # compute missed
-    gt_overlapped = set(overlaps[t_key_r].unique()) # _right is for ground truth
-    missed = (n_truth - len(gt_overlapped)) / n_truth
+    for col in (t_left, t_right, loc_left, loc_right):
+        if col not in overlaps.columns:
+            raise ValueError(
+                f"compute_visitation_errors: expected column '{col}' in overlaps but not found."
+            )
 
-    # compute merging
-    merged_ids = set()
-    for pred_ts, group in overlaps.groupby(t_key_l):
-        if group[loc_key_r].nunique() > 1:
-            merged_ids.update(group[t_key_r].unique())
-    merged = len(merged_ids) / n_truth
+    overlaps = overlaps.fillna({loc_left: 'Street'}) # So they count on merge and missing
 
-    # compute splitting
-    split_ids = set()
-    same_loc = overlaps[overlaps[loc_key_l] == overlaps[loc_key_r]] # _right corresponds to ground truth
-    for gt_ts, group in same_loc.groupby(t_key_r): 
-        if group[t_key_l].nunique() > 1:
-            split_ids.add(gt_ts)
-    split = len(split_ids) / n_truth
+    # 5 – error if the overlap table references a start time not in ground truth
+    bad_ts = set(overlaps[t_right]) - set(true_visits[t_key])
+    if bad_ts:
+        raise ValueError(
+            "compute_visitation_errors: overlap rows reference start times that "
+            "do not exist in ground truth: " + repr(sorted(bad_ts)[:10])
+        )
 
-    return {'missed_fraction': missed,
-            'merged_fraction': merged,
-            'split_fraction': split}
+    diff_loc = overlaps[loc_left] != overlaps[loc_right] #because gt "street" segments are always under a minute, then predicted "street" can't ever be correct
+    same_loc = ~diff_loc
 
-def compute_precision_recall_f1(overlaps, pred_visits, true_visits, traj_cols=None, **kwargs):
-    true_visits = true_visits.dropna()
-    stripped_col_names = [s.removesuffix('_left').removesuffix('_right') for s in overlaps.columns]
-    
-    _ = loader._parse_traj_cols(stripped_col_names, traj_cols, kwargs)    
-    _ = loader._parse_traj_cols(true_visits.columns, traj_cols, kwargs)
-    traj_cols = loader._parse_traj_cols(pred_visits.columns, traj_cols, kwargs)
+    num_overlapped = overlaps[t_right].nunique()
+    missed_fraction = 1 - num_overlapped / n_truth
 
-    d_key = traj_cols['duration']
-    if d_key not in stripped_col_names:
-        raise KeyError(f"Column {d_key} not found in columns {overlaps.columns} for 'overlaps' dataframe.")
-    if d_key not in pred_visits.columns:
-        raise KeyError(f"Column {d_key} not found in columns {pred_visits.columns} for 'pred_visits' dataframe.")
-    if d_key not in true_visits.columns:
-        raise KeyError(f"Column {d_key} not found in columns {true_visits.columns} for 'true_visits' dataframe.")
-    
-    
-    total_pred = pred_visits[d_key].sum()
-    total_truth = true_visits[d_key].sum()
+    merged_fraction = diff_loc.groupby(overlaps[t_right]).any().mean()
+    split_fraction  = overlaps[same_loc].groupby(t_right)[t_left].nunique().gt(1).mean()
 
-    loc_key_r = traj_cols['location_id']+'_right'
-    loc_key_l = traj_cols['location_id']+'_right'
+    return {'missed_fraction': missed_fraction, 'merged_fraction': merged_fraction, 'split_fraction': split_fraction}
 
-    tp = overlaps.loc[overlaps[loc_key_r] == overlaps[loc_key_l], d_key].sum()
-    
-    precision = tp / total_pred if total_pred > 0 else 0.0
-    recall = tp / total_truth if total_truth > 0 else 0.0
-    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
-
-    return {'precision': float(precision),
-            'recall': float(recall),
-            'f1': float(f1)}
+def precision_recall_f1_from_minutes(total_pred, total_truth, tp):
+    """Compute P/R/F1 from minute totals."""
+    precision = tp / total_pred if total_pred else np.nan
+    recall    = tp / total_truth if total_truth else np.nan
+    if np.isnan(precision) or np.isnan(recall):
+        f1 = np.nan
+    elif precision + recall == 0:            # both are 0 → F1 = 0
+        f1 = 0.0
+    else:
+        f1 = 2 * precision * recall / (precision + recall)
+    return {'precision': precision, 'recall': recall, 'f1': f1}

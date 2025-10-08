@@ -6,6 +6,7 @@ import warnings
 import geopandas as gpd
 import nomad.io.base as loader
 from nomad.stop_detection import utils
+from nomad.stop_detection.postprocessing import remove_overlaps
 from nomad.filters import to_timestamp
 from nomad.stop_detection.preprocessing import _find_neighbors
 
