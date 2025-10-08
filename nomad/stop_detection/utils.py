@@ -454,13 +454,15 @@ def summarize_stop_grid(
 
     return pd.Series(out, dtype='object')
 
-def _get_empty_stop_columns(complete_output, passthrough_cols, traj_cols, keep_col_names, is_grid_based=False, has_geometry=False, **kwargs):
+def _get_empty_stop_columns(input_columns, complete_output, passthrough_cols, traj_cols, keep_col_names, is_grid_based=False, **kwargs):
     """
-    Get the column names for an empty stop DataFrame by calling the summarize function on dummy data.
-    This ensures we get the exact same column names that would be produced by the actual summarize function.
+    Get the column names for an empty stop DataFrame by calling the actual helper functions.
+    This avoids the need for dummy data which can cause coordinate system mismatches.
     
     Parameters
     ----------
+    input_columns : pd.Index or list
+        Column names from the original input data (even if empty)
     complete_output : bool
         Whether complete output columns should be included
     passthrough_cols : list
@@ -471,8 +473,6 @@ def _get_empty_stop_columns(complete_output, passthrough_cols, traj_cols, keep_c
         Whether to keep original column names
     is_grid_based : bool
         Whether this is for grid-based summarization
-    has_geometry : bool
-        Whether geometry column should be included
     **kwargs
         Additional arguments passed to summarize function
     
@@ -484,50 +484,62 @@ def _get_empty_stop_columns(complete_output, passthrough_cols, traj_cols, keep_c
     if passthrough_cols is None:
         passthrough_cols = []
     
-    # Create minimal dummy data with required columns
     if is_grid_based:
-        dummy_data = pd.DataFrame({
-            'timestamp': [0],
-            'location_id': ['dummy']
-        })
-        if has_geometry:
-            dummy_data['geometry'] = [None]
-        # Add any passthrough columns that might be expected
-        for col in passthrough_cols:
-            if col not in dummy_data.columns:
-                dummy_data[col] = [None]
+        # Call the actual helper functions with the input columns
+        t_key, use_datetime = _fallback_time_cols(input_columns, traj_cols, kwargs)
+        # Parse traj_cols to get the column mappings
+        cols = loader._parse_traj_cols(input_columns, traj_cols, kwargs, warn=False)
         
-        # Call the actual summarize function to get column names
-        result = summarize_stop_grid(
-            dummy_data,
-            complete_output=complete_output,
-            keep_col_names=keep_col_names,
-            passthrough_cols=passthrough_cols,
-            traj_cols=traj_cols,
-            **kwargs
-        )
+        # Decide output key names
+        start_key = 'start_datetime' if use_datetime else 'start_timestamp'
+        end_key = 'end_datetime' if use_datetime else 'end_timestamp'
+        
+        if keep_col_names:
+            cols[start_key] = cols[t_key]
+            cols[end_key] = cols.get(end_key, end_key)
+        else:
+            cols[start_key] = start_key
+            cols[end_key] = end_key
+        
+        # Build column list
+        column_list = [cols[start_key]]
+        
+        if complete_output:
+            column_list.extend([cols[end_key], 'n_pings', 'max_gap', 'duration'])
+        
+        # Add location_id and geometry
+        column_list.append(cols['location_id'])
+        if 'geometry' in input_columns:
+            column_list.append('geometry')
+        
+        # Add passthrough columns
+        column_list.extend(passthrough_cols)
+        
     else:
-        dummy_data = pd.DataFrame({
-            'timestamp': [0],
-            'longitude': [0.0],
-            'latitude': [0.0]
-        })
-        # Add any passthrough columns that might be expected
-        for col in passthrough_cols:
-            if col not in dummy_data.columns:
-                dummy_data[col] = [None]
+        # Call the actual helper functions with the input columns
+        t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = _fallback_st_cols(input_columns, traj_cols, kwargs)
+        # Parse traj_cols to get the column mappings
+        cols = loader._parse_traj_cols(input_columns, traj_cols, kwargs, warn=False)
         
-        # Call the actual summarize function to get column names
-        result = summarize_stop(
-            dummy_data,
-            complete_output=complete_output,
-            keep_col_names=keep_col_names,
-            passthrough_cols=passthrough_cols,
-            traj_cols=traj_cols,
-            **kwargs
-        )
+        start_t_key = 'start_datetime' if use_datetime else 'start_timestamp'
+        end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
+        
+        if not keep_col_names:
+            cols[coord_key1] = constants.DEFAULT_SCHEMA[coord_key1]
+            cols[coord_key2] = constants.DEFAULT_SCHEMA[coord_key2]
+        else:
+            cols[start_t_key] = cols[t_key]
+        
+        # Build column list
+        column_list = [cols[coord_key1], cols[coord_key2], cols[start_t_key], 'duration']
+        
+        if complete_output:
+            column_list.extend([cols[end_t_key], 'diameter', 'n_pings', 'max_gap'])
+        
+        # Add passthrough columns
+        column_list.extend(passthrough_cols)
     
-    return list(result.index)
+    return column_list
 
 def pad_short_stops(stop_data, pad=5, dur_min=None, traj_cols = None, **kwargs):
     """

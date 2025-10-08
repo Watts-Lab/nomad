@@ -163,7 +163,7 @@ def lachesis(
         # Get column names by calling summarize function on dummy data
         traj_cols_parsed = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
         cols = utils._get_empty_stop_columns(
-            complete_output, passthrough_cols, traj_cols_parsed, 
+            data.columns, complete_output, passthrough_cols, traj_cols_parsed, 
             keep_col_names=keep_col_names, is_grid_based=False, **kwargs
         )
         return pd.DataFrame(columns=cols, dtype=object)
