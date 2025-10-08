@@ -31,7 +31,7 @@ from nomad.traj_gen import Agent, Population, garden_city_to_mercator
 # ## Load city and configure destination diaries
 
 # %%
-city = cg.load('../../garden-city.pkl')
+city = cg.load('../../../examples/garden-city.pkl')
 start = '2024-06-01 00:00-04:00'
 
 #option 1: old
@@ -79,7 +79,7 @@ config = dict(
     N = N_reps*sparsity_samples,
     name_count=2,
     name_seed=2025,
-    city_file='../../garden-city.pkl',
+    city_file='../../../examples/garden-city.pkl',
     destination_diary_file='exp_1_destinations_balanced.csv',
     output_files = dict(
         sparse_path='./sparse_traj_1',
@@ -108,7 +108,7 @@ config_2 = dict(
     N = N_reps*sparsity_samples,
     name_count=2,
     name_seed=2025,
-    city_file='../../garden-city.pkl',
+    city_file='../../../examples/garden-city.pkl',
     destination_diary_file='exp_1_destinations_unbalanced.csv',
     output_files = dict(
         sparse_path='./sparse_traj_2',

@@ -160,6 +160,9 @@ print("Are these stop table columns?")
 print(stops.columns)
 
 # %%
+sparse.columns
+
+# %%
 stops
 
 # %%
