@@ -477,19 +477,14 @@ def _has_duration_cols(col_names, traj_cols):
 def _has_spatial_cols(col_names, traj_cols, exclusive=False):
     """Return True if lon/lat, x/y or geohash columns are present; else raise."""
     if exclusive:
-        # Check if x,y coordinates are explicitly provided (not just defaults)
+        has_lon_lat = (
+            'latitude' in traj_cols and 'longitude' in traj_cols and
+            traj_cols['latitude'] in col_names and traj_cols['longitude'] in col_names
+        )
         has_x_y = (
             'x' in traj_cols and 'y' in traj_cols and
             traj_cols['x'] in col_names and traj_cols['y'] in col_names
         )
-        
-        # Only check for lon/lat if x,y are not explicitly provided
-        has_lon_lat = False
-        if not has_x_y:
-            has_lon_lat = (
-                'latitude' in traj_cols and 'longitude' in traj_cols and
-                traj_cols['latitude'] in col_names and traj_cols['longitude'] in col_names
-            )
 
         if has_lon_lat and has_x_y:
             raise ValueError("Too many spatial columns; provide only one pair.")
