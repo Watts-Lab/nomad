@@ -63,11 +63,6 @@ def remove_overlaps(data, time_thresh=None, min_pts=None, dist_thresh=None, dur_
         if traj is None:
             raise ValueError("When input is a stop table, 'traj' parameter (trajectory data) is required")
         
-        # Check if traj has cluster column (for method 'cluster')
-        if method == 'cluster':
-            # Let grid_based_labels handle the check - it will raise if cluster column not found
-            pass
-        
         # Set summarize_stops to True unless explicitly overridden
         if summarize_stops is None:
             summarize_stops = True
@@ -219,6 +214,8 @@ def _process_clusters(data, time_thresh, dist_thresh, min_pts, output, use_lon_l
         neighbor_dict = _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, traj_cols)
     
     if cluster_df is None:
+        # Local import to avoid circular dependency
+        import nomad.stop_detection.dbscan as TADBSCAN
         cluster_df = TADBSCAN.dbscan(data, time_thresh, dist_thresh, min_pts, use_lon_lat, use_datetime, traj_cols, neighbor_dict=neighbor_dict)
     
     if len(cluster_df) < min_pts:
