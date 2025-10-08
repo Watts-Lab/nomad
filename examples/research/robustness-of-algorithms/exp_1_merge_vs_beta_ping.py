@@ -217,13 +217,12 @@ def plot_metric(metric, title, ax=None, save_individual=True):
     sns.scatterplot(data=results_df, x='beta_ping', y=metric, hue='algorithm',
                    alpha=0.1, s=20, ax=ax, palette='viridis', legend=False)
     
-    # Add line plot (mean values)
-    sns.lineplot(data=chart_df, x='beta_ping', y=f'{metric}_mean', hue='algorithm',
-                 marker='', linewidth=3, ax=ax, palette='viridis')
+    # Add line plot (mean values) - this will create the legend
+    line_plot = sns.lineplot(data=chart_df, x='beta_ping', y=f'{metric}_mean', hue='algorithm',
+                            marker='', linewidth=3, ax=ax, palette='viridis')
     
     # Styling
-    font_sizes = {'title': 16 if is_individual else 14, 'labels': 13 if is_individual else 11, 'legend': 12 if is_individual else 10}
-    ax.set_title(f'Impact of Ping Frequency on {title}', fontsize=font_sizes['title'], pad=10, fontweight='bold')
+    font_sizes = {'labels': 15 if is_individual else 13, 'legend': 12 if is_individual else 10}
     ax.set_xlabel('Mean Time Between Pings (in Minutes)', fontsize=font_sizes['labels'], labelpad=10)
     ax.set_ylabel(title, fontsize=font_sizes['labels'], labelpad=10)
     ax.set_ylim(0, 1)
@@ -231,9 +230,9 @@ def plot_metric(metric, title, ax=None, save_individual=True):
     ax.tick_params(axis='both', which='major', labelsize=font_sizes['labels']-2, length=6, width=1.2)
     ax.minorticks_on()
     
-    # Legend
+    # Fix legend to show lines instead of dots
     handles, labels = ax.get_legend_handles_labels()
-    ax.legend(['TA-DBSCAN', 'Lachesis'], title='Algorithm', bbox_to_anchor=(0.98, 0.98), 
+    ax.legend(handles, ['TA-DBSCAN', 'Lachesis'], title='Algorithm', bbox_to_anchor=(0.98, 0.98), 
               loc='upper right', fontsize=font_sizes['legend'], title_fontsize=font_sizes['legend']+2, frameon=True)
     
     if is_individual and save_individual:
@@ -253,11 +252,11 @@ metrics = {
 for metric, title in metrics.items():
     plot_metric(metric, title)
 
-# Grid plot
-fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+# Grid plot with better spacing
+fig, axes = plt.subplots(2, 3, figsize=(15, 10))
 for i, (metric, title) in enumerate(metrics.items()):
     plot_metric(metric, title, ax=axes.flat[i], save_individual=False)
-plt.tight_layout()
+plt.tight_layout(pad=2.0, h_pad=1.5, w_pad=1.5)
 plt.savefig("figures/exp1_all_metrics_grid.svg", bbox_inches='tight')
 plt.savefig("figures/exp1_all_metrics_grid.png", dpi=600, bbox_inches='tight')
 plt.show()
