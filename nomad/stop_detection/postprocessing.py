@@ -8,7 +8,6 @@ from nomad.stop_detection.preprocessing import _find_neighbors
 from nomad.filters import to_timestamp
 import nomad.stop_detection.hdbscan as HDBSCAN
 import nomad.stop_detection.lachesis as LACHESIS
-import nomad.stop_detection.dbscan as TADBSCAN
 
 def remove_overlaps(data, time_thresh=None, min_pts=None, dist_thresh=None, dur_min=5, min_cluster_size=2, method='polygon', traj=None, summarize_stops=None, traj_cols=None, **kwargs):
     """
