@@ -11,7 +11,7 @@ from pathlib import Path
 import nomad.io.base as loader
 from nomad import constants
 from nomad import filters
-import nomad.stop_detection.ta_dbscan as DBSCAN
+import nomad.stop_detection.dbscan as DBSCAN
 import nomad.stop_detection.lachesis as LACHESIS
 import pdb
 
