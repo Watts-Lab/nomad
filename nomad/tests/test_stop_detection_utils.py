@@ -73,6 +73,16 @@ def overlapping_trajectory_data():
         'cluster': [0, 1, 0, 1, 0, 1]  # Overlapping clusters
     })
 
+@pytest.fixture
+def trajectory_data_with_noise():
+    """Sample trajectory data with noise points (-1) and clusters for testing noise preservation."""
+    return pd.DataFrame({
+        'timestamp': [1609459200, 1609459260, 1609459320, 1609459380, 1609459440, 1609459500, 1609459560],  # Unix timestamps in seconds
+        'longitude': [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0],
+        'latitude': [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0],
+        'cluster': [0, 0, 0, 1, 1, -1, -1]  # Two clusters and two noise points
+    })
+
 ##########################################
 ####      REMOVE_OVERLAPS TESTS       #### 
 ##########################################
@@ -265,3 +275,59 @@ def test_remove_overlaps_parameter_validation():
             )
         
         assert isinstance(result, pd.Series)
+
+def test_remove_overlaps_output_length_matches_input(trajectory_data_with_noise):
+    """Test that output length matches input length for trajectory data."""
+    result = remove_overlaps(
+        trajectory_data_with_noise,
+        method='cluster',
+        time_thresh=120,
+        dur_min=2,
+        summarize_stops=False,
+        traj_cols={'timestamp': 'timestamp', 'longitude': 'longitude', 'latitude': 'latitude'}
+    )
+    
+    # Output should have same length as input
+    assert len(result) == len(trajectory_data_with_noise)
+    assert isinstance(result, pd.Series)
+    assert result.name == 'cluster'
+
+def test_remove_overlaps_preserves_noise_points(trajectory_data_with_noise):
+    """Test that noise points (-1) are preserved in the output."""
+    result = remove_overlaps(
+        trajectory_data_with_noise,
+        method='cluster',
+        time_thresh=120,
+        dur_min=2,
+        summarize_stops=False,
+        traj_cols={'timestamp': 'timestamp', 'longitude': 'longitude', 'latitude': 'latitude'}
+    )
+    
+    # Should preserve noise points (-1)
+    input_noise_indices = trajectory_data_with_noise['cluster'] == -1
+    output_noise_values = result[input_noise_indices]
+    
+    # All originally noise points should remain -1
+    assert all(output_noise_values == -1), f"Expected all noise points to remain -1, got {output_noise_values.tolist()}"
+
+def test_remove_overlaps_preserves_noise_points_polygon_method(trajectory_data_with_noise):
+    """Test that noise points (-1) are preserved in the output for polygon method."""
+    # Add location_id column for polygon method
+    data_with_location = trajectory_data_with_noise.copy()
+    data_with_location['location_id'] = ['A', 'A', 'A', 'B', 'B', 'C', 'D']  # Match data length
+    
+    result = remove_overlaps(
+        data_with_location,
+        method='polygon',
+        time_thresh=120,
+        dur_min=2,
+        summarize_stops=False,
+        traj_cols={'timestamp': 'timestamp', 'longitude': 'longitude', 'latitude': 'latitude'}
+    )
+    
+    # Should preserve noise points (-1)
+    input_noise_indices = data_with_location['cluster'] == -1
+    output_noise_values = result[input_noise_indices]
+    
+    # All originally noise points should remain -1
+    assert all(output_noise_values == -1), f"Expected all noise points to remain -1, got {output_noise_values.tolist()}"

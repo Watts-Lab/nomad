@@ -120,14 +120,14 @@ def remove_overlaps(data, time_thresh=None, min_pts=None, dist_thresh=None, dur_
                 )
                 stops = pd.DataFrame(columns=cols, dtype=object)
             else:
-                # Return empty cluster labels
-                stops = pd.Series([], dtype=int, name='cluster')
+                # Return cluster labels for all rows (including noise points with -1)
+                stops = pred['cluster']
         else:
             if summarize_stops:
                 stops = filtered_pred.groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
             else:
-                # Return the cluster labels
-                stops = filtered_pred['cluster']
+                # Return the cluster labels for all rows (including noise points)
+                stops = pred['cluster']
 
     elif method == 'cluster':
         traj_cols['location_id'] = 'cluster'
@@ -148,14 +148,14 @@ def remove_overlaps(data, time_thresh=None, min_pts=None, dist_thresh=None, dur_
                 )
                 stops = pd.DataFrame(columns=cols, dtype=object)
             else:
-                # Return empty cluster labels
-                stops = pd.Series([], dtype=int, name='cluster')
+                # Return cluster labels for all rows (including noise points with -1)
+                stops = pred['cluster']
         else:
             if summarize_stops:
                 stops = filtered_pred.groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
             else:
-                # Return the cluster labels
-                stops = filtered_pred['cluster']
+                # Return the cluster labels for all rows (including noise points)
+                stops = pred['cluster']
     
     elif method == 'recurse':
         t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(pred.columns, traj_cols, kwargs)
