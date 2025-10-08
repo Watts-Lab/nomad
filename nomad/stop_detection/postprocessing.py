@@ -115,7 +115,7 @@ def remove_overlaps(data, time_thresh=None, min_pts=None, dist_thresh=None, dur_
             if summarize_stops:
                 # Get column names by calling summarize function on dummy data
                 cols = utils._get_empty_stop_columns(
-                    complete_output=False, passthrough_cols=[traj_cols['location_id']], 
+                    pred.columns, complete_output=False, passthrough_cols=[traj_cols['location_id']], 
                     traj_cols=traj_cols, keep_col_names=False, is_grid_based=False, **kwargs
                 )
                 stops = pd.DataFrame(columns=cols, dtype=object)
@@ -143,7 +143,7 @@ def remove_overlaps(data, time_thresh=None, min_pts=None, dist_thresh=None, dur_
             if summarize_stops:
                 # Get column names by calling summarize function on dummy data
                 cols = utils._get_empty_stop_columns(
-                    complete_output=False, passthrough_cols=[traj_cols['location_id']], 
+                    pred.columns, complete_output=False, passthrough_cols=[traj_cols['location_id']], 
                     traj_cols=traj_cols, keep_col_names=False, is_grid_based=False, **kwargs
                 )
                 stops = pd.DataFrame(columns=cols, dtype=object)
