@@ -160,6 +160,9 @@ print("Are these stop table columns?")
 print(stops.columns)
 
 # %%
+stops
+
+# %%
 # ta_dbscan
 stops["location"] = visits.point_in_polygon(stops, poi_table=poi_table, data_crs='EPSG:3857',
                                    max_distance=10, location_id='location', x='x', y='y')
