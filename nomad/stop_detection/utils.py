@@ -13,7 +13,81 @@ import pdb
 from datetime import datetime, time, timedelta
 from nomad.filters import to_timestamp
 
+def clip_stops_datetime(stops, start_datetime, end_datetime, traj_cols=None, **kwargs):
+    """
+    Clip each stop to a specific datetime range.
+    
+    This function takes a stop table and clips each stop to the specified datetime range,
+    recomputing durations and dropping stops that don't intersect the range.
+    
+    Parameters
+    ----------
+    stops : pandas.DataFrame
+        Stop table with at least start_datetime, end_datetime, and duration columns
+    start_datetime : str or pandas.Timestamp
+        Start of the datetime range to clip to
+    end_datetime : str or pandas.Timestamp  
+        End of the datetime range to clip to
+        
+    Returns
+    -------
+    pandas.DataFrame
+        Clipped stop table with updated start/end times and durations.
+        Only includes stops that intersect the specified datetime range.
+    """
+    stops = stops.copy()
+    stops.drop(columns=["n_pings", "diameter", "max_gap", "identifier"], errors="ignore", inplace=True)
+    t_key, use_datetime = _fallback_time_cols(stops.columns, traj_cols, kwargs)
+    end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
+    
+    # Load default col names
+    traj_cols = loader._parse_traj_cols(stops.columns, traj_cols, kwargs)   
+    
+    # check is diary table
+    end_col_present = loader._has_end_cols(stops.columns, traj_cols)
+    duration_col_present = loader._has_duration_cols(stops.columns, traj_cols)
+    #ensure end_column exists
+    if not (end_col_present or duration_col_present):
+        raise ValueError("Missing required (end or duration) temporal columns for stop_table dataframe.")
+    elif not end_col_present:
+        if use_datetime:
+            # stops[end_t_key] = stops[t_key] + pd.to_timedelta(stops[traj_cols["duration"]], unit="min")
+            stops[end_t_key] = stops[t_key] + pd.to_timedelta(stops[traj_cols["duration"]], unit="min")
+        else:
+            stops[end_t_key] = stops[t_key] + 60*stops[traj_cols["duration"]]
+        
+    # Ensure timezone-aware clipping bounds
+    if use_datetime:
+        # tz = stops[t_key].dt.tz
+        tz = stops[t_key].dt.tz if stops[t_key].dt.tz is not None else None
 
+    else:
+        tz = None
+        
+    start_dt = pd.Timestamp(start_datetime, tz=tz)
+    end_dt = pd.Timestamp(end_datetime, tz=tz)
+    
+    if not use_datetime:
+        start_dt = (np.datetime64(start_dt).astype('datetime64[s]')).astype('int64')
+        end_dt = (np.datetime64(end_dt).astype('datetime64[s]')).astype('int64')
+
+    # Filter rows that overlap with the specified range
+    stops = stops[(stops[end_t_key] > start_dt) & (stops[t_key] < end_dt)]
+    print("Stops after filtering for overlap:")
+    print(stops)
+
+    # Clip to datetime range
+    stops[t_key] = stops[t_key].clip(lower=start_dt, upper=end_dt)
+    stops[end_t_key] = stops[end_t_key].clip(lower=start_dt, upper=end_dt)
+
+    # Recompute durations
+    if use_datetime:
+        stops[traj_cols["duration"]] = (stops[end_t_key] - stops[t_key]).dt.total_seconds()//60
+    else:
+        stops[traj_cols["duration"]] = (stops[end_t_key] - stops[t_key])//60
+
+    # Return only stops that have positive duration after clipping
+    return stops[stops['duration'] > 0]
 
 def _diameter(coords, metric='euclidean'):
     """
@@ -218,101 +292,65 @@ def _fallback_st_cols(col_names, traj_cols, kwargs):
             
     return t_key, coord_key1, coord_key2, use_datetime, use_lon_lat
 
-def summarize_stop(
-    grouped_data,
-    method='medoid',
-    complete_output=False,
-    keep_col_names=True,
-    passthrough_cols=None,
-    traj_cols=None,
-    **kwargs
-):
-    """
-    Summarize a single coordinate-based stop cluster.
-
-    Parameters
-    ----------
-    grouped_data : pd.DataFrame
-        One cluster’s worth of pings, sorted by time.
-    method : str
-        Medoid method (currently only 'medoid' supported).
-    complete_output : bool
-        If True, include diameter, n_pings, end_time, and max_gap.
-    keep_col_names : bool
-        If False, rename output coord columns to DEFAULT_SCHEMA (['x','y']).
-        If True, keep user’s original names (e.g. 'lon','lat').
-    passthrough_cols : list[str], optional
-        Any extra columns (e.g. 'user_id') to copy through.
-    traj_cols : dict, optional
-        Overrides for logical column mapping (x, y, timestamp, etc).
-    **kwargs
-        Additional mapping args (e.g. datetime='datetime_col').
-
-    Returns
-    -------
-    pd.Series
-        A one‐row summary with:
-          - start_[timestamp|datetime]
-          - [x|lon], [y|lat]
-          - duration (always)
-          - end_[timestamp|datetime], diameter, n_pings, max_gap (if complete_output)
-          - any passthrough_cols
-    """
-    if passthrough_cols is None:
-        passthrough_cols = []
-
-    # 1) pick time & spatial keys (may raise if missing)
-    t_key, coord_x, coord_y, use_datetime, use_lon_lat = _fallback_st_cols(
-        grouped_data.columns, traj_cols, kwargs
-    )
-
-    # 2) parse full mapping
+def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_col_names = True, passthrough_cols= [], traj_cols=None, **kwargs):
+    t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = _fallback_st_cols(grouped_data.columns, traj_cols, kwargs)
     traj_cols = loader._parse_traj_cols(grouped_data.columns, traj_cols, kwargs)
-
-    # 3) decide output column names
-    start_key = 'start_datetime' if use_datetime else 'start_timestamp'
-    end_key   = 'end_datetime'   if use_datetime else 'end_timestamp'
-
-    # 4) medoid + time bounds
-
-    coords   = grouped_data[[traj_cols[coord_x], traj_cols[coord_y]]].to_numpy()
-    medoid   = _medoid(coords, metric='haversine' if use_lon_lat else 'euclidean')
-    start_ts = grouped_data[traj_cols[t_key]].iloc[0]
-    end_ts   = grouped_data[traj_cols[t_key]].iloc[-1]
-
+    metric = 'haversine' if use_lon_lat else 'euclidean'    
+    start_t_key = 'start_datetime' if use_datetime else 'start_timestamp'
+    end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
+    
     if not keep_col_names:
-        traj_cols[coord_x] = constants.DEFAULT_SCHEMA[coord_x]
-        traj_cols[coord_y] = constants.DEFAULT_SCHEMA[coord_y]
-        # leave start_key as constants.DEFAULT_SCHEMA[start_key]
+       traj_cols[coord_key1] = constants.DEFAULT_SCHEMA[coord_key1]
+       traj_cols[coord_key2] = constants.DEFAULT_SCHEMA[coord_key2]
+       # traj_cols[start_t_key] holds default or user provided value
     else:
-        # write over the default start_key so we output the user’s original t_key name
-        traj_cols[start_key] = traj_cols[t_key]
-        
-    out = {
-        traj_cols[coord_x]:     medoid[0],
-        traj_cols[coord_y]:     medoid[1],
-        traj_cols[start_key]:   start_ts,
-        'duration':        (end_ts - start_ts).total_seconds()//60 if use_datetime else (end_ts - start_ts)//60
-    }
+        # use same time column key for start time
+        # e.g. start time col in stops will be 'unix_timestamp' instead of default 'start_timestamp'
+        traj_cols[start_t_key] = traj_cols[t_key]
+    
+    # Handle empty input defensively - return empty Series with expected columns (as if complete_output=True)
+    if grouped_data.empty:
+        empty_attrs = {coord_key1: None, coord_key2: None, traj_cols[start_t_key]: None, 'duration': None, 
+                      traj_cols[end_t_key]: None, 'diameter': None, 'n_pings': None, 'max_gap': None}
+        for col in passthrough_cols:
+            empty_attrs[col] = None
+        return pd.Series(empty_attrs)
+    
+    # Compute stop statistics
+    coords = grouped_data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
+    medoid = _medoid(coords, metric=metric)
+    end_time = grouped_data[traj_cols[t_key]].iloc[-1]
 
-    # 5) complete stats
+    stop_attr = {} # the pandas series for the output
+    stop_attr[coord_key1] = medoid[0]
+    stop_attr[coord_key2] = medoid[1]
+    stop_attr[traj_cols[start_t_key]]  = grouped_data[traj_cols[t_key]].iloc[0]
+
     if complete_output:
-        out[end_key]       = end_ts
-        out['diameter']    = _diameter(coords, metric='haversine' if use_lon_lat else 'euclidean')
-        out['n_pings']     = len(grouped_data)
-        diffs = grouped_data[traj_cols[t_key]].diff().dropna()
-        out['max_gap'] = (
-            int(diffs.max().total_seconds() // 60)
-            if use_datetime else
-            int(diffs.max() // 60) if len(diffs) else 0
-        )
+        if traj_cols['ha'] in grouped_data.columns:
+            stop_attr[traj_cols['ha']] = grouped_data[traj_cols['ha']].mean()
+        stop_attr['diameter'] = _diameter(coords, metric=metric)
+        stop_attr['n_pings'] = len(grouped_data)
+        stop_attr[traj_cols[end_t_key]] = end_time
+        
+        time_diffs = grouped_data[traj_cols[t_key]].diff().dropna()
+        max_gap = time_diffs.max() if len(time_diffs) > 0 else 0
 
-    # 6) passthrough
-    for c in passthrough_cols:
-        if c in grouped_data.columns:
-            out[c] = grouped_data[c].iloc[0]
+    if use_datetime:
+        stop_attr['duration'] = int((end_time - stop_attr[traj_cols[start_t_key]]).total_seconds())//60
+        if complete_output:
+            stop_attr['max_gap'] = int(max_gap.total_seconds())//60
+    else:
+        stop_attr['duration'] = (end_time - stop_attr[traj_cols[start_t_key]])//60
+        if complete_output:
+            stop_attr['max_gap'] = max_gap//60
 
-    return pd.Series(out, dtype='object')
+    # passthrough columns: e.g. location_id
+    for col in passthrough_cols:
+        if col in grouped_data.columns:
+            stop_attr[col] = grouped_data[col].iloc[0]
+
+    return pd.Series(stop_attr)
 
 def summarize_stop_grid(
     grouped_data,
@@ -333,7 +371,7 @@ def summarize_stop_grid(
         If True, include n_pings, duration, and max_gap.
     keep_col_names : bool
         If False, output start_/end_ keys are DEFAULT_SCHEMA ones;
-        if True, they use the user’s time‐column name.
+        if True, they use the user's time‐column name.
     passthrough_cols : list[str], optional
         Additional columns (e.g. 'user_id') to carry through.
     traj_cols : dict, optional
@@ -367,12 +405,21 @@ def summarize_stop_grid(
     else:
         cols[start_key] = start_key
         cols[end_key]   = end_key
+    
+    # Handle empty input defensively - return empty Series with expected columns (as if complete_output=True)
+    if grouped_data.empty:
+        empty_out = {cols[start_key]: None, cols[end_key]: None, 'n_pings': None, 'max_gap': None, 'duration': None}
+        to_pass = set(passthrough_cols) | {cols['location_id']}
+        if 'geometry' in grouped_data.columns:
+            to_pass.add('geometry')
+        for c in to_pass:
+            empty_out[c] = None
+        return pd.Series(empty_out, dtype='object')
 
     # 4) time bounds
     times      = grouped_data[cols[t_key]]
     start_ts   = times.iloc[0]
     end_ts     = times.iloc[-1]
-
     out = {
         cols[start_key]: start_ts,
     }

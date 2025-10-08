@@ -507,14 +507,14 @@ class Agent:
                                      'timestamp': unix_timestamp,
                                      'duration': dt,
                                      'location': location,
-                                     'identifier': self.identifier}
+                                     'user_id': self.identifier}
                 elif (current_entry['location'] != location):
                     entry_update.append(current_entry)
                     current_entry = {'datetime': datetime,
                                      'timestamp': unix_timestamp,
                                      'duration': dt,
                                      'location': location,
-                                     'identifier': self.identifier}
+                                     'user_id': self.identifier}
                 else:
                     current_entry['duration'] += 1*dt #add one tick to the duration
 
@@ -852,6 +852,7 @@ class Agent:
             return burst_info
 
 
+
 def _cartesian_coords(multilines, distance, offset, eps=0.001):
     """
     Converts path-based coordinates (distance along path, signed perpendicular offset)
@@ -1165,9 +1166,92 @@ class Population:
                 
         return processed
 
+    def reproject_to_mercator(self, sparse_traj=True, full_traj=False, diaries=False,
+                             block_size=15, false_easting=-4265699, false_northing=4392976,
+                             poi_data=None):
+        """
+        Reproject all agent trajectories from Garden City coordinates to Web Mercator.
+        
+        Parameters
+        ----------
+        sparse_traj : bool, default True
+            Whether to reproject sparse trajectories
+        full_traj : bool, default False
+            Whether to reproject full trajectories  
+        diaries : bool, default False
+            Whether to reproject diaries (must have x, y columns)
+        block_size : float, default 15
+            Size of one city block in meters
+        false_easting : float, default -4265699
+            False easting offset for Garden City
+        false_northing : float, default 4392976
+            False northing offset for Garden City
+        poi_data : pd.DataFrame, optional
+            DataFrame with building coordinates (building_id, x, y) to join with diaries
+        """
+        for agent in self.roster.values():
+            if sparse_traj and agent.sparse_traj is not None:
+                agent.sparse_traj = garden_city_to_mercator(
+                    agent.sparse_traj, block_size=block_size, 
+                    false_easting=false_easting, false_northing=false_northing)
+            
+            if full_traj and agent.trajectory is not None:
+                agent.trajectory = garden_city_to_mercator(
+                    agent.trajectory, block_size=block_size,
+                    false_easting=false_easting, false_northing=false_northing)
+            
+            if diaries and agent.diary is not None:
+                # Join with poi_data if provided
+                if poi_data is not None:
+                    agent.diary = agent.diary.merge(
+                        poi_data, left_on='location', right_on='building_id', how='left')
+                    # Drop the building_id column added by merge
+                    agent.diary = agent.diary.drop(columns=['building_id'])
+                
+                agent.diary = garden_city_to_mercator(
+                    agent.diary, block_size=block_size,
+                    false_easting=false_easting, false_northing=false_northing)
+
 # =============================================================================
 # AUXILIARY METHODS
 # =============================================================================
+
+def garden_city_to_mercator(data, block_size=15, false_easting=-4265699, false_northing=4392976):
+    """
+    Convert Garden City block coordinates to Web Mercator coordinates.
+    
+    Parameters
+    ----------
+    data : pd.DataFrame
+        DataFrame with 'x', 'y' columns in Garden City block coordinates
+    block_size : float, default 15
+        Size of one city block in meters
+    false_easting : float, default -4265699
+        False easting offset for Garden City
+    false_northing : float, default 4392976
+        False northing offset for Garden City
+    
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with 'x', 'y' columns updated to Web Mercator coordinates
+    """
+    # Validate required columns
+    if 'x' not in data.columns or 'y' not in data.columns:
+        raise ValueError("DataFrame must contain 'x' and 'y' columns")
+    
+    # Create a copy to avoid modifying original
+    result = data.copy()
+    
+    # Apply Garden City transformation to Web Mercator
+    result['x'] = block_size * result['x'] + false_easting
+    result['y'] = block_size * result['y'] + false_northing
+    
+    # Scale horizontal accuracy if present
+    if 'ha' in result.columns:
+        result['ha'] = block_size * result['ha']
+    
+    return result
 
 
 def allowed_buildings(local_ts):
