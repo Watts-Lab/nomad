@@ -777,9 +777,9 @@ class Agent:
         return None
 
     def sample_trajectory(self,
-                          beta_start,
-                          beta_durations,
-                          beta_ping,
+                          beta_start=None,
+                          beta_durations=None,
+                          beta_ping=5,
                           seed=0,
                           ha=3/4,
                           dt=None,
@@ -1122,7 +1122,7 @@ class Population:
                              existing_data_behavior='delete_matching')
 
     def _build_agent_static_data(self, **static_columns):
-        """Build DataFrame with agent static data (homes, workplaces, user-level attributes)."""
+        """Build DataFrame with agent static data (user_id, homes, workplaces, user-level attributes)."""
         N = len(self.roster)
         
         # Process static columns
@@ -1134,7 +1134,7 @@ class Population:
             ts = agent.last_ping['datetime']
             iso_date = ts.date().isoformat()
             base_data.append({
-                'uid': agent_id,
+                'user_id': agent_id,
                 'home': agent.home,
                 'workplace': agent.workplace,
                 'date': iso_date
