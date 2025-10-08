@@ -41,6 +41,38 @@ def _datetime_or_ts_col(col_names, verbose=False):
                           in keyword arguments. '2025-01-01 00:00Z' will be used for starting trajectory time.")
         return "missing"
 
+def parse_agent_attr(attr, N, name):
+    """
+    Parse agent attribute (homes/workplaces) into a callable that returns the i-th value.
+    
+    Parameters
+    ----------
+    attr : str, list, or None
+        The attribute value. Can be:
+        - None: returns None for all indices
+        - str: returns the same string for all indices
+        - list: must have length N, returns the i-th element
+    N : int
+        Expected number of agents
+    name : str
+        Name of the attribute for error messages
+        
+    Returns
+    -------
+    callable
+        A function that takes an index i and returns the corresponding attribute value
+    """
+    if attr is None:
+        return lambda i: None
+    elif isinstance(attr, str):
+        return lambda i: attr
+    elif isinstance(attr, list):
+        if len(attr) != N:
+            raise ValueError(f"{name} must be a list of length {N}, got {len(attr)}")
+        return lambda i: attr[i]
+    else:
+        raise ValueError(f"{name} must be either a string, a list of length {N}, or None")
+
 def sample_hier_nhpp(traj,
                      beta_start=None,
                      beta_durations=None,
@@ -991,10 +1023,7 @@ class Population:
             print("Agent identifier already exists in population. Replacing corresponding agent.")
         self.roster[agent.identifier] = agent
 
-    def generate_agents(self,
-                        N: int,
-                        seed: int = 0,
-                        name_count: int = 2):
+    def generate_agents(self, N, seed=0, name_count=2, agent_homes=None, agent_workplaces=None):
         """
         Generates N agents, with randomized attributes.
         """
@@ -1003,11 +1032,17 @@ class Population:
         name_seed = int(master_rng.integers(0, 2**32))
         generator = funkybob.UniqueRandomNameGenerator(members=name_count, seed=seed)
 
+        # Create efficient accessors for agent homes and workplaces
+        get_home = parse_agent_attr(agent_homes, N, "agent_homes")
+        get_workplace = parse_agent_attr(agent_workplaces, N, "agent_workplaces")
+            
         for i in range(N):
             agent_seed = int(master_rng.integers(0, 2**32))
-            identifier = generator[i]
+            identifier = generator[i]              
             agent = Agent(identifier=identifier,
                           city=self.city,
+                          home=get_home(i),
+                          workplace=get_workplace(i),
                           seed=agent_seed)
             self.add_agent(agent)
 
@@ -1038,6 +1073,10 @@ class Population:
         partition_cols : list of partition column names.
         filesystem : pyarrow.fs.FileSystem or None
             Optional filesystem object (e.g., s3fs.S3FileSystem). If None, inferred automatically.
+        **kwargs : dict, optional
+            Additional static columns to include in the homes table. Each key-value pair
+            represents a column name and its values. Values must be a list/array of length N
+            (number of agents) or a single value to be repeated for all agents.
         """
         if full_path:
             full_df = pd.concat([agent.trajectory for agent in self.roster.values()], ignore_index=True)
@@ -1072,13 +1111,8 @@ class Population:
                     traj_cols=traj_cols)
     
         if homes_path:
-            homes_data = []
-            for agent_id, agent in self.roster.items():
-                ts = agent.last_ping['datetime']
-                iso_date = ts.date().isoformat()
-                homes_data.append((agent_id, agent.home, agent.workplace, iso_date))
-            homes_df = pd.DataFrame(homes_data, columns=["uid", "home", "workplace", "date"])
-    
+            homes_df = self._build_agent_static_data(**kwargs)
+            
             table = pa.Table.from_pandas(homes_df, preserve_index=False)
             ds.write_dataset(table,
                              base_dir=str(homes_path),
@@ -1086,6 +1120,50 @@ class Population:
                              partitioning_flavor='hive',
                              filesystem=filesystem,
                              existing_data_behavior='delete_matching')
+
+    def _build_agent_static_data(self, **static_columns):
+        """Build DataFrame with agent static data (homes, workplaces, user-level attributes)."""
+        N = len(self.roster)
+        
+        # Process static columns
+        processed_static = self._process_static_columns(static_columns, N)
+        
+        # Build base data
+        base_data = []
+        for agent_id, agent in self.roster.items():
+            ts = agent.last_ping['datetime']
+            iso_date = ts.date().isoformat()
+            base_data.append({
+                'uid': agent_id,
+                'home': agent.home,
+                'workplace': agent.workplace,
+                'date': iso_date
+            })
+        
+        # Create base DataFrame
+        homes_df = pd.DataFrame(base_data)
+        
+        # Add static columns
+        for col_name, col_values in processed_static.items():
+            homes_df[col_name] = col_values
+            
+        return homes_df
+    
+    def _process_static_columns(self, static_columns, N):
+        """Process static columns, validating lengths and handling single values."""
+        processed = {}
+        
+        for col_name, col_values in static_columns.items():
+            if isinstance(col_values, (list, tuple, np.ndarray)):
+                if len(col_values) != N:
+                    raise ValueError(f"Static column '{col_name}' has length {len(col_values)}, "
+                                   f"but expected length {N} (number of agents)")
+                processed[col_name] = col_values
+            else:
+                # Single value - repeat for all agents
+                processed[col_name] = [col_values] * N
+                
+        return processed
 
 # =============================================================================
 # AUXILIARY METHODS
