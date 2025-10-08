@@ -498,7 +498,7 @@ class Agent:
                         'y': coord[1],
                         'datetime': datetime,
                         'timestamp': unix_timestamp,
-                        'identifier': self.identifier}
+                        'user_id': self.identifier}
 
                 trajectory_update.append(ping)
                 self.last_ping = ping
@@ -710,7 +710,7 @@ class Agent:
                 'y': y_coord,
                 'datetime': datetime,
                 'timestamp': unix_timestamp,
-                'identifier': self.identifier
+                'user_id': self.identifier
                 })
             self.trajectory = pd.DataFrame([self.last_ping])
 
@@ -749,7 +749,7 @@ class Agent:
                 'y': y_coord,
                 'datetime': datetime,
                 'timestamp': unix_timestamp,
-                'identifier': self.identifier
+                'user_id': self.identifier
                 })
 
         else:
