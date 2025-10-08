@@ -133,7 +133,7 @@ def grid_based(
         traj_cols_parsed = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
         has_geometry = 'geometry' in data.columns
         cols = utils._get_empty_stop_columns(
-            data.columns, complete_output, passthrough_cols, traj_cols, 
+            data.columns, complete_output, passthrough_cols, traj_cols_parsed, 
             keep_col_names=True, is_grid_based=True, **kwargs
         )
         return pd.DataFrame(columns=cols, dtype=object)

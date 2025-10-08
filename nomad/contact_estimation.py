@@ -163,3 +163,67 @@ def precision_recall_f1_from_minutes(total_pred, total_truth, tp):
     else:
         f1 = 2 * precision * recall / (precision + recall)
     return {'precision': precision, 'recall': recall, 'f1': f1}
+
+def compute_stop_detection_metrics(stops, truth, user_id=None, algorithm=None, traj_cols=None, **kwargs):
+    """
+    Compute stop detection metrics for a single user/algorithm combination.
+    
+    Parameters
+    ----------
+    stops : pd.DataFrame
+        Predicted stops with columns: building_id, duration, start_timestamp, etc.
+    truth : pd.DataFrame  
+        Ground truth stops with columns: building_id, duration, timestamp, etc.
+    user_id : str, optional
+        User identifier for the results
+    algorithm : str, optional
+        Algorithm name for the results
+    traj_cols : dict, optional
+        Column name mappings
+        
+    Returns
+    -------
+    dict
+        Dictionary with metrics: precision, recall, f1, missed_fraction, 
+        merged_fraction, split_fraction, user_id, algorithm
+    """
+    # Handle empty stops case
+    if len(stops) == 0:
+        return {
+            'precision': 0.0, 'recall': 0.0, 'f1': 0.0,
+            'missed_fraction': 1.0, 'merged_fraction': 0.0, 'split_fraction': 0.0,
+            'user_id': user_id, 'algorithm': algorithm
+        }
+    
+    # Prepare data - fill missing building_ids with 'Street'
+    stops_clean = stops.fillna({'building_id': 'Street'})
+    truth_clean = truth.fillna({'building_id': 'Street'})
+    truth_buildings = truth.dropna()  # Only actual buildings for error analysis
+    
+    # Compute overlaps
+    overlaps = overlapping_visits(
+        left=stops_clean, right=truth_clean, match_location=False,
+        traj_cols=traj_cols, **kwargs
+    )
+    
+    # Precision/Recall: only matching locations
+    loc_key = loader._parse_traj_cols(stops_clean.columns, traj_cols, kwargs)['location_id']
+    loc_left = f"{loc_key}_left"
+    loc_right = f"{loc_key}_right"
+    correct_overlaps = overlaps[overlaps[loc_left] == overlaps[loc_right]]
+    total_pred = stops_clean['duration'].sum()
+    total_truth = truth_clean['duration'].sum()
+    tp = correct_overlaps['duration'].sum()
+    prf_metrics = precision_recall_f1_from_minutes(total_pred, total_truth, tp)
+    
+    # Error metrics: compare against buildings only
+    if len(truth_buildings) > 0:
+        overlaps_err = overlapping_visits(
+            left=stops_clean, right=truth_buildings, match_location=False,
+            traj_cols=traj_cols, **kwargs
+        )
+        error_metrics = compute_visitation_errors(overlaps_err, truth_buildings, traj_cols, **kwargs)
+    else:
+        error_metrics = {'missed_fraction': 0.0, 'merged_fraction': 0.0, 'split_fraction': 0.0}
+    
+    return {**prf_metrics, **error_metrics, 'user_id': user_id, 'algorithm': algorithm}

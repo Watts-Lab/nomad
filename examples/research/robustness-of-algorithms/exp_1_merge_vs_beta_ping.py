@@ -40,7 +40,7 @@ import nomad.visit_attribution.visit_attribution as visits
 import nomad.filters as filters
 import nomad.city_gen as cg
 
-from nomad.contact_estimation import overlapping_visits, compute_visitation_errors, precision_recall_f1_from_minutes
+from nomad.contact_estimation import compute_stop_detection_metrics
 
 
 # %%
@@ -61,8 +61,8 @@ def classify_size(size):
         return 'big'
 
 
-# %%
-## Configure stop detection algorithms
+# %% [markdown]
+# ## Configure stop detection algorithms
 
 # %%
 with open('config_low_ha.json', 'r', encoding='utf-8') as f:
@@ -73,12 +73,14 @@ with open('config_high_ha.json', 'r', encoding='utf-8') as f:
 
 config=config1
 
+
+# %%
 config["algos"] = {
     "ta_dbscan_coarse":{
         "func":TADBSCAN.ta_dbscan,
         "params":{
             "time_thresh":240,
-            "dist_thresh":18,
+            "dist_thresh":15,
             "min_pts":2
         }
     },
@@ -86,7 +88,7 @@ config["algos"] = {
         "func":LACHESIS.lachesis,
         "params":{
             'dt_max': 240,
-            'delta_roam': 40
+            'delta_roam': 20
         }
     }
 }
@@ -148,39 +150,116 @@ plt.show()
 # ## Stop detection
 
 # %%
-# This example fails
-algo = config["algos"]["ta_dbscan_coarse"]
-
-user = diaries_df.user_id.unique()[1116]
-sparse = sparse_df.query("user_id==@user").copy()
-truth = diaries_df.query("user_id==@user").copy()
-
-stops = algo["func"](sparse, **algo["params"], x="x", y="y")
-print("Are these stop table columns?")
-print(stops.columns)
-
-# %%
-sparse.columns
-
-# %%
-stops
-
-# %%
-# ta_dbscan
-stops["location"] = visits.point_in_polygon(stops, poi_table=poi_table, data_crs='EPSG:3857',
-                                   max_distance=10, location_id='location', x='x', y='y')
-
-# %%
 results_list = []
 for user in tqdm(diaries_df.user_id.unique(), desc='Processing users'):
     sparse = sparse_df.query("user_id==@user").copy()
     truth = diaries_df.query("user_id==@user").copy()
     
-    # ta_dbscan
-    algo = config["algos"]["ta_dbscan_coarse"]
-    stops = algo["func"](sparse, **algo["params"], x="x", y="y")
-    stops["location"] = visits.point_in_polygon(stops, poi_table=poi_table, data_crs='EPSG:3857',
-                                       max_distance=10, location_id='location', x='x', y='y')
+    # Run both algorithms
+    for algo_name, algo_config in config["algos"].items():
+        # Run stop detection
+        stops = algo_config["func"](sparse, **algo_config["params"], x="x", y="y")
+        
+        # Map stops to buildings
+        stops["location"] = visits.point_in_polygon(
+            stops, 
+            poi_table=poi_table, 
+            data_crs='EPSG:3857',
+            max_distance=10, 
+            location_id='location', 
+            x='x', 
+            y='y'
+        )
+        
+        # Compute metrics
+        metrics = compute_stop_detection_metrics(
+            stops=stops,
+            truth=truth,
+            user_id=user,
+            algorithm=algo_name,
+            traj_cols={'location_id': 'location'}  
+        )
+        
+        results_list.append(metrics)
 
+# Convert to DataFrame
+results_df = pd.DataFrame(results_list)
+
+# Join with beta_ping from homes_df
+results_df = results_df.merge(
+    homes_df[['user_id', 'beta_ping']], 
+    on='user_id', 
+    how='left'
+)
+
+print(f"Computed metrics for {len(results_df)} user-algorithm combinations")
+print(results_df.head())
+
+# %% [markdown]
+# # Plots
+
+# %%
+import os
+os.makedirs('figures', exist_ok=True)
+
+def plot_metric(metric, title, ax=None, save_individual=True):
+    """Plot a single metric with consistent styling."""
+    chart_df = results_df.groupby(['beta_ping', 'algorithm'])[metric].agg(['mean', 'sem']).reset_index()
+    chart_df.rename(columns={'mean': f'{metric}_mean'}, inplace=True)
+    
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(8, 4))
+        is_individual = True
+    else:
+        is_individual = False
+    
+    # Add scatter plot background (individual data points)
+    sns.scatterplot(data=results_df, x='beta_ping', y=metric, hue='algorithm',
+                   alpha=0.1, s=20, ax=ax, palette='viridis', legend=False)
+    
+    # Add line plot (mean values)
+    sns.lineplot(data=chart_df, x='beta_ping', y=f'{metric}_mean', hue='algorithm',
+                 marker='', linewidth=3, ax=ax, palette='viridis')
+    
+    # Styling
+    font_sizes = {'title': 16 if is_individual else 14, 'labels': 13 if is_individual else 11, 'legend': 12 if is_individual else 10}
+    ax.set_title(f'Impact of Ping Frequency on {title}', fontsize=font_sizes['title'], pad=10, fontweight='bold')
+    ax.set_xlabel('Mean Time Between Pings (in Minutes)', fontsize=font_sizes['labels'], labelpad=10)
+    ax.set_ylabel(title, fontsize=font_sizes['labels'], labelpad=10)
+    ax.set_ylim(0, 1)
+    ax.grid(True, linestyle=':', alpha=0.6, linewidth=0.7)
+    ax.tick_params(axis='both', which='major', labelsize=font_sizes['labels']-2, length=6, width=1.2)
+    ax.minorticks_on()
+    
+    # Legend
+    handles, labels = ax.get_legend_handles_labels()
+    ax.legend(['TA-DBSCAN', 'Lachesis'], title='Algorithm', bbox_to_anchor=(0.98, 0.98), 
+              loc='upper right', fontsize=font_sizes['legend'], title_fontsize=font_sizes['legend']+2, frameon=True)
+    
+    if is_individual and save_individual:
+        plt.tight_layout()
+        plt.savefig(f"figures/exp1_{metric}.svg", bbox_inches='tight')
+        plt.savefig(f"figures/exp1_{metric}.png", dpi=600, bbox_inches='tight')
+        plt.show()
+
+# Individual plots
+metrics = {
+    'precision': 'Precision', 'recall': 'Recall', 'f1': 'F1 Score',
+    'missed_fraction': 'Proportion of Stops Missed',
+    'merged_fraction': 'Proportion of Stops Merged', 
+    'split_fraction': 'Proportion of Stops Split'
+}
+
+for metric, title in metrics.items():
+    plot_metric(metric, title)
+
+# Grid plot
+fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+for i, (metric, title) in enumerate(metrics.items()):
+    plot_metric(metric, title, ax=axes.flat[i], save_individual=False)
+plt.tight_layout()
+plt.savefig("figures/exp1_all_metrics_grid.svg", bbox_inches='tight')
+plt.savefig("figures/exp1_all_metrics_grid.png", dpi=600, bbox_inches='tight')
+plt.show()
 
 # %%
