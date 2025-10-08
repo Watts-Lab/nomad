@@ -172,10 +172,14 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, location_id=None, tr
             raise ValueError(f"Provided CRS {data_crs} conflicts with traj CRS {data.crs}.")
 
     if isinstance(data, pd.DataFrame):
+        # Parse traj_cols with kwargs to get spatial column mappings
+        traj_cols_w_deflts = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
         # check that user specified x,y or lat, lon but not both
-        loader._has_spatial_cols(data.columns, traj_cols, exclusive=True)
+        loader._has_spatial_cols(data.columns, traj_cols_w_deflts, exclusive=True)
 
-        use_lon_lat = ('latitude' in traj_cols and 'longitude' in traj_cols)
+        # Check if x,y coordinates are explicitly provided in kwargs
+        has_explicit_x_y = ('x' in kwargs and 'y' in kwargs)
+        use_lon_lat = not has_explicit_x_y and ('latitude' in traj_cols_w_deflts and 'longitude' in traj_cols_w_deflts)
 
         if use_lon_lat:
             if data_crs:
@@ -189,8 +193,8 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, location_id=None, tr
                 data_crs = pyproj.CRS("EPSG:4326")
             
             pings_gdf= gpd.points_from_xy(
-                data[traj_cols['longitude']],
-                data[traj_cols['latitude']],
+                data[traj_cols_w_deflts['longitude']],
+                data[traj_cols_w_deflts['latitude']],
                 crs=data_crs) # order matters: lon first
         else:
             if not data_crs:
@@ -202,8 +206,8 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, location_id=None, tr
                              f"Did you mean to use {poi_table.crs}?"
                              )
             pings_gdf= gpd.points_from_xy(
-                data[traj_cols['x']],
-                data[traj_cols['y']],
+                data[traj_cols_w_deflts['x']],
+                data[traj_cols_w_deflts['y']],
                 crs=data_crs)
     else:
         raise TypeError("`data` must be a pandas DataFrame or a GeoDataFrame.")
