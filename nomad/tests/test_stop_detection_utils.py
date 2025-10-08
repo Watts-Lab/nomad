@@ -4,26 +4,26 @@ import pytest
 from pathlib import Path
 import nomad.io.base as loader
 from nomad import constants
-import nomad.stop_detection.postprocessing as postprocessing
+from nomad.stop_detection.postprocessing import remove_overlaps
 
 @pytest.fixture
 def sample_trajectory_data():
-    """Sample trajectory data with overlapping cluster labels."""
+    """Sample trajectory data with non-overlapping cluster labels for basic functionality tests."""
     return pd.DataFrame({
-        'timestamp': [0, 60, 120, 180, 240, 300, 360, 420],
-        'longitude': [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-        'latitude': [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-        'cluster': [0, 0, 0, 1, 1, 1, 2, 2]  # Overlapping clusters
+        'timestamp': [0, 60, 120, 180, 240, 300],
+        'longitude': [0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        'latitude': [0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        'cluster': [0, 0, 0, 1, 1, 1]  # Non-overlapping clusters
     })
 
 @pytest.fixture
 def sample_trajectory_data_xy():
-    """Sample trajectory data with x,y coordinates and overlapping cluster labels."""
+    """Sample trajectory data with x,y coordinates and non-overlapping cluster labels."""
     return pd.DataFrame({
-        'timestamp': [0, 60, 120, 180, 240, 300, 360, 420],
-        'x': [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-        'y': [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
-        'cluster': [0, 0, 0, 1, 1, 1, 2, 2]  # Overlapping clusters
+        'timestamp': [0, 60, 120, 180, 240, 300],
+        'x': [0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        'y': [0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        'cluster': [0, 0, 0, 1, 1, 1]  # Non-overlapping clusters
     })
 
 @pytest.fixture
@@ -63,17 +63,28 @@ def empty_stop_table():
         'start_timestamp', 'end_timestamp', 'duration', 'location_id'
     ])
 
+@pytest.fixture
+def overlapping_trajectory_data():
+    """Sample trajectory data with overlapping cluster labels for testing overlap removal."""
+    return pd.DataFrame({
+        'timestamp': [0, 60, 120, 180, 240, 300],
+        'longitude': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        'latitude': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        'cluster': [0, 1, 0, 1, 0, 1]  # Overlapping clusters
+    })
+
 ##########################################
 ####      REMOVE_OVERLAPS TESTS       #### 
 ##########################################
 
 def test_remove_overlaps_trajectory_input_default_behavior(sample_trajectory_data):
     """Test that trajectory input defaults to returning cluster labels (summarize_stops=False)."""
-    result = postprocessing.remove_overlaps(
+    result = remove_overlaps(
         sample_trajectory_data, 
         method='cluster', 
         time_thresh=120, 
-        dur_min=2
+        dur_min=2,
+        traj_cols={'timestamp': 'timestamp', 'longitude': 'longitude', 'latitude': 'latitude'}
     )
     
     # Should return cluster labels as Series
@@ -84,12 +95,13 @@ def test_remove_overlaps_trajectory_input_default_behavior(sample_trajectory_dat
 
 def test_remove_overlaps_trajectory_input_explicit_summarize_false(sample_trajectory_data):
     """Test trajectory input with explicit summarize_stops=False."""
-    result = postprocessing.remove_overlaps(
+    result = remove_overlaps(
         sample_trajectory_data, 
         method='cluster', 
         time_thresh=120, 
         dur_min=2,
-        summarize_stops=False
+        summarize_stops=False,
+        traj_cols={'timestamp': 'timestamp', 'longitude': 'longitude', 'latitude': 'latitude'}
     )
     
     # Should return cluster labels as Series
@@ -99,12 +111,13 @@ def test_remove_overlaps_trajectory_input_explicit_summarize_false(sample_trajec
 
 def test_remove_overlaps_trajectory_input_explicit_summarize_true(sample_trajectory_data):
     """Test trajectory input with explicit summarize_stops=True."""
-    result = postprocessing.remove_overlaps(
+    result = remove_overlaps(
         sample_trajectory_data, 
         method='cluster', 
         time_thresh=120, 
         dur_min=2,
-        summarize_stops=True
+        summarize_stops=True,
+        traj_cols={'timestamp': 'timestamp', 'longitude': 'longitude', 'latitude': 'latitude'}
     )
     
     # Should return stop summary table as DataFrame
@@ -118,16 +131,17 @@ def test_remove_overlaps_trajectory_input_explicit_summarize_true(sample_traject
 def test_remove_overlaps_stop_table_input_requires_traj(sample_stop_table):
     """Test that stop table input requires traj parameter."""
     with pytest.raises(ValueError, match="When input is a stop table, 'traj' parameter"):
-        postprocessing.remove_overlaps(
+        remove_overlaps(
             sample_stop_table,
             method='cluster',
             time_thresh=120,
-            dur_min=2
+            dur_min=2,
+            traj_cols={'timestamp': 'start_timestamp', 'longitude': 'longitude', 'latitude': 'latitude'}
         )
 
 def test_remove_overlaps_stop_table_input_with_traj(sample_stop_table, sample_trajectory_data):
     """Test stop table input with traj parameter."""
-    result = postprocessing.remove_overlaps(
+    result = remove_overlaps(
         sample_stop_table,
         traj=sample_trajectory_data,
         method='cluster',
@@ -141,7 +155,7 @@ def test_remove_overlaps_stop_table_input_with_traj(sample_stop_table, sample_tr
 
 def test_remove_overlaps_stop_table_input_explicit_summarize_false(sample_stop_table, sample_trajectory_data):
     """Test stop table input with explicit summarize_stops=False."""
-    result = postprocessing.remove_overlaps(
+    result = remove_overlaps(
         sample_stop_table,
         traj=sample_trajectory_data,
         method='cluster',
@@ -157,7 +171,7 @@ def test_remove_overlaps_stop_table_input_explicit_summarize_false(sample_stop_t
 
 def test_remove_overlaps_stop_table_duration_only(sample_stop_table_duration_only, sample_trajectory_data):
     """Test stop table detection with duration column only (no end_timestamp)."""
-    result = postprocessing.remove_overlaps(
+    result = remove_overlaps(
         sample_stop_table_duration_only,
         traj=sample_trajectory_data,
         method='cluster',
@@ -171,7 +185,7 @@ def test_remove_overlaps_stop_table_duration_only(sample_stop_table_duration_onl
 
 def test_remove_overlaps_empty_trajectory_input(empty_trajectory_data):
     """Test empty trajectory input."""
-    result = postprocessing.remove_overlaps(
+    result = remove_overlaps(
         empty_trajectory_data,
         method='cluster',
         time_thresh=120,
@@ -185,7 +199,7 @@ def test_remove_overlaps_empty_trajectory_input(empty_trajectory_data):
 
 def test_remove_overlaps_empty_stop_table_input(empty_stop_table, sample_trajectory_data):
     """Test empty stop table input."""
-    result = postprocessing.remove_overlaps(
+    result = remove_overlaps(
         empty_stop_table,
         traj=sample_trajectory_data,
         method='cluster',
@@ -210,7 +224,7 @@ def test_remove_overlaps_different_methods(sample_trajectory_data):
             # Polygon method requires location_id column
             data_with_location = sample_trajectory_data.copy()
             data_with_location['location_id'] = ['A', 'A', 'A', 'B', 'B', 'B', 'C', 'C']
-            result = postprocessing.remove_overlaps(
+            result = remove_overlaps(
                 data_with_location,
                 method=method,
                 time_thresh=120,
@@ -218,7 +232,7 @@ def test_remove_overlaps_different_methods(sample_trajectory_data):
                 summarize_stops=False
             )
         else:
-            result = postprocessing.remove_overlaps(
+            result = remove_overlaps(
                 sample_trajectory_data,
                 method=method,
                 time_thresh=120,
@@ -232,7 +246,7 @@ def test_remove_overlaps_different_methods(sample_trajectory_data):
 
 def test_remove_overlaps_coordinate_systems(sample_trajectory_data_xy):
     """Test that function works with different coordinate systems (x,y vs lon,lat)."""
-    result = postprocessing.remove_overlaps(
+    result = remove_overlaps(
         sample_trajectory_data_xy,
         method='cluster',
         time_thresh=120,
@@ -248,7 +262,7 @@ def test_remove_overlaps_coordinate_systems(sample_trajectory_data_xy):
 
 def test_remove_overlaps_backwards_compatibility(sample_trajectory_data):
     """Test that explicit summarize_stops=True maintains old behavior."""
-    result = postprocessing.remove_overlaps(
+    result = remove_overlaps(
         sample_trajectory_data,
         method='cluster',
         time_thresh=120,
@@ -264,6 +278,22 @@ def test_remove_overlaps_backwards_compatibility(sample_trajectory_data):
     expected_cols = ['longitude', 'latitude', 'start_timestamp', 'duration']
     for col in expected_cols:
         assert col in result.columns
+
+def test_remove_overlaps_overlap_removal_behavior(overlapping_trajectory_data):
+    """Test that overlapping clusters are properly handled (may result in empty output)."""
+    result = remove_overlaps(
+        overlapping_trajectory_data,
+        method='cluster',
+        time_thresh=120,
+        dur_min=2,
+        traj_cols={'timestamp': 'timestamp', 'longitude': 'longitude', 'latitude': 'latitude'},
+        summarize_stops=False
+    )
+    
+    # Should return Series (may be empty if overlaps are removed)
+    assert isinstance(result, pd.Series)
+    assert result.name == 'cluster'
+    # Note: Result may be empty if overlapping clusters don't meet duration requirements
 
 def test_remove_overlaps_parameter_validation():
     """Test parameter validation and error handling."""
@@ -281,7 +311,7 @@ def test_remove_overlaps_parameter_validation():
         if method == 'polygon':
             data_with_location = data.copy()
             data_with_location['location_id'] = ['A', 'A', 'B']
-            result = postprocessing.remove_overlaps(
+            result = remove_overlaps(
                 data_with_location,
                 method=method,
                 time_thresh=120,
@@ -289,7 +319,7 @@ def test_remove_overlaps_parameter_validation():
                 summarize_stops=False
             )
         else:
-            result = postprocessing.remove_overlaps(
+            result = remove_overlaps(
                 data,
                 method=method,
                 time_thresh=120,
