@@ -43,7 +43,7 @@ def lachesis_labels(data, dt_max, delta_roam, dur_min=5, traj_cols=None, **kwarg
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
          raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
     if data.empty:
-        return pd.DataFrame()
+        return pd.Series([], dtype=int, name='cluster')
 
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)        
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
@@ -140,10 +140,11 @@ def lachesis(
     if 'user_id' in traj_cols_temp and traj_cols_temp['user_id'] in data.columns:
         uid_col = data[traj_cols_temp['user_id']]
         arr = uid_col.values
-        first = arr[0]
-        if any(x != first for x in arr[1:]):
-            raise ValueError("Multi-user data? Use lachesis_per_user instead.")
-        passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
+        if len(arr) > 0:
+            first = arr[0]
+            if any(x != first for x in arr[1:]):
+                raise ValueError("Multi-user data? Use lachesis_per_user instead.")
+            passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
     else:
         uid_col = None
 
@@ -159,17 +160,13 @@ def lachesis(
     merged = merged[merged.cluster != -1]
 
     if merged.empty:
-        # produce an *empty* stop_table with the *correct* columns
-        # we derive the column set from a one-row dummy call to summarize_stop
-        dummy_cols = utils.summarize_stop(
-            data.iloc[[0]],                 # any single row is fine
-            complete_output=complete_output,
-            traj_cols=traj_cols,
-            keep_col_names=keep_col_names,
-            passthrough_cols=passthrough_cols,
-            **kwargs
-        ).index
-        return pd.DataFrame(columns=dummy_cols, dtype=object)
+        # Get column names by calling summarize function on dummy data
+        traj_cols_parsed = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
+        cols = utils._get_empty_stop_columns(
+            complete_output, passthrough_cols, traj_cols_parsed, 
+            keep_col_names=keep_col_names, is_grid_based=False, **kwargs
+        )
+        return pd.DataFrame(columns=cols, dtype=object)
 
     stop_table = merged.groupby('cluster', as_index=False, sort=False).apply(
         lambda grp: utils.summarize_stop(
