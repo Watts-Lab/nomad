@@ -131,14 +131,19 @@ def ta_dbscan(
     merged = merged[merged.cluster != -1]
 
     if len(merged.cluster.unique())>2:
-        merged = remove_overlaps(
+        # Get adjusted cluster labels (not summary table)
+        adjusted_labels = remove_overlaps(
             merged,
             dist_thresh=dist_thresh,
             min_pts=min_pts,
             time_thresh=time_thresh,
             method="cluster",
             traj_cols=traj_cols,
+            summarize_stops=False,  # Return cluster labels, not summary table
             **kwargs)
+        
+        # Update the cluster column with adjusted labels
+        merged['cluster'] = adjusted_labels
 
     stop_table = merged.groupby('cluster', as_index=False, sort=False).apply(
         lambda grp: utils.summarize_stop(

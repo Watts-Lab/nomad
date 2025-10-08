@@ -74,7 +74,6 @@ def point_in_polygon(data, poi_table, method='centroid', data_crs=None, max_dist
             raise ValueError(f"Method {method} not among implemented methods: `centroid' and `majority'")
 
     else:
-        pdb.set_trace()
         # is labeled pings
         if not cluster_label: #try defaults and raise
             if 'cluster_label' in data.columns:
@@ -174,12 +173,8 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, location_id=None, tr
 
     if isinstance(data, pd.DataFrame):
         # check that user specified x,y or lat, lon but not both
-        try:
-            loader._has_spatial_cols(data.columns, traj_cols, exclusive=True)
-        except:
-            print(data.columns)
-            print(traj_cols)
-            pdb.set_trace()
+        loader._has_spatial_cols(data.columns, traj_cols, exclusive=True)
+
         use_lon_lat = ('latitude' in traj_cols and 'longitude' in traj_cols)
 
         if use_lon_lat:
