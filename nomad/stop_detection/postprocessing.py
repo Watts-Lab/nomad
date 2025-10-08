@@ -10,7 +10,7 @@ import nomad.stop_detection.hdbscan as HDBSCAN
 import nomad.stop_detection.lachesis as LACHESIS
 import nomad.stop_detection.dbscan as TADBSCAN
 
-def remove_overlaps(pred, time_thresh=None, dur_min=None, min_pts=None, min_cluster_size=None, dist_thresh=None, method = 'polygon', traj_cols = None, **kwargs):
+def remove_overlaps(pred, time_thresh=None, min_pts=None, dist_thresh=None, dur_min=5, min_cluster_size=2,  method = 'polygon', traj_cols = None, **kwargs):
     pred = pred.copy()
     # load kwarg and traj_col args onto lean defaults
     traj_cols = loader._parse_traj_cols(
@@ -18,7 +18,7 @@ def remove_overlaps(pred, time_thresh=None, dur_min=None, min_pts=None, min_clus
         traj_cols,
         kwargs,
         defaults={'location_id':'location_id'},
-        warn=False) 
+        warn=False)
 
     summarize_stops_with_loc = partial(
         utils.summarize_stop,

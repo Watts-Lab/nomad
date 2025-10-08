@@ -29,9 +29,14 @@ def grid_based_labels(data, time_thresh=np.inf, min_cluster_size=1, dur_min=0, t
     pd.Series
         Integer cluster labels aligned with `data.index`. Noise gets labels of –1.
     """
+    if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
+        raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
+    if data.empty:
+        return pd.DataFrame()
     # Decide on temporal column to use
     t_key, use_datetime = _fallback_time_cols(data.columns, traj_cols, kwargs)
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs) # load defaults
+
     if traj_cols['location_id'] not in data.columns:
             raise ValueError(f"Missing {traj_cols['location_id']} column in {data.columns}."
                             "pass `location_id` as keyword argument or in traj_cols."

@@ -173,7 +173,12 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, location_id=None, tr
 
     if isinstance(data, pd.DataFrame):
         # check that user specified x,y or lat, lon but not both
-        loader._has_spatial_cols(data.columns, traj_cols, exclusive=True)
+        try:
+            loader._has_spatial_cols(data.columns, traj_cols, exclusive=True)
+        except:
+            print(data.columns)
+            print(traj_cols)
+            pdb.set_trace()
         use_lon_lat = ('latitude' in traj_cols and 'longitude' in traj_cols)
 
         if use_lon_lat:
