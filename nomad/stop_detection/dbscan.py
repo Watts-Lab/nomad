@@ -128,7 +128,6 @@ def ta_dbscan(
         **kwargs
     )
     merged = data.join(labels)
-    merged = merged[merged.cluster != -1]
 
     if len(merged.cluster.unique())>2:
         # Get adjusted cluster labels (not summary table)
@@ -144,12 +143,15 @@ def ta_dbscan(
         
         # Update the cluster column with adjusted labels
         merged['cluster'] = adjusted_labels
+    
+    # Filter out noise points after overlap removal
+    merged = merged[merged.cluster != -1]
 
     if merged.empty:
         # Get column names by calling summarize function on dummy data
         traj_cols_parsed = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
         cols = utils._get_empty_stop_columns(
-            complete_output, passthrough_cols, traj_cols_parsed, 
+            data.columns, complete_output, passthrough_cols, traj_cols_parsed, 
             keep_col_names=keep_col_names, is_grid_based=False, **kwargs
         )
         return pd.DataFrame(columns=cols, dtype=object)
