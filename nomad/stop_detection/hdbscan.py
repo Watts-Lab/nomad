@@ -788,7 +788,7 @@ def st_hdbscan(
         if len(arr) > 0:
             first = arr[0]
             if any(x != first for x in arr[1:]):
-                raise ValueError("Multi-user data? Use lachesis_per_user instead.")
+                raise ValueError("Multi-user data? Use hdbscan_per_user instead.")
             passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
     else:
         uid_col = None
