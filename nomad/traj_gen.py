@@ -41,6 +41,38 @@ def _datetime_or_ts_col(col_names, verbose=False):
                           in keyword arguments. '2025-01-01 00:00Z' will be used for starting trajectory time.")
         return "missing"
 
+def parse_agent_attr(attr, N, name):
+    """
+    Parse agent attribute (homes/workplaces) into a callable that returns the i-th value.
+    
+    Parameters
+    ----------
+    attr : str, list, or None
+        The attribute value. Can be:
+        - None: returns None for all indices
+        - str: returns the same string for all indices
+        - list: must have length N, returns the i-th element
+    N : int
+        Expected number of agents
+    name : str
+        Name of the attribute for error messages
+        
+    Returns
+    -------
+    callable
+        A function that takes an index i and returns the corresponding attribute value
+    """
+    if attr is None:
+        return lambda i: None
+    elif isinstance(attr, str):
+        return lambda i: attr
+    elif isinstance(attr, list):
+        if len(attr) != N:
+            raise ValueError(f"{name} must be a list of length {N}, got {len(attr)}")
+        return lambda i: attr[i]
+    else:
+        raise ValueError(f"{name} must be either a string, a list of length {N}, or None")
+
 def sample_hier_nhpp(traj,
                      beta_start=None,
                      beta_durations=None,
@@ -466,7 +498,7 @@ class Agent:
                         'y': coord[1],
                         'datetime': datetime,
                         'timestamp': unix_timestamp,
-                        'identifier': self.identifier}
+                        'user_id': self.identifier}
 
                 trajectory_update.append(ping)
                 self.last_ping = ping
@@ -475,14 +507,14 @@ class Agent:
                                      'timestamp': unix_timestamp,
                                      'duration': dt,
                                      'location': location,
-                                     'identifier': self.identifier}
+                                     'user_id': self.identifier}
                 elif (current_entry['location'] != location):
                     entry_update.append(current_entry)
                     current_entry = {'datetime': datetime,
                                      'timestamp': unix_timestamp,
                                      'duration': dt,
                                      'location': location,
-                                     'identifier': self.identifier}
+                                     'user_id': self.identifier}
                 else:
                     current_entry['duration'] += 1*dt #add one tick to the duration
 
@@ -678,7 +710,7 @@ class Agent:
                 'y': y_coord,
                 'datetime': datetime,
                 'timestamp': unix_timestamp,
-                'identifier': self.identifier
+                'user_id': self.identifier
                 })
             self.trajectory = pd.DataFrame([self.last_ping])
 
@@ -717,7 +749,7 @@ class Agent:
                 'y': y_coord,
                 'datetime': datetime,
                 'timestamp': unix_timestamp,
-                'identifier': self.identifier
+                'user_id': self.identifier
                 })
 
         else:
@@ -745,9 +777,9 @@ class Agent:
         return None
 
     def sample_trajectory(self,
-                          beta_start,
-                          beta_durations,
-                          beta_ping,
+                          beta_start=None,
+                          beta_durations=None,
+                          beta_ping=5,
                           seed=0,
                           ha=3/4,
                           dt=None,
@@ -818,6 +850,7 @@ class Agent:
 
         if output_bursts:
             return burst_info
+
 
 
 def _cartesian_coords(multilines, distance, offset, eps=0.001):
@@ -991,10 +1024,7 @@ class Population:
             print("Agent identifier already exists in population. Replacing corresponding agent.")
         self.roster[agent.identifier] = agent
 
-    def generate_agents(self,
-                        N: int,
-                        seed: int = 0,
-                        name_count: int = 2):
+    def generate_agents(self, N, seed=0, name_count=2, agent_homes=None, agent_workplaces=None):
         """
         Generates N agents, with randomized attributes.
         """
@@ -1003,11 +1033,17 @@ class Population:
         name_seed = int(master_rng.integers(0, 2**32))
         generator = funkybob.UniqueRandomNameGenerator(members=name_count, seed=seed)
 
+        # Create efficient accessors for agent homes and workplaces
+        get_home = parse_agent_attr(agent_homes, N, "agent_homes")
+        get_workplace = parse_agent_attr(agent_workplaces, N, "agent_workplaces")
+            
         for i in range(N):
             agent_seed = int(master_rng.integers(0, 2**32))
-            identifier = generator[i]
+            identifier = generator[i]              
             agent = Agent(identifier=identifier,
                           city=self.city,
+                          home=get_home(i),
+                          workplace=get_workplace(i),
                           seed=agent_seed)
             self.add_agent(agent)
 
@@ -1038,6 +1074,10 @@ class Population:
         partition_cols : list of partition column names.
         filesystem : pyarrow.fs.FileSystem or None
             Optional filesystem object (e.g., s3fs.S3FileSystem). If None, inferred automatically.
+        **kwargs : dict, optional
+            Additional static columns to include in the homes table. Each key-value pair
+            represents a column name and its values. Values must be a list/array of length N
+            (number of agents) or a single value to be repeated for all agents.
         """
         if full_path:
             full_df = pd.concat([agent.trajectory for agent in self.roster.values()], ignore_index=True)
@@ -1072,13 +1112,8 @@ class Population:
                     traj_cols=traj_cols)
     
         if homes_path:
-            homes_data = []
-            for agent_id, agent in self.roster.items():
-                ts = agent.last_ping['datetime']
-                iso_date = ts.date().isoformat()
-                homes_data.append((agent_id, agent.home, agent.workplace, iso_date))
-            homes_df = pd.DataFrame(homes_data, columns=["uid", "home", "workplace", "date"])
-    
+            homes_df = self._build_agent_static_data(**kwargs)
+            
             table = pa.Table.from_pandas(homes_df, preserve_index=False)
             ds.write_dataset(table,
                              base_dir=str(homes_path),
@@ -1087,9 +1122,136 @@ class Population:
                              filesystem=filesystem,
                              existing_data_behavior='delete_matching')
 
+    def _build_agent_static_data(self, **static_columns):
+        """Build DataFrame with agent static data (user_id, homes, workplaces, user-level attributes)."""
+        N = len(self.roster)
+        
+        # Process static columns
+        processed_static = self._process_static_columns(static_columns, N)
+        
+        # Build base data
+        base_data = []
+        for agent_id, agent in self.roster.items():
+            ts = agent.last_ping['datetime']
+            iso_date = ts.date().isoformat()
+            base_data.append({
+                'user_id': agent_id,
+                'home': agent.home,
+                'workplace': agent.workplace,
+                'date': iso_date
+            })
+        
+        # Create base DataFrame
+        homes_df = pd.DataFrame(base_data)
+        
+        # Add static columns
+        for col_name, col_values in processed_static.items():
+            homes_df[col_name] = col_values
+            
+        return homes_df
+    
+    def _process_static_columns(self, static_columns, N):
+        """Process static columns, validating lengths and handling single values."""
+        processed = {}
+        
+        for col_name, col_values in static_columns.items():
+            if isinstance(col_values, (list, tuple, np.ndarray)):
+                if len(col_values) != N:
+                    raise ValueError(f"Static column '{col_name}' has length {len(col_values)}, "
+                                   f"but expected length {N} (number of agents)")
+                processed[col_name] = col_values
+            else:
+                # Single value - repeat for all agents
+                processed[col_name] = [col_values] * N
+                
+        return processed
+
+    def reproject_to_mercator(self, sparse_traj=True, full_traj=False, diaries=False,
+                             block_size=15, false_easting=-4265699, false_northing=4392976,
+                             poi_data=None):
+        """
+        Reproject all agent trajectories from Garden City coordinates to Web Mercator.
+        
+        Parameters
+        ----------
+        sparse_traj : bool, default True
+            Whether to reproject sparse trajectories
+        full_traj : bool, default False
+            Whether to reproject full trajectories  
+        diaries : bool, default False
+            Whether to reproject diaries (must have x, y columns)
+        block_size : float, default 15
+            Size of one city block in meters
+        false_easting : float, default -4265699
+            False easting offset for Garden City
+        false_northing : float, default 4392976
+            False northing offset for Garden City
+        poi_data : pd.DataFrame, optional
+            DataFrame with building coordinates (building_id, x, y) to join with diaries
+        """
+        for agent in self.roster.values():
+            if sparse_traj and agent.sparse_traj is not None:
+                agent.sparse_traj = garden_city_to_mercator(
+                    agent.sparse_traj, block_size=block_size, 
+                    false_easting=false_easting, false_northing=false_northing)
+            
+            if full_traj and agent.trajectory is not None:
+                agent.trajectory = garden_city_to_mercator(
+                    agent.trajectory, block_size=block_size,
+                    false_easting=false_easting, false_northing=false_northing)
+            
+            if diaries and agent.diary is not None:
+                # Join with poi_data if provided
+                if poi_data is not None:
+                    agent.diary = agent.diary.merge(
+                        poi_data, left_on='location', right_on='building_id', how='left')
+                    # Drop the building_id column added by merge
+                    agent.diary = agent.diary.drop(columns=['building_id'])
+                
+                agent.diary = garden_city_to_mercator(
+                    agent.diary, block_size=block_size,
+                    false_easting=false_easting, false_northing=false_northing)
+
 # =============================================================================
 # AUXILIARY METHODS
 # =============================================================================
+
+def garden_city_to_mercator(data, block_size=15, false_easting=-4265699, false_northing=4392976):
+    """
+    Convert Garden City block coordinates to Web Mercator coordinates.
+    
+    Parameters
+    ----------
+    data : pd.DataFrame
+        DataFrame with 'x', 'y' columns in Garden City block coordinates
+    block_size : float, default 15
+        Size of one city block in meters
+    false_easting : float, default -4265699
+        False easting offset for Garden City
+    false_northing : float, default 4392976
+        False northing offset for Garden City
+    
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with 'x', 'y' columns updated to Web Mercator coordinates
+    """
+    # Validate required columns
+    if 'x' not in data.columns or 'y' not in data.columns:
+        raise ValueError("DataFrame must contain 'x' and 'y' columns")
+    
+    # Create a copy to avoid modifying original
+    result = data.copy()
+    
+    # Apply Garden City transformation to Web Mercator
+    result['x'] = block_size * result['x'] + false_easting
+    result['y'] = block_size * result['y'] + false_northing
+    
+    # Scale horizontal accuracy if present
+    if 'ha' in result.columns:
+        result['ha'] = block_size * result['ha']
+    
+    return result
 
 
 def allowed_buildings(local_ts):
