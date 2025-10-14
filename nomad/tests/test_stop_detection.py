@@ -11,7 +11,7 @@ from pathlib import Path
 import nomad.io.base as loader
 from nomad import constants
 from nomad import filters
-import nomad.stop_detection.ta_dbscan as DBSCAN
+import nomad.stop_detection.dbscan as DBSCAN
 import nomad.stop_detection.lachesis as LACHESIS
 import pdb
 
@@ -212,3 +212,188 @@ def test_lachesis_ground_truth(agent_traj_ground_truth):
 ##########################################
 ####           DBSCAN TESTS           #### 
 ##########################################
+
+##########################################
+####      EMPTY DATAFRAME TESTS       #### 
+##########################################
+
+@pytest.fixture
+def empty_traj():
+    """Empty trajectory DataFrame with standard columns."""
+    return pd.DataFrame(columns=[
+        'timestamp', 'longitude', 'latitude', 'user_id', 'location_id'
+    ])
+
+@pytest.fixture
+def empty_traj_xy():
+    """Empty trajectory DataFrame with x,y coordinates."""
+    return pd.DataFrame(columns=[
+        'timestamp', 'x', 'y', 'user_id', 'location_id'
+    ])
+
+def test_grid_based_empty_dataframe(empty_traj):
+    """Test that grid_based returns proper empty DataFrame with correct columns."""
+    import nomad.stop_detection.grid_based as grid_based
+    
+    result = grid_based.grid_based(
+        empty_traj,
+        time_thresh=120,
+        min_cluster_size=2,
+        dur_min=5,
+        complete_output=True,
+        traj_cols={
+            'timestamp': 'timestamp', 
+            'longitude': 'longitude', 
+            'latitude': 'latitude', 
+            'location_id': 'location_id'
+        }
+    )
+    
+    # Should return empty DataFrame with correct columns
+    assert result.empty
+    expected_cols = ['timestamp', 'end_timestamp', 'n_pings', 'max_gap', 'duration', 'location_id']
+    assert list(result.columns) == expected_cols
+
+def test_grid_based_empty_dataframe_xy(empty_traj_xy):
+    """Test that grid_based works with x,y coordinates on empty data."""
+    import nomad.stop_detection.grid_based as grid_based
+    
+    result = grid_based.grid_based(
+        empty_traj_xy,
+        time_thresh=120,
+        min_cluster_size=2,
+        dur_min=5,
+        complete_output=False,
+        traj_cols={
+            'timestamp': 'timestamp', 
+            'x': 'x', 
+            'y': 'y', 
+            'location_id': 'location_id'
+        }
+    )
+    
+    # Should return empty DataFrame with correct columns
+    assert result.empty
+    expected_cols = ['timestamp', 'duration', 'location_id']
+    assert list(result.columns) == expected_cols
+
+def test_st_hdbscan_empty_dataframe(empty_traj):
+    """Test that st_hdbscan returns proper empty DataFrame with correct columns."""
+    import nomad.stop_detection.hdbscan as hdbscan
+    
+    result = hdbscan.st_hdbscan(
+        empty_traj,
+        time_thresh=60,
+        min_pts=2,
+        min_cluster_size=2,
+        dur_min=5,
+        complete_output=True,
+        traj_cols={
+            'timestamp': 'timestamp', 
+            'longitude': 'longitude', 
+            'latitude': 'latitude'
+        }
+    )
+    
+    # Should return empty DataFrame with correct columns
+    assert result.empty
+    expected_cols = ['longitude', 'latitude', 'timestamp', 'diameter', 'n_pings', 'end_timestamp', 'duration', 'max_gap']
+    assert list(result.columns) == expected_cols
+
+def test_st_hdbscan_empty_dataframe_xy(empty_traj_xy):
+    """Test that st_hdbscan works with x,y coordinates on empty data."""
+    import nomad.stop_detection.hdbscan as hdbscan
+    
+    result = hdbscan.st_hdbscan(
+        empty_traj_xy,
+        time_thresh=60,
+        min_pts=2,
+        min_cluster_size=2,
+        dur_min=5,
+        complete_output=False,
+        traj_cols={
+            'timestamp': 'timestamp', 
+            'x': 'x', 
+            'y': 'y'
+        }
+    )
+    
+    # Should return empty DataFrame with correct columns
+    assert result.empty
+    expected_cols = ['x', 'y', 'timestamp', 'duration']
+    assert list(result.columns) == expected_cols
+
+def test_lachesis_empty_dataframe(empty_traj):
+    """Test that lachesis returns proper empty DataFrame with correct columns."""
+    import nomad.stop_detection.lachesis as lachesis
+    
+    result = lachesis.lachesis(
+        empty_traj,
+        delta_roam=100,
+        dt_max=60,
+        dur_min=5,
+        complete_output=True,
+        traj_cols={
+            'timestamp': 'timestamp', 
+            'longitude': 'longitude', 
+            'latitude': 'latitude'
+        }
+    )
+    
+    # Should return empty DataFrame with correct columns
+    assert result.empty
+    expected_cols = ['longitude', 'latitude', 'timestamp', 'diameter', 'n_pings', 'end_timestamp', 'duration', 'max_gap']
+    assert list(result.columns) == expected_cols
+
+def test_lachesis_empty_dataframe_xy(empty_traj_xy):
+    """Test that lachesis works with x,y coordinates on empty data."""
+    import nomad.stop_detection.lachesis as lachesis
+    
+    result = lachesis.lachesis(
+        empty_traj_xy,
+        delta_roam=100,
+        dt_max=60,
+        dur_min=5,
+        complete_output=False,
+        traj_cols={
+            'timestamp': 'timestamp', 
+            'x': 'x', 
+            'y': 'y'
+        }
+    )
+    
+    # Should return empty DataFrame with correct columns
+    assert result.empty
+    expected_cols = ['x', 'y', 'timestamp', 'duration']
+    assert list(result.columns) == expected_cols
+
+def test_empty_dataframe_consistency():
+    """Test that all algorithms return consistent column structures for empty data."""
+    import nomad.stop_detection.grid_based as grid_based
+    import nomad.stop_detection.hdbscan as hdbscan
+    import nomad.stop_detection.lachesis as lachesis
+    
+    empty_data = pd.DataFrame(columns=['timestamp', 'longitude', 'latitude', 'location_id'])
+    traj_cols = {
+        'timestamp': 'timestamp', 
+        'longitude': 'longitude', 
+        'latitude': 'latitude', 
+        'location_id': 'location_id'
+    }
+    
+    # Test with complete_output=False for all algorithms
+    grid_result = grid_based.grid_based(empty_data, traj_cols=traj_cols, complete_output=False)
+    hdbscan_result = hdbscan.st_hdbscan(empty_data, time_thresh=60, traj_cols=traj_cols, complete_output=False)
+    lachesis_result = lachesis.lachesis(empty_data, delta_roam=100, dt_max=60, traj_cols=traj_cols, complete_output=False)
+    
+    # All should be empty
+    assert grid_result.empty
+    assert hdbscan_result.empty
+    assert lachesis_result.empty
+    
+    # Grid-based should have location_id, others should have spatial coordinates
+    assert 'location_id' in grid_result.columns
+    assert 'longitude' in hdbscan_result.columns
+    assert 'latitude' in hdbscan_result.columns
+    assert 'longitude' in lachesis_result.columns
+    assert 'latitude' in lachesis_result.columns

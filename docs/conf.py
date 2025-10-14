@@ -18,9 +18,9 @@ sys.path.insert(0, os.path.abspath('../src'))
 
 # -- Project information -----------------------------------------------------
 
-project = 'Nomad'
+project = 'NOMAD'
 copyright = '2025, CSSLab'
-author = 'The Nomad Team'
+author = 'The NOMAD Team'
 
 # The full version, including alpha/beta/rc tags
 release = '0.0.1'

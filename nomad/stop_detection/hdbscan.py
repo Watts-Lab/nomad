@@ -654,12 +654,17 @@ def hdbscan_labels(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min
     # Load default col names
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     
+    # Handle empty data
+    if data.empty:
+        return pd.Series([], dtype=int, name='cluster')
+    
     if traj_cols['user_id'] in data.columns:
         uid_col = data[traj_cols['user_id']]
         arr = uid_col.values
-        first = arr[0]
-        if any(x != first for x in arr[1:]):
-            raise ValueError("Multi-user data? Groupby or use hdbscan_per_user instead.")
+        if len(arr) > 0:
+            first = arr[0]
+            if any(x != first for x in arr[1:]):
+                raise ValueError("Multi-user data? Groupby or use hdbscan_per_user instead.")
     
     # Tests to check for spatial and temporal columns
     loader._has_spatial_cols(data.columns, traj_cols)
@@ -780,10 +785,11 @@ def st_hdbscan(
     if 'user_id' in traj_cols_temp and traj_cols_temp['user_id'] in data.columns:
         uid_col = data[traj_cols_temp['user_id']]
         arr = uid_col.values
-        first = arr[0]
-        if any(x != first for x in arr[1:]):
-            raise ValueError("Multi-user data? Use lachesis_per_user instead.")
-        passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
+        if len(arr) > 0:
+            first = arr[0]
+            if any(x != first for x in arr[1:]):
+                raise ValueError("Multi-user data? Use hdbscan_per_user instead.")
+            passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
     else:
         uid_col = None
         
@@ -800,6 +806,15 @@ def st_hdbscan(
 
     merged = data.join(labels_hdbscan)
     merged = merged[merged.cluster != -1]
+
+    if merged.empty:
+        # Get column names by calling summarize function on dummy data
+        traj_cols_parsed = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
+        cols = utils._get_empty_stop_columns(
+            data.columns, complete_output, passthrough_cols, traj_cols_parsed, 
+            keep_col_names=True, is_grid_based=False, **kwargs
+        )
+        return pd.DataFrame(columns=cols, dtype=object)
 
     stop_table = merged.groupby('cluster', as_index=False, sort=False).apply(
         lambda grouped_data: utils.summarize_stop(
