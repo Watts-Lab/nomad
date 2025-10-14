@@ -18,6 +18,7 @@ from nomad.constants import DEFAULT_SCHEMA, FILTER_OPERATORS
 import numpy as np
 import warnings
 import inspect
+import pdb
 
 from shapely import wkt
 import shapely.geometry as sh_geom
@@ -594,7 +595,10 @@ def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_f
         if key in traj_cols and traj_cols[key] in df:
             col = traj_cols[key]
             if df[col].dtype != "Int64":
-                df[col] = df[col].astype("Int64")
+                try:
+                    df[col] = df[col].astype("Int64")
+                except:
+                    df[col] = df[col].astype("int64")
 
             if key == 'timestamp':
                 if len(df)>0:

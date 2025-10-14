@@ -585,6 +585,36 @@ class City:
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
 
+    def get_building_coordinates(self):
+        """
+        Get building coordinates as a DataFrame with building_id, x, y, building_type, size columns.
+        
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with columns: building_id, x, y, building_type, size
+        """
+        coords = []
+        for building_id, building in self.buildings.items():
+            centroid = building.geometry.centroid
+            
+            # Get building type from building_types DataFrame
+            type_row = self.building_types[self.building_types['id'] == building_id]
+            building_type = type_row['type'].iloc[0] if not type_row.empty else None
+            
+            # Get building size (number of blocks)
+            size = len(building.blocks)
+            
+            coords.append({
+                'building_id': building_id,
+                'x': centroid.x,
+                'y': centroid.y,
+                'building_type': building_type,
+                'size': size
+            })
+        
+        return pd.DataFrame(coords)
+
 
 # =============================================================================
 # AUXILIARY METHODS
