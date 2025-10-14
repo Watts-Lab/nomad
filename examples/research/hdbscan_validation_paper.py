@@ -223,7 +223,7 @@ def postjoin_poly_map(data, **kwargs):
 def rem_overlaps_hdbscan(stops, data_with_clusters, params, **kwargs):
     if pp.invalid_stops(stops):
         # The 'pred' data for remove_overlaps is the data with clusters and POI locations joined
-        return pp.remove_overlaps(data_with_clusters, **params, dur_min=5, traj_cols=traj_cols, method='cluster', location_id='building_id')
+        return pp.remove_overlaps(data_with_clusters, **params, dur_min=5, traj_cols=traj_cols, method='cluster', location_id='building_id', summarize_stops=True)
     return stops
 
 def pad_oracle_stops(stops, **kwargs):
