@@ -4,21 +4,84 @@ from functools import partial
 import nomad.stop_detection.utils as utils
 import nomad.stop_detection.grid_based as GRID_BASED 
 import nomad.io.base as loader
-from nomad.stop_detection.dbscan import _find_neighbors
+from nomad.stop_detection.preprocessing import _find_neighbors
 from nomad.filters import to_timestamp
 import nomad.stop_detection.hdbscan as HDBSCAN
 import nomad.stop_detection.lachesis as LACHESIS
-import nomad.stop_detection.dbscan as TADBSCAN
 
-def remove_overlaps(pred, time_thresh=None, dur_min=None, min_pts=None, min_cluster_size=None, dist_thresh=None, method = 'polygon', traj_cols = None, **kwargs):
-    pred = pred.copy()
+def remove_overlaps(data, time_thresh=None, min_pts=None, dist_thresh=None, dur_min=5, min_cluster_size=2, method='polygon', traj=None, summarize_stops=None, traj_cols=None, **kwargs):
+    """
+    Remove temporal overlaps in stop clusters by reassigning cluster labels.
+    
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Input data - either trajectory data with cluster labels or stop table.
+        If stop table, must have start/end time or duration columns.
+    time_thresh : int, optional
+        Maximum time gap (minutes) between consecutive pings within a stop.
+    min_pts : int, optional
+        Minimum neighbors for core points (used in recurse method).
+    dist_thresh : float, optional
+        Distance threshold for neighbors (used in recurse method).
+    dur_min : int, default 5
+        Minimum duration (minutes) for a valid stop.
+    min_cluster_size : int, default 2
+        Minimum number of points required to form a stop.
+    method : {'polygon', 'cluster', 'recurse'}, default 'polygon'
+        Method for removing overlaps:
+        - 'polygon': Use location_id for spatial grouping
+        - 'cluster': Use cluster labels for spatial grouping  
+        - 'recurse': Recursive DBSCAN-based approach
+    traj : pd.DataFrame, optional
+        Trajectory data required when input is a stop table.
+    summarize_stops : bool, optional
+        Whether to return stop summary table (True) or cluster labels (False).
+        Auto-detected based on input type if None:
+        - Trajectory input: defaults to False (return labels)
+        - Stop table input: defaults to True (return summary)
+    traj_cols : dict, optional
+        Column name mappings for trajectory attributes.
+    **kwargs
+        Additional arguments passed to internal functions.
+    
+    Returns
+    -------
+    pd.DataFrame or pd.Series
+        If summarize_stops=True: Stop summary table with columns like start_time, 
+        duration, location_id, etc.
+        If summarize_stops=False: Cluster labels as Series with same index as input.
+    """
+    # Detect if input is stop table or trajectory data
+    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs, defaults={'location_id':'location_id'}, warn=False)
+    end_col_present = loader._has_end_cols(data.columns, traj_cols_temp)
+    duration_col_present = loader._has_duration_cols(data.columns, traj_cols_temp)
+    is_stop_table = (end_col_present or duration_col_present)
+    
+    if is_stop_table:
+        # Input is stop table - require traj parameter
+        if traj is None:
+            raise ValueError("When input is a stop table, 'traj' parameter (trajectory data) is required")
+        
+        # Set summarize_stops to True unless explicitly overridden
+        if summarize_stops is None:
+            summarize_stops = True
+            
+        # Use trajectory data as the main data
+        pred = traj.copy()
+    else:
+        # Input is trajectory data - ignore traj parameter, set summarize_stops to False
+        if summarize_stops is None:
+            summarize_stops = False
+        pred = data.copy()
+    
     # load kwarg and traj_col args onto lean defaults
     traj_cols = loader._parse_traj_cols(
         pred.columns,
         traj_cols,
         kwargs,
         defaults={'location_id':'location_id'},
-        warn=False) 
+        warn=False)
 
     summarize_stops_with_loc = partial(
         utils.summarize_stop,
@@ -47,7 +110,24 @@ def remove_overlaps(pred, time_thresh=None, dur_min=None, min_pts=None, min_clus
         pred.loc[pred.cluster!=-1, 'cluster'] = labels
         pred = pred.drop('temp_building_id', axis=1)
         # Consider returning just cluster labels, same as the input! 
-        stops = pred.loc[pred.cluster!=-1].groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
+        filtered_pred = pred.loc[pred.cluster!=-1]
+        if filtered_pred.empty:
+            if summarize_stops:
+                # Get column names by calling summarize function on dummy data
+                cols = utils._get_empty_stop_columns(
+                    pred.columns, complete_output=False, passthrough_cols=[traj_cols['location_id']], 
+                    traj_cols=traj_cols, keep_col_names=False, is_grid_based=False, **kwargs
+                )
+                stops = pd.DataFrame(columns=cols, dtype=object)
+            else:
+                # Return cluster labels for all rows (including noise points with -1)
+                stops = pred['cluster']
+        else:
+            if summarize_stops:
+                stops = filtered_pred.groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
+            else:
+                # Return the cluster labels for all rows (including noise points)
+                stops = pred['cluster']
 
     elif method == 'cluster':
         traj_cols['location_id'] = 'cluster'
@@ -58,7 +138,24 @@ def remove_overlaps(pred, time_thresh=None, dur_min=None, min_pts=None, min_clus
                                 min_cluster_size=min_cluster_size,
                                 traj_cols=traj_cols)
         pred.loc[pred.cluster!=-1, 'cluster'] = labels
-        stops = pred.groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
+        filtered_pred = pred.loc[pred.cluster!=-1]
+        if filtered_pred.empty:
+            if summarize_stops:
+                # Get column names by calling summarize function on dummy data
+                cols = utils._get_empty_stop_columns(
+                    pred.columns, complete_output=False, passthrough_cols=[traj_cols['location_id']], 
+                    traj_cols=traj_cols, keep_col_names=False, is_grid_based=False, **kwargs
+                )
+                stops = pd.DataFrame(columns=cols, dtype=object)
+            else:
+                # Return cluster labels for all rows (including noise points with -1)
+                stops = pred['cluster']
+        else:
+            if summarize_stops:
+                stops = filtered_pred.groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
+            else:
+                # Return the cluster labels for all rows (including noise points)
+                stops = pred['cluster']
     
     elif method == 'recurse':
         t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(pred.columns, traj_cols, kwargs)
@@ -70,6 +167,10 @@ def remove_overlaps(pred, time_thresh=None, dur_min=None, min_pts=None, min_clus
         stops = pd.DataFrame({'cluster': -1, 'core': -1}, index=times)
         _process_clusters(data_temp, time_thresh, dist_thresh, min_pts, stops, use_lon_lat, use_datetime, traj_cols, dur_min=dur_min)
         stops.index = pred.index
+        
+        if not summarize_stops:
+            # Return just the cluster labels
+            stops = stops['cluster']
     
     return stops
 
@@ -113,6 +214,8 @@ def _process_clusters(data, time_thresh, dist_thresh, min_pts, output, use_lon_l
         neighbor_dict = _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, traj_cols)
     
     if cluster_df is None:
+        # Local import to avoid circular dependency
+        import nomad.stop_detection.dbscan as TADBSCAN
         cluster_df = TADBSCAN.dbscan(data, time_thresh, dist_thresh, min_pts, use_lon_lat, use_datetime, traj_cols, neighbor_dict=neighbor_dict)
     
     if len(cluster_df) < min_pts:
