@@ -231,7 +231,9 @@ def plot_stops_barcode(stops, ax, cmap='Reds', stop_color=None, set_xlim=True, t
     if not (end_col_present or duration_col_present):
         raise ValueError("Missing required (end or duration) temporal columns for true_visits dataframe.")
     elif not end_col_present:
-        end = stops[traj_cols[t_key]] + pd.to_timedelta(stops[traj_cols['duration']] * 60, unit='s')
+        # end = stops[traj_cols[t_key]] + pd.to_timedelta(stops[traj_cols['duration']] * 60, unit='s')
+        start = pd.to_datetime(stops[traj_cols[t_key]], unit='s')
+        end = start + pd.to_timedelta(stops[traj_cols['duration']] * 60, unit='s')
     else:
         end = stops[traj_cols[end_t_key]] if use_datetime else pd.to_datetime(stops[traj_cols[end_t_key]], unit='s')
         
