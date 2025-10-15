@@ -108,48 +108,38 @@ class Building:
                  door: tuple, 
                  city,
                  blocks: list = None, 
-                 geometry: (Polygon | MultiPolygon) = None):
-
+                 bbox: Polygon = None):
+        
         self.building_type = building_type
         self.door = door
         self.city = city
 
         self.id = f'{building_type[0]}-x{door[0]}-y{door[1]}'
 
+        # Calculate the bounding box of the building
         if blocks:
-            self.blocks = blocks
-            block_polygons = [box(x, y, x + 1, y + 1) for x, y in blocks]
-            self.geometry = unary_union(block_polygons)
-            if not isinstance(self.geometry, (Polygon, MultiPolygon)):
-                # This can happen if blocks are disjoint, forming a GeometryCollection.
-                raise ValueError(f"Building geometry formed from blocks is a {type(self.geometry)}, not a Polygon or MultiPolygon. Ensure blocks are contiguous.")
-
-        elif geometry:
-            self.geometry = geometry
-            self.blocks = []
-            min_x, min_y, max_x, max_y = geometry.bounds
-            for x in range(int(min_x), int(max_x)):
-                for y in range(int(min_y), int(max_y)):
-                    block_square = box(x, y, x + 1, y + 1)
-                    if geometry.intersects(block_square):
-                        self.blocks.append((x, y))
-
-            if not self.blocks:
-                raise ValueError(f"Provided geometry {geometry} does not intersect any integer blocks.")
-
+            min_x = min([block[0] for block in blocks])
+            min_y = min([block[1] for block in blocks])
+            max_x = max([block[0]+1 for block in blocks])
+            max_y = max([block[1]+1 for block in blocks])
+            bbox = box(min_x, min_y, max_x, max_y)
+        elif bbox:
+            blocks = []
+            for x in range(int(bbox.bounds[0]), int(bbox.bounds[2])):
+                for y in range(int(bbox.bounds[1]), int(bbox.bounds[3])):
+                    blocks += [(x, y)]
         else:
             raise ValueError(
-                "Either 'blocks' (list of tuples for block-based building) or 'geometry' (Shapely object) must be provided."
+                "Either blocks spanned or bounding box must be provided."
             )
+
+        self.blocks = blocks
+        self.geometry = bbox
 
         # Compute door centroid
-        door_centroid = self._compute_door_centroid()
-        if door_centroid is not None:
-            self.door_centroid = door_centroid
-        else:
-            raise ValueError(
-                f"Invalid door for building '{self.id}'."
-            )
+        door = self.geometry.intersection(self.city.streets[self.door].geometry)
+        self.door_centroid = ((door.coords[0][0] + door.coords[1][0]) / 2,
+                              (door.coords[0][1] + door.coords[1][1]) / 2)
         
     def _compute_door_centroid(self):
         """
@@ -282,7 +272,7 @@ class City:
                      building_type,
                      door,
                      blocks=None,
-                     geometry=None):
+                     bbox=None):
         """
         Adds a building to the city.
 
@@ -294,20 +284,20 @@ class City:
             The coordinates of the door of the building.
         blocks : list
             A list of blocks that the building spans.
-        geometry : shapely.geometry.polygon.Polygon
-            A polygon representing the geometry of the building.
+        bbox : shapely.geometry.polygon.Polygon
+            A polygon representing the bounding box of the building.
         """
 
-        if blocks is None and geometry is None:
+        if blocks is None and bbox is None:
             raise ValueError(
-                "Either blocks spanned or geometry must be provided."
+                "Either blocks spanned or bounding box must be provided."
             )
 
         building = Building(building_type=building_type,
                             door=door,
                             city=self,
                             blocks=blocks, 
-                            geometry=geometry)
+                            bbox=bbox)
 
         combined_plot = unary_union([building.geometry, self.streets[door].geometry])
         if self.buildings_outline.contains(combined_plot) or self.buildings_outline.overlaps(combined_plot):
@@ -316,7 +306,7 @@ class City:
             )
 
         if not check_adjacent(building.geometry, self.streets[door].geometry):
-            raise ValueError(f"Door {door} must be adjacent to new building (Geometry: {building.geometry}).")
+            raise ValueError(f"Door {door} must be adjacent to new building.")
 
         # add building
         self.buildings[building.id] = building
@@ -329,8 +319,7 @@ class City:
         # blocks are no longer streets
         for block in building.blocks:
             self.address_book[block] = building
-            if block in self.streets:
-                del self.streets[block]
+            del self.streets[block]
 
         # expand city boundary if necessary
         buffered_building_geom = building.geometry.buffer(1)
@@ -344,8 +333,7 @@ class City:
                 for y in range(miny, maxy+1):
                     if (x, y) not in self.streets:
                         # Initialize new Street objects for the expanded city area
-                        if not self.manual_streets:
-                            self.add_street((x, y))
+                        self.streets[(x, y)] = Street((x, y))
 
     def get_block(self, coordinates):
         """
