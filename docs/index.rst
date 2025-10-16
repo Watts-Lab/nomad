@@ -14,6 +14,7 @@ User Guide
    2. Stop Detection <stop_detection>
    3. Visit Attribution <visit_attribution>
    4. Synthetic Data Generation <synthetic_data_generation>
+   5. Benchmarking <source/benchmarking_of_stop_detection_algorithms>
 
 Indices and tables
 ==================
