@@ -805,6 +805,22 @@ def st_hdbscan(
     )
 
     merged = data.join(labels_hdbscan)
+    
+    # Remove temporal overlaps if multiple clusters exist
+    if len(merged.cluster.unique()) > 2:  # More than just -1 and one cluster
+        from nomad.stop_detection.postprocessing import remove_overlaps
+        adjusted_labels = remove_overlaps(
+            merged,
+            time_thresh=time_thresh,
+            min_pts=min_pts,
+            method="cluster",
+            traj_cols=traj_cols,
+            summarize_stops=False,  # Return cluster labels, not summary table
+            **kwargs
+        )
+        merged['cluster'] = adjusted_labels
+    
+    # Filter out noise points after overlap removal
     merged = merged[merged.cluster != -1]
 
     if merged.empty:
