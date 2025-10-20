@@ -4,6 +4,7 @@ from shapely.ops import unary_union
 import pickle
 import pandas as pd
 import numpy as np
+import numpy.random as npr
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from matplotlib import cm
@@ -116,40 +117,30 @@ class Building:
 
         self.id = f'{building_type[0]}-x{door[0]}-y{door[1]}'
 
+        # Calculate the bounding box of the building
         if blocks:
-            self.blocks = blocks
-            block_polygons = [box(x, y, x + 1, y + 1) for x, y in blocks]
-            self.geometry = unary_union(block_polygons)
-            if not isinstance(self.geometry, (Polygon, MultiPolygon)):
-                # This can happen if blocks are disjoint, forming a GeometryCollection.
-                raise ValueError(f"Building geometry formed from blocks is a {type(self.geometry)}, not a Polygon or MultiPolygon. Ensure blocks are contiguous.")
-
-        elif geometry:
-            self.geometry = geometry
-            self.blocks = []
-            min_x, min_y, max_x, max_y = geometry.bounds
-            for x in range(int(min_x), int(max_x)):
-                for y in range(int(min_y), int(max_y)):
-                    block_square = box(x, y, x + 1, y + 1)
-                    if geometry.intersects(block_square):
-                        self.blocks.append((x, y))
-
-            if not self.blocks:
-                raise ValueError(f"Provided geometry {geometry} does not intersect any integer blocks.")
-
+            min_x = min([block[0] for block in blocks])
+            min_y = min([block[1] for block in blocks])
+            max_x = max([block[0]+1 for block in blocks])
+            max_y = max([block[1]+1 for block in blocks])
+            bbox = box(min_x, min_y, max_x, max_y)
+        elif bbox:
+            blocks = []
+            for x in range(int(bbox.bounds[0]), int(bbox.bounds[2])):
+                for y in range(int(bbox.bounds[1]), int(bbox.bounds[3])):
+                    blocks += [(x, y)]
         else:
             raise ValueError(
-                "Either 'blocks' (list of tuples for block-based building) or 'geometry' (Shapely object) must be provided."
+                "Either blocks spanned or bounding box must be provided."
             )
+
+        self.blocks = blocks
+        self.geometry = bbox
 
         # Compute door centroid
-        door_centroid = self._compute_door_centroid()
-        if door_centroid is not None:
-            self.door_centroid = door_centroid
-        else:
-            raise ValueError(
-                f"Invalid door for building '{self.id}'."
-            )
+        door = self.geometry.intersection(self.city.streets[self.door].geometry)
+        self.door_centroid = ((door.coords[0][0] + door.coords[1][0]) / 2,
+                              (door.coords[0][1] + door.coords[1][1]) / 2)
         
     def _compute_door_centroid(self):
         """
@@ -282,7 +273,7 @@ class City:
                      building_type,
                      door,
                      blocks=None,
-                     geometry=None):
+                     bbox=None):
         """
         Adds a building to the city.
 
@@ -294,20 +285,20 @@ class City:
             The coordinates of the door of the building.
         blocks : list
             A list of blocks that the building spans.
-        geometry : shapely.geometry.polygon.Polygon
-            A polygon representing the geometry of the building.
+        bbox : shapely.geometry.polygon.Polygon
+            A polygon representing the bounding box of the building.
         """
 
-        if blocks is None and geometry is None:
+        if blocks is None and bbox is None:
             raise ValueError(
-                "Either blocks spanned or geometry must be provided."
+                "Either blocks spanned or bounding box must be provided."
             )
 
         building = Building(building_type=building_type,
                             door=door,
                             city=self,
                             blocks=blocks, 
-                            geometry=geometry)
+                            bbox=bbox)
 
         combined_plot = unary_union([building.geometry, self.streets[door].geometry])
         if self.buildings_outline.contains(combined_plot) or self.buildings_outline.overlaps(combined_plot):
@@ -316,7 +307,7 @@ class City:
             )
 
         if not check_adjacent(building.geometry, self.streets[door].geometry):
-            raise ValueError(f"Door {door} must be adjacent to new building (Geometry: {building.geometry}).")
+            raise ValueError(f"Door {door} must be adjacent to new building.")
 
         # add building
         self.buildings[building.id] = building
@@ -329,8 +320,7 @@ class City:
         # blocks are no longer streets
         for block in building.blocks:
             self.address_book[block] = building
-            if block in self.streets:
-                del self.streets[block]
+            del self.streets[block]
 
         # expand city boundary if necessary
         buffered_building_geom = building.geometry.buffer(1)
@@ -344,8 +334,7 @@ class City:
                 for y in range(miny, maxy+1):
                     if (x, y) not in self.streets:
                         # Initialize new Street objects for the expanded city area
-                        if not self.manual_streets:
-                            self.add_street((x, y))
+                        self.streets[(x, y)] = Street((x, y))
 
     def get_block(self, coordinates):
         """
@@ -615,6 +604,107 @@ class City:
         
         return pd.DataFrame(coords)
 
+
+# =============================================================================
+# RANDOM CITY CLASS
+# =============================================================================
+
+
+class RandomCityGenerator:
+    def __init__(self, width, height, street_spacing=5, park_ratio=0.1, home_ratio=0.4, work_ratio=0.3, retail_ratio=0.2, seed=42):
+        self.seed = seed
+        self.width = width
+        self.height = height
+        self.street_spacing = street_spacing  # Determines regular intervals for streets
+        self.park_ratio = park_ratio
+        self.home_ratio = home_ratio
+        self.work_ratio = work_ratio
+        self.retail_ratio = retail_ratio
+        self.city = City(dimensions=(width, height))
+        self.occupied = np.zeros((self.width, self.height), dtype=bool)  # NumPy array for efficiency
+        self.streets = self.generate_streets()
+        self.building_sizes = {
+            'home': [(2, 2), (1, 2), (2, 1), (1, 1)],  # Mixed sizes
+            'work': [(1, 3), (3, 1), (4, 4), (3, 3), (4, 2), (2, 4)],
+            'retail': [(1, 3), (3, 1), (4, 4), (3, 3), (2, 4), (4, 2)],
+            'park': [(6, 6), (5, 5), (4, 4)]
+        }
+
+    def generate_streets(self):
+        """Predefine streets in a systematic grid pattern using a NumPy mask."""
+        streets = np.zeros((self.width, self.height), dtype=bool)
+        streets[::self.street_spacing, :] = True
+        streets[:, ::self.street_spacing] = True
+        return streets
+    
+    def get_block_type(self, x, y):
+        """Dynamically assigns a block type instead of storing all in memory."""
+        npr.seed(self.seed + x * self.width + y)  # Ensure consistency
+        return npr.choice(['home', 'work', 'retail', 'park'], 
+                          p=[self.home_ratio, self.work_ratio, self.retail_ratio, self.park_ratio])
+    
+    def fill_block(self, block_x, block_y, block_type):
+        """Fills an entire block with buildings."""
+        available_space = np.argwhere(~self.occupied[(block_x + 1):(block_x + self.street_spacing), 
+                                                     (block_y + 1):(block_y + self.street_spacing)])
+        
+        if available_space.size == 0:
+            return  # No available space in this block
+
+        attempts = 0  # Termination condition to prevent infinite loops
+        max_attempts = available_space.shape[0] * 2
+        
+        while available_space.size > 0 and attempts < max_attempts:
+            size = self.building_sizes[block_type][npr.randint(len(self.building_sizes[block_type]))]
+            npr.shuffle(available_space)  # Randomize placement within the block
+            for x_offset, y_offset in available_space.tolist():
+                x, y = block_x + 1 + x_offset, block_y + 1 + y_offset
+                if x + size[0] <= block_x + self.street_spacing and y + size[1] <= block_y + self.street_spacing and \
+                   np.all(self.occupied[x:(x + size[0]), y:(y + size[1])] == False):
+                    door = self.get_adjacent_street((x, y))
+                    if door and self.streets[door]:
+                        try:
+                            self.city.add_building(building_type=block_type, door=door,
+                                                   bbox=box(x, y, x + size[0], y + size[1]))
+                        except Exception as e:
+                            print(f"Skipping building placement at ({x}, {y}) due to error: {e}")
+                        self.occupied[x:x + size[0], y:y + size[1]] = True  # Mark occupied
+                        occupied_positions = np.array([(x_offset + dx, y_offset + dy) for dx in range(size[0]) for dy in range(size[1])])
+                        mask = ~np.any(np.all(available_space[:, None, :] == occupied_positions, axis=2), axis=1)
+                        available_space = available_space[mask]
+                        break  # Place one building at a time and reattempt filling
+            attempts += 1  # Increment attempt counter
+    
+    def get_adjacent_street(self, location):
+        """Finds the closest predefined street to assign as the door, ensuring it’s within bounds."""
+        if not location or not isinstance(location, tuple):
+            return None
+        x, y = location
+        possible_streets = np.array([(x + dx, y + dy) for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]])
+        
+        valid_mask = (possible_streets[:, 0] >= 0) & (possible_streets[:, 0] < self.width) & \
+                     (possible_streets[:, 1] >= 0) & (possible_streets[:, 1] < self.height)
+        
+        valid_streets = possible_streets[valid_mask]
+        valid_streets = valid_streets[self.streets[valid_streets[:, 0], valid_streets[:, 1]]]
+
+        return tuple(valid_streets[0].tolist()) if valid_streets.size > 0 else None
+
+    def place_buildings_in_blocks(self):
+        """Fills each block completely with buildings using proportional distribution."""
+        block_list = [(x, y) for x in range(0, self.width, self.street_spacing)
+                      for y in range(0, self.height, self.street_spacing)]
+        npr.shuffle(block_list)  # Randomize block processing order
+
+        for block_x, block_y in block_list:
+            block_type = self.get_block_type(block_x, block_y)
+            self.fill_block(block_x, block_y, block_type)
+    
+    def generate_city(self):
+        """Generates a systematically structured city where blocks are fully occupied with buildings."""
+        self.place_buildings_in_blocks()
+        self.city.get_street_graph()
+        return self.city if len(self.city.buildings) > 0 else None
 
 # =============================================================================
 # AUXILIARY METHODS
