@@ -105,12 +105,12 @@ class Building:
     """
 
     def __init__(self,
-                 building_type: str, 
-                 door: tuple, 
+                 building_type, 
+                 door, 
                  city,
-                 blocks: list = None, 
-                 bbox: Polygon = None):
-        
+                 blocks = None, 
+                 geometry = None):
+
         self.building_type = building_type
         self.door = door
         self.city = city
