@@ -32,10 +32,14 @@ release = '0.0.1'
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
+    'nbsphinx',
+    'sphinx.ext.mathjax',
+    'sphinx.ext.githubpages',
     "sphinx.ext.todo",
     "sphinx.ext.viewcode",
     "sphinx.ext.autodoc",
-    'sphinx_rtd_theme'
+    'sphinx_rtd_theme',
+    'sphinx_design'
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -45,6 +49,9 @@ templates_path = ['_templates']
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+
+# Don't execute notebooks during build (use pre-executed outputs)
+nbsphinx_execute = 'never'
 
 
 # -- Options for HTML output -------------------------------------------------

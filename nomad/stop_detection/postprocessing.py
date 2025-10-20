@@ -86,8 +86,9 @@ def remove_overlaps(data, time_thresh=None, min_pts=None, dist_thresh=None, dur_
     summarize_stops_with_loc = partial(
         utils.summarize_stop,
         keep_col_names=False,
+        passthrough_cols = [traj_cols['location_id']],
         traj_cols=traj_cols,
-        passthrough_cols = [traj_cols['location_id']])
+        **kwargs)
 
     if  method == 'polygon':
         if traj_cols['location_id'] not in pred.columns:

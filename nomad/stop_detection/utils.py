@@ -308,14 +308,6 @@ def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_
         # e.g. start time col in stops will be 'unix_timestamp' instead of default 'start_timestamp'
         traj_cols[start_t_key] = traj_cols[t_key]
     
-    # Handle empty input defensively - return empty Series with expected columns (as if complete_output=True)
-    if grouped_data.empty:
-        empty_attrs = {coord_key1: None, coord_key2: None, traj_cols[start_t_key]: None, 'duration': None, 
-                      traj_cols[end_t_key]: None, 'diameter': None, 'n_pings': None, 'max_gap': None}
-        for col in passthrough_cols:
-            empty_attrs[col] = None
-        return pd.Series(empty_attrs)
-    
     # Compute stop statistics
     coords = grouped_data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
     medoid = _medoid(coords, metric=metric)
@@ -405,16 +397,6 @@ def summarize_stop_grid(
     else:
         cols[start_key] = start_key
         cols[end_key]   = end_key
-    
-    # Handle empty input defensively - return empty Series with expected columns (as if complete_output=True)
-    if grouped_data.empty:
-        empty_out = {cols[start_key]: None, cols[end_key]: None, 'n_pings': None, 'max_gap': None, 'duration': None}
-        to_pass = set(passthrough_cols) | {cols['location_id']}
-        if 'geometry' in grouped_data.columns:
-            to_pass.add('geometry')
-        for c in to_pass:
-            empty_out[c] = None
-        return pd.Series(empty_out, dtype='object')
 
     # 4) time bounds
     times      = grouped_data[cols[t_key]]
@@ -516,9 +498,7 @@ def _get_empty_stop_columns(input_columns, complete_output, passthrough_cols, tr
         column_list.extend(passthrough_cols)
         
     else:
-        # Call the actual helper functions with the input columns
         t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = _fallback_st_cols(input_columns, traj_cols, kwargs)
-        # Parse traj_cols to get the column mappings
         cols = loader._parse_traj_cols(input_columns, traj_cols, kwargs, warn=False)
         
         start_t_key = 'start_datetime' if use_datetime else 'start_timestamp'
