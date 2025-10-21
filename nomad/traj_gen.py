@@ -1,3 +1,4 @@
+from tracemalloc import start
 import pandas as pd
 import numpy as np
 import numpy.random as npr
@@ -9,6 +10,7 @@ from datetime import timedelta
 from zoneinfo import ZoneInfo
 import warnings
 import funkybob
+from functools import lru_cache
 import s3fs
 import pyarrow as pa
 import pyarrow.dataset as ds
@@ -367,48 +369,112 @@ class Agent:
             ax.scatter(self.trajectory.x, self.trajectory.y, s=6, color=color, alpha=alpha, zorder=2)
             self.city.plot_city(ax, doors=doors, address=address, zorder=1)
 
+    # def _sample_step(self, start_point, dest_building, dt, rng):
+    #     """
+    #     From a destination diary, generates (x, y) pings.
+
+    #     Parameters
+    #     ----------
+    #     start_point : tuple
+    #         The coordinates of the current position as a tuple (x, y).
+    #     dest_building : Building
+    #         The destination building of the agent.
+    #     dt : float
+    #         The time step duration.
+    #     rng : numpy.random.generator
+    #         random number generator for reproducibility.
+
+    #     Returns
+    #     -------
+    #     coord : numpy.ndarray
+    #         A numpy array of floats with shape (1, 2) representing the new coordinates.
+    #     location : str or None
+    #         The building ID if the step is a stay, or `None` if the step is a move.
+    #     """
+    #     city = self.city
+
+    #     start_block = np.floor(start_point)
+    #     start_geometry = city.get_block(tuple(start_block))
+
+    #     curr = np.array(start_point)
+
+    #     if start_geometry == dest_building or start_point == dest_building.door_centroid:
+    #         location = dest_building.id
+    #         p = self.still_probs[dest_building.building_type]
+    #         sigma = self.speeds[dest_building.building_type]
+
+    #         if rng.uniform() < p:
+    #             coord = curr
+    #         else: # Draw until coord falls inside building
+    #             while True:
+    #                 coord = rng.normal(loc=curr, scale=sigma*np.sqrt(dt), size=2)
+    #                 if dest_building.geometry.contains(Point(coord)):
+    #                     break
+    #     else: # Agent travels to building along the streets
+    #         location = None
+    #         dest_point = dest_building.door
+
+    #         if start_geometry in city.buildings.values():
+    #             start_segment = [start_point, start_geometry.door_centroid]
+    #             start = start_geometry.door
+    #         else:
+    #             start_segment = []
+    #             start = tuple(start_block.astype(int))
+
+    #         street_path = city.shortest_paths[start][dest_point]
+    #         path = [(x + 0.5, y + 0.5) for (x, y) in street_path]
+    #         path = start_segment + path + [dest_building.door_centroid]
+    #         path_ml = MultiLineString([path])
+    #         path_length = path_ml.length
+
+    #         # Bounding polygon: needs to stay in street
+    #         street_poly = unary_union([city.get_block(block).geometry for block in street_path])
+    #         bound_poly = unary_union([start_geometry.geometry, street_poly])
+            
+    #         # Transformed coordinates of current position
+    #         path_coord = _path_coords(path_ml, start_point)
+
+    #         heading_drift = 3.33 * dt
+    #         sigma = 0.5 * dt / 1.96
+
+    #         while True:
+    #             # Step in transformed (path-based) space
+    #             step = rng.normal(loc=[heading_drift, 0], scale=sigma * np.sqrt(dt), size=2)
+    #             path_coord = (path_coord[0] + step[0], 0.7 * path_coord[1] + step[1])
+
+    #             if path_coord[0] > path_length:
+    #                 coord = np.array(dest_building.geometry.centroid.coords[0])
+    #                 break
+
+    #             coord = _cartesian_coords(path_ml, *path_coord)
+
+    #             if bound_poly.contains(Point(coord)):
+    #                 break
+
+    #     return coord, location
+
     def _sample_step(self, start_point, dest_building, dt, rng):
-        """
-        From a destination diary, generates (x, y) pings.
-
-        Parameters
-        ----------
-        start_point : tuple
-            The coordinates of the current position as a tuple (x, y).
-        dest_building : Building
-            The destination building of the agent.
-        dt : float
-            The time step duration.
-        rng : numpy.random.generator
-            random number generator for reproducibility.
-
-        Returns
-        -------
-        coord : numpy.ndarray
-            A numpy array of floats with shape (1, 2) representing the new coordinates.
-        location : str or None
-            The building ID if the step is a stay, or `None` if the step is a move.
-        """
+        """Lazy version that computes paths on demand."""
         city = self.city
-
         start_block = np.floor(start_point)
         start_geometry = city.get_block(tuple(start_block))
-
         curr = np.array(start_point)
-
+    
         if start_geometry == dest_building or start_point == dest_building.door_centroid:
+            # Same building logic - unchanged
             location = dest_building.id
             p = self.still_probs[dest_building.building_type]
             sigma = self.speeds[dest_building.building_type]
-
+    
             if rng.uniform() < p:
                 coord = curr
-            else: # Draw until coord falls inside building
+            else:
                 while True:
                     coord = rng.normal(loc=curr, scale=sigma*np.sqrt(dt), size=2)
                     if dest_building.geometry.contains(Point(coord)):
                         break
-        else: # Agent travels to building along the streets
+        else:
+            # Agent travels to building
             location = None
             dest_point = dest_building.door
 
@@ -419,38 +485,53 @@ class Agent:
                 start_segment = []
                 start = tuple(start_block.astype(int))
 
-            street_path = city.shortest_paths[start][dest_point]
+            street_path = self._manhattan_street_path(start, dest_point)
+
             path = [(x + 0.5, y + 0.5) for (x, y) in street_path]
             path = start_segment + path + [dest_building.door_centroid]
             path_ml = MultiLineString([path])
             path_length = path_ml.length
-
-            # Bounding polygon: needs to stay in street
+    
             street_poly = unary_union([city.get_block(block).geometry for block in street_path])
             bound_poly = unary_union([start_geometry.geometry, street_poly])
             
-            # Transformed coordinates of current position
             path_coord = _path_coords(path_ml, start_point)
-
             heading_drift = 3.33 * dt
             sigma = 0.5 * dt / 1.96
-
+    
             while True:
-                # Step in transformed (path-based) space
                 step = rng.normal(loc=[heading_drift, 0], scale=sigma * np.sqrt(dt), size=2)
                 path_coord = (path_coord[0] + step[0], 0.7 * path_coord[1] + step[1])
-
+    
                 if path_coord[0] > path_length:
                     coord = np.array(dest_building.geometry.centroid.coords[0])
                     break
-
+    
                 coord = _cartesian_coords(path_ml, *path_coord)
-
+    
                 if bound_poly.contains(Point(coord)):
                     break
-
+    
         return coord, location
-
+    
+    def _manhattan_street_path(self, start, dest):
+        """Generate Manhattan distance path between two street coordinates."""
+        x1, y1 = start
+        x2, y2 = dest
+        
+        path = [(x1, y1)]
+        
+        # Move horizontally first
+        while x1 != x2:
+            x1 += 1 if x2 > x1 else -1
+            path.append((x1, y1))
+        
+        # Then move vertically
+        while y1 != y2:
+            y1 += 1 if y2 > y1 else -1
+            path.append((x1, y1))
+        
+        return path
 
     def _traj_from_dest_diary(self, dt, seed=0):
         """

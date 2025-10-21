@@ -384,40 +384,91 @@ class City:
 
             return None # If no block found at the original, left, or below coordinates
 
+    # def get_street_graph(self):
+    #     """
+    #     Generates a street graph from the streets data, calculates the shortest paths between all pairs of nodes,
+    #     and computes a gravity DataFrame based on the inverse square of the shortest path lengths.
+
+    #     Add the following attributes to the City object:
+    #         self.street_graph (dict): A dictionary representing the street graph with coordinates as keys and lists of neighboring coordinates as values.
+    #         self.shortest_paths (dict): A dictionary containing the shortest paths between all pairs of nodes.
+    #         self.gravity (pd.DataFrame): A DataFrame indexed by origin and destination coordinates, containing gravity values based on the shortest path lengths.
+    #     """
+
+    #     self.street_graph = {}
+    #     for coords, _ in self.streets.items():
+    #         x, y = coords
+    #         neighbors = [
+    #             (x, y + 1),
+    #             (x, y - 1),
+    #             (x + 1, y),
+    #             (x - 1, y)
+    #         ]
+
+    #         self.street_graph[coords] = [neighbor for neighbor in neighbors if neighbor in self.streets]
+
+    #     G = nx.from_dict_of_lists(self.street_graph)
+    #     sp = dict(nx.all_pairs_shortest_path(G))
+    #     self.shortest_paths = {node: paths for node, paths in sp.items()}
+
+    #     data = [
+    #         {'origin': origin, 'dest': dest, 'gravity': (1 / (len(path) - 1) ** 2 if len(path) > 1 else 0)}
+    #         for origin, paths in sp.items()
+    #         for dest, path in paths.items()
+    #     ]
+    #     self.gravity = pd.DataFrame(data, columns=['origin', 'dest', 'gravity'])
+    #     self.gravity = self.gravity.set_index(['origin', 'dest'])
+
+    # def get_street_graph(self):
+    #     """Generate street graph with only path lengths for gravity calculation."""
+        
+    #     self.street_graph = {}
+    #     for coords, _ in self.streets.items():
+    #         x, y = coords
+    #         neighbors = [(x, y+1), (x, y-1), (x+1, y), (x-1, y)]
+    #         self.street_graph[coords] = [neighbor for neighbor in neighbors if neighbor in self.streets]
+    
+    #     G = nx.from_dict_of_lists(self.street_graph)
+        
+    #     # Store the graph for lazy path computation
+    #     self._graph = G
+        
+    #     # Only compute lengths for gravity
+    #     sp_lengths = dict(nx.all_pairs_shortest_path_length(G))
+        
+    #     data = [
+    #         {'origin': origin, 'dest': dest, 'gravity': (1 / length ** 2 if length > 0 else 0)}
+    #         for origin, dest_lengths in sp_lengths.items()
+    #         for dest, length in dest_lengths.items()
+    #     ]
+    #     self.gravity = pd.DataFrame(data, columns=['origin', 'dest', 'gravity']).set_index(['origin', 'dest'])
+
     def get_street_graph(self):
-        """
-        Generates a street graph from the streets data, calculates the shortest paths between all pairs of nodes,
-        and computes a gravity DataFrame based on the inverse square of the shortest path lengths.
-
-        Add the following attributes to the City object:
-            self.street_graph (dict): A dictionary representing the street graph with coordinates as keys and lists of neighboring coordinates as values.
-            self.shortest_paths (dict): A dictionary containing the shortest paths between all pairs of nodes.
-            self.gravity (pd.DataFrame): A DataFrame indexed by origin and destination coordinates, containing gravity values based on the shortest path lengths.
-        """
-
+        """Generate street graph using Manhattan distance for grid cities."""
+        # Build basic adjacency graph
         self.street_graph = {}
         for coords, _ in self.streets.items():
             x, y = coords
-            neighbors = [
-                (x, y + 1),
-                (x, y - 1),
-                (x + 1, y),
-                (x - 1, y)
-            ]
-
+            neighbors = [(x, y+1), (x, y-1), (x+1, y), (x-1, y)]
             self.street_graph[coords] = [neighbor for neighbor in neighbors if neighbor in self.streets]
-
-        G = nx.from_dict_of_lists(self.street_graph)
-        sp = dict(nx.all_pairs_shortest_path(G))
-        self.shortest_paths = {node: paths for node, paths in sp.items()}
-
-        data = [
-            {'origin': origin, 'dest': dest, 'gravity': (1 / (len(path) - 1) ** 2 if len(path) > 1 else 0)}
-            for origin, paths in sp.items()
-            for dest, path in paths.items()
-        ]
-        self.gravity = pd.DataFrame(data, columns=['origin', 'dest', 'gravity'])
-        self.gravity = self.gravity.set_index(['origin', 'dest'])
+    
+        # Create NetworkX graph for lazy path computation
+        self._graph = nx.from_dict_of_lists(self.street_graph)
+        
+        # Use Manhattan distance for gravity
+        class ManhattanGravity:
+            def loc(self, key):
+                if isinstance(key, tuple) and len(key) == 2:
+                    origin, dest = key
+                    distance = abs(origin[0] - dest[0]) + abs(origin[1] - dest[1])
+                    return 1 / (distance ** 2) if distance > 0 else 0
+                raise KeyError(f"Invalid key: {key}")
+            
+            def __getitem__(self, key):
+                # Support both .loc[] and direct indexing
+                return self.loc(key)
+        
+        self.gravity = ManhattanGravity()
 
     def save(self, filename):
         """
