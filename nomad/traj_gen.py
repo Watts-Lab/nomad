@@ -454,39 +454,37 @@ class Agent:
     #     return coord, location
 
     def _sample_step(self, start_point, dest_building, dt, rng):
-        """Lazy version that computes paths on demand."""
+        """Optimized version using lazy path computation."""
         city = self.city
         start_block = np.floor(start_point)
         start_geometry = city.get_block(tuple(start_block))
         curr = np.array(start_point)
     
         if start_geometry == dest_building or start_point == dest_building.door_centroid:
-            # Same building logic - unchanged
             location = dest_building.id
             p = self.still_probs[dest_building.building_type]
             sigma = self.speeds[dest_building.building_type]
     
             if rng.uniform() < p:
                 coord = curr
-            else:
+            else: # Draw until coord falls inside building
                 while True:
                     coord = rng.normal(loc=curr, scale=sigma*np.sqrt(dt), size=2)
                     if dest_building.geometry.contains(Point(coord)):
                         break
-        else:
-            # Agent travels to building
+        else: # Agent travels to building along the streets
             location = None
             dest_point = dest_building.door
-
+    
             if start_geometry in city.buildings.values():
                 start_segment = [start_point, start_geometry.door_centroid]
                 start = start_geometry.door
             else:
                 start_segment = []
                 start = tuple(start_block.astype(int))
-
-            street_path = self._manhattan_street_path(start, dest_point)
-
+    
+            # Use lazy path computation instead of precomputed paths
+            street_path = city._get_path(start, dest_point)
             path = [(x + 0.5, y + 0.5) for (x, y) in street_path]
             path = start_segment + path + [dest_building.door_centroid]
             path_ml = MultiLineString([path])
@@ -513,25 +511,6 @@ class Agent:
                     break
     
         return coord, location
-    
-    def _manhattan_street_path(self, start, dest):
-        """Generate Manhattan distance path between two street coordinates."""
-        x1, y1 = start
-        x2, y2 = dest
-        
-        path = [(x1, y1)]
-        
-        # Move horizontally first
-        while x1 != x2:
-            x1 += 1 if x2 > x1 else -1
-            path.append((x1, y1))
-        
-        # Then move vertically
-        while y1 != y2:
-            y1 += 1 if y2 > y1 else -1
-            path.append((x1, y1))
-        
-        return path
 
     def _traj_from_dest_diary(self, dt, seed=0):
         """
