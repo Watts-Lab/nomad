@@ -734,10 +734,20 @@ class RandomCityGenerator:
             block_type = self.get_block_type(block_x, block_y)
             self.fill_block(block_x, block_y, block_type)
     
-    def generate_city(self):
-        """Generates a systematically structured city where blocks are fully occupied with buildings."""
+    # def generate_city(self):
+    #     """Generates a systematically structured city where blocks are fully occupied with buildings."""
+    #     self.place_buildings_in_blocks()
+    #     self.city.get_street_graph()
+    #     return self.city if len(self.city.buildings) > 0 else None
+
+    def generate_city(self, compute_graph=False):
+        """Generate city with optional street graph computation."""
         self.place_buildings_in_blocks()
-        self.city.get_street_graph()
+        
+        # Only compute street graph if explicitly requested
+        if compute_graph:
+            self.city.get_street_graph()
+        
         return self.city if len(self.city.buildings) > 0 else None
 
 # =============================================================================
