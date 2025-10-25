@@ -427,7 +427,7 @@ def download_osm_streets(bbox: Tuple[float, float, float, float],
     # Filter service roads
     if 'service' in streets['highway'].values:
         service_mask = streets['highway'] != 'service'
-        if 'service' in streets.columns:
+    if 'service' in streets.columns:
             service_mask |= ~streets['service'].isin(STREET_EXCLUDED_SERVICE_TYPES)
         streets = streets[service_mask]
     
@@ -637,10 +637,7 @@ def get_subtype_summary(gdf: gpd.GeoDataFrame) -> dict:
 
 def get_prominent_streets(streets_gdf: gpd.GeoDataFrame, k: int = 10) -> gpd.GeoDataFrame:
     """
-    Select the most prominent streets and calculate their alignment metrics.
-    
-    Prominence is determined by length and highway type priority. Alignment metrics
-    include bearing, north-south projection, and east-west projection.
+    Select the most prominent streets based on length and highway type priority.
     
     Parameters
     ----------
@@ -652,7 +649,7 @@ def get_prominent_streets(streets_gdf: gpd.GeoDataFrame, k: int = 10) -> gpd.Geo
     Returns
     -------
     gpd.GeoDataFrame
-        Top k prominent streets with alignment metrics
+        Top k prominent streets
     """
     if len(streets_gdf) == 0:
         return streets_gdf.copy()
@@ -679,67 +676,100 @@ def get_prominent_streets(streets_gdf: gpd.GeoDataFrame, k: int = 10) -> gpd.Geo
     # Get top k streets
     top_streets = result.nlargest(k, 'prominence_score')
     
-    # Calculate alignment metrics
-    def calculate_bearing(geom):
-        """Calculate bearing of line geometry."""
-        coords = list(geom.coords)
-        if len(coords) < 2:
-            return 0
-        
-        # Use first and last points for bearing
-        start, end = coords[0], coords[-1]
-        dx = end[0] - start[0]
-        dy = end[1] - start[1]
-        
-        # Calculate bearing in degrees (0 = North, 90 = East)
-        bearing = math.degrees(math.atan2(dx, dy))
-        return (bearing + 360) % 360  # Normalize to 0-360
-    
-    def calculate_projections(geom):
-        """Calculate projections on N-S and E-W axes."""
-        coords = list(geom.coords)
-        if len(coords) < 2:
-            return 0, 0
-        
-        # Calculate total displacement
-        start, end = coords[0], coords[-1]
-        dx = end[0] - start[0]  # East-West
-        dy = end[1] - start[1]  # North-South
-        
-        # Projections as fractions of total length
-        total_length = math.sqrt(dx**2 + dy**2)
-        if total_length == 0:
-            return 0, 0
-        
-        ns_projection = abs(dy) / total_length  # North-South alignment
-        ew_projection = abs(dx) / total_length  # East-West alignment
-        
-        return ns_projection, ew_projection
-    
-    # Add alignment metrics
-    top_streets['bearing'] = top_streets.geometry.apply(calculate_bearing)
-    
-    projections = top_streets.geometry.apply(calculate_projections)
-    top_streets['ns_projection'] = projections.apply(lambda x: x[0])
-    top_streets['ew_projection'] = projections.apply(lambda x: x[1])
-    
-    # Add alignment classification
-    def classify_alignment(ns_proj, ew_proj):
-        """Classify street alignment based on projections."""
-        if ns_proj > 0.7:
-            return 'North-South'
-        elif ew_proj > 0.7:
-            return 'East-West'
-        else:
-            return 'Diagonal'
-    
-    top_streets['alignment'] = top_streets.apply(
-        lambda row: classify_alignment(row['ns_projection'], row['ew_projection']), 
-        axis=1
-    )
-    
     # Drop temporary columns
     columns_to_drop = ['priority', 'prominence_score']
     top_streets = top_streets.drop(columns=[col for col in columns_to_drop if col in top_streets.columns])
     
     return top_streets
+
+
+def segment_angles_and_lengths(geom):
+    """Yield (angle, length) for each segment in a LineString or MultiLineString."""
+    from shapely.geometry import LineString, MultiLineString
+    
+    if isinstance(geom, MultiLineString):
+        for g in geom.geoms:
+            yield from segment_angles_and_lengths(g)
+        return
+    
+    coords = list(geom.coords)
+    if len(coords) < 2:
+        return
+    
+    for i in range(len(coords) - 1):
+        start, end = coords[i], coords[i + 1]
+        dx = end[0] - start[0]
+        dy = end[1] - start[1]
+        length = math.sqrt(dx**2 + dy**2)
+        
+        if length > 0:
+            theta = math.atan2(dy, dx)  # raw angle
+            # Reduce angle mod π to force orientation (ignore directionality)
+            theta = ((theta + math.pi/2) % math.pi) - math.pi/2
+            yield theta, length
+
+
+def optimal_rotation(geoms):
+    """
+    Calculate optimal rotation angle to align streets with N-S/E-W axes.
+    
+    Uses the mathematical approach: minimize sum of sin²(2(θᵢ + φ)) weighted by segment lengths.
+    This is equivalent to maximizing sum of cos(4θᵢ + 4φ), which has closed-form solution.
+    
+    Parameters
+    ----------
+    geoms : list
+        List of Shapely LineString/MultiLineString geometries
+        
+    Returns
+    -------
+    float
+        Optimal rotation angle in radians
+    """
+    A = 0.0  # sum of w_i * cos(4*theta_i)
+    B = 0.0  # sum of w_i * sin(4*theta_i)
+    
+    for geom in geoms:
+        for theta, w in segment_angles_and_lengths(geom):
+            A += w * math.cos(4 * theta)
+            B += w * math.sin(4 * theta)
+    
+    if A == 0 and B == 0:
+        return 0.0
+    
+    return -0.25 * math.atan2(B, A)
+
+
+def rotate_streets_to_align(streets_gdf: gpd.GeoDataFrame, prominent_k: int = 10) -> Tuple[gpd.GeoDataFrame, float]:
+    """
+    Rotate streets to align prominent streets with N-S/E-W axes.
+    
+    Parameters
+    ----------
+    streets_gdf : gpd.GeoDataFrame
+        Street network GeoDataFrame
+    prominent_k : int, default=10
+        Number of prominent streets to use for alignment calculation
+        
+    Returns
+    -------
+    Tuple[gpd.GeoDataFrame, float]
+        Rotated streets GeoDataFrame and rotation angle in degrees
+    """
+    if len(streets_gdf) == 0:
+        return streets_gdf.copy(), 0.0
+    
+    # Get prominent streets for alignment calculation
+    prominent_streets = get_prominent_streets(streets_gdf, k=prominent_k)
+    
+    # Calculate optimal rotation angle
+    rotation_rad = optimal_rotation(prominent_streets.geometry.tolist())
+    rotation_deg = math.degrees(rotation_rad)
+    
+    # Rotate all streets
+    rotated_streets = streets_gdf.copy()
+    rotated_streets.geometry = rotated_streets.geometry.apply(
+        lambda geom: shapely_rotate(geom, rotation_deg, origin='centroid')
+    )
+    
+    return rotated_streets, rotation_deg
