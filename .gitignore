@@ -20,6 +20,10 @@ docs/_build/
 # Exclude images from research folder only
 examples/research/**/*.png
 
+# OSM cache and large outputs
+cache/
+examples/output/
+
 # macOS system file
 .DS_Store
 
