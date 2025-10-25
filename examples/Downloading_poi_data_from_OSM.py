@@ -47,17 +47,32 @@ print(f"Categories: {get_category_summary(buildings)}")
 # Plot results
 fig, axes = plt.subplots(1, 3, figsize=(18, 6))
 
-# Buildings by category
-buildings.plot(ax=axes[0], column='category', legend=True, cmap='tab10')
+# Color scheme from virtual_philly.ipynb
+colors = {
+    'park': 'green',
+    'residential': 'blue', 
+    'retail': 'orange',
+    'workplace': 'purple',
+    'other': 'grey'
+}
+
+# Buildings by category with proper colors
+for category, color in colors.items():
+    subset = buildings[buildings['category'] == category]
+    if len(subset) > 0:
+        subset.plot(ax=axes[0], color=color, edgecolor='black', linewidth=0.2)
 axes[0].set_title('Buildings by Category')
 
 # Buildings + Streets
-buildings.plot(ax=axes[1], color='lightgray', alpha=0.7)
-streets.plot(ax=axes[1], color='navy', linewidth=1)
+for category, color in colors.items():
+    subset = buildings[buildings['category'] == category]
+    if len(subset) > 0:
+        subset.plot(ax=axes[1], color=color, edgecolor='black', linewidth=0.2)
+streets.plot(ax=axes[1], color='black', linewidth=0.5)
 axes[1].set_title('Buildings and Streets')
 
 # Streets only
-streets.plot(ax=axes[2], color='navy', linewidth=1)
+streets.plot(ax=axes[2], color='black', linewidth=0.5)
 axes[2].set_title('Streets Only')
 
 plt.tight_layout()
