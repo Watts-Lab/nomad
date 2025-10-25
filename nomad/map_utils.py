@@ -425,7 +425,7 @@ def download_osm_streets(bbox: Tuple[float, float, float, float],
     # Filter service roads
     if 'service' in streets['highway'].values:
         service_mask = streets['highway'] != 'service'
-    if 'service' in streets.columns:
+        if 'service' in streets.columns:
             service_mask |= ~streets['service'].isin(STREET_EXCLUDED_SERVICE_TYPES)
         streets = streets[service_mask]
     
