@@ -17,10 +17,7 @@ import numpy as np
 from nomad.map_utils import (
     download_osm_buildings,
     download_osm_streets,
-    get_category_summary,
-    get_subtype_summary,
-    get_osm_type_summary,
-    rotate_and_explode,
+    rotate,
     remove_overlaps
 )
 
@@ -53,7 +50,7 @@ def test_download_osm_buildings_garden_city(philly_bbox):
     # Should have all three classification columns
     assert 'osm_type' in buildings.columns
     assert 'subtype' in buildings.columns
-    assert 'category' in buildings.columns
+    assert 'garden_city_category' in buildings.columns
     
     # Should have found some buildings in this area
     assert len(buildings) > 0, "No buildings found in the test area"
@@ -67,7 +64,7 @@ def test_download_osm_buildings_garden_city(philly_bbox):
     
     # All categories should be valid garden city types
     valid_categories = {'residential', 'retail', 'workplace', 'park', 'other'}
-    actual_categories = set(buildings['category'].unique())
+    actual_categories = set(buildings['garden_city_category'].unique())
     assert actual_categories.issubset(valid_categories), (
         f"Found invalid categories: {actual_categories - valid_categories}"
     )
@@ -92,11 +89,11 @@ def test_download_osm_buildings_geolife(philly_bbox):
     # Should have all three classification columns
     assert 'osm_type' in buildings.columns
     assert 'subtype' in buildings.columns
-    assert 'category' in buildings.columns
+    assert 'geolife_plus_category' in buildings.columns
 
     # All categories should be valid geolife_plus types
     valid_categories = {'unknown', 'residential', 'commercial', 'school'}
-    actual_categories = set(buildings['category'].unique())
+    actual_categories = set(buildings['geolife_plus_category'].unique())
     assert actual_categories.issubset(valid_categories), (
         f"Found invalid categories: {actual_categories - valid_categories}"
     )
@@ -124,78 +121,8 @@ def test_download_osm_buildings_includes_parks(philly_bbox):
 
     # All categories should be valid
     valid_categories = {'residential', 'retail', 'workplace', 'park', 'other'}
-    actual_categories = set(all_features['category'].unique())
+    actual_categories = set(all_features['garden_city_category'].unique())
     assert actual_categories.issubset(valid_categories)
-
-
-def test_category_summary():
-    """Test the category summary utility function."""
-    # Create a simple test GeoDataFrame
-    test_data = gpd.GeoDataFrame({
-        'geometry': [
-            Polygon([(0, 0), (1, 0), (1, 1), (0, 1)]),
-            Polygon([(2, 2), (3, 2), (3, 3), (2, 3)]),
-            Polygon([(4, 4), (5, 4), (5, 5), (4, 5)]),
-        ],
-        'osm_type': ['house', 'supermarket', 'house'],
-        'subtype': ['residential', 'commercial', 'residential'],
-        'category': ['residential', 'retail', 'residential']
-    }, crs="EPSG:4326")
-    
-    summary = get_category_summary(test_data)
-    
-    # Should return a dictionary with counts
-    assert isinstance(summary, dict)
-    assert summary == {'residential': 2, 'retail': 1}
-    
-    # Should raise error for uncategorized data
-    uncategorized = gpd.GeoDataFrame({
-        'geometry': [Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])],
-        'building': ['house']
-    }, crs="EPSG:4326")
-
-    with pytest.raises(ValueError, match="Features must be categorized"):
-        get_category_summary(uncategorized)
-
-
-def test_subtype_summary():
-    """Test the subtype summary utility function."""
-    test_data = gpd.GeoDataFrame({
-        'geometry': [
-            Polygon([(0, 0), (1, 0), (1, 1), (0, 1)]),
-            Polygon([(2, 2), (3, 2), (3, 3), (2, 3)]),
-            Polygon([(4, 4), (5, 4), (5, 5), (4, 5)]),
-        ],
-        'osm_type': ['house', 'supermarket', 'hospital'],
-        'subtype': ['residential', 'commercial', 'medical'],
-        'category': ['residential', 'retail', 'workplace']
-    }, crs="EPSG:4326")
-    
-    summary = get_subtype_summary(test_data)
-    
-    # Should return a dictionary with counts
-    assert isinstance(summary, dict)
-    assert summary == {'residential': 1, 'commercial': 1, 'medical': 1}
-
-
-def test_osm_type_summary():
-    """Test the OSM type summary utility function (most granular)."""
-    test_data = gpd.GeoDataFrame({
-        'geometry': [
-            Polygon([(0, 0), (1, 0), (1, 1), (0, 1)]),
-            Polygon([(2, 2), (3, 2), (3, 3), (2, 3)]),
-            Polygon([(4, 4), (5, 4), (5, 5), (4, 5)]),
-        ],
-        'osm_type': ['house', 'supermarket', 'house'],
-        'subtype': ['residential', 'commercial', 'residential'],
-        'category': ['residential', 'retail', 'residential']
-    }, crs="EPSG:4326")
-    
-    summary = get_osm_type_summary(test_data)
-    
-    # Should return a dictionary with counts
-    assert isinstance(summary, dict)
-    assert summary == {'house': 2, 'supermarket': 1}
 
 
 def test_categorization_logic_garden_city():
@@ -678,3 +605,20 @@ def test_schema_switching():
         
         # Different schemas should have different category sets
         assert gc_categories != gl_categories, "Different schemas should have different categories"
+
+
+def test_city_name_download():
+    """Test downloading data using city name instead of bounding box."""
+    from nomad.map_utils import get_city_boundary_osm, download_osm_buildings, download_osm_streets
+    
+    # Test city boundary function
+    city = get_city_boundary_osm('Philadelphia, Pennsylvania')
+    assert isinstance(city, gpd.GeoDataFrame), "Should return GeoDataFrame"
+    
+    # Test building download with city name (small sample)
+    buildings = download_osm_buildings('Philadelphia, Pennsylvania', explode=True)
+    assert isinstance(buildings, gpd.GeoDataFrame), "Should return GeoDataFrame"
+    
+    # Test street download with city name (small sample)  
+    streets = download_osm_streets('Philadelphia, Pennsylvania', explode=True)
+    assert isinstance(streets, gpd.GeoDataFrame), "Should return GeoDataFrame"

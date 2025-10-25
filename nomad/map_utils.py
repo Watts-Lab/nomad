@@ -20,7 +20,6 @@ import numpy as np
 from shapely.affinity import rotate
 from shapely.geometry import box
 from shapely.affinity import rotate as shapely_rotate
-from typing import Tuple, List, Optional, Union
 import warnings
 
 from nomad.constants import (
@@ -31,8 +30,9 @@ from nomad.constants import (
 )
 
 
-def _clip_to_bbox(gdf: gpd.GeoDataFrame, bbox: Tuple[float, float, float, float], 
-                  crs: str = DEFAULT_CRS) -> gpd.GeoDataFrame:
+
+
+def _clip_to_bbox(gdf, bbox, crs=DEFAULT_CRS):
     """Clip geometries to bounding box."""
     if len(gdf) == 0:
         return gdf.copy()
@@ -63,7 +63,7 @@ def _clip_to_bbox(gdf: gpd.GeoDataFrame, bbox: Tuple[float, float, float, float]
 # CATEGORIZATION FUNCTIONS
 # =============================================================================
 
-def get_category_for_subtype(subtype: str, schema: str = DEFAULT_CATEGORY_SCHEMA) -> str:
+def get_category_for_subtype(subtype, schema= DEFAULT_CATEGORY_SCHEMA):
     """
     Get the category for a subtype in a specific schema.
     
@@ -90,7 +90,7 @@ def get_category_for_subtype(subtype: str, schema: str = DEFAULT_CATEGORY_SCHEMA
     return mapping.get(subtype, default)
 
 
-def _classify_building(row: pd.Series, schema: str) -> Tuple[str, str, str]:
+def _classify_building(row, schema):
     """
     Classify a single building based on its OSM tags.
     
@@ -99,7 +99,7 @@ def _classify_building(row: pd.Series, schema: str) -> Tuple[str, str, str]:
     return _classify_feature(row, schema)
 
 
-def _classify_feature(row: pd.Series, schema: str, infer_building_types: bool = False) -> Tuple[str, str, str]:
+def _classify_feature(row, schema, infer_building_types=False):
     """
     Classify a single feature based on its OSM tags.
     
@@ -234,7 +234,7 @@ def _classify_feature(row: pd.Series, schema: str, infer_building_types: bool = 
     return ('unknown', 'unknown', default_category)
 
 
-def _categorize_features(gdf: gpd.GeoDataFrame, schema: str, infer_building_types: bool = False) -> gpd.GeoDataFrame:
+def _categorize_features(gdf, schema, infer_building_types= False):
     """Apply categorization to all features in a GeoDataFrame."""
     if len(gdf) == 0:
         return gdf.copy()
@@ -253,10 +253,7 @@ def _categorize_features(gdf: gpd.GeoDataFrame, schema: str, infer_building_type
 # DOWNLOAD FUNCTIONS
 # =============================================================================
 
-def _download_osm_features(bbox: Tuple[float, float, float, float], 
-                          tags: dict, 
-                          crs: str = DEFAULT_CRS,
-                          clip: bool = False) -> gpd.GeoDataFrame:
+def _download_osm_features(bbox, tags, crs=DEFAULT_CRS, clip=False):
     """
     Download features from OSM with given tags.
     
@@ -300,19 +297,64 @@ def _download_osm_features(bbox: Tuple[float, float, float, float],
     return features
 
 
-def download_osm_buildings(bbox: Tuple[float, float, float, float], 
-                          crs: str = DEFAULT_CRS, 
-                          schema: str = DEFAULT_CATEGORY_SCHEMA, 
-                          clip: bool = False,
-                          infer_building_types: bool = False,
-                          explode: bool = False) -> gpd.GeoDataFrame:
+def get_city_boundary_osm(name, simplify=True, crs="EPSG:4326"):
+    """
+    Get city boundary from OSM using city name.
+    
+    Returns
+    -------
+    tuple
+        (multipolygon, center_coords, population)
+        - multipolygon: city boundary geometry
+        - center_coords: (lon, lat) tuple
+        - population: integer or None
+        
+    Example
+    -------
+    >>> boundary, center, pop = get_city_boundary_osm('Philadelphia, Pennsylvania')
+    """
+    try:
+        city_gdf = ox.geocode_to_gdf(name)
+        city_gdf = city_gdf.to_crs(crs)
+        
+        if len(city_gdf) == 0:
+            return None, None, None
+            
+        geometry = city_gdf.geometry.iloc[0]
+        if simplify:
+            geometry = geometry.simplify(tolerance=0.001)
+            
+        # Get center coordinates
+        center = geometry.centroid
+        center_coords = (center.x, center.y)
+        
+        # Get population
+        population = None
+        if 'population' in city_gdf.columns:
+            pop_val = city_gdf['population'].iloc[0]
+            if not pd.isna(pop_val):
+                population = int(pop_val)
+                
+        return geometry, center_coords, population
+        
+    except Exception as e:
+        warnings.warn(f"Could not fetch city boundary for '{name}': {e}")
+        return None, None, None
+
+
+def download_osm_buildings(bbox_or_city, 
+                          crs=DEFAULT_CRS, 
+                          schema=DEFAULT_CATEGORY_SCHEMA, 
+                          clip=False,
+                          infer_building_types=False,
+                          explode=False):
     """
     Download and categorize buildings and parks from OpenStreetMap.
     
     Parameters
     ----------
-    bbox : Tuple[float, float, float, float]
-        Bounding box (west, south, east, north) in WGS84
+    bbox_or_city : Union[Tuple[float, float, float, float], str]
+        Bounding box (west, south, east, north) in WGS84 or city name
     crs : str, default='EPSG:4326'
         Coordinate reference system for output
     schema : str, default='garden_city'
@@ -330,13 +372,30 @@ def download_osm_buildings(bbox: Tuple[float, float, float, float],
         Buildings and parks with columns: osm_type, subtype, category
     """
     
+    # Determine if input is bbox or city name
+    if isinstance(bbox_or_city, str):
+        boundary, center, population = get_city_boundary_osm(bbox_or_city)
+        if boundary is None:
+            return gpd.GeoDataFrame()
+        # Use city boundary directly instead of converting to bbox
+        city_polygon = boundary
+    else:
+        bbox = bbox_or_city
+        city_polygon = None
+    
     # Download buildings (including parking lots with building tags)
     building_tags = {"building": True}
-    buildings = _download_osm_features(bbox, building_tags, crs, clip)
+    if city_polygon is not None:
+        buildings = ox.features_from_polygon(city_polygon, building_tags)
+    else:
+        buildings = _download_osm_features(bbox, building_tags, crs, clip)
     
     # Download parking lots (even without building tags) - they should be buildings, not parks
     parking_tags = {"amenity": ["parking"]}
-    parking_lots = _download_osm_features(bbox, parking_tags, crs, clip)
+    if city_polygon is not None:
+        parking_lots = ox.features_from_polygon(city_polygon, parking_tags)
+    else:
+        parking_lots = _download_osm_features(bbox, parking_tags, crs, clip)
     
     # Filter out underground parking from parking lots
     if 'parking' in parking_lots.columns:
@@ -366,7 +425,10 @@ def download_osm_buildings(bbox: Tuple[float, float, float, float],
         if tag_key not in ['landuse', 'amenity']:  # Remove landuse and amenity (no parking)
             park_tags[tag_key] = tag_values
     
-    parks = _download_osm_features(bbox, park_tags, crs, clip)
+    if city_polygon is not None:
+        parks = ox.features_from_polygon(city_polygon, park_tags)
+    else:
+        parks = _download_osm_features(bbox, park_tags, crs, clip)
     
     # EXCLUDE WATER FEATURES FROM PARKS - they should not be parks either
     if 'natural' in parks.columns:
@@ -374,20 +436,36 @@ def download_osm_buildings(bbox: Tuple[float, float, float, float],
     if 'waterway' in parks.columns:
         parks = parks[parks['waterway'].isna()]
     
-    # Categorize buildings and parks separately to avoid cross-contamination
-    categorized_buildings = _categorize_features(buildings, schema, infer_building_types) if len(buildings) > 0 else gpd.GeoDataFrame(columns=['osm_type', 'subtype', 'category', 'geometry'], crs=crs)
-    categorized_parks = _categorize_features(parks, schema, infer_building_types) if len(parks) > 0 else gpd.GeoDataFrame(columns=['osm_type', 'subtype', 'category', 'geometry'], crs=crs)
+    # Essential columns to keep
+    essential_cols = ['geometry', 'osm_type', 'subtype', f'{schema}_category',
+                     'addr:street', 'addr:city', 'addr:state', 'addr:housenumber', 'addr:postcode']
+    
+    # Categorize buildings
+    if len(buildings) > 0:
+        classifications = buildings.apply(lambda row: _classify_feature(row, schema, infer_building_types), axis=1)
+        buildings['osm_type'] = classifications.apply(lambda x: x[0])
+        buildings['subtype'] = classifications.apply(lambda x: x[1])
+        buildings[f'{schema}_category'] = classifications.apply(lambda x: x[2])
+        buildings = buildings[[col for col in essential_cols if col in buildings.columns]]
+    
+    # Categorize parks
+    if len(parks) > 0:
+        classifications = parks.apply(lambda row: _classify_feature(row, schema, infer_building_types), axis=1)
+        parks['osm_type'] = classifications.apply(lambda x: x[0])
+        parks['subtype'] = classifications.apply(lambda x: x[1])
+        parks[f'{schema}_category'] = classifications.apply(lambda x: x[2])
+        parks = parks[[col for col in essential_cols if col in parks.columns]]
     
     # Combine only AFTER categorization to prevent parks from being misclassified as buildings
-    if len(categorized_buildings) == 0 and len(categorized_parks) == 0:
-        result = gpd.GeoDataFrame(columns=['osm_type', 'subtype', 'category', 'geometry'], crs=crs)
-    elif len(categorized_buildings) == 0:
-        result = categorized_parks
-    elif len(categorized_parks) == 0:
-        result = categorized_buildings
+    if len(buildings) == 0 and len(parks) == 0:
+        result = gpd.GeoDataFrame(columns=['osm_type', 'subtype', f'{schema}_category', 'geometry'], crs=crs)
+    elif len(buildings) == 0:
+        result = parks
+    elif len(parks) == 0:
+        result = buildings
     else:
         result = gpd.GeoDataFrame(
-            pd.concat([categorized_buildings, categorized_parks], ignore_index=True),
+            pd.concat([buildings, parks], ignore_index=True),
             crs=crs
         )
     
@@ -398,16 +476,29 @@ def download_osm_buildings(bbox: Tuple[float, float, float, float],
     return result
 
 
-def download_osm_streets(bbox: Tuple[float, float, float, float], 
-                        crs: str = DEFAULT_CRS, 
-                        clip: bool = True,
-                        clip_to_gdf: Optional[gpd.GeoDataFrame] = None,
-                        explode: bool = False) -> gpd.GeoDataFrame:
+def download_osm_streets(bbox_or_city, 
+                        crs=DEFAULT_CRS, 
+                        clip=True,
+                        clip_to_gdf=None,
+                        explode=False):
     """Download street network from OpenStreetMap."""
+    
+    # Determine if input is bbox or city name
+    if isinstance(bbox_or_city, str):
+        boundary, center, population = get_city_boundary_osm(bbox_or_city)
+        if boundary is None:
+            return gpd.GeoDataFrame()
+        city_polygon = boundary
+    else:
+        bbox = bbox_or_city
+        city_polygon = None
     
     try:
         # Download street network
-        G = ox.graph_from_bbox(bbox=bbox)
+        if city_polygon is not None:
+            G = ox.graph_from_polygon(city_polygon)
+        else:
+            G = ox.graph_from_bbox(bbox=bbox)
         
         # Convert to GeoDataFrame
         streets = ox.graph_to_gdfs(G, edges=True, nodes=False)
@@ -449,8 +540,8 @@ def download_osm_streets(bbox: Tuple[float, float, float, float],
         clip_bounds = clip_to_gdf.total_bounds
         clip_bbox = (clip_bounds[0], clip_bounds[1], clip_bounds[2], clip_bounds[3])
         streets = _clip_to_bbox(streets, clip_bbox, crs)
-    elif clip:
-        # Clip to original bounding box
+    elif clip and city_polygon is None:
+        # Clip to original bounding box (only for bbox input)
         streets = _clip_to_bbox(streets, bbox, crs)
     
     # Explode if requested
@@ -464,7 +555,7 @@ def download_osm_streets(bbox: Tuple[float, float, float, float],
 # GEOMETRY PROCESSING FUNCTIONS
 # =============================================================================
 
-def remove_overlaps(gdf: gpd.GeoDataFrame, exclude_categories: Optional[List[str]] = None) -> gpd.GeoDataFrame:
+def remove_overlaps(gdf, exclude_categories= None):
     """
     Remove geometries that are entirely contained within other geometries.
     
@@ -519,7 +610,7 @@ def remove_overlaps(gdf: gpd.GeoDataFrame, exclude_categories: Optional[List[str
         return _remove_overlaps_internal(result)
 
 
-def _remove_overlaps_internal(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+def _remove_overlaps_internal(gdf):
     """
     Internal function to perform overlap removal.
     
@@ -576,7 +667,7 @@ def _remove_overlaps_internal(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     return result
 
 
-def rotate(gdf: gpd.GeoDataFrame, rotation_deg: float = 0.0, origin: Union[str, Tuple[float, float]] = 'centroid') -> gpd.GeoDataFrame:
+def rotate(gdf, rotation_deg=0.0, origin='centroid'):
     """
     Rotate geometries around a single point.
     
@@ -621,21 +712,21 @@ def rotate(gdf: gpd.GeoDataFrame, rotation_deg: float = 0.0, origin: Union[str, 
 # SUMMARY FUNCTIONS
 # =============================================================================
 
-def get_category_summary(gdf: gpd.GeoDataFrame) -> dict:
+def get_category_summary(gdf):
     """Get summary of categories in the dataset."""
     if 'category' not in gdf.columns or len(gdf) == 0:
         raise ValueError("Features must be categorized")
     return gdf['category'].value_counts().to_dict()
 
 
-def get_subtype_summary(gdf: gpd.GeoDataFrame) -> dict:
+def get_subtype_summary(gdf):
     """Get summary of subtypes in the dataset."""
     if 'subtype' not in gdf.columns or len(gdf) == 0:
         return {}
     return gdf['subtype'].value_counts().to_dict()
 
 
-def get_prominent_streets(streets_gdf: gpd.GeoDataFrame, k: int = 10) -> gpd.GeoDataFrame:
+def get_prominent_streets(streets_gdf, k= 10):
     """
     Select the most prominent streets based on length and highway type priority.
     
@@ -683,7 +774,7 @@ def get_prominent_streets(streets_gdf: gpd.GeoDataFrame, k: int = 10) -> gpd.Geo
     return top_streets
 
 
-def rotate_streets_to_align(streets_gdf: gpd.GeoDataFrame, k: int = 200) -> Tuple[gpd.GeoDataFrame, float]:
+def rotate_streets_to_align(streets_gdf, k=200):
     if len(streets_gdf) == 0:
         return streets_gdf.copy(), 0.0
     
