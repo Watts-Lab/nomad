@@ -1,8 +1,5 @@
 import operator
 
-# TO DO: Add other schemas
-# TO DO: Add tesselation cell default
-
 DEFAULT_SCHEMA = {
     "user_id": "user_id",
     "latitude": "latitude",
@@ -110,7 +107,7 @@ PARK_TAGS = {
                 'picnic_table', 'dog_park', 'pitch', 'swimming_pool'],
     'landuse': ['park', 'recreation_ground', 'grass', 'meadow', 'allotments', 'cemetery', 
                 'village_green', 'greenfield'],
-    'natural': ['wood', 'grassland', 'beach', 'water']
+    'natural': ['wood', 'grassland', 'beach']
 }
 
 DEFAULT_CRS = "EPSG:4326"
@@ -207,6 +204,7 @@ OSM_BUILDING_TO_SUBTYPE = {
     'transformer_tower': 'service',
     'hangar': 'transportation',
     'parking': 'parking',
+    'park': 'park',
     'train_station': 'transportation',
     'transportation': 'transportation',
 }
@@ -215,6 +213,7 @@ OSM_AMENITY_TO_SUBTYPE = {
     'nursing_home': 'residential',
     'bus_station': 'transportation',
     'parking': 'parking',
+    'fountain': 'park',  # Fountains are park features
     'place_of_worship': 'religious',
     'clinic': 'medical',
     'dentist': 'medical',
@@ -316,22 +315,6 @@ CATEGORY_SCHEMAS = {
 }
 
 DEFAULT_CATEGORY_SCHEMA = 'garden_city'
-
-PARK_TAGS = {
-    'leisure': [
-        'park', 'recreation_ground', 'garden', 'playground',
-        'outdoor_seating', 'picnic_table', 'dog_park', 'pitch', 
-        'swimming_pool'
-    ],
-    'landuse': [
-        'park', 'recreation_ground', 'grass', 'meadow', 'allotments',
-        'cemetery', 'village_green', 'greenfield'
-    ],
-    'natural': [
-        'wood', 'grassland', 'beach', 'water'
-    ]
-}
-
 DEFAULT_CRS = "EPSG:4326"
 
 GARDEN_CITY_CATEGORIES = ['residential', 'retail', 'workplace', 'park', 'other']
