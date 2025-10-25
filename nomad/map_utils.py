@@ -16,6 +16,7 @@ Author: NOMAD Development Team
 import geopandas as gpd
 import pandas as pd
 import osmnx as ox
+import math
 from shapely.affinity import rotate
 from shapely.geometry import box
 from shapely.affinity import rotate as shapely_rotate
@@ -634,8 +635,111 @@ def get_subtype_summary(gdf: gpd.GeoDataFrame) -> dict:
     return gdf['subtype'].value_counts().to_dict()
 
 
-def get_osm_type_summary(gdf: gpd.GeoDataFrame) -> dict:
-    """Get summary of OSM types in the dataset."""
-    if 'osm_type' not in gdf.columns or len(gdf) == 0:
-        return {}
-    return gdf['osm_type'].value_counts().to_dict()
+def get_prominent_streets(streets_gdf: gpd.GeoDataFrame, k: int = 10) -> gpd.GeoDataFrame:
+    """
+    Select the most prominent streets and calculate their alignment metrics.
+    
+    Prominence is determined by length and highway type priority. Alignment metrics
+    include bearing, north-south projection, and east-west projection.
+    
+    Parameters
+    ----------
+    streets_gdf : gpd.GeoDataFrame
+        Street network GeoDataFrame
+    k : int, default=10
+        Number of prominent streets to return
+        
+    Returns
+    -------
+    gpd.GeoDataFrame
+        Top k prominent streets with alignment metrics
+    """
+    if len(streets_gdf) == 0:
+        return streets_gdf.copy()
+    
+    result = streets_gdf.copy()
+    
+    # Calculate street lengths
+    result['length'] = result.geometry.length
+    
+    # Highway type priority (higher = more prominent)
+    highway_priority = {
+        'motorway': 10, 'trunk': 9, 'primary': 8, 'secondary': 7,
+        'tertiary': 6, 'unclassified': 5, 'residential': 4, 'service': 3
+    }
+    
+    if 'highway' in result.columns:
+        result['priority'] = result['highway'].map(highway_priority).fillna(1)
+    else:
+        result['priority'] = 1
+    
+    # Calculate prominence score (length * priority)
+    result['prominence_score'] = result['length'] * result['priority']
+    
+    # Get top k streets
+    top_streets = result.nlargest(k, 'prominence_score')
+    
+    # Calculate alignment metrics
+    def calculate_bearing(geom):
+        """Calculate bearing of line geometry."""
+        coords = list(geom.coords)
+        if len(coords) < 2:
+            return 0
+        
+        # Use first and last points for bearing
+        start, end = coords[0], coords[-1]
+        dx = end[0] - start[0]
+        dy = end[1] - start[1]
+        
+        # Calculate bearing in degrees (0 = North, 90 = East)
+        bearing = math.degrees(math.atan2(dx, dy))
+        return (bearing + 360) % 360  # Normalize to 0-360
+    
+    def calculate_projections(geom):
+        """Calculate projections on N-S and E-W axes."""
+        coords = list(geom.coords)
+        if len(coords) < 2:
+            return 0, 0
+        
+        # Calculate total displacement
+        start, end = coords[0], coords[-1]
+        dx = end[0] - start[0]  # East-West
+        dy = end[1] - start[1]  # North-South
+        
+        # Projections as fractions of total length
+        total_length = math.sqrt(dx**2 + dy**2)
+        if total_length == 0:
+            return 0, 0
+        
+        ns_projection = abs(dy) / total_length  # North-South alignment
+        ew_projection = abs(dx) / total_length  # East-West alignment
+        
+        return ns_projection, ew_projection
+    
+    # Add alignment metrics
+    top_streets['bearing'] = top_streets.geometry.apply(calculate_bearing)
+    
+    projections = top_streets.geometry.apply(calculate_projections)
+    top_streets['ns_projection'] = projections.apply(lambda x: x[0])
+    top_streets['ew_projection'] = projections.apply(lambda x: x[1])
+    
+    # Add alignment classification
+    def classify_alignment(ns_proj, ew_proj):
+        """Classify street alignment based on projections."""
+        if ns_proj > 0.7:
+            return 'North-South'
+        elif ew_proj > 0.7:
+            return 'East-West'
+        else:
+            return 'Diagonal'
+    
+    top_streets['alignment'] = top_streets.apply(
+        lambda row: classify_alignment(row['ns_projection'], row['ew_projection']), 
+        axis=1
+    )
+    
+    # Drop temporary columns
+    columns_to_drop = ['priority', 'prominence_score']
+    top_streets = top_streets.drop(columns=[col for col in columns_to_drop if col in top_streets.columns])
+    
+    return top_streets

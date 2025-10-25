@@ -14,38 +14,51 @@
 # ---
 
 # %% [markdown]
-# # Downloading OSM Data
+# # Downloading OSM Buildings
 #
-# Download buildings and streets from OpenStreetMap, visualize them, and optionally rotate geometries for alignment.
+# Download and categorize buildings from OpenStreetMap. This demo shows how to:
+# - Download buildings and parks from OSM
+# - Categorize them using configurable schemas
+# - Remove overlaps and explode MultiPolygons
+# - Visualize results with proper color coding
+#
+# ## Category Mapping (Garden City Schema)
+#
+# | OSM Tags | Garden City Category | Description |
+# |----------|---------------------|-------------|
+# | `building=house`, `building=residential` | residential | Homes, apartments |
+# | `building=commercial`, `shop=*` | retail | Stores, restaurants |
+# | `building=office`, `amenity=*` | workplace | Offices, civic buildings |
+# | `leisure=park`, `natural=*` | park | Parks, green spaces |
+# | `building=yes` (with inference) | residential/retail | Inferred from height/amenity |
+# | Other buildings | other | Unclassified structures |
+#
+# *Note: Other schemas (e.g., `geolife_plus`) can be used by changing the `schema` parameter.*
 
 # %%
 import pandas as pd
 import geopandas as gpd
 import matplotlib.pyplot as plt
-from nomad.map_utils import download_osm_buildings, download_osm_streets, rotate, remove_overlaps, get_category_summary, get_subtype_summary, get_osm_type_summary
+from nomad.map_utils import download_osm_buildings, remove_overlaps, get_category_summary, get_subtype_summary, get_osm_type_summary
 
 # %%
 bbox = (-75.19747721789525, 39.931392279878246, -75.14652246706544, 39.96336810441389)
 
-# Download, process, and save
+# Download and process buildings
 buildings = download_osm_buildings(bbox, schema='garden_city', clip=True, explode=True, infer_building_types=True)
-streets = download_osm_streets(bbox, clip=True, explode=True)
 
+# Remove overlaps
 buildings = remove_overlaps(buildings)
-streets = remove_overlaps(streets)
 
-buildings = rotate(buildings, rotation_deg=10)
-streets = rotate(streets, rotation_deg=10)
-
+# Save data
 buildings.to_file("philadelphia_buildings.geojson", driver="GeoJSON")
-streets.to_file("philadelphia_streets.geojson", driver="GeoJSON")
 
-print(f"Downloaded {len(buildings)} buildings, {len(streets)} streets")
+print(f"Downloaded {len(buildings)} buildings")
 print(f"Categories: {get_category_summary(buildings)}")
 
 # %%
 # Plot results
-fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+fig, axes = plt.subplots(1, 2, figsize=(16, 8))
 
 # Color scheme from virtual_philly.ipynb
 colors = {
@@ -62,18 +75,12 @@ for category, color in colors.items():
     if len(subset) > 0:
         subset.plot(ax=axes[0], color=color, edgecolor='black', linewidth=0.2)
 axes[0].set_title('Buildings by Category')
+axes[0].set_aspect('equal')
 
-# Buildings + Streets
-for category, color in colors.items():
-    subset = buildings[buildings['category'] == category]
-    if len(subset) > 0:
-        subset.plot(ax=axes[1], color=color, edgecolor='black', linewidth=0.2)
-streets.plot(ax=axes[1], color='black', linewidth=0.5)
-axes[1].set_title('Buildings and Streets')
-
-# Streets only
-streets.plot(ax=axes[2], color='black', linewidth=0.5)
-axes[2].set_title('Streets Only')
+# All buildings overview
+buildings.plot(ax=axes[1], color='lightgray', edgecolor='black', linewidth=0.2)
+axes[1].set_title('All Buildings')
+axes[1].set_aspect('equal')
 
 plt.tight_layout()
 plt.show()
