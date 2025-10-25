@@ -18,6 +18,7 @@ import pandas as pd
 import osmnx as ox
 from shapely.affinity import rotate
 from shapely.geometry import box
+from shapely.affinity import rotate as shapely_rotate
 from typing import Tuple, List, Optional, Union
 import warnings
 
@@ -609,7 +610,7 @@ def rotate(gdf: gpd.GeoDataFrame, rotation_deg: float = 0.0, origin: Union[str, 
     # Rotate all geometries around the same point
     if rotation_deg != 0:
         result.geometry = result.geometry.apply(
-            lambda geom: rotate(geom, rotation_deg, origin=origin_coords)
+            lambda geom: shapely_rotate(geom, rotation_deg, origin=origin_coords)
         )
     
     return result
