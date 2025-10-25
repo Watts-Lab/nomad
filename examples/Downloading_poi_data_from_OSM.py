@@ -19,23 +19,16 @@
 # Download buildings and streets from OpenStreetMap, visualize them, and optionally rotate geometries for alignment.
 
 # %%
-# %load_ext autoreload
-# %autoreload 2
-
-# %%
 import pandas as pd
 import geopandas as gpd
 import matplotlib.pyplot as plt
-from nomad.map_utils import (
-    download_osm_buildings, download_osm_streets, rotate, remove_overlaps,
-    get_category_summary, get_subtype_summary, get_osm_type_summary
-)
+from nomad.map_utils import download_osm_buildings, download_osm_streets, rotate, remove_overlaps, get_category_summary, get_subtype_summary, get_osm_type_summary
 
 # %%
 bbox = (-75.19747721789525, 39.931392279878246, -75.14652246706544, 39.96336810441389)
 
 # Download, process, and save
-buildings = download_osm_buildings(bbox, schema='garden_city', clip=True, explode=True)
+buildings = download_osm_buildings(bbox, schema='garden_city', clip=True, explode=True, infer_building_types=True)
 streets = download_osm_streets(bbox, clip=True, explode=True)
 
 buildings = remove_overlaps(buildings)
@@ -48,6 +41,7 @@ buildings.to_file("philadelphia_buildings.geojson", driver="GeoJSON")
 streets.to_file("philadelphia_streets.geojson", driver="GeoJSON")
 
 print(f"Downloaded {len(buildings)} buildings, {len(streets)} streets")
+print(f"Categories: {get_category_summary(buildings)}")
 
 # %%
 # Plot results
@@ -68,5 +62,3 @@ axes[2].set_title('Streets Only')
 
 plt.tight_layout()
 plt.show()
-
-# %%
