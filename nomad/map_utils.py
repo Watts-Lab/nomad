@@ -16,7 +16,7 @@ Author: NOMAD Development Team
 import geopandas as gpd
 import pandas as pd
 import osmnx as ox
-import math
+import numpy as np
 from shapely.affinity import rotate
 from shapely.geometry import box
 from shapely.affinity import rotate as shapely_rotate
@@ -427,7 +427,7 @@ def download_osm_streets(bbox: Tuple[float, float, float, float],
     # Filter service roads
     if 'service' in streets['highway'].values:
         service_mask = streets['highway'] != 'service'
-    if 'service' in streets.columns:
+        if 'service' in streets.columns:
             service_mask |= ~streets['service'].isin(STREET_EXCLUDED_SERVICE_TYPES)
         streets = streets[service_mask]
     
@@ -683,93 +683,50 @@ def get_prominent_streets(streets_gdf: gpd.GeoDataFrame, k: int = 10) -> gpd.Geo
     return top_streets
 
 
-def segment_angles_and_lengths(geom):
-    """Yield (angle, length) for each segment in a LineString or MultiLineString."""
-    from shapely.geometry import LineString, MultiLineString
-    
-    if isinstance(geom, MultiLineString):
-        for g in geom.geoms:
-            yield from segment_angles_and_lengths(g)
-        return
-    
-    coords = list(geom.coords)
-    if len(coords) < 2:
-        return
-    
-    for i in range(len(coords) - 1):
-        start, end = coords[i], coords[i + 1]
-        dx = end[0] - start[0]
-        dy = end[1] - start[1]
-        length = math.sqrt(dx**2 + dy**2)
-        
-        if length > 0:
-            theta = math.atan2(dy, dx)  # raw angle
-            # Reduce angle mod π to force orientation (ignore directionality)
-            theta = ((theta + math.pi/2) % math.pi) - math.pi/2
-            yield theta, length
-
-
-def optimal_rotation(geoms):
-    """
-    Calculate optimal rotation angle to align streets with N-S/E-W axes.
-    
-    Uses the mathematical approach: minimize sum of sin²(2(θᵢ + φ)) weighted by segment lengths.
-    This is equivalent to maximizing sum of cos(4θᵢ + 4φ), which has closed-form solution.
-    
-    Parameters
-    ----------
-    geoms : list
-        List of Shapely LineString/MultiLineString geometries
-        
-    Returns
-    -------
-    float
-        Optimal rotation angle in radians
-    """
-    A = 0.0  # sum of w_i * cos(4*theta_i)
-    B = 0.0  # sum of w_i * sin(4*theta_i)
-    
-    for geom in geoms:
-        for theta, w in segment_angles_and_lengths(geom):
-            A += w * math.cos(4 * theta)
-            B += w * math.sin(4 * theta)
-    
-    if A == 0 and B == 0:
-        return 0.0
-    
-    return -0.25 * math.atan2(B, A)
-
-
-def rotate_streets_to_align(streets_gdf: gpd.GeoDataFrame, prominent_k: int = 10) -> Tuple[gpd.GeoDataFrame, float]:
-    """
-    Rotate streets to align prominent streets with N-S/E-W axes.
-    
-    Parameters
-    ----------
-    streets_gdf : gpd.GeoDataFrame
-        Street network GeoDataFrame
-    prominent_k : int, default=10
-        Number of prominent streets to use for alignment calculation
-        
-    Returns
-    -------
-    Tuple[gpd.GeoDataFrame, float]
-        Rotated streets GeoDataFrame and rotation angle in degrees
-    """
+def rotate_streets_to_align(streets_gdf: gpd.GeoDataFrame, k: int = 200) -> Tuple[gpd.GeoDataFrame, float]:
     if len(streets_gdf) == 0:
         return streets_gdf.copy(), 0.0
     
-    # Get prominent streets for alignment calculation
-    prominent_streets = get_prominent_streets(streets_gdf, k=prominent_k)
+    # Get random non-highway streets
+    non_highway = streets_gdf[~streets_gdf['highway'].isin(['motorway', 'trunk', 'primary'])]
+    if len(non_highway) > k:
+        sample_streets = non_highway.sample(n=k)
+    else:
+        sample_streets = non_highway
     
-    # Calculate optimal rotation angle
-    rotation_rad = optimal_rotation(prominent_streets.geometry.tolist())
-    rotation_deg = math.degrees(rotation_rad)
+    # Extract all segment angles efficiently
+    all_coords = []
+    for geom in sample_streets.geometry:
+        if hasattr(geom, 'coords'):
+            all_coords.extend(list(geom.coords))
     
-    # Rotate all streets
+    if len(all_coords) < 2:
+        return streets_gdf.copy(), 0.0
+    
+    # Vectorized angle calculation
+    coords_array = np.array(all_coords)
+    dx = coords_array[1:, 0] - coords_array[:-1, 0]
+    dy = coords_array[1:, 1] - coords_array[:-1, 1]
+    mask = (dx != 0) | (dy != 0)
+    
+    if not np.any(mask):
+        return streets_gdf.copy(), 0.0
+    
+    angles = np.arctan2(dy[mask], dx[mask])
+    angles = ((angles + np.pi/2) % np.pi) - np.pi/2
+    
+    # Calculate rotation
+    A, B = np.sum(np.cos(4 * angles)), np.sum(np.sin(4 * angles))
+    rotation_rad = -0.25 * np.arctan2(B, A)
+    rotation_deg = np.degrees(rotation_rad)
+    
+    # Rotate all streets around common centroid
+    all_geoms = streets_gdf.geometry.union_all()
+    origin_coords = (all_geoms.centroid.x, all_geoms.centroid.y)
+    
     rotated_streets = streets_gdf.copy()
     rotated_streets.geometry = rotated_streets.geometry.apply(
-        lambda geom: shapely_rotate(geom, rotation_deg, origin='centroid')
+        lambda geom: shapely_rotate(geom, rotation_deg, origin=origin_coords)
     )
     
     return rotated_streets, rotation_deg
