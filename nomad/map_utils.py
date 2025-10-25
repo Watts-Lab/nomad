@@ -302,7 +302,8 @@ def download_osm_buildings(bbox: Tuple[float, float, float, float],
                           crs: str = DEFAULT_CRS, 
                           schema: str = DEFAULT_CATEGORY_SCHEMA, 
                           clip: bool = False,
-                          infer_building_types: bool = False) -> gpd.GeoDataFrame:
+                          infer_building_types: bool = False,
+                          explode: bool = False) -> gpd.GeoDataFrame:
     """
     Download and categorize buildings and parks from OpenStreetMap.
     
@@ -318,6 +319,8 @@ def download_osm_buildings(bbox: Tuple[float, float, float, float],
         Whether to clip features to exact bounding box
     infer_building_types : bool, default=False
         Whether to apply heuristics for building=yes cases
+    explode : bool, default=False
+        Whether to explode MultiPolygons/MultiLineStrings
         
     Returns
     -------
@@ -375,23 +378,29 @@ def download_osm_buildings(bbox: Tuple[float, float, float, float],
     
     # Combine only AFTER categorization to prevent parks from being misclassified as buildings
     if len(categorized_buildings) == 0 and len(categorized_parks) == 0:
-        return gpd.GeoDataFrame(columns=['osm_type', 'subtype', 'category', 'geometry'], crs=crs)
-    
-    if len(categorized_buildings) == 0:
-        return categorized_parks
+        result = gpd.GeoDataFrame(columns=['osm_type', 'subtype', 'category', 'geometry'], crs=crs)
+    elif len(categorized_buildings) == 0:
+        result = categorized_parks
     elif len(categorized_parks) == 0:
-        return categorized_buildings
+        result = categorized_buildings
     else:
-        return gpd.GeoDataFrame(
+        result = gpd.GeoDataFrame(
             pd.concat([categorized_buildings, categorized_parks], ignore_index=True),
             crs=crs
         )
+    
+    # Explode if requested
+    if explode and len(result) > 0:
+        result = result.explode(ignore_index=True)
+    
+    return result
 
 
 def download_osm_streets(bbox: Tuple[float, float, float, float], 
                         crs: str = DEFAULT_CRS, 
                         clip: bool = True,
-                        clip_to_gdf: Optional[gpd.GeoDataFrame] = None) -> gpd.GeoDataFrame:
+                        clip_to_gdf: Optional[gpd.GeoDataFrame] = None,
+                        explode: bool = False) -> gpd.GeoDataFrame:
     """Download street network from OpenStreetMap."""
     
     try:
@@ -442,6 +451,10 @@ def download_osm_streets(bbox: Tuple[float, float, float, float],
         # Clip to original bounding box
         streets = _clip_to_bbox(streets, bbox, crs)
     
+    # Explode if requested
+    if explode and len(streets) > 0:
+        streets = streets.explode(ignore_index=True)
+    
     return streets
 
 
@@ -479,6 +492,9 @@ def remove_overlaps(gdf: gpd.GeoDataFrame, exclude_categories: Optional[List[str
         return gdf.copy()
     
     result = gdf.copy().reset_index(drop=True)
+    
+    # Remove duplicates first (keep one copy of identical geometries)
+    result = result.drop_duplicates(subset=['geometry'])
     
     # If exclude_categories is specified, only process geometries not in those categories
     if exclude_categories is not None and 'category' in result.columns:
