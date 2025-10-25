@@ -268,7 +268,7 @@ def _download_osm_features(bbox: Tuple[float, float, float, float],
         Coordinate reference system
     clip : bool
         Whether to clip features to bounding box
-        
+    
     Returns
     -------
     gpd.GeoDataFrame
@@ -321,7 +321,7 @@ def download_osm_buildings(bbox: Tuple[float, float, float, float],
         Whether to apply heuristics for building=yes cases
     explode : bool, default=False
         Whether to explode MultiPolygons/MultiLineStrings
-        
+    
     Returns
     -------
     gpd.GeoDataFrame
@@ -425,7 +425,7 @@ def download_osm_streets(bbox: Tuple[float, float, float, float],
     # Filter service roads
     if 'service' in streets['highway'].values:
         service_mask = streets['highway'] != 'service'
-        if 'service' in streets.columns:
+    if 'service' in streets.columns:
             service_mask |= ~streets['service'].isin(STREET_EXCLUDED_SERVICE_TYPES)
         streets = streets[service_mask]
     
@@ -574,15 +574,9 @@ def _remove_overlaps_internal(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     return result
 
 
-def rotate_and_explode(gdf: gpd.GeoDataFrame, 
-                      rotation_deg: float = 0.0, 
-                      origin: Union[str, Tuple[float, float]] = 'centroid',
-                      clip_to_original_bounds: bool = False) -> gpd.GeoDataFrame:
+def rotate(gdf: gpd.GeoDataFrame, rotation_deg: float = 0.0, origin: Union[str, Tuple[float, float]] = 'centroid') -> gpd.GeoDataFrame:
     """
-    Rotate and explode geometries for spatial analysis.
-    
-    This function rotates all geometries around a single point and explodes
-    MultiPolygons/MultiLineStrings into individual geometries.
+    Rotate geometries around a single point.
     
     Parameters
     ----------
@@ -592,19 +586,11 @@ def rotate_and_explode(gdf: gpd.GeoDataFrame,
         Rotation angle in degrees (positive = counterclockwise)
     origin : Union[str, Tuple[float, float]], default='centroid'
         Rotation origin point. Can be 'centroid' or (x, y) coordinates
-    clip_to_original_bounds : bool, default=False
-        Whether to clip rotated geometries to original bounds
         
     Returns
     -------
     gpd.GeoDataFrame
-        Rotated and exploded geometries
-        
-    Notes
-    -----
-    - All geometries are rotated around the same point for consistency
-    - MultiPolygons/MultiLineStrings are exploded into individual geometries
-    - Original CRS is preserved
+        Rotated geometries
     """
     if len(gdf) == 0:
         return gdf.copy()
@@ -625,21 +611,6 @@ def rotate_and_explode(gdf: gpd.GeoDataFrame,
         result.geometry = result.geometry.apply(
             lambda geom: rotate(geom, rotation_deg, origin=origin_coords)
         )
-    
-    # Explode MultiPolygons/MultiLineStrings
-    result = result.explode(ignore_index=True)
-    
-    # Clip to original bounds if requested
-    if clip_to_original_bounds:
-        original_bounds = gdf.total_bounds
-        clip_box = box(original_bounds[0], original_bounds[1], 
-                      original_bounds[2], original_bounds[3])
-        clip_gdf = gpd.GeoDataFrame([1], geometry=[clip_box], crs=result.crs)
-        
-        clipped = result.intersection(clip_gdf.geometry.iloc[0])
-        valid_mask = ~clipped.is_empty
-        result = result[valid_mask].copy()
-        result.geometry = clipped[valid_mask]
     
     return result
 
