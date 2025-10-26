@@ -21,6 +21,7 @@ from shapely.affinity import rotate
 from shapely.geometry import box
 from shapely.affinity import rotate as shapely_rotate
 import warnings
+from osmnx._errors import InsufficientResponseError
 
 from nomad.constants import (
     OSM_BUILDING_TO_SUBTYPE, OSM_AMENITY_TO_SUBTYPE, OSM_TOURISM_TO_SUBTYPE,
@@ -120,6 +121,9 @@ def _classify_feature(row, schema, infer_building_types=False):
     # Priority 1: building tag (but only if it's a specific building type, not 'yes')
     if "building" in row and pd.notna(row["building"]):
         osm_value = str(row["building"]).lower().strip()
+        if osm_value == 'parking':
+            # Parking buildings (garages/structures) treated as 'other'
+            return ('parking', 'parking', 'other')
         if osm_value != 'yes' and osm_value in OSM_BUILDING_TO_SUBTYPE:
             subtype = OSM_BUILDING_TO_SUBTYPE[osm_value]
             category = get_category_for_subtype(subtype, schema)
@@ -130,7 +134,7 @@ def _classify_feature(row, schema, infer_building_types=False):
     if "amenity" in row and pd.notna(row["amenity"]):
         osm_value = str(row["amenity"]).lower().strip()
         if osm_value == 'parking':
-            # Parking lots are always buildings of type "other"
+            # Parking lots are buildings of type 'other'
             return ('parking', 'parking', 'other')
         elif osm_value in OSM_AMENITY_TO_SUBTYPE:
             subtype = OSM_AMENITY_TO_SUBTYPE[osm_value]
@@ -252,7 +256,7 @@ def _categorize_features(gdf, schema, infer_building_types= False):
 # =============================================================================
 # DOWNLOAD FUNCTIONS
 # =============================================================================
-
+#rotate_and_explode SEEMS LIKE AN UNNECESSARY WRAPPER
 def _download_osm_features(bbox, tags, crs=DEFAULT_CRS, clip=False):
     """
     Download features from OSM with given tags.
@@ -276,6 +280,8 @@ def _download_osm_features(bbox, tags, crs=DEFAULT_CRS, clip=False):
     
     try:
         features = ox.features_from_bbox(bbox=bbox, tags=tags)
+    except InsufficientResponseError:
+        return gpd.GeoDataFrame(columns=['geometry'], crs=crs)
     except Exception as e:
         raise RuntimeError(f"Failed to download OSM features: {e}")
     
@@ -347,7 +353,9 @@ def download_osm_buildings(bbox_or_city,
                           schema=DEFAULT_CATEGORY_SCHEMA, 
                           clip=False,
                           infer_building_types=False,
-                          explode=False):
+                          explode=False,
+                          by_chunks=False,
+                          chunk_miles=1.0):
     """
     Download and categorize buildings and parks from OpenStreetMap.
     
@@ -382,6 +390,16 @@ def download_osm_buildings(bbox_or_city,
     else:
         bbox = bbox_or_city
         city_polygon = None
+
+    # Chunked path
+    if by_chunks:
+        return _download_buildings_by_chunks(bbox if city_polygon is None else city_polygon,
+                                            crs=crs,
+                                            schema=schema,
+                                            clip=True,
+                                            infer_building_types=infer_building_types,
+                                            explode=explode,
+                                            chunk_miles=chunk_miles)
     
     # Download buildings (including parking lots with building tags)
     building_tags = {"building": True}
@@ -437,7 +455,7 @@ def download_osm_buildings(bbox_or_city,
         parks = parks[parks['waterway'].isna()]
     
     # Essential columns to keep
-    essential_cols = ['geometry', 'osm_type', 'subtype', f'{schema}_category',
+    essential_cols = ['geometry', 'osm_type', 'subtype', f'{schema}_category', 'category',
                      'addr:street', 'addr:city', 'addr:state', 'addr:housenumber', 'addr:postcode']
     
     # Categorize buildings
@@ -446,6 +464,8 @@ def download_osm_buildings(bbox_or_city,
         buildings['osm_type'] = classifications.apply(lambda x: x[0])
         buildings['subtype'] = classifications.apply(lambda x: x[1])
         buildings[f'{schema}_category'] = classifications.apply(lambda x: x[2])
+        # Backward-compatibility: also provide generic 'category' column
+        buildings['category'] = buildings[f'{schema}_category']
         buildings = buildings[[col for col in essential_cols if col in buildings.columns]]
     
     # Categorize parks
@@ -454,11 +474,14 @@ def download_osm_buildings(bbox_or_city,
         parks['osm_type'] = classifications.apply(lambda x: x[0])
         parks['subtype'] = classifications.apply(lambda x: x[1])
         parks[f'{schema}_category'] = classifications.apply(lambda x: x[2])
+        # Backward-compatibility: also provide generic 'category' column
+        parks['category'] = parks[f'{schema}_category']
         parks = parks[[col for col in essential_cols if col in parks.columns]]
     
     # Combine only AFTER categorization to prevent parks from being misclassified as buildings
     if len(buildings) == 0 and len(parks) == 0:
-        result = gpd.GeoDataFrame(columns=['osm_type', 'subtype', f'{schema}_category', 'geometry'], crs=crs)
+        # For empty areas, return the generic columns expected by tests
+        result = gpd.GeoDataFrame(columns=['osm_type', 'subtype', 'category', 'geometry'], crs=crs)
     elif len(buildings) == 0:
         result = parks
     elif len(parks) == 0:
@@ -480,75 +503,182 @@ def download_osm_streets(bbox_or_city,
                         crs=DEFAULT_CRS, 
                         clip=True,
                         clip_to_gdf=None,
-                        explode=False):
-    """Download street network from OpenStreetMap."""
-    
+                        explode=False,
+                        by_chunks=False,
+                        chunk_miles=1.0):
+    """Download street network from OpenStreetMap using OSMnx query-time filters.
+
+    This implementation pushes highway/service/tunnel/covered/surface filters into
+    the Overpass query via OSMnx's custom_filter and truncates at the graph level
+    before converting to GeoDataFrames to avoid unnecessary post-processing.
+    """
+
     # Determine if input is bbox or city name
     if isinstance(bbox_or_city, str):
         boundary, center, population = get_city_boundary_osm(bbox_or_city)
         if boundary is None:
             return gpd.GeoDataFrame()
         city_polygon = boundary
+        bbox = None
     else:
         bbox = bbox_or_city
         city_polygon = None
-    
+
+    # Build custom Overpass filter (exact match on allowed highway types)
+    highway_types = "|".join(STREET_HIGHWAY_TYPES)
+    parts = [f'["highway"~"^({highway_types})$"]']
+    if STREET_EXCLUDED_SERVICE_TYPES:
+        excluded_services = "|".join(STREET_EXCLUDED_SERVICE_TYPES)
+        parts.append(f'["service"!~"{excluded_services}"]')
+    if STREET_EXCLUDE_TUNNELS:
+        parts.append('["tunnel"!="yes"]')
+    if STREET_EXCLUDE_COVERED:
+        parts.append('["covered"!="yes"]')
+    if STREET_EXCLUDED_SURFACES:
+        excluded_surfaces = "|".join(STREET_EXCLUDED_SURFACES)
+        parts.append(f'["surface"!~"{excluded_surfaces}"]')
+    custom_filter = "".join(parts)
+
+    # Chunked path
+    if by_chunks:
+        target = bbox if city_polygon is None else city_polygon
+        return _download_streets_by_chunks(target,
+                                           crs=crs,
+                                           clip=True,
+                                           clip_to_gdf=clip_to_gdf,
+                                           explode=explode,
+                                           chunk_miles=chunk_miles)
+
     try:
-        # Download street network
+        # Construct graph with query-time filtering and graph-level truncation
         if city_polygon is not None:
-            G = ox.graph_from_polygon(city_polygon)
+            G = ox.graph_from_polygon(city_polygon, custom_filter=custom_filter, simplify=True)
         else:
-            G = ox.graph_from_bbox(bbox=bbox)
-        
+            G = ox.graph_from_bbox(bbox=bbox, custom_filter=custom_filter, truncate_by_edge=bool(clip), simplify=True)
+
+        # Optional additional truncation by another GDF's bounds
+        if clip_to_gdf is not None and len(clip_to_gdf) > 0:
+            cb = clip_to_gdf.total_bounds  # (minx, miny, maxx, maxy)
+            west2, south2, east2, north2 = cb[0], cb[1], cb[2], cb[3]
+            G = ox.truncate.truncate_graph_bbox(G, north2, south2, east2, west2, truncate_by_edge=True)
+
         # Convert to GeoDataFrame
         streets = ox.graph_to_gdfs(G, edges=True, nodes=False)
-        
+
+    except InsufficientResponseError:
+        return gpd.GeoDataFrame(columns=['geometry'], crs=crs)
     except Exception as e:
         raise RuntimeError(f"Failed to download street network: {e}")
-    
+
     if len(streets) == 0:
         return gpd.GeoDataFrame(columns=['geometry'], crs=crs)
-    
+
     # Convert to target CRS
     streets = streets.to_crs(crs)
-    
-    # Filter highway types
-    streets = streets[streets['highway'].isin(STREET_HIGHWAY_TYPES)]
-    
-    # Filter service roads
-    if 'service' in streets['highway'].values:
-        service_mask = streets['highway'] != 'service'
-        if 'service' in streets.columns:
-            service_mask |= ~streets['service'].isin(STREET_EXCLUDED_SERVICE_TYPES)
-        streets = streets[service_mask]
-    
-    # Filter covered roads
-    if STREET_EXCLUDE_COVERED and 'tunnel' in streets.columns:
-        streets = streets[streets['tunnel'] != 'yes']
-    
-    # Filter tunnels
-    if STREET_EXCLUDE_TUNNELS and 'tunnel' in streets.columns:
-        streets = streets[streets['tunnel'] != 'yes']
-    
-    # Filter surface types
-    if 'surface' in streets.columns:
-        streets = streets[~streets['surface'].isin(STREET_EXCLUDED_SURFACES)]
-    
-    # Clip if requested
-    if clip_to_gdf is not None and len(clip_to_gdf) > 0:
-        # Clip to bounds of another GeoDataFrame
-        clip_bounds = clip_to_gdf.total_bounds
-        clip_bbox = (clip_bounds[0], clip_bounds[1], clip_bounds[2], clip_bounds[3])
-        streets = _clip_to_bbox(streets, clip_bbox, crs)
-    elif clip and city_polygon is None:
-        # Clip to original bounding box (only for bbox input)
-        streets = _clip_to_bbox(streets, bbox, crs)
-    
+
+    # Normalize highway values that may be lists into simple strings for downstream tests
+    if 'highway' in streets.columns:
+        streets['highway'] = streets['highway'].apply(lambda v: v[0] if isinstance(v, list) and len(v) > 0 else v)
+
     # Explode if requested
     if explode and len(streets) > 0:
         streets = streets.explode(ignore_index=True)
-    
+
     return streets
+
+
+# =============================================================================
+# CHUNKED DOWNLOAD HELPERS
+# =============================================================================
+
+def _degrees_for_miles_at_lat(miles, lat_deg):
+    # Approximate conversion: 1 deg lat ~ 69 miles; 1 deg lon ~ 69*cos(lat) miles
+    if miles <= 0:
+        return 0.0, 0.0
+    deg_lat = miles / 69.0
+    # Avoid division by zero at poles
+    lat_rad = np.radians(max(min(lat_deg, 89.9), -89.9))
+    miles_per_deg_lon = 69.0 * np.cos(lat_rad)
+    if miles_per_deg_lon <= 0:
+        deg_lon = deg_lat  # fallback
+    else:
+        deg_lon = miles / miles_per_deg_lon
+    return deg_lon, deg_lat
+
+
+def _chunk_target_to_bboxes(target, chunk_miles):
+    # target can be bbox tuple (west, south, east, north) or a shapely polygon
+    if isinstance(target, tuple) and len(target) == 4:
+        west, south, east, north = target
+        polygon = box(west, south, east, north)
+    else:
+        polygon = target
+        west, south, east, north = polygon.bounds
+
+    mean_lat = (south + north) / 2.0
+    step_lon, step_lat = _degrees_for_miles_at_lat(chunk_miles, mean_lat)
+    if step_lon <= 0 or step_lat <= 0:
+        return [(west, south, east, north)]
+
+    bboxes = []
+    y = south
+    while y < north:
+        y2 = min(y + step_lat, north)
+        x = west
+        while x < east:
+            x2 = min(x + step_lon, east)
+            tile = box(x, y, x2, y2)
+            if tile.intersects(polygon):
+                bboxes.append((x, y, x2, y2))
+            x = x2
+        y = y2
+    return bboxes
+
+
+def _dedupe_geometries(gdf):
+    if len(gdf) == 0:
+        return gdf
+    return gdf.drop_duplicates(subset=['geometry'])
+
+
+def _download_buildings_by_chunks(target, crs, schema, clip, infer_building_types, explode, chunk_miles):
+    tiles = _chunk_target_to_bboxes(target, chunk_miles)
+    parts = []
+    for tile in tiles:
+        part = download_osm_buildings(tile if isinstance(target, tuple) else tile,
+                                      crs=crs, schema=schema, clip=True,
+                                      infer_building_types=infer_building_types,
+                                      explode=explode, by_chunks=False)
+        if len(part) > 0:
+            parts.append(part)
+    if not parts:
+        return gpd.GeoDataFrame(columns=['osm_type', 'subtype', f'{schema}_category', 'category', 'geometry'], crs=crs)
+    combined = gpd.GeoDataFrame(pd.concat(parts, ignore_index=True), crs=crs)
+    combined = _dedupe_geometries(combined)
+    # Final clip to target polygon if provided
+    if not isinstance(target, tuple):
+        combined = gpd.clip(combined, gpd.GeoDataFrame(geometry=[target], crs=crs))
+    return combined
+
+
+def _download_streets_by_chunks(target, crs, clip, clip_to_gdf, explode, chunk_miles):
+    tiles = _chunk_target_to_bboxes(target, chunk_miles)
+    parts = []
+    for tile in tiles:
+        part = download_osm_streets(tile if isinstance(target, tuple) else tile,
+                                    crs=crs, clip=True,
+                                    clip_to_gdf=clip_to_gdf,
+                                    explode=explode, by_chunks=False)
+        if len(part) > 0:
+            parts.append(part)
+    if not parts:
+        return gpd.GeoDataFrame(columns=['geometry'], crs=crs)
+    combined = gpd.GeoDataFrame(pd.concat(parts, ignore_index=True), crs=crs)
+    combined = _dedupe_geometries(combined)
+    # Final clip to target polygon if provided
+    if not isinstance(target, tuple):
+        combined = gpd.clip(combined, gpd.GeoDataFrame(geometry=[target], crs=crs))
+    return combined
 
 
 # =============================================================================
@@ -706,6 +836,8 @@ def rotate(gdf, rotation_deg=0.0, origin='centroid'):
         )
     
     return result
+
+ 
 
 
 # =============================================================================

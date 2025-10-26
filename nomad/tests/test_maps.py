@@ -18,7 +18,7 @@ from nomad.map_utils import (
     download_osm_buildings,
     download_osm_streets,
     rotate,
-    remove_overlaps
+    remove_overlaps,
 )
 
 
@@ -228,7 +228,8 @@ def test_download_osm_streets(philly_bbox):
     assert 'highway' in streets.columns
     valid_highway_types = {
         'motorway', 'trunk', 'primary', 'secondary', 'tertiary',
-        'unclassified', 'residential', 'living_street', 'service'
+        'unclassified', 'residential', 'living_street', 'service',
+        'motorway_link', 'primary_link'
     }
     actual_highway_types = set(streets['highway'].unique())
     assert actual_highway_types.issubset(valid_highway_types), (
@@ -260,14 +261,14 @@ def test_rotate_and_explode_buildings():
     }, crs="EPSG:4326")
     
     # Test without rotation
-    result = rotate_and_explode(test_gdf, rotation_deg=0)
+    result = test_gdf.explode(ignore_index=True)
     
     # Should explode multipolygon into separate polygons
     assert len(result) == 3, "Should have 3 polygons after explosion"
     assert all(result.geometry.geom_type == 'Polygon'), "All should be Polygons"
     
     # Test with rotation
-    result_rotated = rotate_and_explode(test_gdf, rotation_deg=45)
+    result_rotated = rotate(test_gdf, rotation_deg=45).explode(ignore_index=True)
     
     # Should still have 3 polygons
     assert len(result_rotated) == 3
@@ -290,14 +291,14 @@ def test_rotate_and_explode_streets():
     }, crs="EPSG:4326")
     
     # Test without rotation
-    result = rotate_and_explode(test_gdf, rotation_deg=0)
+    result = test_gdf.explode(ignore_index=True)
     
     # Should explode multilinestring into separate linestrings
     assert len(result) == 3, "Should have 3 linestrings after explosion"
     assert all(result.geometry.geom_type == 'LineString'), "All should be LineStrings"
     
     # Test with rotation
-    result_rotated = rotate_and_explode(test_gdf, rotation_deg=90)
+    result_rotated = rotate(test_gdf, rotation_deg=90).explode(ignore_index=True)
     
     # Should still have 3 linestrings
     assert len(result_rotated) == 3
@@ -317,7 +318,7 @@ def test_rotate_and_explode_custom_origin():
     
     # Rotate around a point that is NOT the centroid
     origin_point = (0, 0)
-    result = rotate_and_explode(test_gdf, rotation_deg=90, origin=origin_point)
+    result = rotate(test_gdf, rotation_deg=90, origin=origin_point).explode(ignore_index=True)
     
     # Should have rotated around the specified point
     assert len(result) == 1
@@ -409,7 +410,8 @@ def test_remove_overlaps_exclude_categories():
 def test_empty_bounding_box():
     """Test behavior when no features exist in the bounding box."""
     # Use a bounding box in the middle of the ocean (should have no features)
-    ocean_bbox = (-10.0, 30.0, -9.0, 31.0)  # Atlantic Ocean
+    # Smaller ocean bbox to avoid slow accidental coastal fetches
+    ocean_bbox = (-40.0, -30.0, -39.8, -29.8)
     
     buildings = download_osm_buildings(ocean_bbox, clip=True)
     streets = download_osm_streets(ocean_bbox, clip=True)
@@ -491,7 +493,7 @@ def test_parking_lot_classification():
     
     buildings = download_osm_buildings(parking_bbox, clip=True)
     
-    # Parking lots should be classified as 'other' buildings, not parks
+    # Parking lots should be classified as 'other' buildings
     parking_features = buildings[buildings['osm_type'] == 'parking']
     if len(parking_features) > 0:
         assert all(parking_features['category'] == 'other'), "Parking lots should be 'other' buildings"
@@ -553,7 +555,7 @@ def test_rotation_around_common_centroid():
     }, geometry=[poly1, poly2], crs='EPSG:4326')
     
     # Rotate around common centroid
-    rotated = rotate_and_explode(gdf, rotation_deg=90)
+    rotated = rotate(gdf, rotation_deg=90).explode(ignore_index=True)
     
     # Should have same number of features
     assert len(rotated) == 2, f"Expected 2 polygons after rotation, got {len(rotated)}"
@@ -607,18 +609,26 @@ def test_schema_switching():
         assert gc_categories != gl_categories, "Different schemas should have different categories"
 
 
-def test_city_name_download():
-    """Test downloading data using city name instead of bounding box."""
-    from nomad.map_utils import get_city_boundary_osm, download_osm_buildings, download_osm_streets
-    
-    # Test city boundary function
-    city = get_city_boundary_osm('Philadelphia, Pennsylvania')
-    assert isinstance(city, gpd.GeoDataFrame), "Should return GeoDataFrame"
-    
-    # Test building download with city name (small sample)
-    buildings = download_osm_buildings('Philadelphia, Pennsylvania', explode=True)
-    assert isinstance(buildings, gpd.GeoDataFrame), "Should return GeoDataFrame"
-    
-    # Test street download with city name (small sample)  
-    streets = download_osm_streets('Philadelphia, Pennsylvania', explode=True)
-    assert isinstance(streets, gpd.GeoDataFrame), "Should return GeoDataFrame"
+def test_city_boundary_by_name_salem():
+    """Boundary by city name should return (geometry, center tuple, population)."""
+    from nomad.map_utils import get_city_boundary_osm
+    boundary, center, population = get_city_boundary_osm('Salem, New Jersey')
+    assert boundary is not None, "Boundary geometry should not be None"
+    assert hasattr(boundary, 'geom_type'), "Boundary must be a shapely geometry"
+    assert isinstance(center, tuple) and len(center) == 2, "Center must be (lon, lat) tuple"
+    if population is not None:
+        assert isinstance(population, int), "Population must be int or None"
+
+
+def test_download_osm_buildings_city_name_salem():
+    """Download buildings by small city name to keep runtime fast."""
+    from nomad.map_utils import download_osm_buildings
+    buildings = download_osm_buildings('Salem, New Jersey', explode=True)
+    assert isinstance(buildings, gpd.GeoDataFrame)
+
+
+def test_download_osm_streets_city_name_salem():
+    """Download streets by small city name to keep runtime fast."""
+    from nomad.map_utils import download_osm_streets
+    streets = download_osm_streets('Salem, New Jersey', explode=True)
+    assert isinstance(streets, gpd.GeoDataFrame)

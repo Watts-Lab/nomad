@@ -79,7 +79,7 @@ axes[2].set_title('Streets Only')
 axes[2].set_aspect('equal')
 
 plt.tight_layout()
-plt.show()
+plt.show(block=False)
 
 # %%
 ## Download geometries by City Name
@@ -139,4 +139,4 @@ axes[2].set_title('Salem Streets Only')
 axes[2].set_aspect('equal')
 
 plt.tight_layout()
-plt.show()
+plt.show(block=False)
