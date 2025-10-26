@@ -385,73 +385,74 @@ class City:
 
             return None # If no block found at the original, left, or below coordinates
 
-    # def get_street_graph(self):
-    #     """
-    #     Generates a street graph from the streets data, calculates the shortest paths between all pairs of nodes,
-    #     and computes a gravity DataFrame based on the inverse square of the shortest path lengths.
-
-    #     Add the following attributes to the City object:
-    #         self.street_graph (dict): A dictionary representing the street graph with coordinates as keys and lists of neighboring coordinates as values.
-    #         self.shortest_paths (dict): A dictionary containing the shortest paths between all pairs of nodes.
-    #         self.gravity (pd.DataFrame): A DataFrame indexed by origin and destination coordinates, containing gravity values based on the shortest path lengths.
-    #     """
-
-    #     self.street_graph = {}
-    #     for coords, _ in self.streets.items():
-    #         x, y = coords
-    #         neighbors = [
-    #             (x, y + 1),
-    #             (x, y - 1),
-    #             (x + 1, y),
-    #             (x - 1, y)
-    #         ]
-
-    #         self.street_graph[coords] = [neighbor for neighbor in neighbors if neighbor in self.streets]
-
-    #     G = nx.from_dict_of_lists(self.street_graph)
-    #     sp = dict(nx.all_pairs_shortest_path(G))
-    #     self.shortest_paths = {node: paths for node, paths in sp.items()}
-
-    #     data = [
-    #         {'origin': origin, 'dest': dest, 'gravity': (1 / (len(path) - 1) ** 2 if len(path) > 1 else 0)}
-    #         for origin, paths in sp.items()
-    #         for dest, path in paths.items()
-    #     ]
-    #     self.gravity = pd.DataFrame(data, columns=['origin', 'dest', 'gravity'])
-    #     self.gravity = self.gravity.set_index(['origin', 'dest'])
-
     def get_street_graph(self):
-        """Generate street graph with lazy path computation."""
-        
-        self.street_graph = {}
+        """
+        Generates a street graph from the streets data, calculates the shortest paths between all pairs of nodes,
+        and computes a gravity DataFrame based on the inverse square of the shortest path lengths.
 
+        Add the following attributes to the City object:
+            self.street_graph (dict): A dictionary representing the street graph with coordinates as keys and lists of neighboring coordinates as values.
+            self.shortest_paths (dict): A dictionary containing the shortest paths between all pairs of nodes.
+            self.gravity (pd.DataFrame): A DataFrame indexed by origin and destination coordinates, containing gravity values based on the shortest path lengths.
+        """
+
+        self.street_graph = {}
         for coords, _ in self.streets.items():
             x, y = coords
-            neighbors = [(x, y+1), (x, y-1), (x+1, y), (x-1, y)]
+            neighbors = [
+                (x, y + 1),
+                (x, y - 1),
+                (x + 1, y),
+                (x - 1, y)
+            ]
+
             self.street_graph[coords] = [neighbor for neighbor in neighbors if neighbor in self.streets]
 
-        # Store NetworkX graph for lazy computation
-        self._graph = nx.from_dict_of_lists(self.street_graph)
-        
-        # Use LRU cache for frequently accessed paths
-        @lru_cache(maxsize=10000)
-        def _cached_shortest_path(start, end):
-            try:
-                return nx.shortest_path(self._graph, start, end)
-            except nx.NetworkXNoPath:
-                return [start, end]
-        
-        self._get_path = _cached_shortest_path
-        
-        # Only compute lengths for gravity (as in your second method)
-        sp_lengths = dict(nx.all_pairs_shortest_path_length(self._graph))
-        data = [
-            {'origin': origin, 'dest': dest, 'gravity': (1 / length ** 2 if length > 0 else 0)}
-            for origin, dest_lengths in sp_lengths.items()
-            for dest, length in dest_lengths.items()
-        ]
+        G = nx.from_dict_of_lists(self.street_graph)
+        sp = dict(nx.all_pairs_shortest_path(G))
+        self.shortest_paths = {node: paths for node, paths in sp.items()}
 
-        self.gravity = pd.DataFrame(data, columns=['origin', 'dest', 'gravity']).set_index(['origin', 'dest'])  
+        data = [
+            {'origin': origin, 'dest': dest, 'gravity': (1 / (len(path) - 1) ** 2 if len(path) > 1 else 0)}
+            for origin, paths in sp.items()
+            for dest, path in paths.items()
+        ]
+        self.gravity = pd.DataFrame(data, columns=['origin', 'dest', 'gravity'])
+        self.gravity = self.gravity.set_index(['origin', 'dest'])
+
+    # def get_street_graph(self):
+    #     """Generate street graph with lazy path computation."""
+        
+    #     self.street_graph = {}
+
+    #     for coords, _ in self.streets.items():
+    #         x, y = coords
+    #         neighbors = [(x, y+1), (x, y-1), (x+1, y), (x-1, y)]
+    #         self.street_graph[coords] = [neighbor for neighbor in neighbors if neighbor in self.streets]
+
+    #     # Store NetworkX graph for lazy computation
+    #     self._graph = nx.from_dict_of_lists(self.street_graph)
+        
+    #     # Use LRU cache for frequently accessed paths
+    #     @lru_cache(maxsize=10000)
+    #     def _cached_shortest_path(start, end):
+    #         try:
+    #             return nx.shortest_path(self._graph, start, end)
+    #         except nx.NetworkXNoPath:
+    #             return [start, end]
+        
+    #     self._get_path = _cached_shortest_path
+        
+    #     # Only compute lengths for gravity
+    #     sp_lengths = dict(nx.all_pairs_shortest_path_length(self._graph))
+
+    #     data = [
+    #         {'origin': origin, 'dest': dest, 'gravity': (1 / length ** 2 if length > 0 else 0)}
+    #         for origin, dest_lengths in sp_lengths.items()
+    #         for dest, length in dest_lengths.items()
+    #     ]
+
+    #     self.gravity = pd.DataFrame(data, columns=['origin', 'dest', 'gravity']).set_index(['origin', 'dest'])
 
     def save(self, filename):
         """
@@ -677,37 +678,189 @@ class RandomCityGenerator:
         return npr.choice(['home', 'work', 'retail', 'park'], 
                           p=[self.home_ratio, self.work_ratio, self.retail_ratio, self.park_ratio])
     
-    def fill_block(self, block_x, block_y, block_type):
-        """Fills an entire block with buildings."""
-        available_space = np.argwhere(~self.occupied[(block_x + 1):(block_x + self.street_spacing), 
-                                                     (block_y + 1):(block_y + self.street_spacing)])
+    # def fill_block(self, block_x, block_y, block_type):
+    #     """Fills an entire block with buildings."""
+    #     available_space = np.argwhere(~self.occupied[(block_x + 1):(block_x + self.street_spacing), 
+    #                                                  (block_y + 1):(block_y + self.street_spacing)])
         
-        if available_space.size == 0:
-            return  # No available space in this block
+    #     if available_space.size == 0:
+    #         return  # No available space in this block
 
-        attempts = 0  # Termination condition to prevent infinite loops
-        max_attempts = available_space.shape[0] * 2
+    #     attempts = 0  # Termination condition to prevent infinite loops
+    #     max_attempts = available_space.shape[0] * 2
         
-        while available_space.size > 0 and attempts < max_attempts:
-            size = self.building_sizes[block_type][npr.randint(len(self.building_sizes[block_type]))]
-            npr.shuffle(available_space)  # Randomize placement within the block
-            for x_offset, y_offset in available_space.tolist():
-                x, y = block_x + 1 + x_offset, block_y + 1 + y_offset
-                if x + size[0] <= block_x + self.street_spacing and y + size[1] <= block_y + self.street_spacing and \
-                   np.all(self.occupied[x:(x + size[0]), y:(y + size[1])] == False):
-                    door = self.get_adjacent_street((x, y))
-                    if door and self.streets[door]:
+    #     while available_space.size > 0 and attempts < max_attempts:
+    #         size = self.building_sizes[block_type][npr.randint(len(self.building_sizes[block_type]))]
+    #         npr.shuffle(available_space)  # Randomize placement within the block
+    #         for x_offset, y_offset in available_space.tolist():
+    #             x, y = block_x + 1 + x_offset, block_y + 1 + y_offset
+    #             if x + size[0] <= block_x + self.street_spacing and y + size[1] <= block_y + self.street_spacing and \
+    #                np.all(self.occupied[x:(x + size[0]), y:(y + size[1])] == False):
+    #                 door = self.get_adjacent_street((x, y))
+    #                 if door and self.streets[door]:
+    #                     try:
+    #                         self.city.add_building(building_type=block_type, door=door,
+    #                                                bbox=box(x, y, x + size[0], y + size[1]))
+    #                     except Exception as e:
+    #                         print(f"Skipping building placement at ({x}, {y}) due to error: {e}")
+    #                     self.occupied[x:x + size[0], y:y + size[1]] = True  # Mark occupied
+    #                     occupied_positions = np.array([(x_offset + dx, y_offset + dy) for dx in range(size[0]) for dy in range(size[1])])
+    #                     mask = ~np.any(np.all(available_space[:, None, :] == occupied_positions, axis=2), axis=1)
+    #                     available_space = available_space[mask]
+    #                     break  # Place one building at a time and reattempt filling
+    #         attempts += 1  # Increment attempt counter
+
+    def fill_block(self, block_x, block_y, block_type):
+        """Fill block using spiral pattern starting from bottom-left, going counter-clockwise inward."""
+        # Calculate block boundaries
+        start_x = block_x + 1
+        start_y = block_y + 1
+        end_x = min(block_x + self.street_spacing, self.width)
+        end_y = min(block_y + self.street_spacing, self.height)
+        
+        block_width = end_x - start_x
+        block_height = end_y - start_y
+        
+        if block_width <= 0 or block_height <= 0:
+            return
+        
+        local_occupied = np.zeros((block_width, block_height), dtype=bool)
+        
+        layer = 0 # spiral will go layer by layer towards center
+        max_layer = min(block_width, block_height) // 2
+        
+        sizes = self.building_sizes[block_type]
+        
+        while layer < max_layer:
+            # current layer boundaries
+            left = layer
+            right = block_width - 1 - layer
+            bottom = layer  
+            top = block_height - 1 - layer
+            
+            if left > right or bottom > top:
+                break
+            
+            positions = []
+            
+            # Bottom edge: left to right
+            if bottom <= top:
+                for x in range(left, right + 1):
+                    positions.append((x, bottom))
+            
+            # Right edge: bottom+1 to top  
+            if left < right:
+                for y in range(bottom + 1, top + 1):
+                    positions.append((right, y))
+            
+            # Top edge: right-1 to left (if there's more than one row)
+            if bottom < top and right >= left:
+                for x in range(right - 1, left - 1, -1):
+                    positions.append((x, top))
+            
+            # Left edge: top-1 to bottom+1 (if there's more than one column)
+            if left < right and top > bottom:
+                for y in range(top - 1, bottom, -1):
+                    positions.append((left, y))
+            
+            for local_x, local_y in positions:
+                if local_occupied[local_x, local_y]:
+                    continue  # Already occupied
+                
+
+                attempted_sizes = set()
+
+                for attempt in range(min(3, len(sizes))):
+                    available_sizes = [s for s in sizes if s not in attempted_sizes]
+                    if not available_sizes:
+                        break
+                    size = available_sizes[npr.randint(len(available_sizes))]
+                    attempted_sizes.add(size)
+
+                    building_width, building_height = size
+                    
+                    # check building fits in block
+                    if (local_x + building_width > block_width or 
+                        local_y + building_height > block_height):
+                        continue
+                    
+                    # check if area is free
+                    area_slice = local_occupied[local_x:local_x + building_width, 
+                                              local_y:local_y + building_height]
+                    if np.any(area_slice):
+                        continue  # Area occupied
+                    
+                    # Convert to global coordinates
+                    global_x = start_x + local_x
+                    global_y = start_y + local_y
+                    
+                    # Find door
+                    door = self._find_door(global_x, global_y, building_width, building_height)
+                    
+                    if door:
                         try:
-                            self.city.add_building(building_type=block_type, door=door,
-                                                   bbox=box(x, y, x + size[0], y + size[1]))
-                        except Exception as e:
-                            print(f"Skipping building placement at ({x}, {y}) due to error: {e}")
-                        self.occupied[x:x + size[0], y:y + size[1]] = True  # Mark occupied
-                        occupied_positions = np.array([(x_offset + dx, y_offset + dy) for dx in range(size[0]) for dy in range(size[1])])
-                        mask = ~np.any(np.all(available_space[:, None, :] == occupied_positions, axis=2), axis=1)
-                        available_space = available_space[mask]
-                        break  # Place one building at a time and reattempt filling
-            attempts += 1  # Increment attempt counter
+                            # Place building
+                            self.city.add_building(
+                                building_type=block_type,
+                                door=door,
+                                bbox=box(global_x, global_y, 
+                                       global_x + building_width, 
+                                       global_y + building_height)
+                            )
+                            
+                            # Mark area as occupied (both local and global)
+                            local_occupied[local_x:local_x + building_width, 
+                                         local_y:local_y + building_height] = True
+                            self.occupied[global_x:global_x + building_width,
+                                        global_y:global_y + building_height] = True
+                            
+                            break  # Successfully placed, move to next position
+                            
+                        except Exception:
+                            continue  # Try next size or position
+            layer += 1
+
+    def _find_door(self, x, y, width, height):
+        # Check perimeter positions - prioritize based on proximity to block edge
+        door_candidates = []
+        
+        # Left side (higher priority if near block edge)
+        if x > 0:
+            for dy in range(height):
+                door_pos = (x - 1, y + dy)
+                if (0 <= door_pos[0] < self.width and 
+                    0 <= door_pos[1] < self.height and 
+                    self.streets[door_pos[0], door_pos[1]]):
+                    door_candidates.append(door_pos)
+        
+        # Bottom side
+        if y > 0:
+            for dx in range(width):
+                door_pos = (x + dx, y - 1)
+                if (0 <= door_pos[0] < self.width and 
+                    0 <= door_pos[1] < self.height and 
+                    self.streets[door_pos[0], door_pos[1]]):
+                    door_candidates.append(door_pos)
+        
+        # Right side
+        if x + width < self.width:
+            for dy in range(height):
+                door_pos = (x + width, y + dy)
+                if (0 <= door_pos[0] < self.width and 
+                    0 <= door_pos[1] < self.height and 
+                    self.streets[door_pos[0], door_pos[1]]):
+                    door_candidates.append(door_pos)
+        
+        # Top side
+        if y + height < self.height:
+            for dx in range(width):
+                door_pos = (x + dx, y + height)
+                if (0 <= door_pos[0] < self.width and 
+                    0 <= door_pos[1] < self.height and 
+                    self.streets[door_pos[0], door_pos[1]]):
+                    door_candidates.append(door_pos)
+        
+        return door_candidates[0] if door_candidates else None
     
     def get_adjacent_street(self, location):
         """Finds the closest predefined street to assign as the door, ensuring it’s within bounds."""
@@ -734,21 +887,21 @@ class RandomCityGenerator:
             block_type = self.get_block_type(block_x, block_y)
             self.fill_block(block_x, block_y, block_type)
     
-    # def generate_city(self):
-    #     """Generates a systematically structured city where blocks are fully occupied with buildings."""
-    #     self.place_buildings_in_blocks()
-    #     self.city.get_street_graph()
-    #     return self.city if len(self.city.buildings) > 0 else None
-
-    def generate_city(self, compute_graph=False):
-        """Generate city with optional street graph computation."""
+    def generate_city(self):
+        """Generates a systematically structured city where blocks are fully occupied with buildings."""
         self.place_buildings_in_blocks()
-        
-        # Only compute street graph if explicitly requested
-        if compute_graph:
-            self.city.get_street_graph()
-        
+        self.city.get_street_graph()
         return self.city if len(self.city.buildings) > 0 else None
+
+    # def generate_city(self, compute_graph=False):
+    #     """Generate city with optional street graph computation."""
+    #     self.place_buildings_in_blocks()
+        
+    #     # Only compute street graph if explicitly requested
+    #     if compute_graph:
+    #         self.city.get_street_graph()
+        
+    #     return self.city if len(self.city.buildings) > 0 else None
 
 # =============================================================================
 # AUXILIARY METHODS
