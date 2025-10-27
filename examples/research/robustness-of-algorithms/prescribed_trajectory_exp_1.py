@@ -71,9 +71,9 @@ destinations.to_csv("exp_1_destinations_unbalanced.csv", index=False)
 # This could be in a json or yaml and should be passable to a Population object.
 
 # %%
-# option 1
-N_reps = 35
-sparsity_samples = 50
+# option 1 (reduced for quick demo run)
+N_reps = 2
+sparsity_samples = 3
 config = dict(
     dt = 0.5,
     N = N_reps*sparsity_samples,
@@ -100,9 +100,9 @@ config = dict(
 with open('config_low_ha.json', 'w', encoding='utf-8') as f:
     json.dump(config, f, ensure_ascii=False, indent=4)
 
-# option 2
-N_reps = 60
-sparsity_samples = 40
+# option 2 (reduced for quick demo run)
+N_reps = 2
+sparsity_samples = 3
 config_2 = dict(
     dt = 0.5,
     N = N_reps*sparsity_samples,
@@ -127,7 +127,7 @@ config_2 = dict(
     )
 )
 with open('config_high_ha.json', 'w', encoding='utf-8') as f:
-    json.dump(config, f, ensure_ascii=False, indent=4)
+    json.dump(config_2, f, ensure_ascii=False, indent=4)
 
 # %% [markdown]
 # ## Generate trajectories
