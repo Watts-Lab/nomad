@@ -76,3 +76,37 @@ def test_from_geodataframes_roundtrip_nonsquare(tmp_path):
     assert len(s1) == len(s2)
 
 
+def test_shortest_path():
+    rcg = RandomCityGenerator(width=10, height=10, street_spacing=5, seed=1)
+    city = rcg.generate_city()
+    
+    # Test with valid street coordinates
+    start_coord = (0, 0)
+    end_coord = (5, 5)
+    path = city.get_shortest_path(start_coord, end_coord)
+    assert isinstance(path, list)
+    assert len(path) > 0
+    assert path[0] == start_coord
+    assert path[-1] == end_coord
+    
+    # Test with non-street coordinates (should raise ValueError)
+    try:
+        invalid_coord = (100, 100)  # Out of bounds
+        city.get_shortest_path(start_coord, invalid_coord)
+        assert False, "Expected ValueError for out-of-bounds coordinates"
+    except ValueError:
+        pass
+
+    # Test with non-street block (building)
+    building_coords = None
+    for idx, row in city.buildings_gdf.iterrows():
+        building_coords = (int(row['door_cell_x']), int(row['door_cell_y']))
+        break
+    if building_coords:
+        try:
+            city.get_shortest_path(start_coord, building_coords)
+            assert False, "Expected ValueError for non-street block"
+        except ValueError:
+            pass
+
+
