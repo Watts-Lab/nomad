@@ -30,7 +30,7 @@ from pprint import pprint
 
 import nomad.io.base as loader
 import nomad.city_gen as cg
-from nomad.city_gen import City, Building, Street
+from nomad.city_gen import City
 import nomad.traj_gen as tg
 from nomad.traj_gen import Agent, Population
 import nomad.stop_detection.dbscan as DBSCAN
@@ -53,8 +53,8 @@ city.add_building(building_type='park', door=(13, 11), geometry=box(9, 9, 13, 13
 # add a home
 city.add_building(building_type='home', door=(8, 8), blocks=[(7, 7), (7, 8)])
 
-print("Attributes for building 'h-x8-y8':")
-pprint(city.buildings['h-x8-y8'].__dict__)
+print("Row for building 'h-x8-y8' in buildings_gdf:")
+print(city.buildings_gdf.loc['h-x8-y8'][['id','type','door_x','door_y','size']])
 
 # %%
 # add remaining homes
@@ -204,11 +204,12 @@ plt.show(block=False)
 plt.close(fig)
 
 # %% [markdown]
-# Each `Building` is assigned a unique identifier by its type and door coordinate. For example, the retail building with door coordinate (12, 3) has the id 'r-x12-y3'. Individual `Buildings` objects and their attributes may be accessed throught the `city.buildings` dictionary.
+# Each building row is indexed by a unique identifier: type initial + door cell, e.g. retail at (12,3) -> 'r-x12-y3'.
 
 # %%
-print(city.buildings['r-x12-y3'].blocks)
-city.buildings['r-x12-y3'].door_centroid
+print("Blocks for 'r-x12-y3':")
+print(city.blocks_gdf.loc[city.blocks_gdf['building_id']== 'r-x12-y3', ['coord_x','coord_y']].values.tolist())
+print("Door centroid for 'r-x12-y3':", tuple(city.buildings_gdf.loc['r-x12-y3'][['door_x','door_y']]))
 
 # %% [markdown]
 # Once a `City` object has been defined, a `Population` object can be initialized. The `Population` object will contain the `Agents` of the city and generate their trajectories.

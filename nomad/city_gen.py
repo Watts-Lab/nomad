@@ -126,7 +126,7 @@ class City:
         self.buildings_gdf.set_index('id', inplace=True, drop=False)
         # Avoid index name collision on reset_index during GeoPandas to_file
         self.buildings_gdf.index.name = None
-        self.building_types = pd.DataFrame(columns=["id","type"])
+        # derived view can be taken directly from buildings_gdf when needed
         self.blocks_gdf = self._init_blocks_gdf()
         self.streets_gdf = self._derive_streets_from_blocks()
         # Convenience properties are defined below for GDF-first access
@@ -255,10 +255,6 @@ class City:
         # add building
         building_id = f"{building_type[0]}-x{door[0]}-y{door[1]}"
         self.buildings_outline = unary_union([self.buildings_outline, geom])
-        self.building_types = pd.concat(
-            [self.building_types, pd.DataFrame([[building_id, building_type]], columns=["id","type"])],
-            ignore_index=True
-        )
         # Append to buildings_gdf
         bx, by = door_centroid
         dpt = Point(bx, by)

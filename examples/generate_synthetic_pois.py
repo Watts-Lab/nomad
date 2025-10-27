@@ -149,7 +149,7 @@ plt.show(block=False)
 plt.close(fig)
 
 # %%
-city.__dict__.keys()
+city.__dict__["blocks_gdf"].loc[~city.__dict__["blocks_gdf"].building_type.isna()]
 
 # %%
 city.save_geopackage('synthetic_pois.gpkg')
