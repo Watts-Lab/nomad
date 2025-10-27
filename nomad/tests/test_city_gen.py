@@ -11,8 +11,8 @@ def test_city_to_geodataframes_and_persist(tmp_path):
     city = rcg.generate_city()
 
     # Ensure buildings exist
-    assert isinstance(city.buildings, dict)
-    assert len(city.buildings) > 0
+    b_gdf, s_gdf = city.to_geodataframes()
+    assert len(b_gdf) > 0
 
     # Convert to GeoDataFrames
     b_gdf, s_gdf = city.to_geodataframes()
@@ -48,6 +48,28 @@ def test_geopackage_roundtrip(tmp_path):
     city.save_geopackage(str(gpkg))
     city2 = City.from_geopackage(str(gpkg))
 
+    b1, s1 = city.to_geodataframes()
+    b2, s2 = city2.to_geodataframes()
+    assert len(b1) == len(b2)
+    assert len(s1) == len(s2)
+
+
+def test_street_adjacency_edges_smoke():
+    rcg = RandomCityGenerator(width=8, height=8, street_spacing=4, seed=2)
+    city = rcg.generate_city()
+    edges = city.street_adjacency_edges()
+    # Basic properties: DataFrame with u and v columns; non-negative count
+    assert hasattr(edges, 'columns')
+    assert set(['u','v']).issubset(edges.columns)
+    assert len(edges) >= 0
+
+
+def test_from_geodataframes_roundtrip_nonsquare(tmp_path):
+    rcg = RandomCityGenerator(width=10, height=6, street_spacing=5, seed=3)
+    city = rcg.generate_city()
+    gpkg = tmp_path / 'ns_city.gpkg'
+    city.save_geopackage(str(gpkg))
+    city2 = City.from_geopackage(str(gpkg))
     b1, s1 = city.to_geodataframes()
     b2, s2 = city2.to_geodataframes()
     assert len(b1) == len(b2)
