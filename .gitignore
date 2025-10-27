@@ -20,6 +20,9 @@ docs/_build/
 # Exclude images from research folder only
 examples/research/**/*.png
 
+# Exclude virtual environment
+.venv/
+
 # macOS system file
 .DS_Store
 

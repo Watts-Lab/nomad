@@ -392,11 +392,11 @@ class Agent:
         city = self.city
 
         start_block = np.floor(start_point)
-        start_geometry = city.get_block(tuple(start_block))
+        start_blk = city.get_block(tuple(start_block))
 
         curr = np.array(start_point)
 
-        if start_geometry == dest_building or start_point == dest_building.door_centroid:
+        if (start_blk and start_blk.get('building_id') == dest_building.id) or start_point == dest_building.door_centroid:
             location = dest_building.id
             p = self.still_probs[dest_building.building_type]
             sigma = self.speeds[dest_building.building_type]
@@ -426,8 +426,13 @@ class Agent:
             path_length = path_ml.length
 
             # Bounding polygon: needs to stay in street
-            street_poly = unary_union([city.get_block(block).geometry for block in street_path])
-            bound_poly = unary_union([start_geometry.geometry, street_poly])
+            street_polys = []
+            for block in street_path:
+                blk = city.get_block(block)
+                if blk is not None:
+                    street_polys.append(blk['geometry'])
+            street_poly = unary_union(street_polys) if street_polys else None
+            bound_poly = unary_union([start_blk['geometry'], street_poly]) if (start_blk and street_poly) else street_poly
             
             # Transformed coordinates of current position
             path_coord = _path_coords(path_ml, start_point)
@@ -559,8 +564,9 @@ class Agent:
         """
         rng = npr.default_rng(seed)
 
-        id2door = pd.DataFrame([[s, b.door] for s, b in self.city.buildings.items()],
-                               columns=['id', 'door']).set_index('door')  # could this be a field of city?
+        # Use GeoDataFrame-first mapping; preserve structure
+        id2door = self.city.id_to_door_cell().rename('door').reset_index().rename(columns={'index':'id'}).dropna()
+        id2door = id2door.set_index('door') if not id2door.empty else pd.DataFrame(columns=['id']).set_index(pd.Index([]))
 
         if end_time.tz is None:
             tz = getattr(self.last_ping['datetime'], 'tz', None)
