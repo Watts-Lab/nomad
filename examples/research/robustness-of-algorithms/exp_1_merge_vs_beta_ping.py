@@ -144,7 +144,8 @@ ax.text(
 )
 
 plt.tight_layout()
-plt.show()
+plt.show(block=False)
+plt.close()
 
 # %% [markdown]
 # ## Stop detection
@@ -239,7 +240,8 @@ def plot_metric(metric, title, ax=None, save_individual=True):
         plt.tight_layout()
         plt.savefig(f"figures/exp1_{metric}.svg", bbox_inches='tight')
         plt.savefig(f"figures/exp1_{metric}.png", dpi=600, bbox_inches='tight')
-        plt.show()
+        plt.show(block=False)
+        plt.close()
 
 # Individual plots
 metrics = {
@@ -259,6 +261,7 @@ for i, (metric, title) in enumerate(metrics.items()):
 plt.tight_layout(pad=2.0, h_pad=1.5, w_pad=1.5)
 plt.savefig("figures/exp1_all_metrics_grid.svg", bbox_inches='tight')
 plt.savefig("figures/exp1_all_metrics_grid.png", dpi=600, bbox_inches='tight')
-plt.show()
+plt.show(block=False)
+plt.close()
 
 # %%
