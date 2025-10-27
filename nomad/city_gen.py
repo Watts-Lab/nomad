@@ -10,6 +10,7 @@ from matplotlib.ticker import MaxNLocator
 from matplotlib import cm
 import networkx as nx
 import warnings
+import geopandas as gpd
 
 # =============================================================================
 # STREET CLASS
@@ -105,11 +106,12 @@ class Building:
     """
 
     def __init__(self,
-                 building_type, 
-                 door, 
+                 building_type,
+                 door,
                  city,
-                 blocks = None, 
-                 geometry = None):
+                 blocks=None,
+                 bbox=None,
+                 geometry=None):
 
         self.building_type = building_type
         self.door = door
@@ -117,30 +119,33 @@ class Building:
 
         self.id = f'{building_type[0]}-x{door[0]}-y{door[1]}'
 
-        # Calculate the bounding box of the building
+        # Calculate/store geometry and blocks
         if blocks:
             min_x = min([block[0] for block in blocks])
             min_y = min([block[1] for block in blocks])
             max_x = max([block[0]+1 for block in blocks])
             max_y = max([block[1]+1 for block in blocks])
-            bbox = box(min_x, min_y, max_x, max_y)
-        elif bbox:
+            geom = box(min_x, min_y, max_x, max_y)
+        elif bbox is not None:
             blocks = []
             for x in range(int(bbox.bounds[0]), int(bbox.bounds[2])):
                 for y in range(int(bbox.bounds[1]), int(bbox.bounds[3])):
                     blocks += [(x, y)]
+            geom = bbox
+        elif geometry is not None:
+            geom = geometry
         else:
             raise ValueError(
                 "Either blocks spanned or bounding box must be provided."
             )
 
         self.blocks = blocks
-        self.geometry = bbox
+        self.geometry = geom
 
         # Compute door centroid
-        door = self.geometry.intersection(self.city.streets[self.door].geometry)
-        self.door_centroid = ((door.coords[0][0] + door.coords[1][0]) / 2,
-                              (door.coords[0][1] + door.coords[1][1]) / 2)
+        door_geom = self.geometry.intersection(self.city.streets[self.door].geometry)
+        dc = door_geom.centroid
+        self.door_centroid = (dc.x, dc.y)
         
     def _compute_door_centroid(self):
         """
@@ -573,6 +578,53 @@ class City:
         # Set integer ticks
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+
+    def to_geodataframes(self):
+        """
+        Return buildings and streets as GeoDataFrames without altering existing structures.
+
+        Returns
+        -------
+        (gpd.GeoDataFrame, gpd.GeoDataFrame)
+            buildings_gdf with columns: id, type, door_x, door_y, size, geometry
+            streets_gdf with columns: coord_x, coord_y, id, geometry
+        """
+        # Buildings
+        b_rows = []
+        for b_id, b in self.buildings.items():
+            door_x, door_y = b.door_centroid if hasattr(b, 'door_centroid') else (None, None)
+            b_rows.append({
+                'id': b_id,
+                'type': getattr(b, 'building_type', None),
+                'door_x': door_x,
+                'door_y': door_y,
+                'size': len(getattr(b, 'blocks', []) or []),
+                'geometry': b.geometry
+            })
+        buildings_gdf = gpd.GeoDataFrame(b_rows, geometry='geometry', crs=None) if b_rows else gpd.GeoDataFrame(columns=['id','type','door_x','door_y','size','geometry'], geometry='geometry', crs=None)
+
+        # Streets
+        s_rows = []
+        for (x, y), s in self.streets.items():
+            s_rows.append({
+                'coord_x': x,
+                'coord_y': y,
+                'id': s.id,
+                'geometry': s.geometry
+            })
+        streets_gdf = gpd.GeoDataFrame(s_rows, geometry='geometry', crs=None) if s_rows else gpd.GeoDataFrame(columns=['coord_x','coord_y','id','geometry'], geometry='geometry', crs=None)
+
+        return buildings_gdf, streets_gdf
+
+    def to_file(self, buildings_path=None, streets_path=None, driver='GeoJSON'):
+        """
+        Persist city layers to disk. Writes only layers whose path is provided.
+        """
+        b_gdf, s_gdf = self.to_geodataframes()
+        if buildings_path:
+            b_gdf.to_file(buildings_path, driver=driver)
+        if streets_path:
+            s_gdf.to_file(streets_path, driver=driver)
 
     def get_building_coordinates(self):
         """
