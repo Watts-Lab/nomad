@@ -912,7 +912,7 @@ class Agent:
             return burst_info
 
 
-def condense_destinations(destination_diary):
+def condense_destinations(destination_diary, *, time_cols=None):
     """
     Modifies a destination diary, joining consecutive entries for the same location
     into a single entry with the total duration.
@@ -921,28 +921,53 @@ def condense_destinations(destination_diary):
     ----------
     destination_diary : pandas.DataFrame
         Diary containing the destinations of the user.
+    time_cols : dict, optional (keyword-only)
+        Optional mapping for non-canonical column names. Expected keys:
+        {'datetime': <col_name>, 'timestamp': <col_name>}.
+        Defaults are 'datetime' and 'timestamp'.
 
     Returns
     -------
     pandas.DataFrame
-        Updated destination diary.
+        Updated destination diary with canonical columns 'datetime' and 'timestamp'.
     """
 
     if destination_diary.empty:
-        return pd.DataFrame()
+        return pd.DataFrame(columns=['datetime','timestamp','duration','location'])
+
+    # Resolve column names
+    dt_col = 'datetime'
+    ts_col = 'timestamp'
+    if time_cols:
+        dt_col = time_cols.get('datetime', dt_col)
+        ts_col = time_cols.get('timestamp', ts_col)
+
+    # If inputs use local/unix names, allow mapping through kwargs only
+    required = {'location', 'duration', dt_col, ts_col}
+    missing = required - set(destination_diary.columns)
+    if missing:
+        raise KeyError(f"condense_destinations expected columns {required}, missing {missing}")
+
+    df = destination_diary.copy()
 
     # Detect changes in location
-    destination_diary['new_segment'] = destination_diary['location'].ne(destination_diary['location'].shift())
-
+    df['new_segment'] = df['location'].ne(df['location'].shift())
     # Create segment identifiers for grouping
-    destination_diary['segment_id'] = destination_diary['new_segment'].cumsum()
-    # Aggregate data by segment
-    condensed_df = destination_diary.groupby('segment_id').agg({
-        'datetime': 'first',
-        'timestamp': 'first',
+    df['segment_id'] = df['new_segment'].cumsum()
+
+    # Aggregate data by segment with provided column names, then rename canonically
+    condensed_df = df.groupby('segment_id').agg({
+        dt_col: 'first',
+        ts_col: 'first',
         'duration': 'sum',
         'location': 'first'
     }).reset_index(drop=True)
+
+    # Canonical column names in the output
+    if dt_col != 'datetime':
+        condensed_df = condensed_df.rename(columns={dt_col: 'datetime'})
+    if ts_col != 'timestamp':
+        condensed_df = condensed_df.rename(columns={ts_col: 'timestamp'})
 
     return condensed_df
 

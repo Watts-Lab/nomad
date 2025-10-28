@@ -124,15 +124,12 @@ class City:
 
         self.dimensions = dimensions
 
-        # Primary GeoDataFrame stores (single source of truth)
         self.buildings_gdf = gpd.GeoDataFrame(
-            columns=['id','type','door_x','door_y','door_cell_x','door_cell_y','door_point','size','geometry'],
+            columns=['id','type','door_cell_x','door_cell_y','door_point','size','geometry'],
             geometry='geometry', crs=None
         )
-        self.buildings_gdf.set_index(['id', 'door_cell_x', 'door_cell_y'], inplace=True, drop=False)
-        # Avoid index name collision on reset_index during GeoPandas to_file
-        self.buildings_gdf.index.names = [None, None, None]
-        # derived view can be taken directly from buildings_gdf when needed
+        self.buildings_gdf.set_index('id', inplace=True, drop=False)
+        self.buildings_gdf.index.name = None
         self.blocks_gdf = self._init_blocks_gdf()
         self.streets_gdf = self._derive_streets_from_blocks()
         # Convenience properties are defined below for GDF-first access
@@ -218,7 +215,7 @@ class City:
         Parameters
         ----------
         building_type : str
-            The type of the building (e.g., 'home', 'work').
+            The type of the building ('home', 'work', 'retail', 'park').
         door : tuple
             A tuple representing the (x, y) coordinates of the door of the building.
         geom : shapely.geometry.polygon.Polygon, optional
@@ -314,19 +311,27 @@ class City:
             building_id = f"{building_type[0]}-x{door[0]}-y{door[1]}"
         self.buildings_outline = unary_union([self.buildings_outline, geom])
         # Append to buildings_gdf
-        bx, by = door_centroid
-        dpt = Point(bx, by)
+        dpt = Point(door_centroid[0], door_centroid[1])
         size_blocks = len(blocks) if blocks is not None else 0
         new_row = gpd.GeoDataFrame([
-            {'id': building_id, 'type': building_type, 'door_x': bx, 'door_y': by, 'door_cell_x': door[0], 'door_cell_y': door[1], 'door_point': dpt, 'size': size_blocks, 'geometry': geom}
+            {
+                'id': building_id,
+                'type': building_type,
+                'door_cell_x': door[0],
+                'door_cell_y': door[1],
+                'door_point': dpt,
+                'size': size_blocks,
+                'geometry': geom
+            }
         ], geometry='geometry', crs=self.buildings_gdf.crs)
-        new_row.set_index(['id', 'door_cell_x', 'door_cell_y'], inplace=True, drop=False)
-        new_row.index.names = [None, None, None]
+        new_row.set_index('id', inplace=True, drop=False)
+        new_row.index.name = None
         # Avoid FutureWarning by assigning directly when empty
         if self.buildings_gdf.empty:
             self.buildings_gdf = new_row
         else:
-            self.buildings_gdf = pd.concat([self.buildings_gdf, new_row], axis=0, ignore_index=True)
+            # Preserve id index across concatenations
+            self.buildings_gdf = pd.concat([self.buildings_gdf, new_row], axis=0, ignore_index=False)
 
         # blocks are no longer streets
         for block in blocks:
@@ -649,7 +654,7 @@ class City:
         Returns
         -------
         (gpd.GeoDataFrame, gpd.GeoDataFrame)
-            buildings_gdf with columns: id, type, door_x, door_y, size, geometry
+            buildings_gdf with columns: id, type, door_point, door_cell_x, door_cell_y, size, geometry
             streets_gdf with columns: coord_x, coord_y, id, geometry
         """
         # Return current primary stores
@@ -660,14 +665,16 @@ class City:
         if self.buildings_gdf.empty:
             return pd.Series(dtype=object)
         df = self.buildings_gdf.copy()
-        # prefer explicit door cell columns
         if 'door_cell_x' in df.columns and 'door_cell_y' in df.columns:
             cx = df['door_cell_x']
             cy = df['door_cell_y']
+        elif 'door_point' in df.columns:
+            cx = np.floor(df['door_point'].x).astype('Int64')
+            cy = np.floor(df['door_point'].y).astype('Int64')
         else:
-            # fallback to rounded door_x/door_y
-            cx = df['door_x'].round().astype('Int64') if 'door_x' in df else pd.Series([pd.NA]*len(df), index=df.index)
-            cy = df['door_y'].round().astype('Int64') if 'door_y' in df else pd.Series([pd.NA]*len(df), index=df.index)
+            pts = df.geometry.centroid
+            cx = np.floor(pts.x).astype('Int64')
+            cy = np.floor(pts.y).astype('Int64')
         tuples = [ (int(x), int(y)) if (pd.notna(x) and pd.notna(y)) else None for x, y in zip(cx, cy) ]
         return pd.Series(tuples, index=df['id'])
 
@@ -724,23 +731,23 @@ class City:
 
         # Adopt input GeoDataFrames with required columns
         city.buildings_gdf = gpd.GeoDataFrame(buildings_gdf, geometry='geometry', crs=buildings_gdf.crs)
-        missing_cols = set(['id','type','door_x','door_y','door_cell_x','door_cell_y','door_point','size']) - set(city.buildings_gdf.columns)
+        missing_cols = set(['id','type','door_cell_x','door_cell_y','door_point','size']) - set(city.buildings_gdf.columns)
         for col in missing_cols:
             if col == 'size':
                 city.buildings_gdf[col] = 0
             elif col == 'door_point':
                 city.buildings_gdf[col] = city.buildings_gdf.geometry.centroid
-            elif col in ['door_x', 'door_y']:
-                pts = city.buildings_gdf.geometry.centroid
-                city.buildings_gdf['door_x'] = pts.x if col == 'door_x' else pts.y
             elif col in ['door_cell_x', 'door_cell_y']:
                 pts = city.buildings_gdf.geometry.centroid
-                city.buildings_gdf['door_cell_x'] = np.floor(pts.x) if col == 'door_cell_x' else np.floor(pts.y)
+                if col == 'door_cell_x':
+                    city.buildings_gdf['door_cell_x'] = np.floor(pts.x)
+                else:
+                    city.buildings_gdf['door_cell_y'] = np.floor(pts.y)
             else:
                 city.buildings_gdf[col] = None
         # Ensure consistent index on id
-                city.buildings_gdf.set_index('id', inplace=True, drop=False)
-            city.buildings_gdf.index.name = None
+        city.buildings_gdf.set_index('id', inplace=True, drop=False)
+        city.buildings_gdf.index.name = None
         city.buildings_outline = unary_union(city.buildings_gdf.geometry.values) if not city.buildings_gdf.empty else Polygon()
         
         # Blocks/street layers
@@ -838,8 +845,13 @@ class City:
             if not building.empty:
                 return building
         elif door_coords is not None:
-            if door_coords in self.buildings_gdf.index:
-                return self.buildings_gdf.loc[[door_coords]]
+            # Match by door_cell_x/door_cell_y
+            df = self.buildings_gdf
+            if 'door_cell_x' in df.columns and 'door_cell_y' in df.columns:
+                mask = (df['door_cell_x'] == door_coords[0]) & (df['door_cell_y'] == door_coords[1])
+                res = df[mask]
+                if not res.empty:
+                    return res.iloc[[0]]
         elif any_coords is not None:
             from shapely.geometry import Point
             point = Point(any_coords)

@@ -4,7 +4,6 @@ from shapely.geometry import box
 
 from nomad.city_gen import City, RandomCityGenerator
 
-
 def test_city_to_geodataframes_and_persist(tmp_path):
     # Small deterministic city
     rcg = RandomCityGenerator(width=10, height=10, street_spacing=5, seed=1)
@@ -32,8 +31,8 @@ def test_city_to_geodataframes_and_persist(tmp_path):
     assert len(s_back) == len(s_gdf)
 
     # Extra checks: door columns present and a silent plot call
-    assert 'door_x' in b_gdf.columns and 'door_y' in b_gdf.columns
     assert 'door_point' in b_gdf.columns
+    assert 'door_cell_x' in b_gdf.columns and 'door_cell_y' in b_gdf.columns
 
     # Silent plot
     import matplotlib.pyplot as plt
