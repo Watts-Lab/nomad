@@ -6,11 +6,11 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.1
+#       jupytext_version: 1.17.3
 #   kernelspec:
-#     display_name: Python 3.10 (daphme)
+#     display_name: Python (nomad repo venv)
 #     language: python
-#     name: daphme
+#     name: nomad-repo-venv
 # ---
 
 # %%
@@ -34,12 +34,11 @@ from nomad.city_gen import City
 
 # %%
 # Load the city
-city_path = os.path.join(os.getcwd(), 'examples', 'garden-city.gpkg')
-city = cg.City.from_geopackage(city_path)
-print(f"City loaded from {city_path}")
+city_file = '../../garden-city.gpkg'
+city = cg.City.from_geopackage(city_file)
 start = '2024-06-01 00:00-04:00'
 
-#option 1: old
+#option 1: symmetric
 start_time = pd.date_range(start=start, periods=4, freq='60min')
 unix_timestamp = [int(t.timestamp()) for t in start_time]
 duration = [60]*4  # in minutes
@@ -84,7 +83,7 @@ config = dict(
     N = N_reps*sparsity_samples,
     name_count=2,
     name_seed=2025,
-    city_file='../../../examples/garden-city.pkl',
+    city_file='../../garden-city.gpkg',
     destination_diary_file='exp_1_destinations_balanced.csv',
     output_files = dict(
         sparse_path='./sparse_traj_1',
@@ -113,7 +112,7 @@ config_2 = dict(
     N = N_reps*sparsity_samples,
     name_count=2,
     name_seed=2025,
-    city_file='../../../examples/garden-city.pkl',
+    city_file='../../garden-city.gpkg',
     destination_diary_file='exp_1_destinations_unbalanced.csv',
     output_files = dict(
         sparse_path='./sparse_traj_2',
@@ -138,13 +137,15 @@ with open('config_high_ha.json', 'w', encoding='utf-8') as f:
 # ## Generate trajectories
 
 # %%
+city.buildings_gdf
+
+# %%
 # Parameters according to the config file
 with open('config_high_ha.json', 'r', encoding='utf-8') as f:
     config = json.load(f)
     
 # Load city and destination diary from config
-city_file = os.path.join(os.getcwd(), 'examples', 'garden-city.gpkg')
-city = City.from_geopackage(city_file)
+city = City.from_geopackage(config["city_file"])
 poi_data = city.get_building_coordinates() # and type and size
 
 destinations = pd.read_csv(config["destination_diary_file"], parse_dates=["datetime"])
