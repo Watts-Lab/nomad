@@ -72,8 +72,6 @@ class City:
         A dictionary of Street objects with their coordinates as keys.
     buildings_outline : shapely.geometry.polygon.Polygon
         A polygon representing the combined geometry of all buildings in the city.
-    address_book : dict
-        A dictionary mapping coordinates to Building objects.
     city_boundary : shapely.geometry.polygon.Polygon
         A polygon representing the boundary of the city.
     dimensions : tuple
@@ -437,50 +435,66 @@ class City:
         """
         Constructs a graph of street blocks for shortest path calculations.
         Each street block is a node, and edges connect adjacent street blocks.
+        Uses vectorized operations on `streets_gdf` to determine adjacency.
         """
         if hasattr(self, 'street_graph') and self.street_graph is not None:
             return self.street_graph
-        
-        import networkx as nx
-        # Build graph from street blocks
-        G = nx.Graph()
-        for idx, row in self.streets_gdf.iterrows():
-            # Handle different index types
-            if isinstance(idx, tuple):
-                x, y = idx
-            else:
-                x = row['coord_x']
-                y = row['coord_y']
-            G.add_node((x, y))
-        # Add edges based on adjacency (assuming grid-based adjacency)
-        for idx, row in self.streets_gdf.iterrows():
-            if isinstance(idx, tuple):
-                x, y = idx
-            else:
-                x = row['coord_x']
-                y = row['coord_y']
-            # Check adjacent cells (up, down, left, right)
-            for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-                adj_x, adj_y = x + dx, y + dy
-                if (adj_x, adj_y) in G.nodes:
-                    G.add_edge((x, y), (adj_x, adj_y), weight=1)
-        
-        # Compute shortest paths between all pairs of street blocks
-        self.shortest_paths = dict(nx.all_pairs_shortest_path(G))
-        
-        # Compute gravity model (placeholder for actual implementation)
-        data = []
-        for origin in self.shortest_paths:
-            for dest in self.shortest_paths[origin]:
-                if origin != dest:
-                    path_len = len(self.shortest_paths[origin][dest]) - 1
-                    data.append({'origin': origin, 'dest': dest, 'distance': path_len, 'gravity': 1.0 / (path_len + 1)})
-        if data:
-            gravity_df = pd.DataFrame(data)
-            self.gravity = gravity_df.set_index(['origin', 'dest'])
+
+        if self.streets_gdf.empty:
+            self.street_graph = nx.Graph()
+            # Empty gravity as well
+            self.gravity = pd.DataFrame(columns=['distance', 'gravity'])
+            return self.street_graph
+
+        # Nodes
+        nodes_df = self.streets_gdf[['coord_x', 'coord_y']].copy()
+
+        # Build edges via vectorized neighbor matches
+        edges_frames = []
+        for dx, dy in [(1, 0), (0, 1)]:  # undirected; only positive directions to avoid duplicates
+            shifted = nodes_df.copy()
+            shifted['nx'] = nodes_df['coord_x'] + dx
+            shifted['ny'] = nodes_df['coord_y'] + dy
+            # Merge to find neighbor pairs
+            merged = shifted.merge(
+                nodes_df.rename(columns={'coord_x': 'nx', 'coord_y': 'ny'}),
+                on=['nx', 'ny'], how='inner'
+            )
+            if not merged.empty:
+                edges_frames.append(
+                    merged[['coord_x', 'coord_y', 'nx', 'ny']].rename(columns={'coord_x': 'x', 'coord_y': 'y'})
+                )
+
+        if edges_frames:
+            edges_df = pd.concat(edges_frames, ignore_index=True)
         else:
-            self.gravity = pd.DataFrame(columns=['origin', 'dest', 'distance', 'gravity']).set_index(['origin', 'dest'])
-        return G
+            edges_df = pd.DataFrame(columns=['x', 'y', 'nx', 'ny'])
+
+        # Create graph
+        G = nx.Graph()
+        G.add_nodes_from([(int(x), int(y)) for x, y in nodes_df[['coord_x', 'coord_y']].itertuples(index=False)])
+        if not edges_df.empty:
+            edge_list = [((int(r.x), int(r.y)), (int(r.nx), int(r.ny))) for r in edges_df.itertuples(index=False)]
+            G.add_edges_from(edge_list, weight=1)
+
+        # Compute shortest paths (for compatibility) and distances (for gravity)
+        self.shortest_paths = dict(nx.all_pairs_shortest_path(G))
+        # Distances
+        dist_records = []
+        for source, lengths in nx.all_pairs_shortest_path_length(G):
+            for target, d in lengths.items():
+                if source == target:
+                    continue
+                dist_records.append({'origin': source, 'dest': target, 'distance': int(d)})
+        if dist_records:
+            dist_df = pd.DataFrame(dist_records)
+            dist_df['gravity'] = 1.0 / (dist_df['distance'] + 1)
+            self.gravity = dist_df.set_index(['origin', 'dest'])
+        else:
+            self.gravity = pd.DataFrame(columns=['distance', 'gravity'])
+
+        self.street_graph = G
+        return self.street_graph
 
     def save(self, filename):
         """
@@ -667,17 +681,40 @@ class City:
         if streets_path:
             s_gdf.to_file(streets_path, driver=driver)
 
-    def save_geopackage(self, gpkg_path):
-        """Save buildings and streets to a single GeoPackage with layers 'buildings' and 'streets'."""
+    def save_geopackage(self, gpkg_path, persist_blocks: bool = False, edges_path: str = None):
+        """Save buildings/streets to a GeoPackage; optionally persist blocks and edges.
+
+        Parameters
+        ----------
+        gpkg_path : str
+            Path to GeoPackage (.gpkg) to write `buildings` and `streets` layers.
+        persist_blocks : bool, default False
+            If True and `blocks_gdf` is available, persist as `blocks` layer.
+        edges_path : str, optional
+            If provided and gravity is available, writes an edges parquet with columns
+            [ox, oy, dx, dy, distance, gravity].
+        """
         b_gdf, s_gdf = self.to_geodataframes()
         b_gdf.to_file(gpkg_path, layer='buildings', driver='GPKG')
         s_gdf.to_file(gpkg_path, layer='streets', driver='GPKG')
+        if persist_blocks and hasattr(self, 'blocks_gdf') and not self.blocks_gdf.empty:
+            self.blocks_gdf.to_file(gpkg_path, layer='blocks', driver='GPKG')
+        # Optional edges persistence (parquet)
+        if edges_path and hasattr(self, 'gravity') and self.gravity is not None and len(self.gravity) > 0:
+            edges_df = self.gravity.reset_index()
+            # Split tuple origins/dests into integer columns
+            edges_df[['ox', 'oy']] = pd.DataFrame(edges_df['origin'].tolist(), index=edges_df.index)
+            edges_df[['dx', 'dy']] = pd.DataFrame(edges_df['dest'].tolist(), index=edges_df.index)
+            edges_df = edges_df.drop(columns=['origin', 'dest'])
+            edges_df.to_parquet(edges_path, index=False)
 
     @classmethod
-    def from_geodataframes(cls, buildings_gdf, streets_gdf):
+    def from_geodataframes(cls, buildings_gdf, streets_gdf, blocks_gdf=None, edges_df: pd.DataFrame = None):
         """Construct a City from buildings and streets GeoDataFrames."""
         if buildings_gdf.empty:
-            width, height = (0,0) if streets_gdf.empty else (int(streets_gdf['coord_x'].max()+1), int(streets_gdf['coord_y'].max()+1))
+            width, height = (0, 0) if (streets_gdf is None or streets_gdf.empty) else (
+                int(streets_gdf['coord_x'].max() + 1), int(streets_gdf['coord_y'].max() + 1)
+            )
         else:
             bounds = buildings_gdf.geometry.total_bounds
             width, height = int(np.ceil(bounds[2])), int(np.ceil(bounds[3]))
@@ -701,12 +738,23 @@ class City:
                 city.buildings_gdf['door_cell_x'] = np.floor(pts.x) if col == 'door_cell_x' else np.floor(pts.y)
             else:
                 city.buildings_gdf[col] = None
+        # Ensure consistent index on id
                 city.buildings_gdf.set_index('id', inplace=True, drop=False)
             city.buildings_gdf.index.name = None
         city.buildings_outline = unary_union(city.buildings_gdf.geometry.values) if not city.buildings_gdf.empty else Polygon()
         
-        # streets_gdf may be empty if manual_streets=True
-        city.streets_gdf = gpd.GeoDataFrame(streets_gdf, geometry='geometry', crs=streets_gdf.crs) if not streets_gdf.empty else gpd.GeoDataFrame(columns=['coord_x','coord_y','id','geometry'], geometry='geometry', crs=None)
+        # Blocks/street layers
+        if blocks_gdf is not None and not blocks_gdf.empty:
+            city.blocks_gdf = gpd.GeoDataFrame(blocks_gdf, geometry='geometry', crs=blocks_gdf.crs)
+            city.blocks_gdf.set_index(['coord_x', 'coord_y'], inplace=True, drop=False)
+            city.blocks_gdf.index.names = [None, None]
+            # Derive streets from blocks
+            city.streets_gdf = city._derive_streets_from_blocks()
+        else:
+            # streets_gdf may be empty if manual_streets=True
+            city.streets_gdf = gpd.GeoDataFrame(streets_gdf, geometry='geometry', crs=streets_gdf.crs) if (streets_gdf is not None and not streets_gdf.empty) else gpd.GeoDataFrame(columns=['coord_x','coord_y','id','geometry'], geometry='geometry', crs=None)
+            # Initialize blocks grid if missing
+            city.blocks_gdf = city._init_blocks_gdf()
         missing_cols = set(['coord_x','coord_y','id']) - set(city.streets_gdf.columns)
         for col in missing_cols:
             if col == 'id':
@@ -726,13 +774,46 @@ class City:
                        (city.blocks_gdf['coord_y'] >= int(np.floor(miny))) & (city.blocks_gdf['coord_y'] < int(np.ceil(maxy)))
                 city.blocks_gdf.loc[mask, ['kind', 'building_id', 'building_type']] = ['building', bid, btype]
 
+        # Recompute derived attributes, or preload from edges if provided
+        city.buildings_outline = unary_union(city.buildings_gdf.geometry.values) if not city.buildings_gdf.empty else Polygon()
+        if edges_df is not None and not edges_df.empty:
+            # Expect columns: ox, oy, dx, dy, distance, gravity
+            if all(c in edges_df.columns for c in ['ox','oy','dx','dy']):
+                # Set gravity from edges
+                tmp = edges_df.copy()
+                tmp['origin'] = list(zip(tmp['ox'].astype(int), tmp['oy'].astype(int)))
+                tmp['dest'] = list(zip(tmp['dx'].astype(int), tmp['dy'].astype(int)))
+                cols = ['origin','dest'] + [c for c in ['distance','gravity'] if c in tmp.columns]
+                city.gravity = tmp[cols].set_index(['origin','dest'])
+                # Build graph from edges
+                G = nx.Graph()
+                for r in tmp[['ox','oy','dx','dy']].itertuples(index=False):
+                    G.add_edge((int(r.ox), int(r.oy)), (int(r.dx), int(r.dy)), weight=1)
+                city.street_graph = G
+                city.shortest_paths = dict(nx.all_pairs_shortest_path(G))
+            else:
+                city.get_street_graph()
+        else:
+            city.get_street_graph()
         return city
 
     @classmethod
-    def from_geopackage(cls, gpkg_path):
+    def from_geopackage(cls, gpkg_path, edges_path: str = None):
         b_gdf = gpd.read_file(gpkg_path, layer='buildings')
         s_gdf = gpd.read_file(gpkg_path, layer='streets')
-        return cls.from_geodataframes(b_gdf, s_gdf)
+        # blocks layer optional
+        try:
+            bl_gdf = gpd.read_file(gpkg_path, layer='blocks')
+        except Exception:
+            bl_gdf = None
+        # optional edges parquet
+        edges_df = None
+        if edges_path:
+            try:
+                edges_df = pd.read_parquet(edges_path)
+            except Exception:
+                edges_df = None
+        return cls.from_geodataframes(b_gdf, s_gdf, bl_gdf, edges_df)
 
     def get_building(self, identifier=None, door_coords=None, any_coords=None):
         """
@@ -929,7 +1010,7 @@ class RandomCityGenerator:
                 print(f"Skipping building placement at {location} due to error: {e}")
     
     def get_adjacent_street(self, location):
-        """Finds the closest predefined street to assign as the door, ensuring it’s within bounds."""
+        """Finds the closest predefined street to assign as the door, ensuring it is within bounds."""
         if not location or not isinstance(location, tuple):
             return None
         x, y = location
