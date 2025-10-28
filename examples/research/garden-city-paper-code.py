@@ -209,7 +209,9 @@ plt.close(fig)
 print("Blocks for 'r-x12-y3':")
 print(city.blocks_gdf.loc[city.blocks_gdf['building_id']== 'r-x12-y3', ['coord_x','coord_y']].values.tolist())
 building = city.get_building(identifier='r-x12-y3')
-print("Door centroid for 'r-x12-y3':", (building.iloc[0]['door_x'], building.iloc[0]['door_y']))
+dp = building.iloc[0].get('door_point', None)
+if dp is not None:
+    print("Door centroid for 'r-x12-y3':", (dp.x, dp.y))
 
 # %% [markdown]
 # Once a `City` object has been defined, a `Population` object can be initialized. The `Population` object will contain the `Agents` of the city and generate their trajectories.
@@ -248,9 +250,6 @@ d_diary = pd.DataFrame({
     "duration": duration,
     "location": location
 })
-
-# Rename columns to match what condense_destinations expects
-d_diary = d_diary.rename(columns={"datetime": "local_timestamp", "timestamp": "unix_timestamp"})
 
 # Condense the diary
 d_diary = tg.condense_destinations(d_diary)
@@ -405,14 +404,13 @@ for ax in axes:
     ax.yaxis.set_visible(False)
 
 # Plot burst start times (Ns)
-axes[0].vlines(burst_info['timestamp'], 0.1, 0.9, color='red', linewidth=1.2)
+axes[0].vlines(burst_info['start_time'], 0, 1, color='red', linewidth=1.2)
 axes[0].set_title('a) Burst start times', loc='left', fontsize=10)
 
 # Plot burst end times (Ne)
 for _, row in burst_info.iterrows():
-    end_time = row.get('end_time', row['timestamp'] + pd.Timedelta(minutes=5).total_seconds())  # Fallback if end_time is missing
-    axes[1].fill_betweenx([0, 1], row['timestamp'], end_time, color='lightgrey', zorder=1)
-axes[1].vlines(burst_info.get('end_time', burst_info['timestamp'] + pd.Timedelta(minutes=5).total_seconds()), 0, 1, color='blue', linewidth=1.2)
+    axes[1].fill_betweenx([0, 1], row['start_time'], row['end_time'], color='lightgrey', zorder=1)
+axes[1].vlines(burst_info['end_time'], 0, 1, color='blue', linewidth=1.2)
 axes[1].set_title('b) Burst end times', loc='left', fontsize=10)
 
 # Plot pings (N)
@@ -421,8 +419,7 @@ axes[2].set_title('c) Ping times', loc='left', fontsize=10)
 
 fig.subplots_adjust(hspace=2)
 fig.savefig("nhpp-sampling.png", bbox_inches='tight')
-plt.show(block=False)
-plt.close(fig)
+plt.show()
 
 # %% [markdown]
 # # Generating multiple agents
@@ -478,7 +475,7 @@ location = ['h-x13-y11'] * 1 + ['h-x13-y8'] * 1 + ['r-x18-y10'] * 3
 
 destination = pd.DataFrame(
     {"datetime":start_time,
-     "unix_timestamp":unix_timestamp,
+     "timestamp":unix_timestamp,
      "duration":duration,
      "location":location}
      )
@@ -559,6 +556,8 @@ plt.close(fig)
 # The distribution of the pings as well as the burst durations for both levels of local sparsity are plotted below.
 
 # %%
+
+
 fig, axes = plt.subplots(2, 1, figsize=(10, 2))
 
 for j in range(2):
@@ -578,12 +577,12 @@ for j in range(2):
     #ax.vlines(burst_info['start_time'], 0.95, 1.05, color='red', linewidth=1.2, alpha=1)
 
     for i, row in burst_info.iterrows():
-        end_time = row.get('end_time', row['timestamp'] + pd.Timedelta(minutes=5).total_seconds())
         ax.fill_betweenx(
             [0.95, 1.05],
-            row['timestamp'],
-            end_time,
+            row['start_time'],
+            row['end_time'],
             color='lightgrey',
+            alpha=0.8,
             zorder=1
         )
 
@@ -594,13 +593,16 @@ axes[1].set_title('b) Higher Local Sparsity ', loc='left', fontsize=10)
 
 fig.subplots_adjust(hspace=2)
 fig.savefig("exp1-sparsity-levels.png", bbox_inches='tight')
-plt.show(block=False)
-plt.close(fig)
+
+plt.show()
 
 # %% [markdown]
 # We are interested in how the sparsity of the trajectory and parameterization of stop detection algorithms interact. Here, we use a temporal version of DBSCAN to cluster pings into stops. DBSCAN takes three parameters: `time_thresh`, `dist_thresh`, and `min_pts`. Roughly, a point is considered part of a dense cluster if it has at least `min_pts` neighboring points within a distance `dist_thresh` and time gap `time_thresh`; otherwise, it is labeled as noise. 
 #
 # We explore a fine and a coarse parameterization of DBSCAN and apply each to the higher and lower sparsity trajectories.
+
+# %% [markdown]
+# ## TO-DO: UPDATE THE STOP DETECTION LOGIC 
 
 # %%
 fig, axes = plt.subplots(2, 2, figsize=(9, 6))
@@ -617,6 +619,7 @@ for i in range(2):
         ax = axes[i, j]
         Charlie.sample_trajectory(*hier_nhpp_params[j], seed=seed, replace_sparse_traj=True)
 
+        # dbscan_out IS the cluster labels
         dbscan_out = DBSCAN.ta_dbscan_labels(
             Charlie.sparse_traj,
             dist_thresh=dbscan_params[i][1],
@@ -826,32 +829,31 @@ plt.savefig("exp2-lachesis.png")
 plt.show(block=False)
 plt.close(fig)
 
-# %% [markdown]
+# %%
 # Plot shortest path between two buildings
-# if True:
-#     import matplotlib.pyplot as plt
-#     from shapely.geometry import LineString
-#     
-#     fig, ax = plt.subplots(figsize=(10, 10))
-#     city.plot_city(ax, doors=True, address=False)
-#     
-#     # Example: Plot shortest path between two buildings
-#     start_building_id = 'r-x12-y3'
-#     end_building_id = 'r-x15-y5'
-#     
-#     # Get building door coordinates using get_building method
-#     start_building = city.get_building(identifier=start_building_id)
-#     end_building = city.get_building(identifier=end_building_id)
-#     
-#     if start_building is not None and not start_building.empty and end_building is not None and not end_building.empty:
-#         start_door = (start_building['door_cell_x'].iloc[0], start_building['door_cell_y'].iloc[0])
-#         end_door = (end_building['door_cell_x'].iloc[0], end_building['door_cell_y'].iloc[0])
-#         print(f"Plotting shortest path from door {start_door} to door {end_door}")
-#         city.get_shortest_path(start_door, end_door, plot=True, ax=ax)
-#     else:
-#         print(f"Could not find buildings 'r-x12-y3' or 'r-x15-y5'")
-#     
-#     ax.legend()
-#     plt.title(f'Shortest Path from {start_building_id} to {end_building_id}')
-#     plt.show(block=False)
-#     plt.close(fig)
+import matplotlib.pyplot as plt
+from shapely.geometry import LineString
+
+fig, ax = plt.subplots(figsize=(10, 10))
+city.plot_city(ax, doors=True, address=False)
+
+# Example: Plot shortest path between two buildings
+start_building_id = 'r-x12-y3'
+end_building_id = 'r-x15-y5'
+
+# Get building door coordinates using get_building method
+start_building = city.get_building(identifier=start_building_id)
+end_building = city.get_building(identifier=end_building_id)
+
+if start_building is not None and not start_building.empty and end_building is not None and not end_building.empty:
+    start_door = (start_building['door_cell_x'].iloc[0], start_building['door_cell_y'].iloc[0])
+    end_door = (end_building['door_cell_x'].iloc[0], end_building['door_cell_y'].iloc[0])
+    print(f"Plotting shortest path from door {start_door} to door {end_door}")
+    city.get_shortest_path(start_door, end_door, plot=True, ax=ax)
+else:
+    print(f"Could not find buildings 'r-x12-y3' or 'r-x15-y5'")
+
+ax.legend()
+plt.title(f'Shortest Path from {start_building_id} to {end_building_id}')
+plt.show(block=False)
+plt.close(fig)
