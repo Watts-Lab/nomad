@@ -209,8 +209,7 @@ def _extract_naive_and_offset(dt_str):
         has_offset,
         sign * (hours * 3600 + minutes * 60),
         np.nan
-    )
-
+    ).astype(int)
     return naive_str, offset_seconds
 
 def _custom_parse_date(series, parse_dates, mixed_timezone_behavior, fixed_format, check_valid_datetime_str=True):
@@ -547,9 +546,9 @@ def _process_datetime_column(df, col, parse_dates, mixed_timezone_behavior, fixe
         )
 
         df[col] = parsed
+
         # do not compute offset column if already exists
         has_tz = ('tz_offset' in traj_cols) and (traj_cols['tz_offset'] in df.columns)
-       
         if parse_dates and mixed_timezone_behavior == 'naive' and not has_tz:
             if offset is not None and not offset.isna().all():
                 df[traj_cols['tz_offset']] = offset.astype("Int64") #overwrite offset?
@@ -584,7 +583,6 @@ def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_f
                 fixed_format,
                 traj_cols
             )
-
     for key in ['date', 'utc_date']:
         if key in traj_cols and traj_cols[key] in df:
             if parse_dates:
@@ -627,6 +625,7 @@ def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_f
             col = traj_cols[key]
             if not is_string_dtype(df[col].dtype):
                 df[col] = df[col].astype("str")
+
     return df
 
 def _process_filters(filters, col_names, use_pyarrow_dataset, traj_cols=None, schema=None):
@@ -776,7 +775,14 @@ def table_columns(filepath, format="csv", include_schema=False, sep=","):
         header = pd.read_csv(filepath, nrows=0, sep=sep)
         return header.dtypes if include_schema else header.columns
 
-def from_df(df, traj_cols=None, parse_dates=True, mixed_timezone_behavior="naive", fixed_format=None, filters=None, **kwargs):
+def from_df(df,
+            parse_dates=True,
+            mixed_timezone_behavior="naive",
+            fixed_format=None,
+            filters=None,
+            sort_times=False,
+            traj_cols=None,
+            **kwargs):
     """
     Converts a DataFrame into a standardized trajectory format by validating and casting 
     specified spatial and temporal columns.
@@ -818,10 +824,27 @@ def from_df(df, traj_cols=None, parse_dates=True, mixed_timezone_behavior="naive
 
     _has_spatial_cols(df.columns, traj_cols)
     _has_time_cols(df.columns, traj_cols)
-    
-    return _cast_traj_cols(df.copy(), traj_cols, parse_dates=parse_dates,
+    df =  _cast_traj_cols(df.copy(), traj_cols, parse_dates=parse_dates,
                            mixed_timezone_behavior=mixed_timezone_behavior,
                            fixed_format=fixed_format)
+    #sorting
+    t_keys = ['timestamp', 'start_timestamp', 'datetime', 'start_datetime']
+    ts_col = next((traj_cols[k] for k in t_keys if traj_cols[k] in df.columns), None)
+    uid_col = traj_cols['user_id']
+    
+    if uid_col in df.columns and sort_times:
+        # Multi-user case: always safe to sort.
+        return df.sort_values(by=[uid_col, ts_col], ignore_index=True)
+
+    if sort_times:
+        warnings.warn(
+            f"Sorting by timestamp only, as user ID column '{uid_col}' was not found. If this is a multi-user "
+            f"dataset, map the correct user ID column to avoid mixing trajectories.",
+            UserWarning
+        )
+        return df.sort_values(by=[ts_col], ignore_index=True)
+
+    return df
 
 
 def from_file(filepath,
@@ -948,7 +971,7 @@ def from_file(filepath,
     ts_col = next((traj_cols[k] for k in t_keys if traj_cols[k] in df.columns), None)
     uid_col = traj_cols['user_id']
     
-    if uid_col in df.columns:
+    if uid_col in df.columns and sort_times:
         # Multi-user case: always safe to sort.
         return df.sort_values(by=[uid_col, ts_col], ignore_index=True)
 
@@ -1358,7 +1381,7 @@ def sample_from_file(
     ts_col = next((traj_cols[k] for k in t_keys if traj_cols[k] in df.columns), None)
     uid_col = traj_cols['user_id']
     
-    if uid_col in df.columns:
+    if uid_col in df.columns and sort_times:
         # Multi-user case: always safe to sort.
         return df.sort_values(by=[uid_col, ts_col], ignore_index=True)
 
@@ -1391,7 +1414,7 @@ def to_file(df, path, format="csv",
     if use_offset and traj_cols["tz_offset"] not in df.columns:
         raise ValueError(f"use_offset=True but tz_offset column '{traj_cols['tz_offset']}' not found in df")
 
-
+    df = df.copy()
     for k in ["datetime", "start_datetime", "end_datetime"]:
         if k in traj_cols and traj_cols[k] in df.columns:
             col = df[traj_cols[k]]
