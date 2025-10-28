@@ -8,9 +8,9 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.17.3
 #   kernelspec:
-#     display_name: Python 3 (ipykernel)
+#     display_name: Python (nomad repo venv)
 #     language: python
-#     name: python3
+#     name: nomad-repo-venv
 # ---
 
 # %%
@@ -71,7 +71,7 @@ with open('config_low_ha.json', 'r', encoding='utf-8') as f:
 with open('config_high_ha.json', 'r', encoding='utf-8') as f:
     config2 = json.load(f)
 
-config=config1
+config=config2
 
 
 # %%
@@ -98,7 +98,7 @@ config["algos"] = {
 # ## Load sparse data and diaries
 
 # %%
-poi_table = gpd.read_file('../../garden_city.gpkg').rename(columns={"building_id":"location"})
+poi_table = gpd.read_file(config["city_file"]).rename(columns={"id":"location"})
 
 sparse_path=config["output_files"]["sparse_path"]
 diaries_path=config["output_files"]["diaries_path"]
