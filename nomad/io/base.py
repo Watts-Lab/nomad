@@ -527,6 +527,44 @@ def _has_user_cols(col_names, traj_cols):
     
     return user_exists
 
+def _sort_trajectory_dataframe(df, traj_cols, sort_times):
+    """
+    Sort trajectory DataFrame by user_id and timestamp if sort_times is True.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The DataFrame to sort.
+    traj_cols : dict
+        Mapping of logical column names to actual column names.
+    sort_times : bool
+        Whether to sort the DataFrame.
+        
+    Returns
+    -------
+    pd.DataFrame
+        Sorted DataFrame if sort_times is True, otherwise original DataFrame.
+    """
+    if not sort_times:
+        return df
+    
+    # Find the timestamp column
+    t_keys = ['timestamp', 'start_timestamp', 'datetime', 'start_datetime']
+    ts_col = next((traj_cols[k] for k in t_keys if traj_cols[k] in df.columns), None)
+    uid_col = traj_cols['user_id']
+    
+    if uid_col in df.columns:
+        # Multi-user case: always safe to sort.
+        return df.sort_values(by=[uid_col, ts_col], ignore_index=True)
+    
+    # Single user or missing user_id column
+    warnings.warn(
+        f"Sorting by timestamp only, as user ID column '{uid_col}' was not found. If this is a multi-user "
+        f"dataset, map the correct user ID column to avoid mixing trajectories.",
+        UserWarning
+    )
+    return df.sort_values(by=[ts_col], ignore_index=True)
+
 # SPARK check is traj_dataframe
     
 def _process_datetime_column(df, col, parse_dates, mixed_timezone_behavior, fixed_format, traj_cols):
@@ -827,24 +865,8 @@ def from_df(df,
     df =  _cast_traj_cols(df.copy(), traj_cols, parse_dates=parse_dates,
                            mixed_timezone_behavior=mixed_timezone_behavior,
                            fixed_format=fixed_format)
-    #sorting
-    t_keys = ['timestamp', 'start_timestamp', 'datetime', 'start_datetime']
-    ts_col = next((traj_cols[k] for k in t_keys if traj_cols[k] in df.columns), None)
-    uid_col = traj_cols['user_id']
     
-    if uid_col in df.columns and sort_times:
-        # Multi-user case: always safe to sort.
-        return df.sort_values(by=[uid_col, ts_col], ignore_index=True)
-
-    if sort_times:
-        warnings.warn(
-            f"Sorting by timestamp only, as user ID column '{uid_col}' was not found. If this is a multi-user "
-            f"dataset, map the correct user ID column to avoid mixing trajectories.",
-            UserWarning
-        )
-        return df.sort_values(by=[ts_col], ignore_index=True)
-
-    return df
+    return _sort_trajectory_dataframe(df, traj_cols, sort_times)
 
 
 def from_file(filepath,
@@ -1376,24 +1398,7 @@ def sample_from_file(
         fixed_format=fixed_format,
     )
 
-    #sorting
-    t_keys = ['timestamp', 'start_timestamp', 'datetime', 'start_datetime']
-    ts_col = next((traj_cols[k] for k in t_keys if traj_cols[k] in df.columns), None)
-    uid_col = traj_cols['user_id']
-    
-    if uid_col in df.columns and sort_times:
-        # Multi-user case: always safe to sort.
-        return df.sort_values(by=[uid_col, ts_col], ignore_index=True)
-
-    if sort_times:
-        warnings.warn(
-            f"Sorting by timestamp only, as user ID column '{uid_col}' was not found. If this is a multi-user "
-            f"dataset, map the correct user ID column to avoid mixing trajectories.",
-            UserWarning
-        )
-        return df.sort_values(by=[ts_col], ignore_index=True)
-    
-    return df
+    return _sort_trajectory_dataframe(df, traj_cols, sort_times)
 
 def to_file(df, path, format="csv",
             traj_cols=None, output_traj_cols=None,
