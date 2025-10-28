@@ -11,8 +11,10 @@ from zoneinfo import ZoneInfo
 @pytest.fixture
 def base_city_pop():
     test_dir = Path(__file__).resolve().parent
-    city_path = test_dir.parent / "data" / "garden-city.pkl"
-    city = cg.load(city_path)
+    # repo root is parent of nomad/tests → tests/.. → nomad
+    repo_root = test_dir.parents[1]
+    city_path = repo_root / "examples" / "garden-city.gpkg"
+    city = cg.City.from_geopackage(city_path)
     population = Population(city)
     return city, population
 
