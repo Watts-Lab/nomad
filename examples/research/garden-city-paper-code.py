@@ -6,11 +6,11 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.1
+#       jupytext_version: 1.17.3
 #   kernelspec:
-#     display_name: Python 3 (ipykernel)
+#     display_name: Python (nomad repo venv)
 #     language: python
-#     name: python3
+#     name: nomad-repo-venv
 # ---
 
 # %% [markdown]
@@ -49,12 +49,11 @@ from nomad.constants import FAST_STILL_PROBS, SLOW_STILL_PROBS, ALLOWED_BUILDING
 # Initialize city
 city = City(dimensions=(22, 22))
 # add a park
-city.add_building(building_type='park', door=(13, 11), geometry=box(9, 9, 13, 13))
+city.add_building(building_type='park', door=(13, 11), geom=box(9, 9, 13, 13))
 # add a home
 city.add_building(building_type='home', door=(8, 8), blocks=[(7, 7), (7, 8)])
 
-print("Row for building 'h-x8-y8' in buildings_gdf:")
-print(city.buildings_gdf.loc['h-x8-y8'][['id','type','door_x','door_y','size']])
+city.buildings_gdf
 
 # %%
 # add remaining homes
@@ -79,105 +78,105 @@ city.add_building('home', (8, 12), [(7, 12)])
 city.add_building('home', (8, 10), [(7, 10), (7, 9)])
 
 # add workplaces
-city.add_building('work', (3, 4), [(4, 4), (4, 5)])
-city.add_building('work', (5, 3), [(5, 4), (5, 5)])
-city.add_building('work', (6, 6), geometry=box(6, 4, 8, 6))
-city.add_building('work', (8, 6), geometry=box(8, 4, 10, 6))
-city.add_building('work', (12, 6), geometry=box(11, 5, 14, 6))
-city.add_building('work', (12, 3), geometry=box(11, 4, 14, 5))
-city.add_building('work', (15, 3), geometry=box(14, 4, 17, 6))
-city.add_building('work', (18, 4), geometry=box(17, 4, 18, 6))
-city.add_building('work', (18, 6), geometry=box(16, 6, 18, 8))
-city.add_building('work', (15, 9), geometry=box(16, 8, 17, 10))
-city.add_building('work', (18, 8), geometry=box(17, 8, 18, 10))
-city.add_building('work', (18, 10), geometry=box(16, 10, 18, 12))
-city.add_building('work', (18, 13), geometry=box(16, 13, 18, 15))
-city.add_building('work', (18, 15), geometry=box(16, 15, 18, 16))
-city.add_building('work', (15, 15), geometry=box(15, 16, 18, 17))
-city.add_building('work', (14, 15), [(14, 16)])
-city.add_building('work', (16, 18), geometry=box(16, 17, 18, 18))
-city.add_building('work', (15, 18), geometry=box(14, 17, 16, 18))
-city.add_building('work', (13, 18), geometry=box(12, 16, 14, 18))
-city.add_building('work', (11, 18), geometry=box(10, 17, 12, 18))
-city.add_building('work', (11, 15), geometry=box(10, 16, 12, 17))
-city.add_building('work', (8, 18), geometry=box(7, 16, 9, 18))
-city.add_building('work', (6, 18), geometry=box(5, 17, 7, 18))
-city.add_building('work', (6, 15), geometry=box(5, 16, 7, 17))
-city.add_building('work', (3, 16), [(4, 16), (4, 17)])
-city.add_building('work', (3, 13), geometry=box(4, 13, 6, 16))
-city.add_building('work', (6, 12), geometry=box(4, 12, 6, 13))
-city.add_building('work', (3, 10), [(4, 9), (4, 10)])
-city.add_building('work', (6, 9), [(5, 9), (5, 10)])
-city.add_building('work', (6, 8), [(4, 8), (5, 8)])
-city.add_building('work', (3, 6), geometry=box(4, 6, 6, 8))
+city.add_building('work', (3, 4), blocks=[(4, 4), (4, 5)])
+city.add_building('work', (5, 3), blocks=[(5, 4), (5, 5)])
+city.add_building('work', (6, 6), geom=box(6, 4, 8, 6))
+city.add_building('work', (8, 6), geom=box(8, 4, 10, 6))
+city.add_building('work', (12, 6), geom=box(11, 5, 14, 6))
+city.add_building('work', (12, 3), geom=box(11, 4, 14, 5))
+city.add_building('work', (15, 3), geom=box(14, 4, 17, 6))
+city.add_building('work', (18, 4), geom=box(17, 4, 18, 6))
+city.add_building('work', (18, 6), geom=box(16, 6, 18, 8))
+city.add_building('work', (15, 9), geom=box(16, 8, 17, 10))
+city.add_building('work', (18, 8), geom=box(17, 8, 18, 10))
+city.add_building('work', (18, 10), geom=box(16, 10, 18, 12))
+city.add_building('work', (18, 13), geom=box(16, 13, 18, 15))
+city.add_building('work', (18, 15), geom=box(16, 15, 18, 16))
+city.add_building('work', (15, 15), geom=box(15, 16, 18, 17))
+city.add_building('work', (14, 15), blocks=[(14, 16)])
+city.add_building('work', (16, 18), geom=box(16, 17, 18, 18))
+city.add_building('work', (15, 18), geom=box(14, 17, 16, 18))
+city.add_building('work', (13, 18), geom=box(12, 16, 14, 18))
+city.add_building('work', (11, 18), geom=box(10, 17, 12, 18))
+city.add_building('work', (11, 15), geom=box(10, 16, 12, 17))
+city.add_building('work', (8, 18), geom=box(7, 16, 9, 18))
+city.add_building('work', (6, 18), geom=box(5, 17, 7, 18))
+city.add_building('work', (6, 15), geom=box(5, 16, 7, 17))
+city.add_building('work', (3, 16), blocks=[(4, 16), (4, 17)])
+city.add_building('work', (3, 13), geom=box(4, 13, 6, 16))
+city.add_building('work', (6, 12), geom=box(4, 12, 6, 13))
+city.add_building('work', (3, 10), blocks=[(4, 9), (4, 10)])
+city.add_building('work', (6, 9), blocks=[(5, 9), (5, 10)])
+city.add_building('work', (6, 8), blocks=[(4, 8), (5, 8)])
+city.add_building('work', (3, 6), geom=box(4, 6, 6, 8))
 
 # add retail places
-city.add_building('retail', (0, 1), geometry=box(1, 1, 3, 3))
-city.add_building('retail', (3, 0), geometry=box(3, 1, 5, 3))
-city.add_building('retail', (5, 0), [(5, 1)])
-city.add_building('retail', (5, 3), [(5, 2)])
-city.add_building('retail', (6, 0), geometry=box(6, 1, 8, 2))
-city.add_building('retail', (6, 3), geometry=box(6, 2, 8, 3))
-city.add_building('retail', (9, 3), geometry=box(9, 1, 10, 3))
-city.add_building('retail', (12, 3), geometry=box(10, 1, 13, 3))
-city.add_building('retail', (14, 3), geometry=box(13, 1, 15, 3))
-city.add_building('retail', (15, 3), [(15, 2)])
-city.add_building('retail', (16, 3), [(16, 2)])
-city.add_building('retail', (15, 0), [(15, 1)])
-city.add_building('retail', (16, 0), [(16, 1)])
-city.add_building('retail', (17, 3), geometry=box(17, 2, 19, 3))
-city.add_building('retail', (18, 0), geometry=box(17, 1, 19, 2))
-city.add_building('retail', (19, 0), geometry=box(19, 1, 21, 2))
-city.add_building('retail', (18, 3), geometry=box(19, 2, 21, 4))
-city.add_building('retail', (18, 5), geometry=box(19, 4, 21, 6))
-city.add_building('retail', (18, 7), geometry=box(19, 6, 20, 8))
-city.add_building('retail', (21, 7), geometry=box(20, 6, 21, 8))
-city.add_building('retail', (18, 10), geometry=box(19, 9, 21, 11))
-city.add_building('retail', (18, 11), geometry=box(19, 11, 21, 13))
-city.add_building('retail', (18, 13), geometry=box(19, 13, 20, 15))
-city.add_building('retail', (21, 13), geometry=box(20, 13, 21, 15))
-city.add_building('retail', (21, 16), geometry=box(19, 15, 21, 17))
-city.add_building('retail', (21, 18), geometry=box(19, 17, 21, 19))
+city.add_building('retail', (0, 1), geom=box(1, 1, 3, 3))
+city.add_building('retail', (3, 0), geom=box(3, 1, 5, 3))
+city.add_building('retail', (5, 0), blocks=[(5, 1)])
+city.add_building('retail', (5, 3), blocks=[(5, 2)])
+city.add_building('retail', (6, 0), geom=box(6, 1, 8, 2))
+city.add_building('retail', (6, 3), geom=box(6, 2, 8, 3))
+city.add_building('retail', (9, 3), geom=box(9, 1, 10, 3))
+city.add_building('retail', (12, 3), geom=box(10, 1, 13, 3))
+city.add_building('retail', (14, 3), geom=box(13, 1, 15, 3))
+city.add_building('retail', (15, 3), blocks=[(15, 2)])
+city.add_building('retail', (16, 3), blocks=[(16, 2)])
+city.add_building('retail', (15, 0), blocks=[(15, 1)])
+city.add_building('retail', (16, 0), blocks=[(16, 1)])
+city.add_building('retail', (17, 3), geom=box(17, 2, 19, 3))
+city.add_building('retail', (18, 0), geom=box(17, 1, 19, 2))
+city.add_building('retail', (19, 0), geom=box(19, 1, 21, 2))
+city.add_building('retail', (18, 3), geom=box(19, 2, 21, 4))
+city.add_building('retail', (18, 5), geom=box(19, 4, 21, 6))
+city.add_building('retail', (18, 7), geom=box(19, 6, 20, 8))
+city.add_building('retail', (21, 7), geom=box(20, 6, 21, 8))
+city.add_building('retail', (18, 10), geom=box(19, 9, 21, 11))
+city.add_building('retail', (18, 11), geom=box(19, 11, 21, 13))
+city.add_building('retail', (18, 13), geom=box(19, 13, 20, 15))
+city.add_building('retail', (21, 13), geom=box(20, 13, 21, 15))
+city.add_building('retail', (21, 16), geom=box(19, 15, 21, 17))
+city.add_building('retail', (21, 18), geom=box(19, 17, 21, 19))
 
-city.add_building('retail', (21, 19), geometry=box(19, 19, 21, 20))
-city.add_building('retail', (20, 21), geometry=box(19, 20, 21, 21))
-city.add_building('retail', (17, 18), geometry=box(17, 19, 18, 21))
-city.add_building('retail', (16, 18), geometry=box(16, 19, 17, 21))
-city.add_building('retail', (14, 18), geometry=box(13, 19, 16, 20))
-city.add_building('retail', (15, 21), geometry=box(14, 20, 16, 21))
-city.add_building('retail', (13, 21), geometry=box(12, 20, 14, 21))
-city.add_building('retail', (12, 18), geometry=box(12, 19, 13, 20))
-city.add_building('retail', (11, 18), geometry=box(10, 19, 12, 21))
-city.add_building('retail', (9, 18), geometry=box(8, 19, 10, 20))
-city.add_building('retail', (9, 21), geometry=box(8, 20, 10, 21))
-city.add_building('retail', (6, 21), geometry=box(5, 19, 7, 21))
-city.add_building('retail', (4, 21), geometry=box(3, 20, 5, 21))
-city.add_building('retail', (4, 18), geometry=box(3, 19, 5, 20))
-city.add_building('retail', (2, 18), geometry=box(2, 19, 3, 21))
-city.add_building('retail', (1, 18), geometry=box(1, 19, 2, 21))
-city.add_building('retail', (3, 17), geometry=box(1, 16, 3, 18))
-city.add_building('retail', (3, 15), geometry=box(1, 15, 3, 16))
-city.add_building('retail', (3, 14), geometry=box(1, 14, 3, 15))
-city.add_building('retail', (3, 12), geometry=box(1, 12, 3, 14))
-city.add_building('retail', (3, 11), geometry=box(1, 11, 3, 12))
-city.add_building('retail', (3, 10), geometry=box(1, 10, 3, 11))
-city.add_building('retail', (3, 8), geometry=box(1, 8, 3, 10))
-city.add_building('retail', (3, 7), geometry=box(1, 7, 3, 8))
-city.add_building('retail', (0, 5), geometry=box(1, 4, 2, 7))
-city.add_building('retail', (3, 6), [(2, 6)])
-city.add_building('retail', (3, 5), [(2, 5)])
-city.add_building('retail', (3, 4), [(2, 4)])
+city.add_building('retail', (21, 19), geom=box(19, 19, 21, 20))
+city.add_building('retail', (20, 21), geom=box(19, 20, 21, 21))
+city.add_building('retail', (17, 18), geom=box(17, 19, 18, 21))
+city.add_building('retail', (16, 18), geom=box(16, 19, 17, 21))
+city.add_building('retail', (14, 18), geom=box(13, 19, 16, 20))
+city.add_building('retail', (15, 21), geom=box(14, 20, 16, 21))
+city.add_building('retail', (13, 21), geom=box(12, 20, 14, 21))
+city.add_building('retail', (12, 18), geom=box(12, 19, 13, 20))
+city.add_building('retail', (11, 18), geom=box(10, 19, 12, 21))
+city.add_building('retail', (9, 18), geom=box(8, 19, 10, 20))
+city.add_building('retail', (9, 21), geom=box(8, 20, 10, 21))
+city.add_building('retail', (6, 21), geom=box(5, 19, 7, 21))
+city.add_building('retail', (4, 21), geom=box(3, 20, 5, 21))
+city.add_building('retail', (4, 18), geom=box(3, 19, 5, 20))
+city.add_building('retail', (2, 18), geom=box(2, 19, 3, 21))
+city.add_building('retail', (1, 18), geom=box(1, 19, 2, 21))
+city.add_building('retail', (3, 17), geom=box(1, 16, 3, 18))
+city.add_building('retail', (3, 15), geom=box(1, 15, 3, 16))
+city.add_building('retail', (3, 14), geom=box(1, 14, 3, 15))
+city.add_building('retail', (3, 12), geom=box(1, 12, 3, 14))
+city.add_building('retail', (3, 11), geom=box(1, 11, 3, 12))
+city.add_building('retail', (3, 10), geom=box(1, 10, 3, 11))
+city.add_building('retail', (3, 8), geom=box(1, 8, 3, 10))
+city.add_building('retail', (3, 7), geom=box(1, 7, 3, 8))
+city.add_building('retail', (0, 5), geom=box(1, 4, 2, 7))
+city.add_building('retail', (3, 6), blocks=[(2, 6)])
+city.add_building('retail', (3, 5), blocks=[(2, 5)])
+city.add_building('retail', (3, 4), blocks=[(2, 4)])
 
 city.get_street_graph()
 
 # get_street_graph can be expensive so persisting is recommended
-city.save('../garden-city.pkl')
+city.save_geopackage('../garden-city.gpkg')
 
 # %% [markdown]
-# For future uses, we can simply load the city pkl file. 
+# For future uses, we can simply load the city gpkg file. 
 
 # %%
-city = cg.load('../garden-city.pkl')
+city = City.from_geopackage('../garden-city.gpkg')
 
 # %% [markdown]
 # ### Plotting the city
@@ -209,7 +208,8 @@ plt.close(fig)
 # %%
 print("Blocks for 'r-x12-y3':")
 print(city.blocks_gdf.loc[city.blocks_gdf['building_id']== 'r-x12-y3', ['coord_x','coord_y']].values.tolist())
-print("Door centroid for 'r-x12-y3':", tuple(city.buildings_gdf.loc['r-x12-y3'][['door_x','door_y']]))
+building = city.get_building(identifier='r-x12-y3')
+print("Door centroid for 'r-x12-y3':", (building.iloc[0]['door_x'], building.iloc[0]['door_y']))
 
 # %% [markdown]
 # Once a `City` object has been defined, a `Population` object can be initialized. The `Population` object will contain the `Agents` of the city and generate their trajectories.
@@ -249,6 +249,10 @@ d_diary = pd.DataFrame({
     "location": location
 })
 
+# Rename columns to match what condense_destinations expects
+d_diary = d_diary.rename(columns={"datetime": "local_timestamp", "timestamp": "unix_timestamp"})
+
+# Condense the diary
 d_diary = tg.condense_destinations(d_diary)
 
 Alice = Agent(identifier="Alice",
@@ -306,9 +310,12 @@ ax.set_xticklabels([])
 ax.set_xticks([])
 ax.set_yticks([])
 
-ax.scatter(x=Bob.trajectory.x, 
-           y=Bob.trajectory.y, 
-           s=0.5, color='red', alpha=0.1)
+if not Bob.trajectory.empty:
+    ax.scatter(x=Bob.trajectory['x'], 
+               y=Bob.trajectory['y'], 
+               s=0.5, color='red', alpha=0.1)
+else:
+    pass
 
 plt.savefig("garden-city-one-user.png")
 plt.show(block=False)
@@ -398,13 +405,14 @@ for ax in axes:
     ax.yaxis.set_visible(False)
 
 # Plot burst start times (Ns)
-axes[0].vlines(burst_info['start_time'], 0, 1, color='red', linewidth=1.2)
+axes[0].vlines(burst_info['timestamp'], 0.1, 0.9, color='red', linewidth=1.2)
 axes[0].set_title('a) Burst start times', loc='left', fontsize=10)
 
 # Plot burst end times (Ne)
 for _, row in burst_info.iterrows():
-    axes[1].fill_betweenx([0, 1], row['start_time'], row['end_time'], color='lightgrey', zorder=1)
-axes[1].vlines(burst_info['end_time'], 0, 1, color='blue', linewidth=1.2)
+    end_time = row.get('end_time', row['timestamp'] + pd.Timedelta(minutes=5).total_seconds())  # Fallback if end_time is missing
+    axes[1].fill_betweenx([0, 1], row['timestamp'], end_time, color='lightgrey', zorder=1)
+axes[1].vlines(burst_info.get('end_time', burst_info['timestamp'] + pd.Timedelta(minutes=5).total_seconds()), 0, 1, color='blue', linewidth=1.2)
 axes[1].set_title('b) Burst end times', loc='left', fontsize=10)
 
 # Plot pings (N)
@@ -570,12 +578,12 @@ for j in range(2):
     #ax.vlines(burst_info['start_time'], 0.95, 1.05, color='red', linewidth=1.2, alpha=1)
 
     for i, row in burst_info.iterrows():
+        end_time = row.get('end_time', row['timestamp'] + pd.Timedelta(minutes=5).total_seconds())
         ax.fill_betweenx(
             [0.95, 1.05],
-            row['start_time'],
-            row['end_time'],
+            row['timestamp'],
+            end_time,
             color='lightgrey',
-            alpha=0.8,
             zorder=1
         )
 
@@ -685,6 +693,18 @@ init_diary = pd.DataFrame([{
     'duration': 1,
     'location': 'p-x13-y11'
 }])
+
+# Condense the destination diary
+d_diary = pd.DataFrame(Bob.destination_diary)
+# Before condense_destinations
+# print("Before condense_destinations, d_diary columns:", d_diary.columns.tolist())
+# print("First few rows of d_diary before condensing:")
+# print(d_diary.head())
+d_diary = tg.condense_destinations(d_diary)
+# After condense_destinations
+# print("After condense_destinations, d_diary columns:", d_diary.columns.tolist())
+# print("First few rows of d_diary after condensing:")
+# print(d_diary.head())
 
 # Daniel is slow
 Daniel = Agent(identifier="Daniel",
@@ -805,3 +825,33 @@ plt.tight_layout()
 plt.savefig("exp2-lachesis.png")
 plt.show(block=False)
 plt.close(fig)
+
+# %% [markdown]
+# Plot shortest path between two buildings
+# if True:
+#     import matplotlib.pyplot as plt
+#     from shapely.geometry import LineString
+#     
+#     fig, ax = plt.subplots(figsize=(10, 10))
+#     city.plot_city(ax, doors=True, address=False)
+#     
+#     # Example: Plot shortest path between two buildings
+#     start_building_id = 'r-x12-y3'
+#     end_building_id = 'r-x15-y5'
+#     
+#     # Get building door coordinates using get_building method
+#     start_building = city.get_building(identifier=start_building_id)
+#     end_building = city.get_building(identifier=end_building_id)
+#     
+#     if start_building is not None and not start_building.empty and end_building is not None and not end_building.empty:
+#         start_door = (start_building['door_cell_x'].iloc[0], start_building['door_cell_y'].iloc[0])
+#         end_door = (end_building['door_cell_x'].iloc[0], end_building['door_cell_y'].iloc[0])
+#         print(f"Plotting shortest path from door {start_door} to door {end_door}")
+#         city.get_shortest_path(start_door, end_door, plot=True, ax=ax)
+#     else:
+#         print(f"Could not find buildings 'r-x12-y3' or 'r-x15-y5'")
+#     
+#     ax.legend()
+#     plt.title(f'Shortest Path from {start_building_id} to {end_building_id}')
+#     plt.show(block=False)
+#     plt.close(fig)

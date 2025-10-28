@@ -20,18 +20,23 @@ import geopandas as gpd
 import pickle
 import json
 from tqdm import tqdm
+import os
 
 # %%
 import nomad.io.base as loader
 import nomad.city_gen as cg
 import nomad.traj_gen as tg
 from nomad.traj_gen import Agent, Population, garden_city_to_mercator
+from nomad.city_gen import City
 
 # %% [markdown]
 # ## Load city and configure destination diaries
 
 # %%
-city = cg.load('../../../examples/garden-city.pkl')
+# Load the city
+city_path = os.path.join(os.getcwd(), 'examples', 'garden-city.gpkg')
+city = cg.City.from_geopackage(city_path)
+print(f"City loaded from {city_path}")
 start = '2024-06-01 00:00-04:00'
 
 #option 1: old
@@ -138,7 +143,8 @@ with open('config_high_ha.json', 'r', encoding='utf-8') as f:
     config = json.load(f)
     
 # Load city and destination diary from config
-city = cg.load(config["city_file"])
+city_file = os.path.join(os.getcwd(), 'examples', 'garden-city.gpkg')
+city = City.from_geopackage(city_file)
 poi_data = city.get_building_coordinates() # and type and size
 
 destinations = pd.read_csv(config["destination_diary_file"], parse_dates=["datetime"])

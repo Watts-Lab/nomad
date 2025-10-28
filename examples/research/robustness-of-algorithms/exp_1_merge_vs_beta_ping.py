@@ -6,11 +6,11 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.1
+#       jupytext_version: 1.17.3
 #   kernelspec:
-#     display_name: Python 3.10 (daphme)
+#     display_name: Python 3 (ipykernel)
 #     language: python
-#     name: daphme
+#     name: python3
 # ---
 
 # %%

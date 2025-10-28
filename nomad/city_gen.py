@@ -37,14 +37,22 @@ class Street:
     (none)
     """
 
-    def __init__(self, 
-                 coordinates: tuple):
+    def __init__(self, coordinates: tuple = None, geometry: Polygon = None):
+        if coordinates is not None:
+            self.coordinates = coordinates
+            self.geometry = box(coordinates[0], coordinates[1], coordinates[0] + 1, coordinates[1] + 1)
+        elif geometry is not None:
+            if not geometry.is_valid:
+                raise ValueError("Invalid street geometry")
+            bounds = geometry.bounds
+            if abs(bounds[2] - bounds[0] - 1) > 0.01 or abs(bounds[3] - bounds[1] - 1) > 0.01:
+                raise ValueError("Street geometry must represent a 1x1 block")
+            self.coordinates = (int(bounds[0]), int(bounds[1]))
+            self.geometry = geometry
+        else:
+            raise ValueError("Either coordinates or geometry must be provided")
 
-        self.coordinates = coordinates
-        self.geometry = box(coordinates[0], coordinates[1],
-                            coordinates[0]+1, coordinates[1]+1)
-
-        self.id = f's-x{coordinates[0]}-y{coordinates[1]}'
+        self.id = f's-x{self.coordinates[0]}-y{self.coordinates[1]}'
 
 
 # =============================================================================
@@ -132,12 +140,15 @@ class City:
         # Convenience properties are defined below for GDF-first access
 
     def _derive_streets_from_blocks(self):
-        """Build streets_gdf from blocks_gdf rows marked as 'street'."""
+        """
+        Derives streets GeoDataFrame from blocks_gdf where kind is 'street'.
+        """
         if not hasattr(self, 'blocks_gdf') or self.blocks_gdf.empty:
-            return gpd.GeoDataFrame(columns=['coord_x','coord_y','id','geometry'], geometry='geometry', crs=None)
-        streets = self.blocks_gdf[self.blocks_gdf['kind'] == 'street'][['coord_x','coord_y','geometry']].copy()
-        streets['id'] = streets.apply(lambda r: f"s-x{int(r['coord_x'])}-y{int(r['coord_y'])}", axis=1)
-        streets = streets[['coord_x','coord_y','id','geometry']]
+            self.blocks_gdf = self._init_blocks_gdf()
+        streets = self.blocks_gdf[self.blocks_gdf['kind'] == 'street'].copy()
+        if not streets.empty:
+            streets['id'] = streets['coord_x'].astype(int).astype(str) + '-y' + streets['coord_y'].astype(int).astype(str)
+            streets['id'] = 's-x' + streets['id']
         streets_gdf = gpd.GeoDataFrame(streets, geometry='geometry', crs=self.blocks_gdf.crs)
         streets_gdf.set_index(['coord_x', 'coord_y'], inplace=True, drop=False)
         streets_gdf.index.names = [None, None]
@@ -202,7 +213,7 @@ class City:
             row = {'coord_x': x, 'coord_y': y, 'id': sid, 'geometry': box(x, y, x+1, y+1)}
             self.streets_gdf = pd.concat([self.streets_gdf, gpd.GeoDataFrame([row], geometry='geometry', crs=self.streets_gdf.crs)], ignore_index=True)
 
-    def add_building(self, building_type: str, door: tuple, geom: Polygon, blocks=None):
+    def add_building(self, building_type: str, door: tuple, geom: Polygon = None, blocks=None, gdf_row=None):
         """
         Adds a building to the city with the specified type, door location, and geometry.
 
@@ -212,18 +223,59 @@ class City:
             The type of the building (e.g., 'home', 'work').
         door : tuple
             A tuple representing the (x, y) coordinates of the door of the building.
-        geom : shapely.geometry.polygon.Polygon
-            The geometry of the building.
+        geom : shapely.geometry.polygon.Polygon, optional
+            The geometry of the building (can be a box or MultiPolygon).
         blocks : list of tuples, optional
             A list of (x, y) coordinates representing the blocks occupied by the building.
+        gdf_row : geopandas.GeoDataFrame or pandas.Series, optional
+            A single row GeoDataFrame or Series containing building information.
 
         Raises
         ------
         ValueError
-            If the door is not on an existing street or if the building overlaps with existing buildings.
+            If the door is not on an existing street, if the building overlaps with existing buildings,
+            or if the geometry/blocks do not align with the grid.
         """
         def check_adjacent(geom1, geom2):
             return geom1.touches(geom2) or geom1.intersects(geom2)
+
+        if gdf_row is not None:
+            if isinstance(gdf_row, pd.Series):
+                gdf_row = gpd.GeoDataFrame([gdf_row], geometry='geometry')
+            elif not isinstance(gdf_row, gpd.GeoDataFrame) or len(gdf_row) != 1:
+                raise ValueError("gdf_row must be a GeoDataFrame with exactly one row or a pandas Series.")
+            building_type = gdf_row.iloc[0]['type'] if 'type' in gdf_row.columns else building_type
+            door = (gdf_row.iloc[0]['door_cell_x'], gdf_row.iloc[0]['door_cell_y']) if 'door_cell_x' in gdf_row.columns else door
+            geom = gdf_row.iloc[0]['geometry'] if 'geometry' in gdf_row.columns else geom
+
+        # If geom is actually a list of blocks, reassign it to blocks
+        if isinstance(geom, list):
+            blocks = geom
+            geom = None
+
+        # If geom is None and blocks are provided, construct geometry from blocks
+        if geom is None and blocks is not None and len(blocks) > 0:
+            from shapely.geometry import MultiPolygon
+            block_polys = [box(x, y, x+1, y+1) for x, y in blocks]
+            geom = MultiPolygon(block_polys).envelope if len(block_polys) > 1 else block_polys[0]
+            # Validate that blocks align with grid
+            for x, y in blocks:
+                if (x, y) not in self.blocks_gdf.index:
+                    raise ValueError(f"Block ({x}, {y}) does not align with city grid.")
+        elif geom is not None and blocks is None:
+            # Validate that geometry aligns with grid by checking bounds
+            minx, miny, maxx, maxy = geom.bounds
+            if not (minx.is_integer() and miny.is_integer() and maxx.is_integer() and maxy.is_integer()):
+                raise ValueError(f"Geometry bounds {geom.bounds} do not align with integer grid.")
+            # Derive blocks from geometry bounds for validation
+            blocks = [(int(x), int(y)) for x in range(int(minx), int(maxx))
+                      for y in range(int(miny), int(maxy))
+                      if minx <= x < maxx and miny <= y < maxy]
+            for x, y in blocks:
+                if (x, y) not in self.blocks_gdf.index:
+                    raise ValueError(f"Derived block ({x}, {y}) from geometry does not align with city grid.")
+        elif geom is None and (blocks is None or len(blocks) == 0):
+            raise ValueError("Either geom or blocks must be provided.")
 
         # Compute door centroid via intersection with target street
         door_poly = box(door[0], door[1], door[0]+1, door[1]+1)
@@ -231,6 +283,9 @@ class City:
         if door_line.is_empty:
             raise ValueError(f"Door {door} must be adjacent to new building.")
         door_centroid = (door_line.centroid.x, door_line.centroid.y)
+
+        # Validate index presence without noisy prints
+        in_index = (door[0], door[1]) in self.streets_gdf.index if isinstance(door, tuple) else door in self.streets_gdf.index
 
         # Validate adjacency using streets_gdf geometry at door
         srow = self.streets_gdf.loc[(door[0], door[1])] if (door[0], door[1]) in self.streets_gdf.index else None
@@ -246,8 +301,19 @@ class City:
         if not check_adjacent(geom, street_geom):
             raise ValueError(f"Door {door} must be adjacent to new building.")
 
+        # Derive blocks from geom if not provided
+        if blocks is None:
+            minx, miny, maxx, maxy = geom.bounds
+            blocks = [(int(x), int(y)) for x in range(int(minx), int(maxx) + 1)
+                      for y in range(int(miny), int(maxy) + 1)
+                      if minx <= x < maxx and miny <= y < maxy]
+
         # add building
-        building_id = f"{building_type[0]}-x{door[0]}-y{door[1]}"
+        # Prefer explicit id from gdf_row when provided
+        if gdf_row is not None and isinstance(gdf_row, gpd.GeoDataFrame) and 'id' in gdf_row.columns:
+            building_id = str(gdf_row.iloc[0]['id'])
+        else:
+            building_id = f"{building_type[0]}-x{door[0]}-y{door[1]}"
         self.buildings_outline = unary_union([self.buildings_outline, geom])
         # Append to buildings_gdf
         bx, by = door_centroid
@@ -258,7 +324,11 @@ class City:
         ], geometry='geometry', crs=self.buildings_gdf.crs)
         new_row.set_index(['id', 'door_cell_x', 'door_cell_y'], inplace=True, drop=False)
         new_row.index.names = [None, None, None]
-        self.buildings_gdf = pd.concat([self.buildings_gdf, new_row], axis=0)
+        # Avoid FutureWarning by assigning directly when empty
+        if self.buildings_gdf.empty:
+            self.buildings_gdf = new_row
+        else:
+            self.buildings_gdf = pd.concat([self.buildings_gdf, new_row], axis=0, ignore_index=True)
 
         # blocks are no longer streets
         for block in blocks:
@@ -271,49 +341,66 @@ class City:
                 self.streets_gdf = self.streets_gdf.drop(index=(cx, cy))
 
         # expand city boundary if necessary
-        buffered_building_geom = geom.buffer(1)
-        if not self.city_boundary.contains(buffered_building_geom):
-            new_boundary = self.city_boundary.union(buffered_building_geom).envelope
-            self.city_boundary = new_boundary
-            self.dimensions = (int(new_boundary.bounds[2]), int(new_boundary.bounds[3]))
-            # Update the streets for any new blocks within the expanded boundary
-            minx, miny, maxx, maxy = map(int, new_boundary.bounds)
-            for x in range(minx, maxx+1):
-                for y in range(miny, maxy+1):
-                    sid = f's-x{x}-y{y}'
-                    exists = ((self.streets_gdf['coord_x'] == x) & (self.streets_gdf['coord_y'] == y)).any()
-                    if not exists:
-                        self.streets_gdf = pd.concat([
-                            self.streets_gdf,
-                            gpd.GeoDataFrame([{'coord_x': x, 'coord_y': y, 'id': sid, 'geometry': box(x, y, x+1, y+1)}], geometry='geometry', crs=self.streets_gdf.crs)
-                        ], ignore_index=True)
-                        # also add to blocks_gdf as street
-                        if hasattr(self, 'blocks_gdf'):
-                            new_block = gpd.GeoDataFrame([{
-                                'coord_x': x,
-                                'coord_y': y,
-                                'kind': 'street',
-                                'building_id': None,
-                                'building_type': None,
-                                'geometry': box(x, y, x+1, y+1)
-                            }], geometry='geometry', crs=self.blocks_gdf.crs)
-                            self.blocks_gdf = pd.concat([self.blocks_gdf, new_block], ignore_index=True)
+        minx, miny, maxx, maxy = geom.bounds
+        if maxx > self.dimensions[0] or maxy > self.dimensions[1]:
+            new_width = max(self.dimensions[0], int(np.ceil(maxx)))
+            new_height = max(self.dimensions[1], int(np.ceil(maxy)))
+            self.dimensions = (new_width, new_height)
+            self.city_boundary = box(0, 0, new_width, new_height)
+            self.blocks_gdf = self._init_blocks_gdf()
+            self.streets_gdf = self._derive_streets_from_blocks()
+
+    def add_buildings_from_gdf(self, buildings_gdf):
+        """
+        Initialize or add multiple buildings from a GeoDataFrame.
+
+        Parameters
+        ----------
+        buildings_gdf : geopandas.GeoDataFrame
+            A GeoDataFrame containing building information with columns for type, door coordinates, and geometry.
+
+        Raises
+        ------
+        ValueError
+            If the GeoDataFrame lacks required columns or contains invalid data.
+        """
+        required_columns = ['type', 'door_cell_x', 'door_cell_y', 'geometry']
+        if not all(col in buildings_gdf.columns for col in required_columns):
+            raise ValueError(f"GeoDataFrame must contain columns: {required_columns}")
+
+        for _, row in buildings_gdf.iterrows():
+            self.add_building(
+                building_type=row['type'],
+                door=(row['door_cell_x'], row['door_cell_y']),
+                geom=row['geometry'],
+                gdf_row=buildings_gdf.loc[[row.name]]
+            )
 
     def street_adjacency_edges(self):
-        """Return DataFrame of 4-neighborhood edges between street blocks (coord tuples)."""
-        if not hasattr(self, 'blocks_gdf') or self.blocks_gdf.empty:
-            return pd.DataFrame(columns=['u','v'])
-        streets = self.blocks_gdf[self.blocks_gdf['kind'] == 'street'][['coord_x','coord_y']].copy()
-        streets['u'] = list(zip(streets['coord_x'], streets['coord_y']))
-        edges = []
-        offsets = [(1,0),(-1,0),(0,1),(0,-1)]
-        street_set = set(streets['u'])
-        for (x,y) in street_set:
-            for dx, dy in offsets:
-                v = (x+dx, y+dy)
-                if v in street_set and (x,y) < v:
-                    edges.append({'u': (x,y), 'v': v})
-        return pd.DataFrame(edges)
+        """
+        Returns a DataFrame of edges representing adjacency between street blocks.
+        Each row is an edge (u,v) where u and v are street block IDs (or coordinates).
+        """
+        if not hasattr(self, 'gravity') or self.gravity is None or len(self.gravity) == 0:
+            self.get_street_graph()
+        # If gravity still empty (e.g., too few streets), derive edges from grid adjacency directly
+        if self.gravity is None or len(self.gravity) == 0:
+            if self.streets_gdf.empty:
+                return pd.DataFrame(columns=['u', 'v'])
+            nodes = set()
+            edges_list = []
+            for idx, row in self.streets_gdf.iterrows():
+                x = int(row['coord_x']) if 'coord_x' in row else int(idx[0])
+                y = int(row['coord_y']) if 'coord_y' in row else int(idx[1])
+                nodes.add((x, y))
+            for (x, y) in nodes:
+                for dx, dy in [(1,0), (0,1)]:  # undirected, add each edge once
+                    nb = (x+dx, y+dy)
+                    if nb in nodes:
+                        edges_list.append({'u': (x,y), 'v': nb})
+            return pd.DataFrame(edges_list, columns=['u','v'])
+        edges = self.gravity.reset_index()[['origin', 'dest']].rename(columns={'origin': 'u', 'dest': 'v'})
+        return edges
 
     def get_block(self, coordinates):
         """
@@ -347,24 +434,53 @@ class City:
         return {'kind': 'unknown', 'building_id': None, 'building_type': None, 'geometry': None}
 
     def get_street_graph(self):
-        """Compute graph and shortest paths using blocks/street edges."""
-        edges_df = self.street_adjacency_edges()
+        """
+        Constructs a graph of street blocks for shortest path calculations.
+        Each street block is a node, and edges connect adjacent street blocks.
+        """
+        if hasattr(self, 'street_graph') and self.street_graph is not None:
+            return self.street_graph
+        
+        import networkx as nx
+        # Build graph from street blocks
         G = nx.Graph()
-        for _, row in edges_df.iterrows():
-            G.add_edge(row['u'], row['v'])
-        # ensure isolated street nodes exist
-        if hasattr(self, 'streets_gdf') and not self.streets_gdf.empty:
-            for _, r in self.streets_gdf[['coord_x','coord_y']].iterrows():
-                G.add_node((int(r['coord_x']), int(r['coord_y'])))
-        sp = dict(nx.all_pairs_shortest_path(G))
-        self.street_graph = {n: list(G.neighbors(n)) for n in G.nodes}
-        self.shortest_paths = {node: paths for node, paths in sp.items()}
+        for idx, row in self.streets_gdf.iterrows():
+            # Handle different index types
+            if isinstance(idx, tuple):
+                x, y = idx
+            else:
+                x = row['coord_x']
+                y = row['coord_y']
+            G.add_node((x, y))
+        # Add edges based on adjacency (assuming grid-based adjacency)
+        for idx, row in self.streets_gdf.iterrows():
+            if isinstance(idx, tuple):
+                x, y = idx
+            else:
+                x = row['coord_x']
+                y = row['coord_y']
+            # Check adjacent cells (up, down, left, right)
+            for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                adj_x, adj_y = x + dx, y + dy
+                if (adj_x, adj_y) in G.nodes:
+                    G.add_edge((x, y), (adj_x, adj_y), weight=1)
+        
+        # Compute shortest paths between all pairs of street blocks
+        self.shortest_paths = dict(nx.all_pairs_shortest_path(G))
+        
+        # Compute gravity model (placeholder for actual implementation)
         data = []
-        for origin, paths in sp.items():
-            for dest, path in paths.items():
-                w = (1 / (len(path) - 1) ** 2) if len(path) > 1 else 0
-                data.append({'origin': origin, 'dest': dest, 'gravity': w})
-        self.gravity = pd.DataFrame(data).set_index(['origin','dest'])
+        for origin in self.shortest_paths:
+            for dest in self.shortest_paths[origin]:
+                if origin != dest:
+                    path_len = len(self.shortest_paths[origin][dest]) - 1
+                    data.append({'origin': origin, 'dest': dest, 'distance': path_len, 'gravity': 1.0 / (path_len + 1)})
+        if data:
+            gravity_df = pd.DataFrame(data)
+            self.gravity = gravity_df.set_index(['origin', 'dest'])
+        else:
+            self.gravity = pd.DataFrame(columns=['origin', 'dest', 'distance', 'gravity']).set_index(['origin', 'dest'])
+        return G
 
     def save(self, filename):
         """
@@ -401,9 +517,9 @@ class City:
 
         # Draw city boundary
         x, y = self.city_boundary.exterior.xy
-        ax.plot(np.array(x), np.array(y), linewidth=2, color='black')  # Dashed line for the boundary
+        ax.plot(np.array(x), np.array(y), linewidth=2, color='black')
 
-        # Define colors for different building types
+        # Colors
         if colors is None:
             colors = {
                 'street': 'white',
@@ -414,104 +530,101 @@ class City:
                 'default': 'lightcoral'
             }
 
-        # Plot streets from GeoDataFrame
-        for _, row in self.streets_gdf.iterrows():
-            geom = row.geometry
-            if isinstance(geom, (Polygon,)):
-                x, y = geom.exterior.xy
-                ax.fill(x, y, facecolor=colors['street'], linewidth=0.5, label='Street', zorder=zorder)
-            elif isinstance(geom, MultiPolygon):
-                for single in geom.geoms:
-                    x, y = single.exterior.xy
-                    ax.fill(x, y, facecolor=colors['street'], linewidth=0.5, label='Street', zorder=zorder)
+        # Streets: fill each street cell
+        if hasattr(self, 'streets_gdf') and not self.streets_gdf.empty:
+            for _, s in self.streets_gdf.iterrows():
+                sx, sy = s.geometry.exterior.xy
+                ax.fill(sx, sy, facecolor=colors['street'], linewidth=0.5, zorder=zorder)
 
-        # Plot buildings
-        if heatmap_agent is not None:
+        # Buildings
+        if heatmap_agent is not None and not self.buildings_gdf.empty:
+            from matplotlib.colors import Normalize
+            from matplotlib.cm import ScalarMappable
+            from matplotlib import cm
             weights = heatmap_agent.diary.groupby('location').duration.sum()
-            norm = Normalize(vmin=0, vmax=max(weights)/2)
-            base_color = np.array([1, 0, 0])  # RGB for red
+            norm = Normalize(vmin=0, vmax=max(weights)/2 if len(weights) else 1)
+            base_color = np.array([1, 0, 0])
 
-            for _, brow in self.buildings_gdf.iterrows():
-                btype = brow.get('type')
-                geom = brow.geometry
-                if isinstance(geom, Polygon):
-                    x, y = geom.exterior.xy
-                    weight = weights.get(brow['id'], 0)
-                    alpha = norm(weight) if weight > 0 else 0
-
-                    ax.fill(x, y, facecolor=base_color, alpha=alpha,
-                            edgecolor='black', linewidth=0.5,
-                            label=btype.capitalize(), zorder=zorder)
-                    ax.plot(x, y, color='black', alpha=1, linewidth=0.5, zorder=zorder + 1)
-
-                    if doors:
-                        door_line = geom.intersection(self.streets_gdf[(self.streets_gdf['coord_x'] == brow['door_cell_x']) & (self.streets_gdf['coord_y'] == brow['door_cell_y'])].iloc[0].geometry)
-                        scaled_door_line = scale(door_line, xfact=0.25, yfact=0.25, origin=door_line.centroid)
-                        dx, dy = scaled_door_line.xy
-                        ax.plot(dx, dy, linewidth=2, color='white', zorder=zorder)
-
-                    if address:
-                        door_coord = brow.get('door_x'), brow.get('door_y')
-                        bbox = ax.get_window_extent().transformed(plt.gcf().dpi_scale_trans.inverted())
-                        axes_width_in_inches = bbox.width
-                        axes_data_range = ax.get_xlim()[1] - ax.get_xlim()[0]
-                        fontsize = (axes_width_in_inches / axes_data_range) * 13  # Example scaling factor
-
-                        ax.text(door_coord[0] + 0.15, door_coord[1] + 0.15,
-                                f"{door_coord[0]}, {door_coord[1]}",
-                                ha='left', va='bottom',
-                                fontsize=fontsize, color='black')
-
-            sm = ScalarMappable(cmap=cm.Reds, norm=norm)
-            sm.set_array([])
-            cbar = plt.colorbar(sm, ax=ax, shrink=0.5, aspect=10, pad=0.02)
-            cbar.set_label('Minutes Spent')
-
-        else:
-            # Plot buildings from GDF
-            for _, brow in self.buildings_gdf.iterrows():
-                btype = brow.get('type')
-                geom = brow.geometry
-                if isinstance(geom, Polygon):
-                    x, y = geom.exterior.xy
-                    ax.fill(x, y, facecolor=colors.get(btype, colors['default']),
-                            edgecolor='black', linewidth=0.5, alpha=alpha,
-                            label=str(btype).capitalize() if isinstance(btype, str) else 'Building',
-                            zorder=zorder)
-                    for interior_ring in geom.interiors:
-                        x_int, y_int = interior_ring.xy
-                        ax.plot(x_int, y_int, color='black', linewidth=0.5, zorder=zorder + 1)
-                        ax.fill(x_int, y_int, facecolor='white', zorder=zorder + 1)
-                elif isinstance(geom, MultiPolygon):
-                    for single_polygon in geom.geoms:
-                        x, y = single_polygon.exterior.xy
-                        ax.fill(x, y, facecolor=colors.get(btype, colors['default']),
-                                edgecolor='black', linewidth=0.5, alpha=alpha,
-                                label=str(btype).capitalize() if isinstance(btype, str) else 'Building',
+            for _, b in self.buildings_gdf.iterrows():
+                geom = b.geometry
+                weight = weights.get(b['id'], 0)
+                a = norm(weight) if weight > 0 else 0
+                if isinstance(geom, (Polygon, MultiPolygon)):
+                    polys = [geom] if isinstance(geom, Polygon) else list(geom.geoms)
+                    for poly in polys:
+                        bx, by = poly.exterior.xy
+                        ax.fill(bx, by, facecolor=base_color, alpha=a,
+                        edgecolor='black', linewidth=0.5,
                                 zorder=zorder)
-                        for interior_ring in single_polygon.interiors:
+                        ax.plot(bx, by, color='black', alpha=1, linewidth=0.5, zorder=zorder + 1)
+                        for interior_ring in poly.interiors:
                             x_int, y_int = interior_ring.xy
                             ax.plot(x_int, y_int, color='black', linewidth=0.5, zorder=zorder + 1)
                             ax.fill(x_int, y_int, facecolor='white', zorder=zorder + 1)
-                # Doors/address labels
-                if doors or address:
-                    dx, dy = brow.get('door_x'), brow.get('door_y')
-                    if pd.notna(dx) and pd.notna(dy):
-                        if doors:
-                            # draw a small line marker at the door centroid
-                            ax.plot([dx-0.1, dx+0.1], [dy, dy], linewidth=2, color='white', zorder=zorder + 2)
-                        if address:
-                            bbox = ax.get_window_extent().transformed(plt.gcf().dpi_scale_trans.inverted())
-                            axes_width_in_inches = bbox.width
-                            axes_data_range = ax.get_xlim()[1] - ax.get_xlim()[0]
-                            fontsize = (axes_width_in_inches / axes_data_range) * 13
-                            ax.text(dx + 0.15, dy + 0.15,
-                                    f"{int(round(dx))}, {int(round(dy))}",
-                                    ha='left', va='bottom', fontsize=fontsize, color='black')
+
+                if doors:
+                    door_x = float(b['door_cell_x'])
+                    door_y = float(b['door_cell_y'])
+                    door_line = geom.intersection(box(door_x, door_y, door_x+1, door_y+1))
+                    scaled = scale(door_line, xfact=0.25, yfact=0.25, origin=door_line.centroid)
+                    if isinstance(scaled, LineString):
+                        dx, dy = scaled.xy
+                    ax.plot(dx, dy, linewidth=2, color='white', zorder=zorder)
+
+                if address:
+                    door_coord = (int(b['door_cell_x']), int(b['door_cell_y']))
+                    bbox = ax.get_window_extent().transformed(plt.gcf().dpi_scale_trans.inverted())
+                    axes_width_in_inches = bbox.width
+                    axes_data_range = ax.get_xlim()[1] - ax.get_xlim()[0]
+                    fontsize = (axes_width_in_inches / axes_data_range) * 13
+                    ax.text(door_coord[0] + 0.15, door_coord[1] + 0.15,
+                            f"{door_coord[0]}, {door_coord[1]}",
+                            ha='left', va='bottom', fontsize=fontsize, color='black')
+
+            sm = ScalarMappable(cmap=cm.Reds, norm=norm)
+            sm.set_array([])
+            plt.colorbar(sm, ax=ax, shrink=0.5, aspect=10, pad=0.02).set_label('Minutes Spent')
+
+        elif not self.buildings_gdf.empty:
+            for _, b in self.buildings_gdf.iterrows():
+                geom = b.geometry
+                bcolor = colors.get(b['type'], colors['default'])
+                if isinstance(geom, (Polygon, MultiPolygon)):
+                    polys = [geom] if isinstance(geom, Polygon) else list(geom.geoms)
+                    for poly in polys:
+                        bx, by = poly.exterior.xy
+                        ax.fill(bx, by, facecolor=bcolor,
+                            edgecolor='black', linewidth=0.5, alpha=alpha,
+                            zorder=zorder)
+                        for interior_ring in poly.interiors:
+                            x_int, y_int = interior_ring.xy
+                            ax.plot(x_int, y_int, color='black', linewidth=0.5, zorder=zorder + 1)
+                            ax.fill(x_int, y_int, facecolor='white', zorder=zorder + 1)
+
+                if doors:
+                    door_x = float(b['door_cell_x'])
+                    door_y = float(b['door_cell_y'])
+                    door_line = geom.intersection(box(door_x, door_y, door_x+1, door_y+1))
+                    scaled = scale(door_line, xfact=0.25, yfact=0.25, origin=door_line.centroid)
+                    if isinstance(scaled, LineString):
+                        dx, dy = scaled.xy
+                        ax.plot(dx, dy, linewidth=2, color='white', zorder=zorder + 2)
+                    elif isinstance(scaled, MultiLineString):
+                        for single_line in scaled.geoms:
+                            dx, dy = single_line.xy
+                            ax.plot(dx, dy, linewidth=2, color='white', zorder=zorder + 2)
+
+                if address:
+                    door_coord = (int(b['door_cell_x']), int(b['door_cell_y']))
+                    bbox = ax.get_window_extent().transformed(plt.gcf().dpi_scale_trans.inverted())
+                    axes_width_in_inches = bbox.width
+                    axes_data_range = ax.get_xlim()[1] - ax.get_xlim()[0]
+                    fontsize = (axes_width_in_inches / axes_data_range) * 13
+                    ax.text(door_coord[0] + 0.15, door_coord[1] + 0.15,
+                            f"{door_coord[0]}, {door_coord[1]}",
+                            ha='left', va='bottom', fontsize=fontsize, color='black')
 
         ax.set_aspect('equal')
-
-        # Set integer ticks
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
 
@@ -571,7 +684,7 @@ class City:
         if width <= 0 or height <= 0:
             width, height = (0,0)
         city = cls(dimensions=(width, height), manual_streets=True)
-        
+
         # Adopt input GeoDataFrames with required columns
         city.buildings_gdf = gpd.GeoDataFrame(buildings_gdf, geometry='geometry', crs=buildings_gdf.crs)
         missing_cols = set(['id','type','door_x','door_y','door_cell_x','door_cell_y','door_point','size']) - set(city.buildings_gdf.columns)
@@ -588,8 +701,8 @@ class City:
                 city.buildings_gdf['door_cell_x'] = np.floor(pts.x) if col == 'door_cell_x' else np.floor(pts.y)
             else:
                 city.buildings_gdf[col] = None
-        city.buildings_gdf.set_index('id', inplace=True, drop=False)
-        city.buildings_gdf.index.name = None
+                city.buildings_gdf.set_index('id', inplace=True, drop=False)
+            city.buildings_gdf.index.name = None
         city.buildings_outline = unary_union(city.buildings_gdf.geometry.values) if not city.buildings_gdf.empty else Polygon()
         
         # streets_gdf may be empty if manual_streets=True
@@ -612,7 +725,7 @@ class City:
                 mask = (city.blocks_gdf['coord_x'] >= int(np.floor(minx))) & (city.blocks_gdf['coord_x'] < int(np.ceil(maxx))) & \
                        (city.blocks_gdf['coord_y'] >= int(np.floor(miny))) & (city.blocks_gdf['coord_y'] < int(np.ceil(maxy)))
                 city.blocks_gdf.loc[mask, ['kind', 'building_id', 'building_type']] = ['building', bid, btype]
-        
+
         return city
 
     @classmethod
@@ -620,6 +733,39 @@ class City:
         b_gdf = gpd.read_file(gpkg_path, layer='buildings')
         s_gdf = gpd.read_file(gpkg_path, layer='streets')
         return cls.from_geodataframes(b_gdf, s_gdf)
+
+    def get_building(self, identifier=None, door_coords=None, any_coords=None):
+        """
+        Retrieve a building by string ID, door coordinates, or any coordinates within the city's bounds.
+        
+        Parameters:
+        -----------
+        identifier : str, optional
+            The string ID of the building (e.g., 'h-x8-y8').
+        door_coords : tuple, optional
+            The (x, y) coordinates of the building's door.
+        any_coords : tuple, optional
+            Any (x, y) coordinates within the city's bounds to find a building that contains this point.
+        
+        Returns:
+        --------
+        geopandas.GeoDataFrame or None
+            A GeoDataFrame with a single row containing building details if found, None otherwise.
+        """
+        if identifier is not None:
+            building = self.buildings_gdf[self.buildings_gdf['id'] == identifier]
+            if not building.empty:
+                return building
+        elif door_coords is not None:
+            if door_coords in self.buildings_gdf.index:
+                return self.buildings_gdf.loc[[door_coords]]
+        elif any_coords is not None:
+            from shapely.geometry import Point
+            point = Point(any_coords)
+            building = self.buildings_gdf[self.buildings_gdf.geometry.contains(point)]
+            if not building.empty:
+                return building
+        return None
 
     def get_building_coordinates(self):
         """
@@ -712,7 +858,7 @@ class City:
 
 
 class RandomCityGenerator:
-    def __init__(self, width, height, street_spacing=5, park_ratio=0.1, home_ratio=0.4, work_ratio=0.3, retail_ratio=0.2, seed=42):
+    def __init__(self, width, height, street_spacing=5, park_ratio=0.1, home_ratio=0.4, work_ratio=0.3, retail_ratio=0.2, seed=42, verbose=False):
         self.seed = seed
         self.width = width
         self.height = height
@@ -721,6 +867,7 @@ class RandomCityGenerator:
         self.home_ratio = home_ratio
         self.work_ratio = work_ratio
         self.retail_ratio = retail_ratio
+        self.verbose = verbose
         self.city = City(dimensions=(width, height))
         self.occupied = np.zeros((self.width, self.height), dtype=bool)  # NumPy array for efficiency
         self.streets = self.generate_streets()
@@ -745,36 +892,41 @@ class RandomCityGenerator:
                           p=[self.home_ratio, self.work_ratio, self.retail_ratio, self.park_ratio])
     
     def fill_block(self, block_x, block_y, block_type):
-        """Fills an entire block with buildings."""
-        available_space = np.argwhere(~self.occupied[(block_x + 1):(block_x + self.street_spacing), 
-                                                     (block_y + 1):(block_y + self.street_spacing)])
+        """Fills a block with a building of the specified type."""
+        location = (block_x, block_y)
+        door = self.get_adjacent_street(location)
+        if door is None:
+            if self.verbose:
+                print(f"No adjacent street found for {location}")
+            return
         
-        if available_space.size == 0:
-            return  # No available space in this block
+        # Define building footprint only on interior cells (preserve street corridors)
+        # Streets are predefined along every `street_spacing` row/col; exclude those cells
+        bx0 = block_x
+        by0 = block_y
+        bx1 = min(block_x + self.street_spacing, self.width)
+        by1 = min(block_y + self.street_spacing, self.height)
 
-        attempts = 0  # Termination condition to prevent infinite loops
-        max_attempts = available_space.shape[0] * 2
+        candidate_blocks = []
+        for x in range(bx0, bx1):
+            for y in range(by0, by1):
+                # keep as building only if not a designated street cell
+                if not self.streets[x, y]:
+                    candidate_blocks.append((x, y))
+
+        if not candidate_blocks:
+            return
+
+        from shapely.geometry import MultiPolygon
+        block_polys = [box(x, y, x+1, y+1) for x, y in candidate_blocks]
+        geom = unary_union(block_polys)
+        blocks = candidate_blocks
         
-        while available_space.size > 0 and attempts < max_attempts:
-            size = self.building_sizes[block_type][npr.randint(len(self.building_sizes[block_type]))]
-            npr.shuffle(available_space)  # Randomize placement within the block
-            for x_offset, y_offset in available_space.tolist():
-                x, y = block_x + 1 + x_offset, block_y + 1 + y_offset
-                if x + size[0] <= block_x + self.street_spacing and y + size[1] <= block_y + self.street_spacing and \
-                   np.all(self.occupied[x:(x + size[0]), y:(y + size[1])] == False):
-                    door = self.get_adjacent_street((x, y))
-                    if door is not None and ((self.city.streets_gdf['coord_x'] == door[0]) & (self.city.streets_gdf['coord_y'] == door[1])).any():
-                        try:
-                            self.city.add_building(building_type=block_type, door=door,
-                                                   bbox=box(x, y, x + size[0], y + size[1]))
-                        except Exception as e:
-                            print(f"Skipping building placement at ({x}, {y}) due to error: {e}")
-                        self.occupied[x:x + size[0], y:y + size[1]] = True  # Mark occupied
-                        occupied_positions = np.array([(x_offset + dx, y_offset + dy) for dx in range(size[0]) for dy in range(size[1])])
-                        mask = ~np.any(np.all(available_space[:, None, :] == occupied_positions, axis=2), axis=1)
-                        available_space = available_space[mask]
-                        break  # Place one building at a time and reattempt filling
-            attempts += 1  # Increment attempt counter
+        try:
+            self.city.add_building(building_type=block_type, door=door, geom=geom, blocks=blocks)
+        except ValueError as e:
+            if self.verbose:
+                print(f"Skipping building placement at {location} due to error: {e}")
     
     def get_adjacent_street(self, location):
         """Finds the closest predefined street to assign as the door, ensuring it’s within bounds."""
@@ -809,8 +961,8 @@ class RandomCityGenerator:
         """Generates a systematically structured city where blocks are fully occupied with buildings."""
         self.place_buildings_in_blocks()
         self.city.get_street_graph()
-        # consider city generated if at least one building present in GDF
-        return self.city if (hasattr(self.city, 'buildings_gdf') and len(self.city.buildings_gdf) > 0) else None
+        # Always return the city object, even if no buildings were added
+        return self.city
 
 # =============================================================================
 # AUXILIARY METHODS
