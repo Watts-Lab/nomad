@@ -25,6 +25,7 @@ setup(
         'shapely',
         'matplotlib',
         'networkx',
+        'osmnx',
         'pygeohash',
         'libgeohash',
         'funkybob',
