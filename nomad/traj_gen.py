@@ -665,7 +665,7 @@ class Agent:
                     grav = []
                     for p in pairs:
                         try:
-                            grav.append(float(self.city.gravity.loc[p, 'gravity']))
+                            grav.append(float(self.city.gravity.at[p, 'gravity']))
                         except Exception:
                             grav.append(0.0)
                     grav = np.asarray(grav, dtype=float)
@@ -1288,36 +1288,6 @@ class Population:
 # =============================================================================
 # AUXILIARY METHODS
 # =============================================================================
-
-def garden_city_to_mercator(data, block_size=15, false_easting=-4265699, false_northing=4392976):
-    """
-    Convert Garden City block coordinates to Web Mercator coordinates.
-    
-    .. deprecated::
-        Use :func:`nomad.map_utils.blocks_to_mercator` instead, or the 
-        :meth:`City.to_mercator` method which uses the city's stored parameters.
-    
-    Parameters
-    ----------
-    data : pd.DataFrame
-        DataFrame with 'x', 'y' columns in Garden City block coordinates
-    block_size : float, default 15
-        Size of one city block in meters
-    false_easting : float, default -4265699
-        False easting offset for Garden City
-    false_northing : float, default 4392976
-        False northing offset for Garden City
-    
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame with 'x', 'y' columns updated to Web Mercator coordinates
-    """
-    from nomad.map_utils import blocks_to_mercator
-    return blocks_to_mercator(data, block_size=block_size, 
-                             false_easting=false_easting, 
-                             false_northing=false_northing)
-
 
 def allowed_buildings(local_ts):
     """

@@ -1010,7 +1010,7 @@ def rotate_streets_to_align(streets_gdf, k=200):
 
 
 # =============================================================================
-# COORDINATE TRANSFORMATION UTILITIES
+# GARDEN CITY COORDINATE TRANSFORMATION UTILITIES
 # =============================================================================
 
 def blocks_to_mercator(data, block_size=15.0, false_easting=-4265699.0, false_northing=4392976.0):
