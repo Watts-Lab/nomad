@@ -99,7 +99,11 @@ class City:
 
     def __init__(self,
                  dimensions: tuple = (0,0),
-                 manual_streets: bool = False):
+                 manual_streets: bool = False,
+                 name: str = "Garden City",
+                 block_side_length: float = 15.0,
+                 web_mercator_origin_x: float = -4265699.0,
+                 web_mercator_origin_y: float = 4392976.0):
         
         """
         Initializes the City object with given dimensions and optionally manual streets.
@@ -111,7 +115,20 @@ class City:
         manual_streets : bool
             If True, streets must be manually added to the city. 
             If False, all blocks are initialized as streets until it is populated with a building.
+        name : str, optional
+            Name of the city (default: "Garden City").
+        block_side_length : float, optional
+            Side length of city blocks in meters (default: 15.0).
+        web_mercator_origin_x : float, optional
+            False easting for Web Mercator projection (default: -4265699.0).
+        web_mercator_origin_y : float, optional
+            False northing for Web Mercator projection (default: 4392976.0).
         """
+
+        self.name = name
+        self.block_side_length = block_side_length
+        self.web_mercator_origin_x = web_mercator_origin_x
+        self.web_mercator_origin_y = web_mercator_origin_y
 
         self.buildings_outline = Polygon()
 
@@ -688,8 +705,9 @@ class City:
         if streets_path:
             s_gdf.to_file(streets_path, driver=driver)
 
-    def save_geopackage(self, gpkg_path, persist_blocks: bool = False, edges_path: str = None):
-        """Save buildings/streets to a GeoPackage; optionally persist blocks and edges.
+    def save_geopackage(self, gpkg_path, persist_blocks: bool = False, 
+                        persist_city_properties: bool = True, edges_path: str = None):
+        """Save buildings/streets/properties to a GeoPackage; optionally persist blocks and edges.
 
         Parameters
         ----------
@@ -697,6 +715,9 @@ class City:
             Path to GeoPackage (.gpkg) to write `buildings` and `streets` layers.
         persist_blocks : bool, default False
             If True and `blocks_gdf` is available, persist as `blocks` layer.
+        persist_city_properties : bool, default True
+            If True, persist city properties (name, block_side_length, web_mercator_origin,
+            city_boundary, buildings_outline) as `city_properties` layer.
         edges_path : str, optional
             If provided and gravity is available, writes an edges parquet with columns
             [ox, oy, dx, dy, distance, gravity].
@@ -706,6 +727,20 @@ class City:
         s_gdf.to_file(gpkg_path, layer='streets', driver='GPKG')
         if persist_blocks and hasattr(self, 'blocks_gdf') and not self.blocks_gdf.empty:
             self.blocks_gdf.to_file(gpkg_path, layer='blocks', driver='GPKG')
+        
+        # Persist city properties
+        if persist_city_properties:
+            city_props_gdf = gpd.GeoDataFrame({
+                'name': [self.name],
+                'block_side_length': [self.block_side_length],
+                'web_mercator_origin_x': [self.web_mercator_origin_x],
+                'web_mercator_origin_y': [self.web_mercator_origin_y],
+                'city_boundary': [self.city_boundary],
+                'buildings_outline': [self.buildings_outline],
+                'geometry': [self.city_boundary]  # Primary geometry column
+            }, crs=self.buildings_gdf.crs)
+            city_props_gdf.to_file(gpkg_path, layer='city_properties', driver='GPKG')
+        
         # Optional edges persistence (parquet)
         if edges_path and hasattr(self, 'gravity') and self.gravity is not None and len(self.gravity) > 0:
             edges_df = self.gravity.reset_index()
@@ -808,6 +843,23 @@ class City:
     def from_geopackage(cls, gpkg_path, edges_path: str = None):
         b_gdf = gpd.read_file(gpkg_path, layer='buildings')
         s_gdf = gpd.read_file(gpkg_path, layer='streets')
+        
+        # Try to load city properties (backwards compatible)
+        city_props = {}
+        try:
+            props_gdf = gpd.read_file(gpkg_path, layer='city_properties')
+            if not props_gdf.empty:
+                props = props_gdf.iloc[0]
+                city_props['name'] = props.get('name', 'Garden City')
+                city_props['block_side_length'] = props.get('block_side_length', 15.0)
+                city_props['web_mercator_origin_x'] = props.get('web_mercator_origin_x', -4265699.0)
+                city_props['web_mercator_origin_y'] = props.get('web_mercator_origin_y', 4392976.0)
+                city_props['city_boundary'] = props.get('city_boundary', None)
+                city_props['buildings_outline'] = props.get('buildings_outline', None)
+        except Exception:
+            # Layer doesn't exist, use defaults
+            pass
+        
         # blocks layer optional
         try:
             bl_gdf = gpd.read_file(gpkg_path, layer='blocks')
@@ -820,7 +872,24 @@ class City:
                 edges_df = pd.read_parquet(edges_path)
             except Exception:
                 edges_df = None
-        return cls.from_geodataframes(b_gdf, s_gdf, bl_gdf, edges_df)
+        
+        city = cls.from_geodataframes(b_gdf, s_gdf, bl_gdf, edges_df)
+        
+        # Apply loaded city properties
+        if 'name' in city_props:
+            city.name = city_props['name']
+        if 'block_side_length' in city_props:
+            city.block_side_length = city_props['block_side_length']
+        if 'web_mercator_origin_x' in city_props:
+            city.web_mercator_origin_x = city_props['web_mercator_origin_x']
+        if 'web_mercator_origin_y' in city_props:
+            city.web_mercator_origin_y = city_props['web_mercator_origin_y']
+        if city_props.get('city_boundary') is not None:
+            city.city_boundary = city_props['city_boundary']
+        if city_props.get('buildings_outline') is not None:
+            city.buildings_outline = city_props['buildings_outline']
+        
+        return city
 
     def get_building(self, identifier=None, door_coords=None, any_coords=None):
         """
@@ -880,6 +949,52 @@ class City:
             'size': self.buildings_gdf['size'].values
         })
         return out
+    
+    def to_mercator(self, data):
+        """
+        Convert city block coordinates to Web Mercator coordinates using city's parameters.
+        
+        Parameters
+        ----------
+        data : pd.DataFrame
+            DataFrame with 'x', 'y' columns in city block coordinates
+        
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with 'x', 'y' columns updated to Web Mercator coordinates.
+            If 'ha' column exists, it is also scaled.
+        """
+        from nomad.map_utils import blocks_to_mercator
+        return blocks_to_mercator(
+            data, 
+            block_size=self.block_side_length,
+            false_easting=self.web_mercator_origin_x,
+            false_northing=self.web_mercator_origin_y
+        )
+    
+    def from_mercator(self, data):
+        """
+        Convert Web Mercator coordinates back to city block coordinates using city's parameters.
+        
+        Parameters
+        ----------
+        data : pd.DataFrame
+            DataFrame with 'x', 'y' columns in Web Mercator coordinates
+        
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with 'x', 'y' columns updated to city block coordinates.
+            If 'ha' column exists, it is also scaled back.
+        """
+        from nomad.map_utils import mercator_to_blocks
+        return mercator_to_blocks(
+            data,
+            block_size=self.block_side_length,
+            false_easting=self.web_mercator_origin_x,
+            false_northing=self.web_mercator_origin_y
+        )
 
     def get_shortest_path(self, start_coord: tuple, end_coord: tuple, plot: bool = False, ax=None):
         """
