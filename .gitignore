@@ -20,6 +20,10 @@ docs/_build/
 # Exclude images from research folder only
 examples/research/**/*.png
 
+# OSM cache and large outputs
+cache/
+examples/output/
+
 # macOS system file
 .DS_Store
 
@@ -28,6 +32,33 @@ examples/research/**/*.png
 *.egg-info/
 dist/
 build/
-**/*.json
 pip
 tutorials/IC2S2-2025/tutorial-sample/_SUCCESS
+
+# Development environment configurations (personal/local only)
+.vscode/
+.idea/
+*.code-workspace
+pyrightconfig.json
+requirements.txt
+README_POWERSHELL_FIX.md
+
+# Helper scripts (personal/local only)
+*.bat
+*.ps1
+setup_environment.bat
+install_osmnx.bat
+fix_powershell.ps1
+bash_to_powershell.bat
+
+# Virtual environments
+venv/
+env/
+.env
+.venv/
+virtual-environments/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+*.tmp
