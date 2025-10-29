@@ -14,9 +14,9 @@
 # ---
 
 # %% [markdown]
-# # Downloading OSM Data
+# # Downloading places of interest (POI) Data from OSM
 #
-# Useful OSM wrappers to download buildings and streets.
+# Useful open street maps overpass API wrappers to download buildings and streets.
 
 # %%
 import pandas as pd
@@ -24,7 +24,6 @@ import geopandas as gpd
 import matplotlib.pyplot as plt
 from nomad.map_utils import download_osm_buildings, download_osm_streets, remove_overlaps
 
-# %%
 ## Download by Bounding Box
 bbox = (-75.19747721789525, 39.931392279878246, -75.14652246706544, 39.96336810441389)
 
@@ -44,7 +43,6 @@ print(f"Building categories: {buildings['garden_city_category'].value_counts().t
 print("\nSample buildings data:")
 print(buildings.head())
 
-# %%
 # Plot results
 fig, axes = plt.subplots(1, 3, figsize=(18, 6))
 
@@ -104,7 +102,6 @@ print(salem_buildings.head())
 print("\nSample Salem streets data:")
 print(salem_streets.head())
 
-# %%
 # Plot Salem results
 fig, axes = plt.subplots(1, 3, figsize=(18, 6))
 
