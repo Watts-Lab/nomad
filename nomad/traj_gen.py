@@ -1247,11 +1247,10 @@ class Population:
                 
         return processed
 
-    def reproject_to_mercator(self, sparse_traj=True, full_traj=False, diaries=False,
-                             block_size=15, false_easting=-4265699, false_northing=4392976,
-                             poi_data=None):
+    def reproject_to_mercator(self, sparse_traj=True, full_traj=False, diaries=False, poi_data=None):
         """
-        Reproject all agent trajectories from Garden City coordinates to Web Mercator.
+        Reproject all agent trajectories from city block coordinates to Web Mercator.
+        Uses the city's stored transformation parameters (block_side_length, web_mercator_origin_x/y).
         
         Parameters
         ----------
@@ -1261,46 +1260,30 @@ class Population:
             Whether to reproject full trajectories  
         diaries : bool, default False
             Whether to reproject diaries (must have x, y columns)
-        block_size : float, default 15
-            Size of one city block in meters
-        false_easting : float, default -4265699
-            False easting offset for Garden City
-        false_northing : float, default 4392976
-            False northing offset for Garden City
         poi_data : pd.DataFrame, optional
-            DataFrame with building coordinates (building_id, x, y) to join with diaries
+            DataFrame with building coordinates (building_id, x, y) to join with diaries.
+            If not provided, derived from city's buildings_gdf using door coordinates.
         """
         for agent in self.roster.values():
             if sparse_traj and agent.sparse_traj is not None:
-                agent.sparse_traj = garden_city_to_mercator(
-                    agent.sparse_traj, block_size=block_size, 
-                    false_easting=false_easting, false_northing=false_northing)
+                agent.sparse_traj = self.city.to_mercator(agent.sparse_traj)
             
             if full_traj and agent.trajectory is not None:
-                agent.trajectory = garden_city_to_mercator(
-                    agent.trajectory, block_size=block_size,
-                    false_easting=false_easting, false_northing=false_northing)
+                agent.trajectory = self.city.to_mercator(agent.trajectory)
             
             if diaries and agent.diary is not None:
-                # If no poi_data provided, derive from city's buildings_gdf using door coordinates
-                if poi_data is None and hasattr(self.city, 'buildings_gdf') and not self.city.buildings_gdf.empty:
+                # Derive poi_data from city's buildings_gdf if not provided
+                if poi_data is None:
                     bdf = self.city.buildings_gdf
-                    # Prefer explicit door_point geometry if present
-                    if 'door_point' in bdf.columns:
-                        bx = bdf['door_point'].x
-                        by = bdf['door_point'].y
-                    else:
-                        # Fallback to door_cell + 0.5
-                        bx = bdf['door_cell_x'].astype(float) + 0.5 if 'door_cell_x' in bdf.columns else bdf.geometry.centroid.x
-                        by = bdf['door_cell_y'].astype(float) + 0.5 if 'door_cell_y' in bdf.columns else bdf.geometry.centroid.y
-                    poi_data = pd.DataFrame({'building_id': bdf['id'].values, 'x': bx.values, 'y': by.values})
+                    poi_data = pd.DataFrame({
+                        'building_id': bdf['id'].values,
+                        'x': (bdf['door_cell_x'].astype(float) + 0.5).values,
+                        'y': (bdf['door_cell_y'].astype(float) + 0.5).values
+                    })
 
-                if poi_data is not None:
-                    agent.diary = agent.diary.merge(poi_data, left_on='location', right_on='building_id', how='left')
-                    agent.diary = agent.diary.drop(columns=['building_id'])
-
-                agent.diary = garden_city_to_mercator(agent.diary, block_size=block_size,
-                    false_easting=false_easting, false_northing=false_northing)
+                agent.diary = agent.diary.merge(poi_data, left_on='location', right_on='building_id', how='left')
+                agent.diary = agent.diary.drop(columns=['building_id'])
+                agent.diary = self.city.to_mercator(agent.diary)
 
 # =============================================================================
 # AUXILIARY METHODS
