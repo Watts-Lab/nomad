@@ -22,6 +22,8 @@ from shapely.geometry import box
 from shapely.affinity import rotate as shapely_rotate
 import warnings
 from osmnx._errors import InsufficientResponseError
+import tempfile
+import os
 
 from nomad.constants import (
     OSM_BUILDING_TO_SUBTYPE, OSM_AMENITY_TO_SUBTYPE, OSM_TOURISM_TO_SUBTYPE,
@@ -33,6 +35,97 @@ from nomad.constants import (
 
 
 
+from contextlib import contextmanager
+
+@contextmanager
+def _osmnx_temp_cache_dir():
+    """Use a temporary OSMnx cache folder for the duration of the call, then delete it.
+
+    This provides the performance/robustness of caching within a single call
+    but leaves no persistent files on disk afterward.
+    """
+    prev_use_cache = getattr(ox.settings, 'use_cache', None)
+    prev_cache_folder = getattr(ox.settings, 'cache_folder', None)
+    with tempfile.TemporaryDirectory(prefix="osmnx-cache-") as tmpdir:
+        try:
+            ox.settings.use_cache = True
+            ox.settings.cache_folder = tmpdir
+        except Exception:
+            # Best-effort: some environments may not expose these settings
+            pass
+        try:
+            yield
+        finally:
+            # Restore settings
+            try:
+                if prev_use_cache is not None:
+                    ox.settings.use_cache = prev_use_cache
+                if prev_cache_folder is not None:
+                    ox.settings.cache_folder = prev_cache_folder
+            except Exception:
+                pass
+
+
+# Cache mode control
+DEFAULT_OSMNX_CACHE_MODE = os.environ.get('NOMAD_OSMNX_CACHE_MODE', 'persistent')  # 'temp' | 'persistent' | 'off'
+
+@contextmanager
+def _osmnx_persistent_cache():
+    prev_use_cache = getattr(ox.settings, 'use_cache', None)
+    prev_cache_folder = getattr(ox.settings, 'cache_folder', None)
+    try:
+        ox.settings.use_cache = True
+        # Default to ./cache under current working directory
+        cache_dir = os.environ.get('NOMAD_OSMNX_CACHE_DIR', os.path.abspath('cache'))
+        os.makedirs(cache_dir, exist_ok=True)
+        ox.settings.cache_folder = cache_dir
+        yield
+    finally:
+        try:
+            if prev_use_cache is not None:
+                ox.settings.use_cache = prev_use_cache
+            if prev_cache_folder is not None:
+                ox.settings.cache_folder = prev_cache_folder
+        except Exception:
+            pass
+
+
+@contextmanager
+def _osmnx_cache_off():
+    prev_use_cache = getattr(ox.settings, 'use_cache', None)
+    try:
+        ox.settings.use_cache = False
+        yield
+    finally:
+        try:
+            if prev_use_cache is not None:
+                ox.settings.use_cache = prev_use_cache
+        except Exception:
+            pass
+
+
+def set_osmnx_cache_mode(mode):
+    """Globally set default OSMnx cache mode: 'temp', 'persistent', or 'off'."""
+    global DEFAULT_OSMNX_CACHE_MODE
+    if mode not in ('temp', 'persistent', 'off'):
+        raise ValueError("cache mode must be one of: 'temp', 'persistent', 'off'")
+    DEFAULT_OSMNX_CACHE_MODE = mode
+
+
+@contextmanager
+def _osmnx_cache_context(mode=None):
+    mode = (mode or DEFAULT_OSMNX_CACHE_MODE)
+    if mode == 'temp':
+        with _osmnx_temp_cache_dir():
+            yield
+    elif mode == 'persistent':
+        with _osmnx_persistent_cache():
+            yield
+    elif mode == 'off':
+        with _osmnx_cache_off():
+            yield
+    else:
+        raise ValueError("Unknown cache mode")
 def _clip_to_bbox(gdf, bbox, crs=DEFAULT_CRS):
     """Clip geometries to bounding box."""
     if len(gdf) == 0:
@@ -100,6 +193,50 @@ def _classify_building(row, schema):
     return _classify_feature(row, schema)
 
 
+def _parse_tag_values(value):
+    """Normalize OSM tag value(s) to a list of lowercased strings."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return []
+    # Lists/arrays/tuples of values
+    if isinstance(value, (list, tuple, set, np.ndarray)):
+        values = list(value)
+    else:
+        # Split common multi-value delimiters used in OSM tags
+        text = str(value)
+        # Replace pipes and commas with semicolons for unified splitting
+        for delim in ['|', ',']:
+            text = text.replace(delim, ';')
+        values = [v for v in (part.strip() for part in text.split(';')) if v]
+    return [str(v).lower().strip() for v in values]
+
+
+def _choose_amenity_classification(row, schema):
+    """
+    Pick the primary amenity-based classification, preferring non-parking amenities
+    when multiple amenities exist. Returns a (osm_value, subtype, category) tuple
+    or None if no amenity-based classification can be determined.
+    """
+    if 'amenity' not in row or pd.isna(row['amenity']):
+        return None
+    amenities = _parse_tag_values(row['amenity'])
+    if not amenities:
+        return None
+
+    mapped = [(a, OSM_AMENITY_TO_SUBTYPE[a]) for a in amenities if a in OSM_AMENITY_TO_SUBTYPE]
+    # Prefer the first non-parking amenity if present
+    for amenity_value, subtype in mapped:
+        if subtype != 'parking':
+            category = get_category_for_subtype(subtype, schema)
+            return (amenity_value, subtype, category)
+    # Otherwise, if parking exists (and no better amenity), choose parking
+    for a in amenities:
+        if a == 'parking':
+            subtype = 'parking'
+            category = get_category_for_subtype(subtype, schema)
+            return ('parking', subtype, category)
+    return None
+
+
 def _classify_feature(row, schema, infer_building_types=False):
     """
     Classify a single feature based on its OSM tags.
@@ -122,24 +259,20 @@ def _classify_feature(row, schema, infer_building_types=False):
     if "building" in row and pd.notna(row["building"]):
         osm_value = str(row["building"]).lower().strip()
         if osm_value == 'parking':
-            # Parking buildings (garages/structures) treated as 'other'
-            return ('parking', 'parking', 'other')
+            # Building tag takes precedence: building=parking means parking.
+            subtype = 'parking'
+            category = get_category_for_subtype(subtype, schema)
+            return ('parking', subtype, category)
         if osm_value != 'yes' and osm_value in OSM_BUILDING_TO_SUBTYPE:
             subtype = OSM_BUILDING_TO_SUBTYPE[osm_value]
             category = get_category_for_subtype(subtype, schema)
             return (osm_value, subtype, category)
         # For building=yes, continue to check other tags (amenity, leisure, etc.)
     
-    # Priority 2: amenity tag (including parking lots)
-    if "amenity" in row and pd.notna(row["amenity"]):
-        osm_value = str(row["amenity"]).lower().strip()
-        if osm_value == 'parking':
-            # Parking lots are buildings of type 'other'
-            return ('parking', 'parking', 'other')
-        elif osm_value in OSM_AMENITY_TO_SUBTYPE:
-            subtype = OSM_AMENITY_TO_SUBTYPE[osm_value]
-            category = get_category_for_subtype(subtype, schema)
-            return (osm_value, subtype, category)
+    # Priority 2: amenity tag (support multiple amenities; prefer non-parking)
+    amenity_choice = _choose_amenity_classification(row, schema)
+    if amenity_choice is not None:
+        return amenity_choice
     
     # Priority 3: leisure tag (for parks and recreational areas)
     if "leisure" in row and pd.notna(row["leisure"]):
@@ -253,11 +386,32 @@ def _categorize_features(gdf, schema, infer_building_types= False):
     return result
 
 
+# Derive secondary amenity-based subtypes when multiple amenities exist
+def _derive_secondary_subtypes(row, schema, primary_subtype):
+    amenities = _parse_tag_values(row['amenity']) if 'amenity' in row and pd.notna(row['amenity']) else []
+    secondary = []
+    for a in amenities:
+        if a in OSM_AMENITY_TO_SUBTYPE:
+            subtype = OSM_AMENITY_TO_SUBTYPE[a]
+            if subtype != 'parking' and subtype != primary_subtype and subtype not in secondary:
+                secondary.append(subtype)
+    return secondary[:2]
+
+
+def _add_secondary_subtypes_columns(gdf, schema):
+    if len(gdf) == 0:
+        return gdf
+    sec = gdf.apply(lambda row: _derive_secondary_subtypes(row, schema, row.get('subtype')), axis=1)
+    gdf = gdf.copy()
+    gdf['subtype_2'] = sec.apply(lambda arr: arr[0] if isinstance(arr, list) and len(arr) > 0 else pd.NA)
+    gdf['subtype_3'] = sec.apply(lambda arr: arr[1] if isinstance(arr, list) and len(arr) > 1 else pd.NA)
+    return gdf
+
 # =============================================================================
 # DOWNLOAD FUNCTIONS
 # =============================================================================
 #rotate_and_explode SEEMS LIKE AN UNNECESSARY WRAPPER
-def _download_osm_features(bbox, tags, crs=DEFAULT_CRS, clip=False):
+def _download_osm_features(bbox, tags, crs=DEFAULT_CRS, clip=False, cache_mode=None):
     """
     Download features from OSM with given tags.
     
@@ -279,7 +433,8 @@ def _download_osm_features(bbox, tags, crs=DEFAULT_CRS, clip=False):
     """
     
     try:
-        features = ox.features_from_bbox(bbox=bbox, tags=tags)
+        with _osmnx_cache_context(cache_mode):
+            features = ox.features_from_bbox(bbox=bbox, tags=tags)
     except InsufficientResponseError:
         return gpd.GeoDataFrame(columns=['geometry'], crs=crs)
     except Exception as e:
@@ -355,7 +510,8 @@ def download_osm_buildings(bbox_or_city,
                           infer_building_types=False,
                           explode=False,
                           by_chunks=False,
-                          chunk_miles=1.0):
+                          chunk_miles=1.0,
+                          cache_mode=None):
     """
     Download and categorize buildings and parks from OpenStreetMap.
     
@@ -399,21 +555,24 @@ def download_osm_buildings(bbox_or_city,
                                             clip=True,
                                             infer_building_types=infer_building_types,
                                             explode=explode,
-                                            chunk_miles=chunk_miles)
+                                            chunk_miles=chunk_miles,
+                                            cache_mode=cache_mode)
     
     # Download buildings (including parking lots with building tags)
     building_tags = {"building": True}
     if city_polygon is not None:
-        buildings = ox.features_from_polygon(city_polygon, building_tags)
+        with _osmnx_cache_context(cache_mode):
+            buildings = ox.features_from_polygon(city_polygon, building_tags)
     else:
-        buildings = _download_osm_features(bbox, building_tags, crs, clip)
+        buildings = _download_osm_features(bbox, building_tags, crs, clip, cache_mode)
     
     # Download parking lots (even without building tags) - they should be buildings, not parks
     parking_tags = {"amenity": ["parking"]}
     if city_polygon is not None:
-        parking_lots = ox.features_from_polygon(city_polygon, parking_tags)
+        with _osmnx_cache_context(cache_mode):
+            parking_lots = ox.features_from_polygon(city_polygon, parking_tags)
     else:
-        parking_lots = _download_osm_features(bbox, parking_tags, crs, clip)
+        parking_lots = _download_osm_features(bbox, parking_tags, crs, clip, cache_mode)
     
     # Filter out underground parking from parking lots
     if 'parking' in parking_lots.columns:
@@ -444,9 +603,10 @@ def download_osm_buildings(bbox_or_city,
             park_tags[tag_key] = tag_values
     
     if city_polygon is not None:
-        parks = ox.features_from_polygon(city_polygon, park_tags)
+        with _osmnx_cache_context(cache_mode):
+            parks = ox.features_from_polygon(city_polygon, park_tags)
     else:
-        parks = _download_osm_features(bbox, park_tags, crs, clip)
+        parks = _download_osm_features(bbox, park_tags, crs, clip, cache_mode)
     
     # EXCLUDE WATER FEATURES FROM PARKS - they should not be parks either
     if 'natural' in parks.columns:
@@ -455,7 +615,8 @@ def download_osm_buildings(bbox_or_city,
         parks = parks[parks['waterway'].isna()]
     
     # Essential columns to keep
-    essential_cols = ['geometry', 'osm_type', 'subtype', f'{schema}_category', 'category',
+    essential_cols = ['geometry', 'osm_type', 'subtype', 'subtype_2', 'subtype_3',
+                     f'{schema}_category', 'category',
                      'addr:street', 'addr:city', 'addr:state', 'addr:housenumber', 'addr:postcode']
     
     # Categorize buildings
@@ -466,6 +627,7 @@ def download_osm_buildings(bbox_or_city,
         buildings[f'{schema}_category'] = classifications.apply(lambda x: x[2])
         # Backward-compatibility: also provide generic 'category' column
         buildings['category'] = buildings[f'{schema}_category']
+        buildings = _add_secondary_subtypes_columns(buildings, schema)
         buildings = buildings[[col for col in essential_cols if col in buildings.columns]]
     
     # Categorize parks
@@ -476,6 +638,7 @@ def download_osm_buildings(bbox_or_city,
         parks[f'{schema}_category'] = classifications.apply(lambda x: x[2])
         # Backward-compatibility: also provide generic 'category' column
         parks['category'] = parks[f'{schema}_category']
+        parks = _add_secondary_subtypes_columns(parks, schema)
         parks = parks[[col for col in essential_cols if col in parks.columns]]
     
     # Combine only AFTER categorization to prevent parks from being misclassified as buildings
@@ -505,7 +668,8 @@ def download_osm_streets(bbox_or_city,
                         clip_to_gdf=None,
                         explode=False,
                         by_chunks=False,
-                        chunk_miles=1.0):
+                        chunk_miles=1.0,
+                        cache_mode=None):
     """Download street network from OpenStreetMap using OSMnx query-time filters.
 
     This implementation pushes highway/service/tunnel/covered/surface filters into
@@ -547,14 +711,16 @@ def download_osm_streets(bbox_or_city,
                                            clip=True,
                                            clip_to_gdf=clip_to_gdf,
                                            explode=explode,
-                                           chunk_miles=chunk_miles)
+                                           chunk_miles=chunk_miles,
+                                           cache_mode=cache_mode)
 
     try:
-        # Construct graph with query-time filtering and graph-level truncation
-        if city_polygon is not None:
-            G = ox.graph_from_polygon(city_polygon, custom_filter=custom_filter, simplify=True)
-        else:
-            G = ox.graph_from_bbox(bbox=bbox, custom_filter=custom_filter, truncate_by_edge=bool(clip), simplify=True)
+        with _osmnx_cache_context(cache_mode):
+            # Construct graph with query-time filtering and graph-level truncation
+            if city_polygon is not None:
+                G = ox.graph_from_polygon(city_polygon, custom_filter=custom_filter, simplify=True)
+            else:
+                G = ox.graph_from_bbox(bbox=bbox, custom_filter=custom_filter, truncate_by_edge=bool(clip), simplify=True)
 
         # Optional additional truncation by another GDF's bounds
         if clip_to_gdf is not None and len(clip_to_gdf) > 0:
@@ -641,14 +807,15 @@ def _dedupe_geometries(gdf):
     return gdf.drop_duplicates(subset=['geometry'])
 
 
-def _download_buildings_by_chunks(target, crs, schema, clip, infer_building_types, explode, chunk_miles):
+def _download_buildings_by_chunks(target, crs, schema, clip, infer_building_types, explode, chunk_miles, cache_mode=None):
     tiles = _chunk_target_to_bboxes(target, chunk_miles)
     parts = []
     for tile in tiles:
         part = download_osm_buildings(tile if isinstance(target, tuple) else tile,
                                       crs=crs, schema=schema, clip=True,
                                       infer_building_types=infer_building_types,
-                                      explode=explode, by_chunks=False)
+                                      explode=explode, by_chunks=False,
+                                      cache_mode=cache_mode)
         if len(part) > 0:
             parts.append(part)
     if not parts:
@@ -661,14 +828,15 @@ def _download_buildings_by_chunks(target, crs, schema, clip, infer_building_type
     return combined
 
 
-def _download_streets_by_chunks(target, crs, clip, clip_to_gdf, explode, chunk_miles):
+def _download_streets_by_chunks(target, crs, clip, clip_to_gdf, explode, chunk_miles, cache_mode=None):
     tiles = _chunk_target_to_bboxes(target, chunk_miles)
     parts = []
     for tile in tiles:
         part = download_osm_streets(tile if isinstance(target, tuple) else tile,
                                     crs=crs, clip=True,
                                     clip_to_gdf=clip_to_gdf,
-                                    explode=explode, by_chunks=False)
+                                    explode=explode, by_chunks=False,
+                                    cache_mode=cache_mode)
         if len(part) > 0:
             parts.append(part)
     if not parts:

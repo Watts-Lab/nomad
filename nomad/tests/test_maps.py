@@ -13,25 +13,28 @@ import pytest
 import geopandas as gpd
 from shapely.geometry import Polygon, LineString, MultiPolygon, MultiLineString
 import numpy as np
+import pandas as pd
 
 from nomad.map_utils import (
     download_osm_buildings,
     download_osm_streets,
     rotate,
     remove_overlaps,
+    _classify_building,
+    get_city_boundary_osm,
 )
 
 
 @pytest.fixture
 def philly_bbox():
     """Bounding box for a section of Philadelphia."""
+    # Shrunk to 50% side length around the original center to speed up tests
     return (
-    -75.16620602,  # west
-    39.941158234,  # south
-    -75.14565573,  # east
-    39.955720193   # north
-)
-
+        -75.1610684475,  # west
+        39.94479872375,  # south
+        -75.1507933025,  # east
+        39.95207970325   # north
+    )
 
 def test_download_osm_buildings_garden_city(philly_bbox):
     """
@@ -92,7 +95,7 @@ def test_download_osm_buildings_geolife(philly_bbox):
     assert 'geolife_plus_category' in buildings.columns
 
     # All categories should be valid geolife_plus types
-    valid_categories = {'unknown', 'residential', 'commercial', 'school'}
+    valid_categories = {'unknown', 'residential', 'commercial', 'school', 'other'}
     actual_categories = set(buildings['geolife_plus_category'].unique())
     assert actual_categories.issubset(valid_categories), (
         f"Found invalid categories: {actual_categories - valid_categories}"
@@ -127,8 +130,6 @@ def test_download_osm_buildings_includes_parks(philly_bbox):
 
 def test_categorization_logic_garden_city():
     """Test that categorization returns all three levels with garden_city schema."""
-    from nomad.map_utils import _classify_building
-    import pandas as pd
     
     # Test building tag priority - should return (osm_type, subtype, category)
     assert _classify_building(pd.Series({'building': 'house'}), 'garden_city') == ('house', 'residential', 'residential')
@@ -142,8 +143,8 @@ def test_categorization_logic_garden_city():
     # Test place of worship → retail
     assert _classify_building(pd.Series({'amenity': 'place_of_worship'}), 'garden_city') == ('place_of_worship', 'religious', 'retail')
     
-    # Test parking → park
-    assert _classify_building(pd.Series({'amenity': 'parking'}), 'garden_city') == ('parking', 'parking', 'park')
+    # Test parking → other (parking is not a park in garden_city schema)
+    assert _classify_building(pd.Series({'amenity': 'parking'}), 'garden_city') == ('parking', 'parking', 'other')
     
     # Test shop tag (when no building tag, shop should map to commercial)
     result = _classify_building(pd.Series({'shop': 'bakery'}), 'garden_city')
@@ -154,8 +155,6 @@ def test_categorization_logic_garden_city():
 
 def test_categorization_logic_geolife():
     """Test that categorization works correctly with geolife_plus schema."""
-    from nomad.map_utils import _classify_building
-    import pandas as pd
     
     # Residential stays residential
     assert _classify_building(pd.Series({'building': 'house'}), 'geolife_plus') == ('house', 'residential', 'residential')
@@ -175,8 +174,6 @@ def test_categorization_logic_geolife():
 
 def test_priority_order():
     """Test that building tag takes priority over other tags."""
-    from nomad.map_utils import _classify_building
-    import pandas as pd
     
     # Building tag should win over amenity
     result = _classify_building(pd.Series({
@@ -339,7 +336,6 @@ def test_rotate_and_explode_custom_origin():
 
 def test_remove_overlaps_identical_polygons():
     """Test that remove_overlaps handles identical polygons correctly."""
-    from shapely.geometry import Polygon
     
     # Create identical polygons
     poly1 = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
@@ -362,7 +358,6 @@ def test_remove_overlaps_identical_polygons():
 
 def test_remove_overlaps_contained_polygons():
     """Test that remove_overlaps removes contained polygons."""
-    from shapely.geometry import Polygon
     
     # Create a large polygon and a smaller one contained within it
     large_poly = Polygon([(0, 0), (3, 0), (3, 3), (0, 3)])
@@ -384,7 +379,6 @@ def test_remove_overlaps_contained_polygons():
 
 def test_remove_overlaps_exclude_categories():
     """Test that remove_overlaps can exclude certain categories."""
-    from shapely.geometry import Polygon
     
     # Create overlapping polygons with different categories
     poly1 = Polygon([(0, 0), (2, 0), (2, 2), (0, 2)])
@@ -409,9 +403,15 @@ def test_remove_overlaps_exclude_categories():
 
 def test_empty_bounding_box():
     """Test behavior when no features exist in the bounding box."""
-    # Use a bounding box in the middle of the ocean (should have no features)
-    # Smaller ocean bbox to avoid slow accidental coastal fetches
-    ocean_bbox = (-40.0, -30.0, -39.8, -29.8)
+    # User-provided empty box (NW/SEx converted to west,south,east,north):
+    # NW (lat, lon): 38.027365740492634, -66.19799553667396
+    # SE (lat, lon): 37.81476271794678,  -65.78506182161694
+    ocean_bbox = (
+        -66.19799553667396,  # west
+        37.81476271794678,   # south
+        -65.78506182161694,  # east
+        38.027365740492634   # north
+    )
     
     buildings = download_osm_buildings(ocean_bbox, clip=True)
     streets = download_osm_streets(ocean_bbox, clip=True)
@@ -423,6 +423,22 @@ def test_empty_bounding_box():
     # Should have correct columns even when empty
     expected_cols = ['osm_type', 'subtype', 'category', 'geometry']
     assert list(buildings.columns) == expected_cols, f"Expected columns {expected_cols}, got {list(buildings.columns)}"
+
+
+def test_empty_bounding_box_custom_crs():
+    """Empty-area downloads should work in other CRS as well (e.g., EPSG:3857)."""
+    ocean_bbox = (
+        -66.19799553667396,  # west
+        37.81476271794678,   # south
+        -65.78506182161694,  # east
+        38.027365740492634   # north
+    )
+    buildings = download_osm_buildings(ocean_bbox, crs='EPSG:3857', clip=True)
+    streets = download_osm_streets(ocean_bbox, crs='EPSG:3857', clip=True)
+    assert len(buildings) == 0
+    assert len(streets) == 0
+    assert buildings.crs == 'EPSG:3857'
+    assert streets.crs == 'EPSG:3857'
 
 
 def test_different_coordinate_systems():
@@ -611,7 +627,6 @@ def test_schema_switching():
 
 def test_city_boundary_by_name_salem():
     """Boundary by city name should return (geometry, center tuple, population)."""
-    from nomad.map_utils import get_city_boundary_osm
     boundary, center, population = get_city_boundary_osm('Salem, New Jersey')
     assert boundary is not None, "Boundary geometry should not be None"
     assert hasattr(boundary, 'geom_type'), "Boundary must be a shapely geometry"
@@ -622,13 +637,11 @@ def test_city_boundary_by_name_salem():
 
 def test_download_osm_buildings_city_name_salem():
     """Download buildings by small city name to keep runtime fast."""
-    from nomad.map_utils import download_osm_buildings
     buildings = download_osm_buildings('Salem, New Jersey', explode=True)
     assert isinstance(buildings, gpd.GeoDataFrame)
 
 
 def test_download_osm_streets_city_name_salem():
     """Download streets by small city name to keep runtime fast."""
-    from nomad.map_utils import download_osm_streets
     streets = download_osm_streets('Salem, New Jersey', explode=True)
     assert isinstance(streets, gpd.GeoDataFrame)
