@@ -1,4 +1,5 @@
 from shapely.geometry import box, Polygon, LineString, MultiLineString, Point, MultiPoint, MultiPolygon, GeometryCollection
+from shapely import wkt
 from math import floor, ceil
 from shapely.affinity import scale
 from shapely.ops import unary_union
@@ -14,6 +15,9 @@ from matplotlib.cm import ScalarMappable
 import networkx as nx
 import warnings
 import geopandas as gpd
+import os
+
+from nomad.map_utils import blocks_to_mercator, mercator_to_blocks
 
 # =============================================================================
 # STREET CLASS
@@ -267,7 +271,6 @@ class City:
 
         # If geom is None and blocks are provided, construct geometry from blocks
         if geom is None and blocks is not None and len(blocks) > 0:
-            from shapely.geometry import MultiPolygon
             block_polys = [box(x, y, x+1, y+1) for x, y in blocks]
             geom = MultiPolygon(block_polys).envelope if len(block_polys) > 1 else block_polys[0]
             # Validate that blocks align with grid
@@ -574,9 +577,6 @@ class City:
 
         # Buildings
         if heatmap_agent is not None and not self.buildings_gdf.empty:
-            from matplotlib.colors import Normalize
-            from matplotlib.cm import ScalarMappable
-            from matplotlib import cm
             weights = heatmap_agent.diary.groupby('location').duration.sum()
             norm = Normalize(vmin=0, vmax=max(weights)/2 if len(weights) else 1)
             base_color = np.array([1, 0, 0])
@@ -844,50 +844,40 @@ class City:
         b_gdf = gpd.read_file(gpkg_path, layer='buildings')
         s_gdf = gpd.read_file(gpkg_path, layer='streets')
         
-        # Try to load city properties (backwards compatible)
-        city_props = {}
-        try:
-            props_gdf = gpd.read_file(gpkg_path, layer='city_properties')
-            if not props_gdf.empty:
-                props = props_gdf.iloc[0]
-                city_props['name'] = props.get('name', 'Garden City')
-                city_props['block_side_length'] = props.get('block_side_length', 15.0)
-                city_props['web_mercator_origin_x'] = props.get('web_mercator_origin_x', -4265699.0)
-                city_props['web_mercator_origin_y'] = props.get('web_mercator_origin_y', 4392976.0)
-                city_props['city_boundary'] = props.get('city_boundary', None)
-                city_props['buildings_outline'] = props.get('buildings_outline', None)
-        except Exception:
-            # Layer doesn't exist, use defaults
-            pass
-        
-        # blocks layer optional
+        bl_gdf = None
+        props_gdf = None
         try:
             bl_gdf = gpd.read_file(gpkg_path, layer='blocks')
         except Exception:
-            bl_gdf = None
-        # optional edges parquet
-        edges_df = None
-        if edges_path:
-            try:
-                edges_df = pd.read_parquet(edges_path)
-            except Exception:
-                edges_df = None
+            pass
+        
+        try:
+            props_gdf = gpd.read_file(gpkg_path, layer='city_properties')
+        except Exception:
+            pass
+        
+        city_props = {}
+        if props_gdf is not None and not props_gdf.empty:
+            props = props_gdf.iloc[0]
+            city_props['name'] = props.get('name', 'Garden City')
+            city_props['block_side_length'] = props.get('block_side_length', 15.0)
+            city_props['web_mercator_origin_x'] = props.get('web_mercator_origin_x', -4265699.0)
+            city_props['web_mercator_origin_y'] = props.get('web_mercator_origin_y', 4392976.0)
+            
+            boundary = props.get('city_boundary')
+            if boundary is not None:
+                city_props['city_boundary'] = wkt.loads(boundary) if isinstance(boundary, str) else boundary
+                
+            outline = props.get('buildings_outline')
+            if outline is not None:
+                city_props['buildings_outline'] = wkt.loads(outline) if isinstance(outline, str) else outline
+        
+        edges_df = pd.read_parquet(edges_path) if edges_path and os.path.exists(edges_path) else None
         
         city = cls.from_geodataframes(b_gdf, s_gdf, bl_gdf, edges_df)
         
-        # Apply loaded city properties
-        if 'name' in city_props:
-            city.name = city_props['name']
-        if 'block_side_length' in city_props:
-            city.block_side_length = city_props['block_side_length']
-        if 'web_mercator_origin_x' in city_props:
-            city.web_mercator_origin_x = city_props['web_mercator_origin_x']
-        if 'web_mercator_origin_y' in city_props:
-            city.web_mercator_origin_y = city_props['web_mercator_origin_y']
-        if city_props.get('city_boundary') is not None:
-            city.city_boundary = city_props['city_boundary']
-        if city_props.get('buildings_outline') is not None:
-            city.buildings_outline = city_props['buildings_outline']
+        for key, value in city_props.items():
+            setattr(city, key, value)
         
         return city
 
@@ -922,7 +912,6 @@ class City:
                 if not res.empty:
                     return res.iloc[[0]]
         elif any_coords is not None:
-            from shapely.geometry import Point
             point = Point(any_coords)
             building = self.buildings_gdf[self.buildings_gdf.geometry.contains(point)]
             if not building.empty:
@@ -965,7 +954,6 @@ class City:
             DataFrame with 'x', 'y' columns updated to Web Mercator coordinates.
             If 'ha' column exists, it is also scaled.
         """
-        from nomad.map_utils import blocks_to_mercator
         return blocks_to_mercator(
             data, 
             block_size=self.block_side_length,
@@ -988,7 +976,6 @@ class City:
             DataFrame with 'x', 'y' columns updated to city block coordinates.
             If 'ha' column exists, it is also scaled back.
         """
-        from nomad.map_utils import mercator_to_blocks
         return mercator_to_blocks(
             data,
             block_size=self.block_side_length,
@@ -1125,7 +1112,6 @@ class RandomCityGenerator:
         if not candidate_blocks:
             return
 
-        from shapely.geometry import MultiPolygon
         block_polys = [box(x, y, x+1, y+1) for x, y in candidate_blocks]
         geom = unary_union(block_polys)
         blocks = candidate_blocks
