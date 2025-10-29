@@ -278,7 +278,7 @@ SUBTYPE_TO_GARDEN_CITY = {
     'military': 'workplace',
     'office': 'workplace',
     'outbuilding': 'other',
-    'parking': 'park',
+    'parking': 'other',
     'religious': 'retail',
     'residential': 'residential',
     'service': 'other',

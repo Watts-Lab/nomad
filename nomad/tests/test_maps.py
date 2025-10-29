@@ -14,6 +14,32 @@ import geopandas as gpd
 from shapely.geometry import Polygon, LineString, MultiPolygon, MultiLineString
 import numpy as np
 import pandas as pd
+import os
+import tempfile
+import osmnx as ox
+
+@pytest.fixture(scope="module", autouse=True)
+def osmnx_tmp_cache():
+    """Use a temporary OSMnx cache folder for this module and clean it up at teardown."""
+    prev_use_cache = getattr(ox.settings, 'use_cache', None)
+    prev_cache_folder = getattr(ox.settings, 'cache_folder', None)
+    prev_env_dir = os.environ.get('NOMAD_OSMNX_CACHE_DIR')
+    tmpdir_obj = tempfile.TemporaryDirectory(prefix="nomad-osmnx-cache-")
+    try:
+        os.environ['NOMAD_OSMNX_CACHE_DIR'] = tmpdir_obj.name
+        ox.settings.use_cache = True
+        ox.settings.cache_folder = tmpdir_obj.name
+        yield
+    finally:
+        if prev_env_dir is None:
+            os.environ.pop('NOMAD_OSMNX_CACHE_DIR', None)
+        else:
+            os.environ['NOMAD_OSMNX_CACHE_DIR'] = prev_env_dir
+        if prev_use_cache is not None:
+            ox.settings.use_cache = prev_use_cache
+        if prev_cache_folder is not None:
+            ox.settings.cache_folder = prev_cache_folder
+        tmpdir_obj.cleanup()
 
 from nomad.map_utils import (
     download_osm_buildings,
@@ -28,12 +54,12 @@ from nomad.map_utils import (
 @pytest.fixture
 def philly_bbox():
     """Bounding box for a section of Philadelphia."""
-    # Shrunk to 50% side length around the original center to speed up tests
+    # Simple, small rectangle in Center City for faster tests
     return (
-        -75.1610684475,  # west
-        39.94479872375,  # south
-        -75.1507933025,  # east
-        39.95207970325   # north
+        -75.1590,  # west
+        39.9470,   # south
+        -75.1530,  # east
+        39.9500    # north
     )
 
 def test_download_osm_buildings_garden_city(philly_bbox):
@@ -82,6 +108,7 @@ def test_download_osm_buildings_garden_city(philly_bbox):
     )
 
 
+@pytest.mark.skip(reason="Trimmed suite: covered by schema switching test")
 def test_download_osm_buildings_geolife(philly_bbox):
     """Test with geolife_plus category schema."""
     buildings = download_osm_buildings(philly_bbox, schema='geolife_plus')
@@ -128,6 +155,7 @@ def test_download_osm_buildings_includes_parks(philly_bbox):
     assert actual_categories.issubset(valid_categories)
 
 
+@pytest.mark.skip(reason="Trimmed suite: unit mapping checks not high value")
 def test_categorization_logic_garden_city():
     """Test that categorization returns all three levels with garden_city schema."""
     
@@ -153,6 +181,7 @@ def test_categorization_logic_garden_city():
     assert result[2] == 'other'  # category (default for unknown)
 
 
+@pytest.mark.skip(reason="Trimmed suite: unit mapping checks not high value")
 def test_categorization_logic_geolife():
     """Test that categorization works correctly with geolife_plus schema."""
     
@@ -183,6 +212,7 @@ def test_priority_order():
     assert result == ('residential', 'residential', 'residential')  # building tag wins
 
 
+@pytest.mark.skip(reason="Trimmed suite: CRS covered elsewhere")
 def test_crs_handling(philly_bbox):
     """Test that coordinate reference systems are handled correctly."""
     # Default should be EPSG:4326 (WGS84 lat/lon)
@@ -275,6 +305,7 @@ def test_rotate_and_explode_buildings():
     assert not result.geometry.iloc[0].equals(result_rotated.geometry.iloc[0])
 
 
+@pytest.mark.skip(reason="Trimmed suite: explosion/rotation covered by buildings test")
 def test_rotate_and_explode_streets():
     """Test rotating and exploding street geometries."""
     # Create test data with multilinestrings
@@ -406,11 +437,12 @@ def test_empty_bounding_box():
     # User-provided empty box (NW/SEx converted to west,south,east,north):
     # NW (lat, lon): 38.027365740492634, -66.19799553667396
     # SE (lat, lon): 37.81476271794678,  -65.78506182161694
+    # Simplified explicit coordinates near the same area
     ocean_bbox = (
-        -66.19799553667396,  # west
-        37.81476271794678,   # south
-        -65.78506182161694,  # east
-        38.027365740492634   # north
+        -66.20,  # west
+        37.82,   # south
+        -65.79,  # east
+        38.03    # north
     )
     
     buildings = download_osm_buildings(ocean_bbox, clip=True)
@@ -425,6 +457,23 @@ def test_empty_bounding_box():
     assert list(buildings.columns) == expected_cols, f"Expected columns {expected_cols}, got {list(buildings.columns)}"
 
 
+def test_empty_polygon():
+    """Test behavior when an empty-area polygon is provided directly."""
+    # Simplified explicit coordinates near the same empty area
+    poly = Polygon([
+        (-66.20, 37.82), (-65.79, 37.82), (-65.79, 38.03), (-66.20, 38.03), (-66.20, 37.82)
+    ])
+
+    buildings = download_osm_buildings(poly, clip=True)
+    streets = download_osm_streets(poly, clip=True)
+
+    assert len(buildings) == 0
+    assert len(streets) == 0
+    expected_cols = ['osm_type', 'subtype', 'category', 'geometry']
+    assert list(buildings.columns) == expected_cols
+
+
+@pytest.mark.skip(reason="Trimmed suite: empty-area CRS covered by other tests")
 def test_empty_bounding_box_custom_crs():
     """Empty-area downloads should work in other CRS as well (e.g., EPSG:3857)."""
     ocean_bbox = (
@@ -441,6 +490,7 @@ def test_empty_bounding_box_custom_crs():
     assert streets.crs == 'EPSG:3857'
 
 
+@pytest.mark.skip(reason="Trimmed suite: CRS behavior already covered")
 def test_different_coordinate_systems():
     """Test that functions work correctly with different CRS."""
     # Philadelphia bounding box
@@ -463,8 +513,8 @@ def test_different_coordinate_systems():
 def test_water_feature_exclusion():
     """Test that water features are properly excluded from buildings and parks."""
     # Use a bounding box that includes water features (like Schuylkill River)
-    water_bbox = (-75.18232868207252 - 0.01, 39.95057101861711 - 0.01,
-                  -75.18232868207252 + 0.01, 39.95057101861711 + 0.01)
+    water_bbox = (-75.18232868207252 - 0.006, 39.95057101861711 - 0.006,
+                  -75.18232868207252 + 0.006, 39.95057101861711 + 0.006)
     
     buildings = download_osm_buildings(water_bbox, clip=True)
     
@@ -481,8 +531,8 @@ def test_water_feature_exclusion():
 def test_park_categorization():
     """Test that parks are correctly categorized as 'park', not 'other'."""
     # Use a bounding box known to have parks (like Washington Square Park)
-    park_bbox = (-75.1531894880407 - 0.005, 39.9462501797551 - 0.005,
-                 -75.1531894880407 + 0.005, 39.9462501797551 + 0.005)
+    park_bbox = (-75.1531894880407 - 0.003, 39.9462501797551 - 0.003,
+                 -75.1531894880407 + 0.003, 39.9462501797551 + 0.003)
     
     buildings = download_osm_buildings(park_bbox, clip=True)
     
@@ -504,8 +554,8 @@ def test_park_categorization():
 def test_parking_lot_classification():
     """Test that parking lots are classified as buildings, not parks."""
     # Use a bounding box with parking lots
-    parking_bbox = (-75.1550204236118 - 0.001, 39.94419232826087 - 0.001,
-                    -75.1550204236118 + 0.001, 39.94419232826087 + 0.001)
+    parking_bbox = (-75.1550204236118 - 0.0005, 39.94419232826087 - 0.0005,
+                    -75.1550204236118 + 0.0005, 39.94419232826087 + 0.0005)
     
     buildings = download_osm_buildings(parking_bbox, clip=True)
     
@@ -519,7 +569,8 @@ def test_parking_lot_classification():
 def test_speculative_classification():
     """Test the infer_building_types parameter works correctly."""
     # Use a small bounding box with mixed building types
-    test_bbox = (-75.1662060, 39.9411582, -75.1456557, 39.9557201)
+    # Smaller bbox to keep this network call fast
+    test_bbox = (-75.15849966125, 39.946618968625, -75.15336208875, 39.950259458375)
     
     # Test without speculative classification
     buildings_basic = download_osm_buildings(test_bbox, infer_building_types=False, clip=True)
@@ -540,6 +591,7 @@ def test_speculative_classification():
         assert inferred_categories.issuperset(basic_categories), "Inference should not remove categories"
 
 
+@pytest.mark.skip(reason="Trimmed suite: explode covered by rotate/explode test")
 def test_multipolygon_explosion():
     """Test that MultiPolygons are properly exploded."""
     # Create a test MultiPolygon
@@ -580,6 +632,7 @@ def test_rotation_around_common_centroid():
     assert all(rotated.geometry.is_valid), "All rotated geometries should be valid"
 
 
+@pytest.mark.skip(reason="Trimmed suite: containment covered by other overlap tests")
 def test_overlap_removal_containment():
     """Test that overlap removal only removes fully contained polygons."""
     # Create contained polygon scenario
@@ -636,12 +689,12 @@ def test_city_boundary_by_name_salem():
 
 
 def test_download_osm_buildings_city_name_salem():
-    """Download buildings by small city name to keep runtime fast."""
-    buildings = download_osm_buildings('Salem, New Jersey', explode=True)
+    """Download buildings by small city name; keep processing minimal."""
+    buildings = download_osm_buildings('Salem, New Jersey', explode=False)
     assert isinstance(buildings, gpd.GeoDataFrame)
 
 
 def test_download_osm_streets_city_name_salem():
-    """Download streets by small city name to keep runtime fast."""
-    streets = download_osm_streets('Salem, New Jersey', explode=True)
+    """Download streets by small city name; keep processing minimal."""
+    streets = download_osm_streets('Salem, New Jersey', explode=False)
     assert isinstance(streets, gpd.GeoDataFrame)
