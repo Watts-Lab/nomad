@@ -1310,6 +1310,10 @@ def garden_city_to_mercator(data, block_size=15, false_easting=-4265699, false_n
     """
     Convert Garden City block coordinates to Web Mercator coordinates.
     
+    .. deprecated::
+        Use :func:`nomad.map_utils.blocks_to_mercator` instead, or the 
+        :meth:`City.to_mercator` method which uses the city's stored parameters.
+    
     Parameters
     ----------
     data : pd.DataFrame
@@ -1326,22 +1330,10 @@ def garden_city_to_mercator(data, block_size=15, false_easting=-4265699, false_n
     pd.DataFrame
         DataFrame with 'x', 'y' columns updated to Web Mercator coordinates
     """
-    # Validate required columns
-    if 'x' not in data.columns or 'y' not in data.columns:
-        raise ValueError("DataFrame must contain 'x' and 'y' columns")
-    
-    # Create a copy to avoid modifying original
-    result = data.copy()
-    
-    # Apply Garden City transformation to Web Mercator
-    result['x'] = block_size * result['x'] + false_easting
-    result['y'] = block_size * result['y'] + false_northing
-    
-    # Scale horizontal accuracy if present
-    if 'ha' in result.columns:
-        result['ha'] = block_size * result['ha']
-    
-    return result
+    from nomad.map_utils import blocks_to_mercator
+    return blocks_to_mercator(data, block_size=block_size, 
+                             false_easting=false_easting, 
+                             false_northing=false_northing)
 
 
 def allowed_buildings(local_ts):

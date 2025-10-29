@@ -1,8 +1,10 @@
 import pandas as pd
+import numpy as np
 import geopandas as gpd
 from shapely.geometry import box
 
 from nomad.city_gen import City, RandomCityGenerator
+from nomad.map_utils import blocks_to_mercator, mercator_to_blocks
 
 def test_city_to_geodataframes_and_persist(tmp_path):
     # Small deterministic city
@@ -172,5 +174,127 @@ def test_add_buildings_from_gdf():
     })
     city.add_buildings_from_gdf(gdf)
     assert len(city.buildings_gdf[city.buildings_gdf['id'].isin(['test1', 'test2'])]) == 2
+
+
+def test_coordinate_roundtrip(tmp_path):
+    """
+    Test coordinate transformation roundtrip: blocks -> mercator -> blocks.
+    Ensures that transforming coordinates and transforming back yields the original values.
+    """
+    # Create test data in block coordinates
+    df = pd.DataFrame({
+        'x': [0.0, 1.5, 10.0, 25.3],
+        'y': [0.0, 2.5, 15.0, 30.7],
+        'ha': [0.5, 0.75, 1.0, 1.5],
+        'other_col': ['a', 'b', 'c', 'd']
+    })
+    
+    # Test with default Garden City parameters
+    mercator_df = blocks_to_mercator(df)
+    
+    # Check transformation happened
+    assert mercator_df['x'].iloc[0] == -4265699.0
+    assert mercator_df['y'].iloc[0] == 4392976.0
+    assert mercator_df['ha'].iloc[0] == 7.5  # 0.5 * 15
+    
+    # Check other columns preserved
+    assert mercator_df['other_col'].tolist() == ['a', 'b', 'c', 'd']
+    
+    # Transform back
+    blocks_df = mercator_to_blocks(mercator_df)
+    
+    # Check roundtrip accuracy (within floating point precision)
+    np.testing.assert_allclose(blocks_df['x'].values, df['x'].values, rtol=1e-10)
+    np.testing.assert_allclose(blocks_df['y'].values, df['y'].values, rtol=1e-10)
+    np.testing.assert_allclose(blocks_df['ha'].values, df['ha'].values, rtol=1e-10)
+    
+    # Test with custom parameters (e.g., Philly with 10m blocks)
+    mercator_df2 = blocks_to_mercator(df, block_size=10.0, false_easting=-8000000, false_northing=4800000)
+    blocks_df2 = mercator_to_blocks(mercator_df2, block_size=10.0, false_easting=-8000000, false_northing=4800000)
+    
+    np.testing.assert_allclose(blocks_df2['x'].values, df['x'].values, rtol=1e-10)
+    np.testing.assert_allclose(blocks_df2['y'].values, df['y'].values, rtol=1e-10)
+
+
+def test_city_persistence_with_properties(tmp_path):
+    """
+    Test saving and loading a city with properties layer.
+    Ensures city metadata (name, block_side_length, mercator origins) are persisted and restored.
+    """
+    # Create a city with custom properties
+    rcg = RandomCityGenerator(width=10, height=10, street_spacing=5, seed=42)
+    city = rcg.generate_city()
+    
+    # Set custom properties
+    city.name = "Test City"
+    city.block_side_length = 12.5
+    city.web_mercator_origin_x = -5000000.0
+    city.web_mercator_origin_y = 5000000.0
+    
+    # Save to geopackage
+    gpkg_path = tmp_path / "test_city.gpkg"
+    city.save_geopackage(str(gpkg_path), persist_city_properties=True)
+    
+    # Load back
+    city2 = City.from_geopackage(str(gpkg_path))
+    
+    # Verify properties were preserved
+    assert city2.name == "Test City"
+    assert city2.block_side_length == 12.5
+    assert city2.web_mercator_origin_x == -5000000.0
+    assert city2.web_mercator_origin_y == 5000000.0
+    
+    # Verify geometries were preserved (compare bounds since geometries may be loaded differently)
+    from shapely.geometry import shape
+    from shapely import wkt
+    
+    # Handle case where geometry might be WKT string
+    if isinstance(city2.city_boundary, str):
+        city2_boundary = wkt.loads(city2.city_boundary)
+    else:
+        city2_boundary = city2.city_boundary
+    
+    if isinstance(city2.buildings_outline, str):
+        city2_outline = wkt.loads(city2.buildings_outline)
+    else:
+        city2_outline = city2.buildings_outline
+    
+    # Compare geometries (using equals_exact for floating point tolerance)
+    assert city2_boundary.equals_exact(city.city_boundary, tolerance=1e-6)
+    assert city2_outline.equals_exact(city.buildings_outline, tolerance=1e-6)
+    
+    # Verify buildings and streets were preserved
+    assert len(city2.buildings_gdf) == len(city.buildings_gdf)
+    assert len(city2.streets_gdf) == len(city.streets_gdf)
+    
+    # Test City.to_mercator and City.from_mercator methods
+    test_data = pd.DataFrame({
+        'x': [0.0, 1.0, 2.0],
+        'y': [0.0, 1.0, 2.0]
+    })
+    
+    mercator_data = city2.to_mercator(test_data)
+    
+    # Should use city's custom parameters
+    assert mercator_data['x'].iloc[0] == -5000000.0  # 12.5 * 0 + (-5000000)
+    assert mercator_data['y'].iloc[0] == 5000000.0   # 12.5 * 0 + 5000000
+    assert mercator_data['x'].iloc[1] == -5000000.0 + 12.5  # 12.5 * 1 + (-5000000)
+    
+    # Test roundtrip through city methods
+    blocks_data = city2.from_mercator(mercator_data)
+    np.testing.assert_allclose(blocks_data['x'].values, test_data['x'].values, rtol=1e-10)
+    np.testing.assert_allclose(blocks_data['y'].values, test_data['y'].values, rtol=1e-10)
+    
+    # Test backwards compatibility: save without properties, load with defaults
+    gpkg_path2 = tmp_path / "test_city_no_props.gpkg"
+    city.save_geopackage(str(gpkg_path2), persist_city_properties=False)
+    
+    city3 = City.from_geopackage(str(gpkg_path2))
+    
+    # Should have default values
+    assert city3.name == "Garden City"
+    assert city3.block_side_length == 15.0
+    assert city3.web_mercator_origin_x == -4265699.0
+    assert city3.web_mercator_origin_y == 4392976.0
 
 
