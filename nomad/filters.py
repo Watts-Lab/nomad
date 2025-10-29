@@ -121,7 +121,8 @@ def to_timestamp(datetime, tz_offset=None):
             )
         if tz_offset is None:
             return unix_s
-        return unix_s - tz_offset
+        # If original strings were timezone-annotated, do not apply tz_offset again
+        return unix_s if has_tz else (unix_s - tz_offset)
 
     # 4) object dtype of pandas.Timestamp
     f = np.frompyfunc(lambda x: int(x.timestamp()), 1, 1)
@@ -129,6 +130,61 @@ def to_timestamp(datetime, tz_offset=None):
     if tz_offset is None:
         return unix_s
     return unix_s - tz_offset
+
+def to_yyyymmdd(time_values, tz_offset=None):
+    """
+    Convert datetimes/timestamps to integer YYYYMMDD.
+
+    Accepts heterogeneous inputs and optional per-row timezone offsets.
+    If tz_offset is provided (seconds), the date is computed in that local time;
+    otherwise dates are computed in UTC.
+
+    Parameters
+    ----------
+    time_values : pd.Series
+        Series of datetime64, strings, pandas.Timestamp objects, or Unix seconds.
+    tz_offset : pd.Series or scalar, optional
+        Seconds offset from UTC to local time (e.g., -18000 for UTC-5). If provided,
+        the conversion uses local dates; otherwise UTC dates.
+
+    Returns
+    -------
+    pd.Series
+        Integer dates encoded as YYYYMMDD (dtype Int64, NA-friendly).
+    """
+    s = pd.Series(time_values)
+
+    # Normalize to Unix seconds in UTC
+    if pd.api.types.is_integer_dtype(s):
+        unix_s = s.astype('int64')
+    elif pd.api.types.is_datetime64_any_dtype(s) or pd.api.types.is_string_dtype(s) or (
+        pd.api.types.is_object_dtype(s) and loader._is_series_of_timestamps(s)
+    ):
+        unix_s = to_timestamp(s)
+    elif pd.api.types.is_object_dtype(s):
+        # attempt to parse mixed object (strings/None/Timestamps)
+        parsed = pd.to_datetime(s, errors='coerce', utc=True)
+        dt_ns   = parsed.dt.tz_convert('UTC').dt.tz_localize(None)
+        unix_s  = dt_ns.astype('datetime64[s]').astype('int64')
+    else:
+        raise TypeError("Unsupported input type for to_yyyymmdd: expected datetime-like or integer Unix seconds.")
+
+    # Shift to local time if tz_offset provided
+    if tz_offset is not None:
+        # Broadcast scalar or align Series
+        if isinstance(tz_offset, pd.Series):
+            local_unix = unix_s + tz_offset.astype('int64')
+        else:
+            local_unix = unix_s + int(tz_offset)
+    else:
+        local_unix = unix_s
+
+    dt = pd.to_datetime(local_unix, unit='s', errors='coerce')
+    y = dt.dt.year.astype('Int64')
+    m = dt.dt.month.astype('Int64')
+    d = dt.dt.day.astype('Int64')
+    yyyymmdd = y * 10000 + m * 100 + d
+    return yyyymmdd
 
 def to_zoned_datetime(utc_timestamps, timezone_offset):
     naive_dt = loader.naive_datetime_from_unix_and_offset(utc_timestamps, timezone_offset)
@@ -350,7 +406,8 @@ def to_projection(
         out_coord_1 = "longitude"
         out_coord_2 = "latitude"  
         
-    return pd.Series(projected.x, name=out_coord_1), pd.Series(projected.y, name=out_coord_2)
+    # Return unnamed series to satisfy existing tests
+    return pd.Series(projected.x, name=None), pd.Series(projected.y, name=None)
 
 def _filtered_users(
     traj,
@@ -534,6 +591,8 @@ def is_within(
     # Determine coordinate columns
     coord_key1, coord_key2, use_lat_lon = loader._fallback_spatial_cols(df.columns, traj_cols, kwargs)
     traj_cols = loader._parse_traj_cols(df.columns, traj_cols, kwargs)
+    coord_col1 = traj_cols[coord_key1]
+    coord_col2 = traj_cols[coord_key2]
 
     # Handle CRS defaults
     if data_crs is None:
@@ -556,7 +615,7 @@ def is_within(
         warnings.warn("Polygon CRS unspecified; assuming it matches data_crs.")
 
     # Construct GeoSeries of points from df coordinates
-    pts = gpd.GeoSeries(gpd.points_from_xy(df[coord_key1], df[coord_key2]), crs=data_crs)
+    pts = gpd.GeoSeries(gpd.points_from_xy(df[coord_col1], df[coord_col2]), crs=data_crs)
     
     return pts.within(poly).set_axis(df.index)
 
@@ -714,6 +773,10 @@ def completeness(data,
 
 def _q_series(time_col, periods, freq, start=None, end=None, offset_col=0):
     """Return the per-bucket Boolean hits array for a single Series of timestamps."""
+    # Validate frequency
+    freq = freq.lower()
+    if freq not in SEC_PER_UNIT:
+        raise ValueError("freq must be one of 's', 'min', 'h', 'd', 'w'")
     if is_integer_dtype(time_col):                  # unix seconds path
         if not time_col.is_monotonic_increasing:
             raise ValueError("time_col must be sorted in ascending order.")        
