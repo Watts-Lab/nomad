@@ -8,9 +8,9 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.17.1
 #   kernelspec:
-#     display_name: Python 3.10 (daphme)
+#     display_name: Python 3 (ipykernel)
 #     language: python
-#     name: daphme
+#     name: python3
 # ---
 
 # %%
@@ -20,21 +20,25 @@ import geopandas as gpd
 import pickle
 import json
 from tqdm import tqdm
+import os
 
 # %%
 import nomad.io.base as loader
 import nomad.city_gen as cg
 import nomad.traj_gen as tg
 from nomad.traj_gen import Agent, Population, garden_city_to_mercator
+from nomad.city_gen import City
 
 # %% [markdown]
 # ## Load city and configure destination diaries
 
 # %%
-city = cg.load('../../../examples/garden-city.pkl')
+# Load the city
+city_file = '../../garden-city.gpkg'
+city = cg.City.from_geopackage(city_file)
 start = '2024-06-01 00:00-04:00'
 
-#option 1: old
+#option 1: symmetric
 start_time = pd.date_range(start=start, periods=4, freq='60min')
 unix_timestamp = [int(t.timestamp()) for t in start_time]
 duration = [60]*4  # in minutes
@@ -71,15 +75,15 @@ destinations.to_csv("exp_1_destinations_unbalanced.csv", index=False)
 # This could be in a json or yaml and should be passable to a Population object.
 
 # %%
-# option 1
-N_reps = 35
-sparsity_samples = 50
+# option 1 (reduced for quick demo run)
+N_reps = 2
+sparsity_samples = 3
 config = dict(
     dt = 0.5,
     N = N_reps*sparsity_samples,
     name_count=2,
     name_seed=2025,
-    city_file='../../../examples/garden-city.pkl',
+    city_file='../../garden-city.gpkg',
     destination_diary_file='exp_1_destinations_balanced.csv',
     output_files = dict(
         sparse_path='./sparse_traj_1',
@@ -100,15 +104,15 @@ config = dict(
 with open('config_low_ha.json', 'w', encoding='utf-8') as f:
     json.dump(config, f, ensure_ascii=False, indent=4)
 
-# option 2
-N_reps = 60
-sparsity_samples = 40
+# option 2 (reduced for quick demo run)
+N_reps = 2
+sparsity_samples = 3
 config_2 = dict(
     dt = 0.5,
     N = N_reps*sparsity_samples,
     name_count=2,
     name_seed=2025,
-    city_file='../../../examples/garden-city.pkl',
+    city_file='../../garden-city.gpkg',
     destination_diary_file='exp_1_destinations_unbalanced.csv',
     output_files = dict(
         sparse_path='./sparse_traj_2',
@@ -127,7 +131,7 @@ config_2 = dict(
     )
 )
 with open('config_high_ha.json', 'w', encoding='utf-8') as f:
-    json.dump(config, f, ensure_ascii=False, indent=4)
+    json.dump(config_2, f, ensure_ascii=False, indent=4)
 
 # %% [markdown]
 # ## Generate trajectories
@@ -138,8 +142,14 @@ with open('config_high_ha.json', 'r', encoding='utf-8') as f:
     config = json.load(f)
     
 # Load city and destination diary from config
-city = cg.load(config["city_file"])
-poi_data = city.get_building_coordinates() # and type and size
+city = City.from_geopackage(config["city_file"])
+# Build POI data from buildings_gdf door info
+cent = city.buildings_gdf['door_point'] if 'door_point' in city.buildings_gdf.columns else city.buildings_gdf.geometry.centroid
+poi_data = pd.DataFrame({
+    'building_id': city.buildings_gdf['id'].values,
+    'x': (city.buildings_gdf['door_cell_x'].astype(float) + 0.5).values if 'door_cell_x' in city.buildings_gdf.columns else cent.x.values,
+    'y': (city.buildings_gdf['door_cell_y'].astype(float) + 0.5).values if 'door_cell_y' in city.buildings_gdf.columns else cent.y.values
+})
 
 destinations = pd.read_csv(config["destination_diary_file"], parse_dates=["datetime"])
 

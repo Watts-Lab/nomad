@@ -1007,3 +1007,109 @@ def rotate_streets_to_align(streets_gdf, k=200):
     )
     
     return rotated_streets, rotation_deg
+
+
+# =============================================================================
+# GARDEN CITY COORDINATE TRANSFORMATION UTILITIES
+# =============================================================================
+
+def blocks_to_mercator(data, block_size=15.0, false_easting=-4265699.0, false_northing=4392976.0):
+    """
+    Convert city block coordinates to Web Mercator coordinates.
+    
+    This function applies an affine transformation to convert abstract city block
+    coordinates (in units of blocks) to Web Mercator projection coordinates (EPSG:3857)
+    in meters. The transformation is: x_mercator = block_size * x_block + false_easting
+    
+    Parameters
+    ----------
+    data : pd.DataFrame
+        DataFrame with 'x', 'y' columns in city block coordinates
+    block_size : float, default 15.0
+        Size of one city block in meters
+    false_easting : float, default -4265699.0
+        False easting offset (x-origin) in Web Mercator meters
+    false_northing : float, default 4392976.0
+        False northing offset (y-origin) in Web Mercator meters
+    
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with 'x', 'y' columns updated to Web Mercator coordinates.
+        If 'ha' column exists, it is also scaled by block_size.
+    
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> df = pd.DataFrame({'x': [0, 1, 2], 'y': [0, 1, 2]})
+    >>> result = blocks_to_mercator(df, block_size=15, false_easting=-4265699, false_northing=4392976)
+    >>> result['x'].tolist()
+    [-4265699.0, -4265684.0, -4265669.0]
+    """
+    # Validate required columns
+    if 'x' not in data.columns or 'y' not in data.columns:
+        raise ValueError("DataFrame must contain 'x' and 'y' columns")
+    
+    # Create a copy to avoid modifying original
+    result = data.copy()
+    
+    # Apply affine transformation: mercator = block_size * block + origin
+    result['x'] = block_size * result['x'] + false_easting
+    result['y'] = block_size * result['y'] + false_northing
+    
+    # Scale horizontal accuracy if present
+    if 'ha' in result.columns:
+        result['ha'] = block_size * result['ha']
+    
+    return result
+
+
+def mercator_to_blocks(data, block_size=15.0, false_easting=-4265699.0, false_northing=4392976.0):
+    """
+    Convert Web Mercator coordinates back to city block coordinates.
+    
+    This function applies the inverse affine transformation to convert Web Mercator
+    projection coordinates (EPSG:3857) in meters back to abstract city block
+    coordinates. The transformation is: x_block = (x_mercator - false_easting) / block_size
+    
+    Parameters
+    ----------
+    data : pd.DataFrame
+        DataFrame with 'x', 'y' columns in Web Mercator coordinates
+    block_size : float, default 15.0
+        Size of one city block in meters
+    false_easting : float, default -4265699.0
+        False easting offset (x-origin) in Web Mercator meters
+    false_northing : float, default 4392976.0
+        False northing offset (y-origin) in Web Mercator meters
+    
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with 'x', 'y' columns updated to city block coordinates.
+        If 'ha' column exists, it is also scaled back by dividing by block_size.
+    
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> df = pd.DataFrame({'x': [-4265699.0, -4265684.0], 'y': [4392976.0, 4392991.0]})
+    >>> result = mercator_to_blocks(df, block_size=15, false_easting=-4265699, false_northing=4392976)
+    >>> result['x'].tolist()
+    [0.0, 1.0]
+    """
+    # Validate required columns
+    if 'x' not in data.columns or 'y' not in data.columns:
+        raise ValueError("DataFrame must contain 'x' and 'y' columns")
+    
+    # Create a copy to avoid modifying original
+    result = data.copy()
+    
+    # Apply inverse affine transformation: block = (mercator - origin) / block_size
+    result['x'] = (result['x'] - false_easting) / block_size
+    result['y'] = (result['y'] - false_northing) / block_size
+    
+    # Scale horizontal accuracy back if present
+    if 'ha' in result.columns:
+        result['ha'] = result['ha'] / block_size
+    
+    return result

@@ -33,7 +33,7 @@ examples/output/
 dist/
 build/
 pip
-tutorials/IC2S2-2025/tutorial-sample/_SUCCESS
+tutorials/IC2S2-2025/tutorial-sample/*
 
 # Development environment configurations (personal/local only)
 .vscode/
