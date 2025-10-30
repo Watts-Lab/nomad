@@ -12,6 +12,7 @@ import funkybob
 import s3fs
 import pyarrow as pa
 import pyarrow.dataset as ds
+import uuid
 
 from nomad.io.base import from_df, to_file
 
@@ -296,12 +297,18 @@ class Agent:
         self.city = city
 
         if home is None:
-            home = city.building_types[city.building_types['type'] == 'home'].sample(n=1, random_state=rng)['id'].iloc[0]
+            home = city.buildings_gdf[city.buildings_gdf['type'] == 'home'].sample(n=1, random_state=rng)['id'].iloc[0]
         if workplace is None:
-            workplace = city.building_types[city.building_types['type'] == 'work'].sample(n=1, random_state=rng)['id'].iloc[0]
+            workplace = city.buildings_gdf[city.buildings_gdf['type'] == 'work'].sample(n=1, random_state=rng)['id'].iloc[0]
 
+        home_building = city.get_building(identifier=home)
+        workplace_building = city.get_building(identifier=workplace)
+        if home_building is None or workplace_building is None:
+            raise ValueError(f"Home {home} or workplace {workplace} not found in city buildings.")
         self.home = home
         self.workplace = workplace
+        self.home_centroid = home_building['geometry'].iloc[0].centroid if not home_building.empty and 'geometry' in home_building.columns else None
+        self.workplace_centroid = workplace_building['geometry'].iloc[0].centroid if not workplace_building.empty and 'geometry' in workplace_building.columns else None
 
         self.still_probs = still_probs
         self.speeds = speeds
@@ -367,20 +374,20 @@ class Agent:
             ax.scatter(self.trajectory.x, self.trajectory.y, s=6, color=color, alpha=alpha, zorder=2)
             self.city.plot_city(ax, doors=doors, address=address, zorder=1)
 
-    def _sample_step(self, start_point, dest_building, dt, rng):
+    def _sample_step(self, start_point, dest_building_id, dt, rng):
         """
-        From a destination diary, generates (x, y) pings.
+        From a destination diary, generates a single (x, y) ping step towards dest_building_id.
 
         Parameters
         ----------
         start_point : tuple
             The coordinates of the current position as a tuple (x, y).
-        dest_building : Building
-            The destination building of the agent.
+        dest_building_id : str
+            The destination building id.
         dt : float
-            The time step duration.
-        rng : numpy.random.generator
-            random number generator for reproducibility.
+            The time step duration (minutes).
+        rng : numpy.random.Generator
+            Random number generator for reproducibility.
 
         Returns
         -------
@@ -391,82 +398,114 @@ class Agent:
         """
         city = self.city
 
-        start_block = np.floor(start_point)
-        start_geometry = city.get_block(tuple(start_block))
+        # Resolve destination building geometry and attributes
+        brow = city.buildings_gdf[city.buildings_gdf['id'] == dest_building_id]
+        if brow.empty:
+            # Unknown destination; remain in place
+            return np.asarray(start_point, dtype=float), None
+        dest_geom = brow.iloc[0]['geometry']
+        dest_type = brow.iloc[0]['type'] if 'type' in brow.columns else 'home'
+        # Door cell and door centroid
+        dest_cell = (int(brow.iloc[0]['door_cell_x']), int(brow.iloc[0]['door_cell_y'])) if 'door_cell_x' in brow.columns else (int(np.floor(dest_geom.centroid.x)), int(np.floor(dest_geom.centroid.y)))
+        door_poly = box(dest_cell[0], dest_cell[1], dest_cell[0]+1, dest_cell[1]+1)
+        door_line = dest_geom.intersection(door_poly)
+        dest_door_centroid = dest_geom.centroid if door_line.is_empty else door_line.centroid
 
-        curr = np.array(start_point)
+        # Determine start block and geometry
+        start_block = tuple(np.floor(start_point).astype(int))
+        # Clamp to bounds
+        start_block = (
+            max(0, min(start_block[0], city.dimensions[0] - 1)),
+            max(0, min(start_block[1], city.dimensions[1] - 1)),
+        )
+        start_info = city.get_block(start_block)
+        start_point_arr = np.asarray(start_point, dtype=float)
 
-        if start_geometry == dest_building or start_point == dest_building.door_centroid:
-            location = dest_building.id
-            p = self.still_probs[dest_building.building_type]
-            sigma = self.speeds[dest_building.building_type]
+        # If already at destination building area or at door centroid, stay-within-building dynamics
+        if (start_info['kind'] == 'building' and start_info['building_id'] == dest_building_id) or \
+           (abs(start_point_arr[0] - dest_door_centroid.x) < 1e-9 and abs(start_point_arr[1] - dest_door_centroid.y) < 1e-9):
+            location = dest_building_id
+            p = self.still_probs.get(dest_type, 0.5)
+            sigma = self.speeds.get(dest_type, 0.5)
 
             if rng.uniform() < p:
-                coord = curr
-            else: # Draw until coord falls inside building
-                while True:
-                    coord = rng.normal(loc=curr, scale=sigma*np.sqrt(dt), size=2)
-                    if dest_building.geometry.contains(Point(coord)):
-                        break
-        else: # Agent travels to building along the streets
-            location = None
-            dest_point = dest_building.door
-
-            if start_geometry in city.buildings.values():
-                start_segment = [start_point, start_geometry.door_centroid]
-                start = start_geometry.door
+                coord = start_point_arr
             else:
-                start_segment = []
-                start = tuple(start_block.astype(int))
+                # Draw until coord falls inside building
+                while True:
+                    coord = rng.normal(loc=start_point_arr, scale=sigma*np.sqrt(dt), size=2)
+                    if dest_geom.contains(Point(coord)):
+                        break
+            return coord, location
 
-            street_path = city.shortest_paths[start][dest_point]
-            path = [(x + 0.5, y + 0.5) for (x, y) in street_path]
-            path = start_segment + path + [dest_building.door_centroid]
-            path_ml = MultiLineString([path])
-            path_length = path_ml.length
+        # Otherwise, move along streets toward destination door cell
+        location = None
+        start_segment = []
+        # If currently inside a building, first move towards its door centroid
+        if start_info['kind'] == 'building' and start_info['building_id'] is not None:
+            srow = city.buildings_gdf[city.buildings_gdf['id'] == start_info['building_id']]
+            if not srow.empty:
+                s_cell = (int(srow.iloc[0]['door_cell_x']), int(srow.iloc[0]['door_cell_y'])) if 'door_cell_x' in srow.columns else start_block
+                s_door_poly = box(s_cell[0], s_cell[1], s_cell[0]+1, s_cell[1]+1)
+                s_door_line = srow.iloc[0]['geometry'].intersection(s_door_poly)
+                s_door_centroid = srow.iloc[0]['geometry'].centroid if s_door_line.is_empty else s_door_line.centroid
+                start_segment = [tuple(start_point_arr.tolist()), (s_door_centroid.x, s_door_centroid.y)]
+                start_node = s_cell
+            else:
+                start_node = start_block
+        else:
+            start_node = start_block
 
-            # Bounding polygon: needs to stay in street
-            street_poly = unary_union([city.get_block(block).geometry for block in street_path])
-            bound_poly = unary_union([start_geometry.geometry, street_poly])
-            
-            # Transformed coordinates of current position
-            path_coord = _path_coords(path_ml, start_point)
+        # Shortest path between street blocks (door cells)
+        try:
+            street_path = city.get_shortest_path(start_node, dest_cell)
+        except ValueError:
+            street_path = []
+        if not street_path:
+            # No path; step straight towards destination door centroid
+            direction = np.asarray([dest_door_centroid.x, dest_door_centroid.y]) - start_point_arr
+            norm = np.linalg.norm(direction)
+            if norm == 0:
+                return start_point_arr, None
+            step = (direction / norm) * (0.5 * dt)
+            coord = start_point_arr + step
+            return coord, location
 
-            heading_drift = 3.33 * dt
-            sigma = 0.5 * dt / 1.96
+        # Build continuous path through block centers, include start/end segments
+        path = [(x + 0.5, y + 0.5) for (x, y) in street_path]
+        path = start_segment + path + [(dest_door_centroid.x, dest_door_centroid.y)]
+        path_ml = MultiLineString([path])
+        street_geom = unary_union([city.get_block(b)['geometry'] for b in street_path])
+        bound_poly = unary_union([start_info['geometry'], street_geom]) if start_info['geometry'] is not None else street_geom
 
-            while True:
-                # Step in transformed (path-based) space
-                step = rng.normal(loc=[heading_drift, 0], scale=sigma * np.sqrt(dt), size=2)
-                path_coord = (path_coord[0] + step[0], 0.7 * path_coord[1] + step[1])
+        # Transformed coordinates of current position along the path
+        path_coord = _path_coords(path_ml, start_point_arr)
 
-                if path_coord[0] > path_length:
-                    coord = np.array(dest_building.geometry.centroid.coords[0])
-                    break
+        heading_drift = 3.33 * dt
+        sigma = 0.5 * dt / 1.96
 
-                coord = _cartesian_coords(path_ml, *path_coord)
+        while True:
+            # Step in transformed (path-based) space
+            step = rng.normal(loc=[heading_drift, 0], scale=sigma * np.sqrt(dt), size=2)
+            path_coord = (path_coord[0] + step[0], 0.7 * path_coord[1] + step[1])
 
-                if bound_poly.contains(Point(coord)):
-                    break
+            if path_coord[0] > path_ml.length:
+                coord = np.array([dest_geom.centroid.x, dest_geom.centroid.y])
+                break
+
+            coord = _cartesian_coords(path_ml, *path_coord)
+
+            if bound_poly.contains(Point(coord)):
+                break
 
         return coord, location
 
 
     def _traj_from_dest_diary(self, dt, seed=0):
         """
-        Simulate a trajectory and give agent true travel diary attribute.
-
-        Parameters
-        ----------
-        dt : float
-            The time step duration.
-
-        Returns
-        -------
-        None (updates self.trajectory, self.diary)
+        Simulate a trajectory and update agent diary from destination_diary.
         """
-
-        rng = np.random.default_rng(seed) # random generator for steps
+        rng = np.random.default_rng(seed)  # random generator for steps
         city = self.city
         destination_diary = self.destination_diary
 
@@ -483,17 +522,15 @@ class Agent:
         entry_update = []
         for i in range(destination_diary.shape[0]):
             destination_info = destination_diary.iloc[i]
-            duration = int(destination_info['duration'] * 1/dt)
             building_id = destination_info['location']
 
             duration_in_ticks = int(destination_info['duration'] / dt)
             for _ in range(duration_in_ticks):
                 prev_ping = self.last_ping
                 start_point = (prev_ping['x'], prev_ping['y'])
-                dest_building = city.buildings[building_id]
                 unix_timestamp = prev_ping['timestamp'] + tick_secs
-                datetime = prev_ping['datetime'] + timedelta(seconds=tick_secs)               
-                coord, location = self._sample_step(start_point, dest_building, dt, rng)
+                datetime = prev_ping['datetime'] + timedelta(seconds=tick_secs)
+                coord, location = self._sample_step(start_point, building_id, dt, rng)
                 ping = {'x': coord[0], 
                         'y': coord[1],
                         'datetime': datetime,
@@ -502,7 +539,7 @@ class Agent:
 
                 trajectory_update.append(ping)
                 self.last_ping = ping
-                if current_entry == None:
+                if current_entry is None:
                     current_entry = {'datetime': datetime,
                                      'timestamp': unix_timestamp,
                                      'duration': dt,
@@ -516,7 +553,7 @@ class Agent:
                                      'location': location,
                                      'user_id': self.identifier}
                 else:
-                    current_entry['duration'] += 1*dt #add one tick to the duration
+                    current_entry['duration'] += 1*dt  # add one tick to the duration
 
         if self.trajectory is None:
             self.trajectory = pd.DataFrame(trajectory_update)
@@ -530,6 +567,7 @@ class Agent:
         else:
             self.diary = pd.concat([self.diary, pd.DataFrame(entry_update)], ignore_index=True)
         self.destination_diary = destination_diary.drop(destination_diary.index)
+        return None
 
     def _generate_dest_diary(self, 
                              end_time, 
@@ -559,82 +597,102 @@ class Agent:
         """
         rng = npr.default_rng(seed)
 
-        id2door = pd.DataFrame([[s, b.door] for s, b in self.city.buildings.items()],
-                               columns=['id', 'door']).set_index('door')  # could this be a field of city?
+        # Mapping: building id -> door cell
+        id2cell = self.city.id_to_door_cell()
 
         if end_time.tz is None:
             tz = getattr(self.last_ping['datetime'], 'tz', None)
             if tz is not None:
-                end_time.tz_localize(tz)
-                warnings.warn(
-                    f"The end_time input is timezone-naive. Assuming it is in {tz}.")
+                end_time = end_time.tz_localize(tz)
 
         if isinstance(end_time, pd.Timestamp):
             end_time = int(end_time.timestamp())  # Convert to unix
 
-        # Create visit frequency table is user does not already have one
+        # Create visit frequency table if user does not already have one
         visit_freqs = self.visit_freqs
         if visit_freqs is None:
+            bdf = self.city.buildings_gdf
             visit_freqs = pd.DataFrame({
-                'id': list(self.city.buildings.keys()),
-                'type': [b.building_type for b in self.city.buildings.values()],
+                'id': bdf['id'].values,
+                'type': bdf['type'].values if 'type' in bdf.columns else ['home']*len(bdf),
                 'freq': 0,
-                'p': 0
+                'p': 0.0
             }).set_index('id')
 
             # Initializes past counts randomly
-            visit_freqs.loc[self.home, 'freq'] = 20
-            visit_freqs.loc[self.workplace, 'freq'] = 20
-            visit_freqs.loc[visit_freqs.type == 'park', 'freq'] = 5
-
-            initial_locs = []
-            initial_locs += list(rng.choice(visit_freqs.loc[visit_freqs.type == 'retail'].index, size=rng.poisson(4)))
-            initial_locs += list(rng.choice(visit_freqs.loc[visit_freqs.type == 'work'].index, size=rng.poisson(2)))
-            initial_locs += list(rng.choice(visit_freqs.loc[visit_freqs.type == 'home'].index, size=rng.poisson(2)))
-            visit_freqs.loc[initial_locs, 'freq'] += 2
+            if (visit_freqs.type == 'home').any():
+                visit_freqs.loc[visit_freqs.type == 'home', 'freq'] += 2
+            if (visit_freqs.type == 'work').any():
+                visit_freqs.loc[visit_freqs.type == 'work', 'freq'] += 2
+            if (visit_freqs.type == 'park').any():
+                visit_freqs.loc[visit_freqs.type == 'park', 'freq'] += 1
 
         if self.destination_diary.empty:
             start_time_local = self.last_ping['datetime']
-            start_time = self.last_ping['timestamp']
-            curr = self.city.get_block((self.last_ping['x'], self.last_ping['y'])).id  # Always a building?? Could be street
+            start_time = int(self.last_ping['timestamp'])
+            curr_info = self.city.get_block((int(np.floor(self.last_ping['x'])), int(np.floor(self.last_ping['y']))))
+            curr = curr_info['building_id'] if curr_info['kind'] == 'building' and curr_info['building_id'] is not None else self.home
         else:
             last_entry = self.destination_diary.iloc[-1]
             start_time_local = last_entry.datetime + timedelta(minutes=int(last_entry.duration))
-            start_time = last_entry.unix_timestamp + last_entry.duration*60
+            start_time = int(last_entry.timestamp + last_entry.duration*60)
             curr = last_entry.location
 
         dest_update = []
         while start_time < end_time:
-            curr_type = visit_freqs.loc[curr, 'type']
+            curr_type = visit_freqs.loc[curr, 'type'] if curr in visit_freqs.index else 'home'
             allowed = allowed_buildings(start_time_local)
             x = visit_freqs.loc[(visit_freqs['type'].isin(allowed)) & (visit_freqs.freq > 0)]
 
-            S = len(x) # Fix depending on whether "explore" should depend only on allowed buildings
+            S = len(x) if len(x) > 0 else 1
 
-            #probability of exploring
+            # probability of exploring
             p_exp = rho*(S**(-gamma))
 
             # Stay
-            if (curr_type in allowed) & (rng.uniform() < stay_probs[curr_type]):
+            if (curr_type in allowed) & (rng.uniform() < stay_probs.get(curr_type, 0.5)):
                 pass
 
             # Exploration
             elif rng.uniform() < p_exp:
-                visit_freqs['p'] = self.city.gravity.xs(
-                    self.city.buildings[curr].door, level=0).join(id2door, how='right').set_index('id')
+                # Compute gravity probs from current door cell to unexplored candidates
                 y = visit_freqs.loc[(visit_freqs['type'].isin(allowed)) & (visit_freqs.freq == 0)]
-
-                if not y.empty and y['p'].sum() > 0:
-                    curr = rng.choice(y.index, p=y['p']/y['p'].sum())
+                if not y.empty and curr in id2cell.index and id2cell[curr] is not None:
+                    curr_cell = id2cell[curr]
+                    dest_cells = [id2cell.get(bid) for bid in y.index]
+                    pairs = [(curr_cell, dc) for dc in dest_cells]
+                    # Look up gravity for each pair (fill missing with 0)
+                    grav = []
+                    for p in pairs:
+                        try:
+                            grav.append(float(self.city.gravity.at[p, 'gravity']))
+                        except Exception:
+                            grav.append(0.0)
+                    grav = np.asarray(grav, dtype=float)
+                    if grav.sum() > 0:
+                        grav = grav / grav.sum()
+                        curr = rng.choice(y.index, p=grav)
+                    else:
+                        # If there are no more buildings to explore, then preferential return
+                        if not x.empty and x['freq'].sum() > 0:
+                            curr = rng.choice(x.index, p=x['freq']/x['freq'].sum())
+                        else:
+                            curr = rng.choice(visit_freqs.index)
                 else:
-                    # If there are no more buildings to explore, then preferential return
-                    curr = rng.choice(x.index, p=x['freq']/x['freq'].sum())
+                    # Fallback: preferential return
+                    if not x.empty and x['freq'].sum() > 0:
+                        curr = rng.choice(x.index, p=x['freq']/x['freq'].sum())
+                    else:
+                        curr = rng.choice(visit_freqs.index)
 
                 visit_freqs.loc[curr, 'freq'] += 1
 
             # Preferential return
             else:
-                curr = rng.choice(x.index, p=x['freq']/x['freq'].sum())
+                if not x.empty and x['freq'].sum() > 0:
+                    curr = rng.choice(x.index, p=x['freq']/x['freq'].sum())
+                else:
+                    curr = rng.choice(visit_freqs.index)
                 visit_freqs.loc[curr, 'freq'] += 1
 
             # Update destination diary
@@ -645,7 +703,7 @@ class Agent:
             dest_update.append(entry)
 
             start_time_local = start_time_local + timedelta(minutes=int(epr_time_res))
-            start_time = start_time + epr_time_res*60 # because start_time in seconds
+            start_time = start_time + epr_time_res*60  # because start_time in seconds
 
         if self.destination_diary.empty:
             self.destination_diary = pd.DataFrame(dest_update)
@@ -659,8 +717,8 @@ class Agent:
         return None
 
     def generate_trajectory(self,
-                            destination_diary= None,
-                            end_time=None, 
+                            destination_diary=None,
+                            end_time=None,
                             epr_time_res=15,
                             dt=1,
                             seed=0,
@@ -681,10 +739,10 @@ class Agent:
         seed : int, optional
             Random seed for reproducibility.
         kwargs : dict, optional
-            Additional keyword arguments for trajectory generation. 
+            Additional keyword arguments for trajectory generation.
             Can include 'x', 'y', 'datetime', 'timestamp', 'tz'
             These are used to set the initial position of the agent.
-        
+
         Returns
         -------
         None (updates self.trajectory)
@@ -701,9 +759,17 @@ class Agent:
             # warning for overwriting agent's destination diary if it exists?
 
             loc = destination_diary.iloc[0]['location']
-            loc_centroid = self.city.buildings[loc].geometry.centroid
+            loc_row = self.city.buildings_gdf[self.city.buildings_gdf['id'] == loc]
+            if loc_row.empty:
+                raise ValueError(f"Location {loc} not found in city buildings.")
+            loc_centroid = loc_row.iloc[0]['geometry'].centroid
             x_coord, y_coord = loc_centroid.x, loc_centroid.y
-            datetime = destination_diary.iloc[0]['datetime']
+            if 'datetime' in destination_diary.columns:
+                datetime = destination_diary.iloc[0]['datetime']
+            elif 'local_timestamp' in destination_diary.columns:
+                datetime = destination_diary.iloc[0]['local_timestamp']
+            else:
+                raise KeyError("Neither 'datetime' nor 'local_timestamp' found in destination_diary columns")
             unix_timestamp = int(datetime.timestamp())
             self.last_ping = pd.Series({
                 'x': x_coord,
@@ -717,41 +783,35 @@ class Agent:
         # ensure last ping
         if self.trajectory is None:
             if _xy_or_loc_col(kwargs.keys(), verbose) == "location":
-                loc_centroid = self.city.buildings[kwargs['location']].geometry.centroid
+                loc_row = self.city.buildings_gdf[self.city.buildings_gdf['id'] == kwargs['location']]
+                if loc_row.empty:
+                    raise ValueError(f"Location {kwargs['location']} not found in city buildings.")
+                loc_centroid = loc_row.iloc[0]['geometry'].centroid
                 x_coord, y_coord = loc_centroid.x, loc_centroid.y
             elif _xy_or_loc_col(kwargs.keys(), verbose) == "xy":
                 x_coord, y_coord = kwargs['x'], kwargs['y']
             else:
-                loc_centroid = self.city.buildings[self.home].geometry.centroid
+                home_row = self.city.buildings_gdf[self.city.buildings_gdf['id'] == self.home]
+                if home_row.empty:
+                    raise ValueError(f"Home location {self.home} not found in city buildings.")
+                loc_centroid = home_row.iloc[0]['geometry'].centroid
                 x_coord, y_coord = loc_centroid.x, loc_centroid.y
-
-            if _datetime_or_ts_col(kwargs.keys(), verbose) == "datetime":
-                datetime = kwargs['datetime']
-                if not isinstance(datetime, pd.Timestamp):
-                    try:
-                        datetime = pd.to_datetime(datetime)
-                    except Exception as e:
-                        raise ValueError(f"datetime is not of a convertible type: {e}")
-                if datetime.tz is None and 'tz' in kwargs:
-                    datetime = datetime.tz_localize(kwargs['tz'])
-                unix_timestamp = int(datetime.timestamp())
-            elif _datetime_or_ts_col(kwargs.keys(), verbose) == 'timestamp':
-                unix_timestamp = kwargs['timestamp']
-                if 'tz' in kwargs:
-                    datetime = pd.to_datetime(unix_timestamp, unit='s', utc=True).tz_convert(kwargs['tz'])
-                datetime = pd.to_datetime(unix_timestamp, unit='s')
-            else:
-                datetime = pd.to_datetime('2025-01-01 00:00Z')
-                unix_timestamp = int(datetime.timestamp())
-
-            self.last_ping = pd.Series({
-                'x': x_coord,
-                'y': y_coord,
-                'datetime': datetime,
-                'timestamp': unix_timestamp,
-                'user_id': self.identifier
-                })
-
+                if 'datetime' in kwargs:
+                    datetime = kwargs['datetime']
+                else:
+                    datetime = pd.Timestamp.now(tz='America/New_York')
+                if 'timestamp' in kwargs:
+                    unix_timestamp = kwargs['timestamp']
+                else:
+                    unix_timestamp = int(datetime.timestamp())
+                self.last_ping = pd.Series({
+                    'x': x_coord,
+                    'y': y_coord,
+                    'datetime': datetime,
+                    'timestamp': unix_timestamp,
+                    'user_id': self.identifier
+                    })
+                self.trajectory = pd.DataFrame([self.last_ping])
         else:
             if ('x' in kwargs)or('y' in kwargs)or('datetime'in kwargs)or('timestamp' in kwargs):
                 raise ValueError(
@@ -852,6 +912,65 @@ class Agent:
             return burst_info
 
 
+def condense_destinations(destination_diary, *, time_cols=None):
+    """
+    Modifies a destination diary, joining consecutive entries for the same location
+    into a single entry with the total duration.
+
+    Parameters
+    ----------
+    destination_diary : pandas.DataFrame
+        Diary containing the destinations of the user.
+    time_cols : dict, optional (keyword-only)
+        Optional mapping for non-canonical column names. Expected keys:
+        {'datetime': <col_name>, 'timestamp': <col_name>}.
+        Defaults are 'datetime' and 'timestamp'.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Updated destination diary with canonical columns 'datetime' and 'timestamp'.
+    """
+
+    if destination_diary.empty:
+        return pd.DataFrame(columns=['datetime','timestamp','duration','location'])
+
+    # Resolve column names
+    dt_col = 'datetime'
+    ts_col = 'timestamp'
+    if time_cols:
+        dt_col = time_cols.get('datetime', dt_col)
+        ts_col = time_cols.get('timestamp', ts_col)
+
+    # If inputs use local/unix names, allow mapping through kwargs only
+    required = {'location', 'duration', dt_col, ts_col}
+    missing = required - set(destination_diary.columns)
+    if missing:
+        raise KeyError(f"condense_destinations expected columns {required}, missing {missing}")
+
+    df = destination_diary.copy()
+
+    # Detect changes in location
+    df['new_segment'] = df['location'].ne(df['location'].shift())
+    # Create segment identifiers for grouping
+    df['segment_id'] = df['new_segment'].cumsum()
+
+    # Aggregate data by segment with provided column names, then rename canonically
+    condensed_df = df.groupby('segment_id').agg({
+        dt_col: 'first',
+        ts_col: 'first',
+        'duration': 'sum',
+        'location': 'first'
+    }).reset_index(drop=True)
+
+    # Canonical column names in the output
+    if dt_col != 'datetime':
+        condensed_df = condensed_df.rename(columns={dt_col: 'datetime'})
+    if ts_col != 'timestamp':
+        condensed_df = condensed_df.rename(columns={ts_col: 'timestamp'})
+
+    return condensed_df
+
 
 def _cartesian_coords(multilines, distance, offset, eps=0.001):
     """
@@ -925,44 +1044,6 @@ def _path_coords(multilines, point, eps=0.001):
     offset = np.dot(delta, normal)
 
     return distance, offset
-
-def condense_destinations(destination_diary):
-    """
-    Modifies a sequence of timestamped destinations, joining consecutive 
-    destinations in the same location into a single entry with the aggregated duration.
-
-    Parameters
-    ----------
-    destination_diary : pandas.DataFrame
-        DataFrame containing timestamped locations the user is heading towards.
-
-    Returns
-    -------
-    pandas.DataFrame
-        A new DataFrame with condensed destination entries.
-    """
-
-    if destination_diary.empty:
-        return pd.DataFrame()
-
-    # Detect changes in location
-    destination_diary['new_segment'] = destination_diary['location'].ne(destination_diary['location'].shift())
-
-    # Create segment identifiers for grouping
-    destination_diary['segment_id'] = destination_diary['new_segment'].cumsum()
-    # Aggregate data by segment
-    condensed_df = destination_diary.groupby('segment_id').agg({
-        'datetime': 'first',
-        'timestamp': 'first',
-        'duration': 'sum',
-        'location': 'first'
-    }).reset_index(drop=True)
-
-    return condensed_df
-
-# =============================================================================
-# POPULATION
-# =============================================================================
 
 class Population:
     """
@@ -1166,11 +1247,10 @@ class Population:
                 
         return processed
 
-    def reproject_to_mercator(self, sparse_traj=True, full_traj=False, diaries=False,
-                             block_size=15, false_easting=-4265699, false_northing=4392976,
-                             poi_data=None):
+    def reproject_to_mercator(self, sparse_traj=True, full_traj=False, diaries=False, poi_data=None):
         """
-        Reproject all agent trajectories from Garden City coordinates to Web Mercator.
+        Reproject all agent trajectories from city block coordinates to Web Mercator.
+        Uses the city's stored transformation parameters (block_side_length, web_mercator_origin_x/y).
         
         Parameters
         ----------
@@ -1180,79 +1260,34 @@ class Population:
             Whether to reproject full trajectories  
         diaries : bool, default False
             Whether to reproject diaries (must have x, y columns)
-        block_size : float, default 15
-            Size of one city block in meters
-        false_easting : float, default -4265699
-            False easting offset for Garden City
-        false_northing : float, default 4392976
-            False northing offset for Garden City
         poi_data : pd.DataFrame, optional
-            DataFrame with building coordinates (building_id, x, y) to join with diaries
+            DataFrame with building coordinates (building_id, x, y) to join with diaries.
+            If not provided, derived from city's buildings_gdf using door coordinates.
         """
         for agent in self.roster.values():
             if sparse_traj and agent.sparse_traj is not None:
-                agent.sparse_traj = garden_city_to_mercator(
-                    agent.sparse_traj, block_size=block_size, 
-                    false_easting=false_easting, false_northing=false_northing)
+                agent.sparse_traj = self.city.to_mercator(agent.sparse_traj)
             
             if full_traj and agent.trajectory is not None:
-                agent.trajectory = garden_city_to_mercator(
-                    agent.trajectory, block_size=block_size,
-                    false_easting=false_easting, false_northing=false_northing)
+                agent.trajectory = self.city.to_mercator(agent.trajectory)
             
             if diaries and agent.diary is not None:
-                # Join with poi_data if provided
-                if poi_data is not None:
-                    agent.diary = agent.diary.merge(
-                        poi_data, left_on='location', right_on='building_id', how='left')
-                    # Drop the building_id column added by merge
-                    agent.diary = agent.diary.drop(columns=['building_id'])
-                
-                agent.diary = garden_city_to_mercator(
-                    agent.diary, block_size=block_size,
-                    false_easting=false_easting, false_northing=false_northing)
+                # Derive poi_data from city's buildings_gdf if not provided
+                if poi_data is None:
+                    bdf = self.city.buildings_gdf
+                    poi_data = pd.DataFrame({
+                        'building_id': bdf['id'].values,
+                        'x': (bdf['door_cell_x'].astype(float) + 0.5).values,
+                        'y': (bdf['door_cell_y'].astype(float) + 0.5).values
+                    })
+
+                agent.diary = agent.diary.merge(poi_data, left_on='location', right_on='building_id', how='left')
+                agent.diary = agent.diary.drop(columns=['building_id'])
+                agent.diary = self.city.to_mercator(agent.diary)
 
 # =============================================================================
 # AUXILIARY METHODS
 # =============================================================================
-
-def garden_city_to_mercator(data, block_size=15, false_easting=-4265699, false_northing=4392976):
-    """
-    Convert Garden City block coordinates to Web Mercator coordinates.
-    
-    Parameters
-    ----------
-    data : pd.DataFrame
-        DataFrame with 'x', 'y' columns in Garden City block coordinates
-    block_size : float, default 15
-        Size of one city block in meters
-    false_easting : float, default -4265699
-        False easting offset for Garden City
-    false_northing : float, default 4392976
-        False northing offset for Garden City
-    
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame with 'x', 'y' columns updated to Web Mercator coordinates
-    """
-    # Validate required columns
-    if 'x' not in data.columns or 'y' not in data.columns:
-        raise ValueError("DataFrame must contain 'x' and 'y' columns")
-    
-    # Create a copy to avoid modifying original
-    result = data.copy()
-    
-    # Apply Garden City transformation to Web Mercator
-    result['x'] = block_size * result['x'] + false_easting
-    result['y'] = block_size * result['y'] + false_northing
-    
-    # Scale horizontal accuracy if present
-    if 'ha' in result.columns:
-        result['ha'] = block_size * result['ha']
-    
-    return result
-
 
 def allowed_buildings(local_ts):
     """
