@@ -23,6 +23,7 @@ import warnings
 from osmnx._errors import InsufficientResponseError
 import tempfile
 import os
+import sys
 
 from nomad.constants import (
     OSM_BUILDING_TO_SUBTYPE, OSM_AMENITY_TO_SUBTYPE, OSM_TOURISM_TO_SUBTYPE,
@@ -400,7 +401,8 @@ def get_city_boundary_osm(name, simplify=True, crs="EPSG:4326"):
     """
     try:
         city_gdf = ox.geocode_to_gdf(name)
-        city_gdf = city_gdf.to_crs(crs)
+        if crs is not None:
+            city_gdf = city_gdf.to_crs(crs)
         
         if len(city_gdf) == 0:
             return None, None, None
@@ -427,15 +429,16 @@ def get_city_boundary_osm(name, simplify=True, crs="EPSG:4326"):
         return None, None, None
 
 
-def download_osm_buildings(bbox_or_city, 
-                          crs=DEFAULT_CRS, 
-                          schema=DEFAULT_CATEGORY_SCHEMA, 
+def download_osm_buildings(bbox_or_city,
+                          crs=DEFAULT_CRS,
+                          schema=DEFAULT_CATEGORY_SCHEMA,
                           clip=False,
                           infer_building_types=False,
                           explode=False,
                           by_chunks=False,
-                          chunk_miles=1.0,
-                          cache_mode=None):
+                          chunk_km=1.0,
+                          cache_mode=None,
+                          progress_callback=None):
     """Download buildings and parks from OSM and categorize them.
 
     Parameters
@@ -445,7 +448,7 @@ def download_osm_buildings(bbox_or_city,
     - clip: clip features to the bbox/polygon
     - infer_building_types: heuristics for building="yes"
     - explode: explode MultiPolygons into Polygons
-    - by_chunks, chunk_miles: optional tiling to reduce query size
+    - by_chunks, chunk_km: optional tiling to reduce query size
     - cache_mode: 'persistent', 'temp', or 'off'
 
     Returns a GeoDataFrame with columns including: osm_type, subtype, category.
@@ -473,8 +476,9 @@ def download_osm_buildings(bbox_or_city,
                                             clip=True,
                                             infer_building_types=infer_building_types,
                                             explode=explode,
-                                            chunk_miles=chunk_miles,
-                                            cache_mode=cache_mode)
+                                            chunk_km=chunk_km,
+                                            cache_mode=cache_mode,
+                                            progress_callback=progress_callback)
     
     # Download buildings (including parking lots with building tags)
     building_tags = {"building": True}
@@ -482,6 +486,7 @@ def download_osm_buildings(bbox_or_city,
         with _osmnx_cache_context(cache_mode):
             try:
                 buildings = ox.features_from_polygon(city_polygon, building_tags)
+                buildings = buildings.to_crs(crs)
             except InsufficientResponseError:
                 buildings = gpd.GeoDataFrame(columns=['geometry'], crs=crs)
     else:
@@ -493,6 +498,7 @@ def download_osm_buildings(bbox_or_city,
         with _osmnx_cache_context(cache_mode):
             try:
                 parking_lots = ox.features_from_polygon(city_polygon, parking_tags)
+                parking_lots = parking_lots.to_crs(crs)
             except InsufficientResponseError:
                 parking_lots = gpd.GeoDataFrame(columns=['geometry'], crs=crs)
     else:
@@ -530,6 +536,7 @@ def download_osm_buildings(bbox_or_city,
         with _osmnx_cache_context(cache_mode):
             try:
                 parks = ox.features_from_polygon(city_polygon, park_tags)
+                parks = parks.to_crs(crs)
             except InsufficientResponseError:
                 parks = gpd.GeoDataFrame(columns=['geometry'], crs=crs)
     else:
@@ -589,14 +596,15 @@ def download_osm_buildings(bbox_or_city,
     return result
 
 
-def download_osm_streets(bbox_or_city, 
-                        crs=DEFAULT_CRS, 
+def download_osm_streets(bbox_or_city,
+                        crs=DEFAULT_CRS,
                         clip=True,
                         clip_to_gdf=None,
                         explode=False,
                         by_chunks=False,
-                        chunk_miles=1.0,
-                        cache_mode=None):
+                        chunk_km=1.0,
+                        cache_mode=None,
+                        progress_callback=None):
     """Download a filtered street network from OSM.
 
     Applies highway/service/tunnel/covered/surface filters at query time.
@@ -641,8 +649,9 @@ def download_osm_streets(bbox_or_city,
                                            clip=True,
                                            clip_to_gdf=clip_to_gdf,
                                            explode=explode,
-                                           chunk_miles=chunk_miles,
-                                           cache_mode=cache_mode)
+                                           chunk_km=chunk_km,
+                                           cache_mode=cache_mode,
+                                           progress_callback=progress_callback)
 
     try:
         with _osmnx_cache_context(cache_mode):
@@ -687,22 +696,22 @@ def download_osm_streets(bbox_or_city,
 # CHUNKED DOWNLOAD HELPERS
 # =============================================================================
 
-def _degrees_for_miles_at_lat(miles, lat_deg):
-    # Approximate conversion: 1 deg lat ~ 69 miles; 1 deg lon ~ 69*cos(lat) miles
-    if miles <= 0:
+def _degrees_for_km_at_lat(km, lat_deg):
+    """Return longitude/latitude degree spans for a square tile of size `km` near latitude."""
+    if km <= 0:
         return 0.0, 0.0
-    deg_lat = miles / 69.0
-    # Avoid division by zero at poles
+    # 1 degree latitude ≈ 111.32 km
+    deg_lat = km / 111.32
     lat_rad = np.radians(max(min(lat_deg, 89.9), -89.9))
-    miles_per_deg_lon = 69.0 * np.cos(lat_rad)
-    if miles_per_deg_lon <= 0:
-        deg_lon = deg_lat  # fallback
+    km_per_deg_lon = 111.32 * np.cos(lat_rad)
+    if km_per_deg_lon <= 0:
+        deg_lon = deg_lat
     else:
-        deg_lon = miles / miles_per_deg_lon
+        deg_lon = km / km_per_deg_lon
     return deg_lon, deg_lat
 
 
-def _chunk_target_to_bboxes(target, chunk_miles):
+def _chunk_target_to_bboxes(target, chunk_km):
     # target can be bbox tuple (west, south, east, north) or a shapely polygon
     if isinstance(target, tuple) and len(target) == 4:
         west, south, east, north = target
@@ -712,7 +721,7 @@ def _chunk_target_to_bboxes(target, chunk_miles):
         west, south, east, north = polygon.bounds
 
     mean_lat = (south + north) / 2.0
-    step_lon, step_lat = _degrees_for_miles_at_lat(chunk_miles, mean_lat)
+    step_lon, step_lat = _degrees_for_km_at_lat(chunk_km, mean_lat)
     if step_lon <= 0 or step_lat <= 0:
         return [(west, south, east, north)]
 
@@ -737,45 +746,83 @@ def _dedupe_geometries(gdf):
     return gdf.drop_duplicates(subset=['geometry'])
 
 
-def _download_buildings_by_chunks(target, crs, schema, clip, infer_building_types, explode, chunk_miles, cache_mode=None):
-    tiles = _chunk_target_to_bboxes(target, chunk_miles)
+def _download_buildings_by_chunks(target, crs, schema, clip, infer_building_types, explode, chunk_km, cache_mode=None, progress_callback=None):
+    is_polygon = not isinstance(target, tuple)
+    if is_polygon:
+        target_gdf = gpd.GeoDataFrame(geometry=[target], crs="EPSG:4326")
+    
+    tiles = _chunk_target_to_bboxes(target, chunk_km)
     parts = []
-    for tile in tiles:
-        part = download_osm_buildings(tile if isinstance(target, tuple) else tile,
+    total = len(tiles)
+    for idx, tile in enumerate(tiles, start=1):
+        if is_polygon:
+            tile_box = box(*tile)
+            clipped = target_gdf.clip(gpd.GeoDataFrame(geometry=[tile_box], crs="EPSG:4326"))
+            if len(clipped) == 0 or clipped.geometry.iloc[0].is_empty:
+                if progress_callback is not None:
+                    progress_callback('buildings', idx, total)
+                else:
+                    print(f"[OSM buildings] chunk {idx}/{total} (empty)", flush=True)
+                continue
+            query_geometry = clipped.geometry.iloc[0]
+        else:
+            query_geometry = tile
+        
+        part = download_osm_buildings(query_geometry,
                                       crs=crs, schema=schema, clip=True,
                                       infer_building_types=infer_building_types,
                                       explode=explode, by_chunks=False,
                                       cache_mode=cache_mode)
         if len(part) > 0:
             parts.append(part)
+        if progress_callback is not None:
+            progress_callback('buildings', idx, total)
+        else:
+            print(f"[OSM buildings] chunk {idx}/{total}", flush=True)
     if not parts:
         return gpd.GeoDataFrame(columns=['osm_type', 'subtype', f'{schema}_category', 'category', 'geometry'], crs=crs)
     combined = gpd.GeoDataFrame(pd.concat(parts, ignore_index=True), crs=crs)
     combined = _dedupe_geometries(combined)
-    # Final clip to target polygon if provided
-    if not isinstance(target, tuple):
-        combined = gpd.clip(combined, gpd.GeoDataFrame(geometry=[target], crs=crs))
     return combined
 
 
-def _download_streets_by_chunks(target, crs, clip, clip_to_gdf, explode, chunk_miles, cache_mode=None):
-    tiles = _chunk_target_to_bboxes(target, chunk_miles)
+def _download_streets_by_chunks(target, crs, clip, clip_to_gdf, explode, chunk_km, cache_mode=None, progress_callback=None):
+    is_polygon = not isinstance(target, tuple)
+    if is_polygon:
+        target_gdf = gpd.GeoDataFrame(geometry=[target], crs="EPSG:4326")
+    
+    tiles = _chunk_target_to_bboxes(target, chunk_km)
     parts = []
-    for tile in tiles:
-        part = download_osm_streets(tile if isinstance(target, tuple) else tile,
+    total = len(tiles)
+    for idx, tile in enumerate(tiles, start=1):
+        if is_polygon:
+            tile_box = box(*tile)
+            clipped = target_gdf.clip(gpd.GeoDataFrame(geometry=[tile_box], crs="EPSG:4326"))
+            if len(clipped) == 0 or clipped.geometry.iloc[0].is_empty:
+                if progress_callback is not None:
+                    progress_callback('streets', idx, total)
+                else:
+                    print(f"[OSM streets] chunk {idx}/{total} (empty)", flush=True)
+                continue
+            query_geometry = clipped.geometry.iloc[0]
+        else:
+            query_geometry = tile
+        
+        part = download_osm_streets(query_geometry,
                                     crs=crs, clip=True,
                                     clip_to_gdf=clip_to_gdf,
                                     explode=explode, by_chunks=False,
                                     cache_mode=cache_mode)
         if len(part) > 0:
             parts.append(part)
+        if progress_callback is not None:
+            progress_callback('streets', idx, total)
+        else:
+            print(f"[OSM streets] chunk {idx}/{total}", flush=True)
     if not parts:
         return gpd.GeoDataFrame(columns=['geometry'], crs=crs)
     combined = gpd.GeoDataFrame(pd.concat(parts, ignore_index=True), crs=crs)
     combined = _dedupe_geometries(combined)
-    # Final clip to target polygon if provided
-    if not isinstance(target, tuple):
-        combined = gpd.clip(combined, gpd.GeoDataFrame(geometry=[target], crs=crs))
     return combined
 
 
