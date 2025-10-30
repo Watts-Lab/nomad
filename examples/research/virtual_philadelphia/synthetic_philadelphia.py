@@ -48,62 +48,80 @@ CITY_NAME = "Philadelphia, Pennsylvania, USA"
 OUTPUT_DIR = Path(__file__).resolve().parent
 RAW_GPKG_PATH = OUTPUT_DIR / "philadelphia_osm_raw.gpkg"
 
-print(f"Fetching city boundary for {CITY_NAME}...")
-boundary, city_center, population = nm.get_city_boundary_osm(CITY_NAME, simplify=True)
+LOAD_FROM_CACHE = RAW_GPKG_PATH.exists()
 
-boundary_gdf = gpd.GeoDataFrame(
-    {
-        "name": [CITY_NAME],
-        "population": [population],
-    },
-    geometry=[boundary],
-    crs="EPSG:4326"
-).to_crs("EPSG:3857")
+if LOAD_FROM_CACHE:
+    print("Loading persisted data from GeoPackage...")
+    buildings = gpd.read_file(RAW_GPKG_PATH, layer="buildings")
+    streets = gpd.read_file(RAW_GPKG_PATH, layer="streets")
+    boundary_gdf = gpd.read_file(RAW_GPKG_PATH, layer="city_boundary")
+    print(f"Loaded {len(buildings):,} buildings and {len(streets):,} streets")
+else:
+    print(f"Fetching city boundary for {CITY_NAME}...")
+    boundary, city_center, population = nm.get_city_boundary_osm(CITY_NAME, simplify=True)
+    
+    boundary_gdf = gpd.GeoDataFrame(
+        {
+            "name": [CITY_NAME],
+            "population": [population],
+        },
+        geometry=[boundary],
+        crs="EPSG:4326"
+    ).to_crs("EPSG:3857")
+    
+    cache_mode = "persistent"
+    
+    print("Downloading buildings (single query, Web Mercator)...")
+    start_time = time.time()
+    buildings = nm.download_osm_buildings(
+        boundary,
+        crs="EPSG:3857",
+        schema="garden_city",
+        clip=True,
+        infer_building_types=True,
+        explode=True,
+        by_chunks=False,
+        cache_mode=cache_mode,
+    )
+    elapsed = time.time() - start_time
+    print(f"Downloaded {len(buildings):,} buildings in {elapsed:.1f}s")
+    
+    buildings = nm.remove_overlaps(buildings).reset_index(drop=True)
+    
+    print("Downloading streets (single query, Web Mercator)...")
+    start_time = time.time()
+    streets = nm.download_osm_streets(
+        boundary,
+        crs="EPSG:3857",
+        clip=True,
+        explode=True,
+        by_chunks=False,
+        cache_mode=cache_mode,
+    )
+    elapsed = time.time() - start_time
+    print(f"Downloaded {len(streets):,} streets in {elapsed:.1f}s")
+    
+    streets = streets.reset_index(drop=True)
+    
+    RAW_GPKG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if RAW_GPKG_PATH.exists():
+        RAW_GPKG_PATH.unlink()
+    
+    print(f"Persisting raw data layers to {RAW_GPKG_PATH}...")
+    buildings.to_file(RAW_GPKG_PATH, layer="buildings", driver="GPKG")
+    streets.to_file(RAW_GPKG_PATH, layer="streets", driver="GPKG", mode="a")
+    boundary_gdf.to_file(RAW_GPKG_PATH, layer="city_boundary", driver="GPKG", mode="a")
 
-cache_mode = "persistent"
+# %%
+category_counts = buildings["garden_city_category"].value_counts().to_dict()
+print("\nBuilding category counts:")
+for key, value in sorted(category_counts.items()):
+    print(f"  {key}: {value:,}")
 
-print("Downloading buildings (single query, Web Mercator)...")
-start_time = time.time()
-buildings = nm.download_osm_buildings(
-    boundary,
-    crs="EPSG:3857",
-    schema="garden_city",
-    clip=True,
-    infer_building_types=True,
-    explode=True,
-    by_chunks=False,
-    cache_mode=cache_mode,
-)
-elapsed = time.time() - start_time
-print(f"Downloaded {len(buildings):,} buildings in {elapsed:.1f}s")
-
-buildings = nm.remove_overlaps(buildings).reset_index(drop=True)
-
-print("Downloading streets (single query, Web Mercator)...")
-start_time = time.time()
-streets = nm.download_osm_streets(
-    boundary,
-    crs="EPSG:3857",
-    clip=True,
-    explode=True,
-    by_chunks=False,
-    cache_mode=cache_mode,
-)
-elapsed = time.time() - start_time
-print(f"Downloaded {len(streets):,} streets in {elapsed:.1f}s")
-
-streets = streets.reset_index(drop=True)
-
-print(f"Downloaded {len(buildings):,} building polygons and {len(streets):,} street segments.")
-
-RAW_GPKG_PATH.parent.mkdir(parents=True, exist_ok=True)
-if RAW_GPKG_PATH.exists():
-    RAW_GPKG_PATH.unlink()
-
-print(f"Persisting raw data layers to {RAW_GPKG_PATH}...")
-buildings.to_file(RAW_GPKG_PATH, layer="buildings", driver="GPKG")
-streets.to_file(RAW_GPKG_PATH, layer="streets", driver="GPKG", mode="a")
-boundary_gdf.to_file(RAW_GPKG_PATH, layer="city_boundary", driver="GPKG", mode="a")
+subtype_counts = buildings["subtype"].value_counts().head(15).to_dict()
+print("\nTop building subtypes (first 15):")
+for key, value in sorted(subtype_counts.items(), key=lambda x: x[1], reverse=True):
+    print(f"  {key}: {value:,}")
 
 
 # %% [markdown]
@@ -133,42 +151,17 @@ rotated_boundary.to_file(RAW_GPKG_PATH, layer="city_boundary_rotated", driver="G
 # %%
 print("Generating diagnostic plots...")
 
-def _plot_city(ax, b_gdf, s_gdf, title):
-    if len(b_gdf) > 0:
-        color_map = {
-            "park": "#74c476",
-            "residential": "#6baed6",
-            "retail": "#fd8d3c",
-            "workplace": "#9e9ac8",
-            "other": "#969696",
-        }
-        column_name = "garden_city_category" if "garden_city_category" in b_gdf.columns else None
-        if column_name:
-            for cat, color in color_map.items():
-                subset = b_gdf[b_gdf[column_name] == cat]
-                if len(subset) > 0:
-                    subset.plot(ax=ax, color=color, linewidth=0, alpha=0.6)
-            others = b_gdf[~b_gdf[column_name].isin(color_map.keys())]
-            if len(others) > 0:
-                others.plot(ax=ax, color="#bdbdbd", linewidth=0, alpha=0.5)
-        else:
-            b_gdf.plot(ax=ax, color="#9ecae1", linewidth=0, alpha=0.6)
-
-    if len(s_gdf) > 0:
-        s_gdf.plot(ax=ax, color="#000000", linewidth=0.3, alpha=0.6)
-
+def _plot_streets(ax, s_gdf, title):
+    s_gdf.plot(ax=ax, color="#000000", linewidth=0.3, alpha=0.7)
     ax.set_title(title)
     ax.set_axis_off()
-    try:
-        ctx.add_basemap(ax, crs=b_gdf.crs if len(b_gdf) > 0 else s_gdf.crs, source=ctx.providers.OpenStreetMap.Mapnik, attribution="")
-    except Exception:
-        pass
+    ctx.add_basemap(ax, crs=s_gdf.crs, source=ctx.providers.OpenStreetMap.Mapnik, attribution="")
 
 
 fig, axes = plt.subplots(1, 2, figsize=(18, 9))
 
-_plot_city(axes[0], buildings.sample(n=min(20000, len(buildings))) if len(buildings) > 20000 else buildings, streets, "Original (Web Mercator)")
-_plot_city(axes[1], rotated_buildings.sample(n=min(20000, len(rotated_buildings))) if len(rotated_buildings) > 20000 else rotated_buildings, rotated_streets, f"Rotated ({rotation_deg:.2f}°)")
+_plot_streets(axes[0], streets, "Original Streets (Web Mercator)")
+_plot_streets(axes[1], rotated_streets, f"Rotated Streets ({rotation_deg:.2f}°)")
 
 plt.tight_layout()
 plt.savefig(OUTPUT_DIR / "philadelphia_rotation_diagnostics.png", dpi=200, bbox_inches="tight")
