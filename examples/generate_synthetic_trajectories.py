@@ -17,9 +17,6 @@
 # # Synthetic Trajectory Generation with Nomad
 #
 # This notebook demonstrates how to generate realistic synthetic human mobility trajectories.
-#
-# **Note**: The parallel generation section (Part 2) works on Linux/Mac only. Windows users 
-# should skip Part 2 or adapt the code for Windows multiprocessing.
 
 # %%
 import pandas as pd
@@ -28,8 +25,7 @@ import matplotlib.pyplot as plt
 plt.style.use('default')
 import time
 import os
-from tqdm import tqdm
-from concurrent.futures import ProcessPoolExecutor
+from joblib import Parallel, delayed
 
 from nomad.city_gen import City
 from nomad.traj_gen import Agent, Population
@@ -151,12 +147,9 @@ agent_params = [
 print(f"Generating {n_agents} agents in parallel...")
 start_time = time.time()
 
-with ProcessPoolExecutor() as executor:
-    results = list(tqdm(
-        executor.map(generate_agent_trajectory, agent_params),
-        total=n_agents,
-        desc="Generating trajectories"
-    ))
+results = Parallel(n_jobs=-1, verbose=10)(
+    delayed(generate_agent_trajectory)(params) for params in agent_params
+)
 
 generation_time = time.time() - start_time
 print(f"Generated {n_agents} agents in {generation_time:.2f}s ({generation_time/n_agents:.2f}s per agent)")
