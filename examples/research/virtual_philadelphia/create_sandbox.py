@@ -27,15 +27,15 @@ SANDBOX_GPKG = OUTPUT_DIR / "sandbox_data.gpkg"
 
 print("Downloading OSM data for Old City Philadelphia...")
 
-# Convert bbox to Web Mercator
-old_city_polygon = gpd.GeoDataFrame(geometry=[OLD_CITY_BBOX], crs="EPSG:4326").to_crs("EPSG:3857").geometry.iloc[0]
+# Pass bbox in EPSG:4326 (OSMnx expects geographic coordinates)
+# The download functions will convert to the target CRS internally
 
 cache_mode = "persistent"
 
 print("Downloading buildings (Web Mercator)...")
 start_time = time.time()
 buildings = nm.download_osm_buildings(
-    old_city_polygon,
+    OLD_CITY_BBOX,  # Pass in EPSG:4326, function converts to target CRS
     crs="EPSG:3857",
     schema="garden_city",
     clip=True,
@@ -52,7 +52,7 @@ buildings = nm.remove_overlaps(buildings).reset_index(drop=True)
 print("Downloading streets (Web Mercator)...")
 start_time = time.time()
 streets = nm.download_osm_streets(
-    old_city_polygon,
+    OLD_CITY_BBOX,  # Pass in EPSG:4326, function converts to target CRS
     crs="EPSG:3857",
     clip=True,
     explode=True,
@@ -63,6 +63,9 @@ elapsed = time.time() - start_time
 print(f"Downloaded {len(streets):,} streets in {elapsed:.1f}s")
 
 streets = streets.reset_index(drop=True)
+
+# Convert to Web Mercator for rotation (both are already in EPSG:3857 from download)
+old_city_polygon = gpd.GeoDataFrame(geometry=[OLD_CITY_BBOX], crs="EPSG:4326").to_crs("EPSG:3857").geometry.iloc[0]
 
 print("Estimating optimal rotation for grid alignment...")
 rotation_start = time.time()
