@@ -3,6 +3,7 @@ from shapely import wkt
 from math import floor, ceil
 from shapely.affinity import scale
 from shapely.ops import unary_union
+from shapely.prepared import prep
 import pickle
 import pandas as pd
 import numpy as np
@@ -939,8 +940,10 @@ class City:
             s_gdf.to_file(streets_path, driver=driver)
 
     def save_geopackage(self, gpkg_path, persist_blocks: bool = False, 
-                        persist_city_properties: bool = True, edges_path: str = None):
-        """Save buildings/streets/properties to a GeoPackage; optionally persist blocks and edges.
+                        persist_city_properties: bool = True, edges_path: str = None,
+                        street_graphml_path: str = None):
+        """Save buildings/streets/properties to a GeoPackage; optionally persist blocks, edges,
+        and write the internal street graph to GraphML.
 
         Parameters
         ----------
@@ -954,6 +957,9 @@ class City:
         edges_path : str, optional
             If provided and gravity is available, writes an edges parquet with columns
             [ox, oy, dx, dy, distance, gravity].
+        street_graphml_path : str, optional
+            If provided, writes the city's internal street graph (grid adjacency) to GraphML.
+            Nodes are labeled as "x_y" with integer attributes x and y; edges retain 'weight'.
         """
         b_gdf, s_gdf = self.to_geodataframes()
         b_gdf.to_file(gpkg_path, layer='buildings', driver='GPKG')
@@ -982,6 +988,27 @@ class City:
             edges_df[['dx', 'dy']] = pd.DataFrame(edges_df['dest'].tolist(), index=edges_df.index)
             edges_df = edges_df.drop(columns=['origin', 'dest'])
             edges_df.to_parquet(edges_path, index=False)
+
+        # Optional GraphML persistence of the internal grid street graph
+        if street_graphml_path:
+            try:
+                if not hasattr(self, 'street_graph') or self.street_graph is None:
+                    self.get_street_graph(lazy=True)
+                G = self.street_graph
+                # Remap tuple nodes to string ids and attach coordinates as attributes
+                H = nx.Graph()
+                for (x, y) in G.nodes:
+                    node_id = f"{int(x)}_{int(y)}"
+                    H.add_node(node_id, x=int(x), y=int(y))
+                for u, v, data in G.edges(data=True):
+                    uid = f"{int(u[0])}_{int(u[1])}"
+                    vid = f"{int(v[0])}_{int(v[1])}"
+                    w = data.get('weight', 1)
+                    H.add_edge(uid, vid, weight=int(w))
+                nx.write_graphml(H, street_graphml_path)
+            except Exception:
+                # Silently ignore GraphML write issues to avoid breaking primary persistence
+                pass
 
     @classmethod
     def from_geodataframes(cls, buildings_gdf, streets_gdf, blocks_gdf=None, edges_df: pd.DataFrame = None):
@@ -1550,10 +1577,16 @@ def generate_canvas_blocks(boundary_polygon: Polygon, block_size: float, crs: st
     y_min = int(miny // block_size)
     y_max = int(maxy // block_size) + 1
     blocks = []
+    # Use prepared geometry for fast repeated intersection checks
+    boundary_prep = prep(boundary_polygon)
     for x in range(x_min, x_max):
+        x0 = x * block_size
+        x1 = (x + 1) * block_size
         for y in range(y_min, y_max):
-            block_geom = box(x * block_size, y * block_size, (x + 1) * block_size, (y + 1) * block_size)
-            if boundary_polygon.intersects(block_geom):
+            y0 = y * block_size
+            y1 = (y + 1) * block_size
+            block_geom = box(x0, y0, x1, y1)
+            if boundary_prep.intersects(block_geom):
                 blocks.append({'coord_x': x, 'coord_y': y, 'geometry': block_geom})
     if not blocks:
         return gpd.GeoDataFrame(columns=['coord_x','coord_y','geometry'], geometry='geometry', crs=crs)
@@ -1670,21 +1703,27 @@ class RasterCityGenerator:
         self.building_components = {}
 
     def generate_city(self) -> 'City':
+        import time as _t
+        _t0 = _t.time()
         print("Generating canvas blocks...")
         self.blocks_gdf = generate_canvas_blocks(self.boundary_polygon, self.block_size, self.crs)
-        print(f"Generated {len(self.blocks_gdf):,} blocks")
+        print(f"Generated {len(self.blocks_gdf):,} blocks (in {_t.time()-_t0:.2f}s)")
+        _t1 = _t.time()
         print("Assigning block types...")
         buildings_by_type = self._group_buildings_by_type()
         typed_blocks = assign_block_types(self.blocks_gdf, self.streets_gdf, buildings_by_type, self.block_size)
+        print(f"Block types assigned (in {_t.time()-_t1:.2f}s)")
+        _t2 = _t.time()
         print("Assigning streets...")
         street_blocks = typed_blocks[typed_blocks['type'] == 'street'][['coord_x','coord_y','geometry']].copy()
         print("Verifying street connectivity...")
         connected_streets, summary = verify_street_connectivity(street_blocks)
-        print(f"  Streets: {summary['kept']:,} kept, {summary['discarded']:,} discarded")
+        print(f"  Streets: {summary['kept']:,} kept, {summary['discarded']:,} discarded (in {_t.time()-_t2:.2f}s)")
         street_coords_set = set(zip(connected_streets['coord_x'], connected_streets['coord_y']))
+        _t3 = _t.time()
         print("Assigning buildings to blocks...")
         buildings_to_add = self._assign_buildings_to_blocks(typed_blocks, street_coords_set)
-        print(f"  Found {len(buildings_to_add):,} buildings to add")
+        print(f"  Found {len(buildings_to_add):,} buildings to add (in {_t.time()-_t3:.2f}s)")
         minx, miny, maxx, maxy = self.boundary_polygon.bounds
         grid_min_x = int(minx // self.block_size)
         grid_min_y = int(miny // self.block_size)
@@ -1709,9 +1748,12 @@ class RasterCityGenerator:
         city.streets_gdf['id'] = ('s-x' + city.streets_gdf['coord_x'].astype(int).astype(str) + '-y' + city.streets_gdf['coord_y'].astype(int).astype(str))
         city.streets_gdf.set_index(['coord_x','coord_y'], inplace=True, drop=False)
         city.streets_gdf.index.names = [None, None]
+        _t4 = _t.time()
         print("Adding buildings to city...")
         added_building_blocks = set()
         skipped_overlap = 0
+        new_building_rows = []
+        block_updates = []
         for building_info in buildings_to_add:
             door_coords = (building_info['door'][0]-offset_x, building_info['door'][1]-offset_y)
             building_blocks = [(x-offset_x, y-offset_y) for x,y in building_info['blocks']]
@@ -1719,11 +1761,51 @@ class RasterCityGenerator:
             if building_blocks_set & added_building_blocks:
                 skipped_overlap += 1
                 continue
+            # Create geometry on grid units
             building_geom = self._blocks_to_geometry_grid(building_blocks)
-            city.add_building(building_type=building_info['type'], door=door_coords, blocks=building_blocks, geom=building_geom)
+            # Build building row (fast path)
+            building_id = f"{building_info['type'][0]}-x{door_coords[0]}-y{door_coords[1]}"
+            dpt = Point(door_coords[0] + 0.5, door_coords[1] + 0.5)
+            new_building_rows.append({
+                'id': building_id,
+                'type': building_info['type'],
+                'door_cell_x': door_coords[0],
+                'door_cell_y': door_coords[1],
+                'door_point': dpt,
+                'size': len(building_blocks),
+                'geometry': building_geom,
+            })
+            # Queue block updates
+            for (cx, cy) in building_blocks:
+                block_updates.append({'coord_x': cx, 'coord_y': cy, 'kind': 'building', 'building_id': building_id, 'building_type': building_info['type']})
             added_building_blocks.update(building_blocks_set)
+
+        # Apply updates in batch
+        if new_building_rows:
+            nb_gdf = gpd.GeoDataFrame(new_building_rows, geometry='geometry', crs=city.buildings_gdf.crs)
+            nb_gdf.set_index('id', inplace=True, drop=False)
+            nb_gdf.index.name = None
+            if city.buildings_gdf.empty:
+                city.buildings_gdf = nb_gdf
+            else:
+                city.buildings_gdf = pd.concat([city.buildings_gdf, nb_gdf], axis=0, ignore_index=False)
+
+        if block_updates:
+            upd_df = pd.DataFrame(block_updates)
+            upd_df.set_index(['coord_x','coord_y'], inplace=True)
+            # Align indices present in blocks_gdf
+            common_idx = city.blocks_gdf.index.intersection(upd_df.index)
+            if len(common_idx) > 0:
+                cols = ['kind','building_id','building_type']
+                city.blocks_gdf.loc[common_idx, cols] = upd_df.loc[common_idx, cols].values
+            # Drop updated coords from streets_gdf if present
+            if hasattr(city, 'streets_gdf') and not city.streets_gdf.empty:
+                drop_idx = city.streets_gdf.index.intersection(upd_df.index)
+                if len(drop_idx) > 0:
+                    city.streets_gdf = city.streets_gdf.drop(index=drop_idx)
+
         if skipped_overlap > 0:
-            print(f"  Skipped {skipped_overlap} buildings due to overlap")
+            print(f"  Skipped {skipped_overlap} buildings due to overlap (adding took {_t.time()-_t4:.2f}s)")
         return city
 
     def _group_buildings_by_type(self) -> Dict[str, gpd.GeoDataFrame]:
@@ -1743,11 +1825,21 @@ class RasterCityGenerator:
             if building_type not in buildings_by_type:
                 continue
             buildings_gdf = buildings_by_type[building_type]
-            for idx, building_row in buildings_gdf.iterrows():
-                building_blocks = find_intersecting_blocks(gpd.GeoDataFrame([building_row], geometry='geometry', crs=self.crs), typed_blocks[typed_blocks['type'] == building_type])
-                if len(building_blocks) == 0:
+            if len(buildings_gdf) == 0:
+                continue
+            # Single spatial join per type (much faster than per-building)
+            tb_type = typed_blocks[typed_blocks['type'] == building_type]
+            if len(tb_type) == 0:
+                continue
+            joins = find_intersecting_blocks(buildings_gdf, tb_type)
+            if len(joins) == 0:
+                continue
+            # Group block coords by source building index
+            grouped = joins.groupby('geometry_idx')
+            for bidx, grp in grouped:
+                block_coords = list(zip(grp['coord_x'], grp['coord_y']))
+                if not block_coords:
                     continue
-                block_coords = list(zip(building_blocks['coord_x'], building_blocks['coord_y']))
                 components = find_connected_components(block_coords, connectivity='4-connected')
                 for component in components:
                     component_blocks = list(component)

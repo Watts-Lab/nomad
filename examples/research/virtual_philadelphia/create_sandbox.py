@@ -30,7 +30,6 @@ print("Downloading OSM data for Old City Philadelphia...")
 # Pass bbox in EPSG:4326 (OSMnx expects geographic coordinates)
 # The download functions will convert to the target CRS internally
 
-cache_mode = "persistent"
 
 print("Downloading buildings (Web Mercator)...")
 start_time = time.time()
@@ -41,8 +40,6 @@ buildings = nm.download_osm_buildings(
     clip=True,
     infer_building_types=True,
     explode=True,
-    by_chunks=False,
-    cache_mode=cache_mode,
 )
 elapsed = time.time() - start_time
 print(f"Downloaded {len(buildings):,} buildings in {elapsed:.1f}s")
@@ -56,8 +53,7 @@ streets = nm.download_osm_streets(
     crs="EPSG:3857",
     clip=True,
     explode=True,
-    by_chunks=False,
-    cache_mode=cache_mode,
+    graphml_path=OUTPUT_DIR / "streets_consolidated.graphml",
 )
 elapsed = time.time() - start_time
 print(f"Downloaded {len(streets):,} streets in {elapsed:.1f}s")

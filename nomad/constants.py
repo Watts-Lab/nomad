@@ -101,6 +101,10 @@ STREET_EXCLUDE_COVERED = True
 STREET_EXCLUDE_TUNNELS = True
 STREET_EXCLUDED_SURFACES = ['paving_stones']
 
+# Default topology/quality thresholds
+INTERSECTION_CONSOLIDATION_TOLERANCE_M = 12.0  # merge clustered nodes into a single intersection
+STREET_MIN_LENGTH_M = 20.0  # drop micro segments like short driveways/service stubs
+
 # Park/green space tags for downloading
 PARK_TAGS = {
     'leisure': ['park', 'recreation_ground', 'garden', 'playground', 'outdoor_seating', 
@@ -272,8 +276,8 @@ SUBTYPE_TO_GARDEN_CITY = {
     'education': 'workplace',
     'entertainment': 'retail',
     'garage': 'other',
-    # Treat hotel as home-like destination for now; adjust later if needed
-    'hotel': 'home',
+    # Map hotel into residential bucket for garden_city schema
+    'hotel': 'residential',
     'industrial': 'workplace',
     'medical': 'workplace',
     'military': 'workplace',
@@ -281,8 +285,8 @@ SUBTYPE_TO_GARDEN_CITY = {
     'outbuilding': 'other',
     'parking': 'other',
     'religious': 'retail',
-    # Map residential to home to align with City categories
-    'residential': 'home',
+    # Keep residential as residential in garden_city schema
+    'residential': 'residential',
     'service': 'other',
     'transportation': 'workplace',
     'warehouse': 'workplace',

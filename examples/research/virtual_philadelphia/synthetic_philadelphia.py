@@ -70,8 +70,6 @@ else:
         crs="EPSG:4326"
     ).to_crs("EPSG:3857")
     
-    cache_mode = "persistent"
-    
     print("Downloading buildings (single query, Web Mercator)...")
     start_time = time.time()
     buildings = nm.download_osm_buildings(
@@ -81,8 +79,6 @@ else:
         clip=True,
         infer_building_types=True,
         explode=True,
-        by_chunks=False,
-        cache_mode=cache_mode,
     )
     elapsed = time.time() - start_time
     print(f"Downloaded {len(buildings):,} buildings in {elapsed:.1f}s")
@@ -96,8 +92,6 @@ else:
         crs="EPSG:3857",
         clip=True,
         explode=True,
-        by_chunks=False,
-        cache_mode=cache_mode,
     )
     elapsed = time.time() - start_time
     print(f"Downloaded {len(streets):,} streets in {elapsed:.1f}s")

@@ -98,8 +98,8 @@ def run_audit(gpkg_path: Path) -> int:
         boundary = gpd.read_file(gpkg_path, layer='city_boundary')
         boundary_poly = boundary.to_crs('EPSG:4326').geometry.iloc[0] if boundary.crs is not None else boundary.geometry.iloc[0]
         print("\nDownloading buildings A/B from OSM (may take several minutes)...")
-        b_no = nm.download_osm_buildings(boundary_poly, crs='EPSG:3857', schema='garden_city', clip=True, infer_building_types=False, explode=True, by_chunks=False, cache_mode='persistent')
-        b_yes = nm.download_osm_buildings(boundary_poly, crs='EPSG:3857', schema='garden_city', clip=True, infer_building_types=True, explode=True, by_chunks=False, cache_mode='persistent')
+        b_no = nm.download_osm_buildings(boundary_poly, crs='EPSG:3857', schema='garden_city', clip=True, infer_building_types=False, explode=True)
+        b_yes = nm.download_osm_buildings(boundary_poly, crs='EPSG:3857', schema='garden_city', clip=True, infer_building_types=True, explode=True)
         def _count_gcc(df):
             col = 'garden_city_category' if 'garden_city_category' in df.columns else ('category' if 'category' in df.columns else None)
             return df[col].value_counts().to_dict() if col else {}

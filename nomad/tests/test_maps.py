@@ -48,6 +48,8 @@ from nomad.map_utils import (
     remove_overlaps,
     _classify_building,
     get_city_boundary_osm,
+    save_geodata,
+    load_geodata,
 )
 
 
@@ -210,6 +212,28 @@ def test_priority_order():
         'amenity': 'school'
     }), 'garden_city')
     assert result == ('residential', 'residential', 'residential')  # building tag wins
+
+
+def test_save_load_geodata(tmp_path):
+    import geopandas as gpd
+    from shapely.geometry import Point, LineString
+    gdf = gpd.GeoDataFrame({'id':[1,2],'name':['a','b']}, geometry=[Point(0,0), Point(1,1)], crs='EPSG:4326')
+    # GeoJSON
+    geojson_path = tmp_path / 'points.geojson'
+    save_geodata(gdf, str(geojson_path))
+    gdf2 = load_geodata(str(geojson_path))
+    assert len(gdf2) == 2 and set(gdf2.geometry.geom_type.unique()) == {'Point'}
+    # GeoParquet
+    parquet_path = tmp_path / 'points.parquet'
+    save_geodata(gdf, str(parquet_path))
+    gdf3 = load_geodata(str(parquet_path))
+    assert len(gdf3) == 2 and set(gdf3.geometry.geom_type.unique()) == {'Point'}
+    # Shapefile
+    shp_path = tmp_path / 'lines.shp'
+    lines = gpd.GeoDataFrame({'id':[1]}, geometry=[LineString([(0,0),(1,0)])], crs='EPSG:4326')
+    save_geodata(lines, str(shp_path))
+    lines2 = load_geodata(str(shp_path))
+    assert len(lines2) == 1 and set(lines2.geometry.geom_type.unique()) == {'LineString'}
 
 
 @pytest.mark.skip(reason="Trimmed suite: CRS covered elsewhere")
