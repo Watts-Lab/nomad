@@ -661,13 +661,23 @@ class Agent:
                     curr_cell = id2cell[curr]
                     dest_cells = [id2cell.get(bid) for bid in y.index]
                     pairs = [(curr_cell, dc) for dc in dest_cells]
-                    # Look up gravity for each pair (fill missing with 0)
+                    # Compute gravity on-demand using fast distance; fallback to stored gravity
                     grav = []
-                    for p in pairs:
+                    for u, v in pairs:
+                        g_val = 0.0
                         try:
-                            grav.append(float(self.city.gravity.at[p, 'gravity']))
+                            d = self.city.get_distance_fast(u, v)
+                            if np.isfinite(d):
+                                g_val = 1.0 / (d + 1.0)
                         except Exception:
-                            grav.append(0.0)
+                            pass
+                        if g_val == 0.0:
+                            # Fallback to legacy gravity table if available
+                            try:
+                                g_val = float(self.city.gravity.at[(u, v), 'gravity'])
+                            except Exception:
+                                g_val = 0.0
+                        grav.append(g_val)
                     grav = np.asarray(grav, dtype=float)
                     if grav.sum() > 0:
                         grav = grav / grav.sum()

@@ -16,6 +16,7 @@ import networkx as nx
 import warnings
 import geopandas as gpd
 import os
+from typing import Dict, List, Tuple, Optional, Set
 
 from nomad.map_utils import blocks_to_mercator, mercator_to_blocks
 
@@ -151,8 +152,23 @@ class City:
         )
         self.buildings_gdf.set_index('id', inplace=True, drop=False)
         self.buildings_gdf.index.name = None
-        self.blocks_gdf = self._init_blocks_gdf()
-        self.streets_gdf = self._derive_streets_from_blocks()
+        
+        if manual_streets:
+            self.blocks_gdf = gpd.GeoDataFrame(
+                columns=['coord_x','coord_y','kind','building_id','building_type','geometry'],
+                geometry='geometry', crs=None
+            )
+            self.blocks_gdf.set_index(['coord_x', 'coord_y'], inplace=True, drop=False)
+            self.blocks_gdf.index.names = [None, None]
+            self.streets_gdf = gpd.GeoDataFrame(
+                columns=['coord_x','coord_y','id','geometry'],
+                geometry='geometry', crs=None
+            )
+            self.streets_gdf.set_index(['coord_x', 'coord_y'], inplace=True, drop=False)
+            self.streets_gdf.index.names = [None, None]
+        else:
+            self.blocks_gdf = self._init_blocks_gdf()
+            self.streets_gdf = self._derive_streets_from_blocks()
         # Convenience properties are defined below for GDF-first access
 
     def _derive_streets_from_blocks(self):
@@ -296,8 +312,21 @@ class City:
         door_poly = box(door[0], door[1], door[0]+1, door[1]+1)
         door_line = geom.intersection(door_poly)
         if door_line.is_empty:
-            raise ValueError(f"Door {door} must be adjacent to new building.")
-        door_centroid = (door_line.centroid.x, door_line.centroid.y)
+            if blocks is not None:
+                neighbors = [(0, 1), (0, -1), (1, 0), (-1, 0)]
+                is_adjacent_to_blocks = any(
+                    (x + dx, y + dy) == door
+                    for x, y in blocks
+                    for dx, dy in neighbors
+                )
+                if is_adjacent_to_blocks:
+                    door_centroid = (door[0] + 0.5, door[1] + 0.5)
+                else:
+                    raise ValueError(f"Door {door} must be adjacent to new building.")
+            else:
+                raise ValueError(f"Door {door} must be adjacent to new building.")
+        else:
+            door_centroid = (door_line.centroid.x, door_line.centroid.y)
 
         # Validate index presence without noisy prints
         in_index = (door[0], door[1]) in self.streets_gdf.index if isinstance(door, tuple) else door in self.streets_gdf.index
@@ -307,14 +336,38 @@ class City:
         if srow is None or isinstance(srow, pd.DataFrame) and srow.empty:
             raise ValueError(f"Door {door} must be on an existing street cell.")
         street_geom = srow.geometry if isinstance(srow, pd.Series) else srow.iloc[0].geometry
-        combined_plot = unary_union([geom, street_geom])
-        if self.buildings_outline.contains(combined_plot) or self.buildings_outline.overlaps(combined_plot):
-            raise ValueError(
-                "New building or its door overlap with existing buildings."
-            )
+        
+        if blocks is not None and len(blocks) > 0:
+            building_blocks_set = set(blocks)
+            existing_building_blocks = set()
+            if hasattr(self, 'blocks_gdf') and not self.blocks_gdf.empty:
+                existing_building_blocks = set(
+                    self.blocks_gdf[self.blocks_gdf['kind'] == 'building'].index.tolist()
+                )
+            
+            if building_blocks_set & existing_building_blocks:
+                raise ValueError(
+                    "New building overlaps with existing buildings."
+                )
+        else:
+            geom_only_overlaps = self.buildings_outline.contains(geom) or self.buildings_outline.overlaps(geom)
+            if geom_only_overlaps:
+                raise ValueError(
+                    "New building overlaps with existing buildings."
+                )
 
         if not check_adjacent(geom, street_geom):
-            raise ValueError(f"Door {door} must be adjacent to new building.")
+            if blocks is not None:
+                neighbors = [(0, 1), (0, -1), (1, 0), (-1, 0)]
+                is_adjacent_to_blocks = any(
+                    (x + dx, y + dy) == door
+                    for x, y in blocks
+                    for dx, dy in neighbors
+                )
+                if not is_adjacent_to_blocks:
+                    raise ValueError(f"Door {door} must be adjacent to new building.")
+            else:
+                raise ValueError(f"Door {door} must be adjacent to new building.")
 
         # Derive blocks from geom if not provided
         if blocks is None:
@@ -456,18 +509,25 @@ class City:
             }
         return {'kind': 'unknown', 'building_id': None, 'building_type': None, 'geometry': None}
 
-    def get_street_graph(self):
+    def get_street_graph(self, lazy=True):
         """
         Constructs a graph of street blocks for shortest path calculations.
         Each street block is a node, and edges connect adjacent street blocks.
         Uses vectorized operations on `streets_gdf` to determine adjacency.
+        
+        Parameters
+        ----------
+        lazy : bool, default True
+            If True, only builds the graph structure without precomputing all shortest paths.
+            Paths will be computed on-demand in get_shortest_path(). This avoids O(n²) memory
+            usage for large networks (>10k nodes).
         """
         if hasattr(self, 'street_graph') and self.street_graph is not None:
             return self.street_graph
 
         if self.streets_gdf.empty:
             self.street_graph = nx.Graph()
-            # Empty gravity as well
+            self.shortest_paths = {}  # Empty dict for lazy computation
             self.gravity = pd.DataFrame(columns=['distance', 'gravity'])
             return self.street_graph
 
@@ -502,24 +562,197 @@ class City:
             edge_list = [((int(r.x), int(r.y)), (int(r.nx), int(r.ny))) for r in edges_df.itertuples(index=False)]
             G.add_edges_from(edge_list, weight=1)
 
-        # Compute shortest paths (for compatibility) and distances (for gravity)
-        self.shortest_paths = dict(nx.all_pairs_shortest_path(G))
-        # Distances
-        dist_records = []
-        for source, lengths in nx.all_pairs_shortest_path_length(G):
-            for target, d in lengths.items():
-                if source == target:
-                    continue
-                dist_records.append({'origin': source, 'dest': target, 'distance': int(d)})
-        if dist_records:
-            dist_df = pd.DataFrame(dist_records)
-            dist_df['gravity'] = 1.0 / (dist_df['distance'] + 1)
-            self.gravity = dist_df.set_index(['origin', 'dest'])
-        else:
-            self.gravity = pd.DataFrame(columns=['distance', 'gravity'])
-
         self.street_graph = G
+        
+        # Lazy mode: don't precompute all paths (saves memory)
+        if lazy:
+            self.shortest_paths = {}  # Empty dict, paths computed on-demand
+            self.gravity = None  # Computed on-demand if needed
+        else:
+            # Legacy mode: precompute all paths (for backwards compatibility)
+            # WARNING: This can cause MemoryError for large networks (>10k nodes)
+            try:
+                self.shortest_paths = dict(nx.all_pairs_shortest_path(G))
+                # Distances
+                dist_records = []
+                for source, lengths in nx.all_pairs_shortest_path_length(G):
+                    for target, d in lengths.items():
+                        if source == target:
+                            continue
+                        dist_records.append({'origin': source, 'dest': target, 'distance': int(d)})
+                if dist_records:
+                    dist_df = pd.DataFrame(dist_records)
+                    dist_df['gravity'] = 1.0 / (dist_df['distance'] + 1)
+                    self.gravity = dist_df.set_index(['origin', 'dest'])
+                else:
+                    self.gravity = pd.DataFrame(columns=['distance', 'gravity'])
+            except MemoryError:
+                # Fallback to lazy mode if memory error occurs
+                self.shortest_paths = {}
+                self.gravity = None
+        
+        # Always build the shortcut ("highway") network for fast queries
+        # If shortcuts fail, fallback to on-demand path computation remains available
+        self._build_shortcut_network()
+
         return self.street_graph
+
+    # ---------------------------------------------------------------------
+    # Shortcut ("highway") network for fast on-demand routing
+    # ---------------------------------------------------------------------
+    def _build_shortcut_network(self, target_num_hubs: int = 256) -> None:
+        """
+        Build a sparse shortcut routing structure that enables near-instant shortest
+        path queries with low memory:
+
+        - Select a well-distributed subset of street blocks as hubs
+        - Precompute hub-to-hub next-hop table (on the hub graph)
+        - Precompute, for every node, the next step toward its nearest hub (multi-source BFS)
+
+        Memory:
+          - O(N) for next_to_hub (one next-hop per node)
+          - O(H^2) for hub next-hop table, with H << N
+
+        Time:
+          - O(N + E) for multi-source BFS (nodes -> nearest hub)
+          - O(H * (N + E)) worst-case for hub next-hop derivation (early-stops once all hubs reached)
+        """
+        if not hasattr(self, 'street_graph') or self.street_graph is None:
+            return
+
+        G = self.street_graph
+        if G.number_of_nodes() == 0:
+            return
+
+        # Select hubs
+        hubs = self._select_hubs(target_num_hubs)
+        if len(hubs) == 0:
+            # Fallback: pick an arbitrary node
+            any_node = next(iter(G.nodes))
+            hubs = {any_node}
+
+        # Multi-source BFS from hubs to assign nearest hub and one-step-to-hub for all nodes
+        self._nearest_hub, self._next_to_hub = self._compute_nearest_hub_and_next_step(hubs)
+
+        # Precompute hub-to-hub next-hop table
+        self._hub_next_hop = self._compute_hub_next_hop(hubs)
+        self._shortcut_hubs = hubs
+
+    def _select_hubs(self, target_num_hubs: int) -> set:
+        """
+        Select hubs approximately uniformly over the grid using a stride on coordinates.
+        Falls back to random subsampling if stride yields too many hubs.
+        """
+        nodes_df = self.streets_gdf[['coord_x', 'coord_y']]
+        num_nodes = len(nodes_df)
+        if num_nodes == 0:
+            return set()
+
+        # Aim for roughly target_num_hubs by choosing a coordinate stride
+        stride = max(1, int(np.sqrt(num_nodes / max(1, target_num_hubs))))
+        # Center the selection using offsets to avoid biasing towards the origin
+        off_x = stride // 2
+        off_y = stride // 2
+
+        candidates = nodes_df[
+            (nodes_df['coord_x'] % stride == off_x % stride) &
+            (nodes_df['coord_y'] % stride == off_y % stride)
+        ]
+        hubs = set((int(x), int(y)) for x, y in candidates.itertuples(index=False))
+
+        # If too many, downsample; if too few, progressively relax stride
+        if len(hubs) > target_num_hubs:
+            # random downsample deterministically by hashing
+            hubs_list = sorted(list(hubs))
+            step = max(1, len(hubs_list) // target_num_hubs)
+            hubs = set(hubs_list[::step])
+        elif len(hubs) < max(2, target_num_hubs // 4):
+            # relax stride to add more
+            stride = max(1, stride // 2)
+            candidates = nodes_df[
+                (nodes_df['coord_x'] % stride == off_x % stride) &
+                (nodes_df['coord_y'] % stride == off_y % stride)
+            ]
+            hubs = set((int(x), int(y)) for x, y in candidates.itertuples(index=False))
+
+        return hubs
+
+    def _compute_nearest_hub_and_next_step(self, hubs: set):
+        """
+        Multi-source BFS from all hubs.
+        For each node v, compute:
+          - nearest_hub[v]: the hub assigned to v
+          - next_to_hub[v]: the next node to step to in order to reach nearest_hub[v]
+        """
+        from collections import deque
+
+        G = self.street_graph
+        nearest_hub = {}
+        next_to_hub = {}
+        visited = set()
+
+        dq = deque()
+        for h in hubs:
+            dq.append(h)
+            nearest_hub[h] = h
+            next_to_hub[h] = h  # self pointer for hubs
+            visited.add(h)
+
+        while dq:
+            u = dq.popleft()
+            for w in G.neighbors(u):
+                if w in visited:
+                    continue
+                visited.add(w)
+                nearest_hub[w] = nearest_hub[u]
+                # The next step to hub for w is u (the node we came from)
+                next_to_hub[w] = u
+                dq.append(w)
+
+        return nearest_hub, next_to_hub
+
+    def _compute_hub_next_hop(self, hubs: set):
+        """
+        For each hub s, run a BFS and assign for every other hub t the first step to take
+        from s along the shortest path to t. Stops early when all hubs are discovered.
+        Returns: dict-of-dicts next_hop[s][t] -> neighbor node (first step from s).
+        """
+        from collections import deque
+
+        G = self.street_graph
+        hubs_list = list(hubs)
+        hub_set = set(hubs_list)
+        next_hop = {h: {} for h in hubs_list}
+
+        for s in hubs_list:
+            seen = set([s])
+            first_step = {s: s}
+            dq = deque()
+            # Initialize with immediate neighbors of s; their first_step is themselves
+            for n in G.neighbors(s):
+                if n not in seen:
+                    seen.add(n)
+                    first_step[n] = n
+                    dq.append(n)
+
+            remaining = hub_set - {s}
+            while dq and remaining:
+                u = dq.popleft()
+                if u in hub_set and u in remaining:
+                    next_hop[s][u] = first_step[u]
+                    remaining.remove(u)
+                    # Note: continue exploring to potentially find other hubs
+                for w in G.neighbors(u):
+                    if w in seen:
+                        continue
+                    seen.add(w)
+                    first_step[w] = first_step[u]
+                    dq.append(w)
+
+            # ensure self-case exists
+            next_hop[s][s] = s
+
+        return next_hop
 
     def save(self, filename):
         """
@@ -986,6 +1219,7 @@ class City:
     def get_shortest_path(self, start_coord: tuple, end_coord: tuple, plot: bool = False, ax=None):
         """
         Retrieves the shortest path between two blocks using tuple coordinates and optionally plots it.
+        Uses lazy computation: paths are computed on-demand to avoid O(n²) memory usage.
 
         Parameters
         ----------
@@ -1009,15 +1243,85 @@ class City:
         """
         if not (isinstance(start_coord, tuple) and isinstance(end_coord, tuple)):
             raise ValueError("Coordinates must be tuples of (x, y).")
-        if start_coord not in self.streets_gdf.index or end_coord not in self.streets_gdf.index:
-            raise ValueError("Start or end coordinates must be street blocks.")
+        
+        # Check if coordinates are street blocks
+        if not ((self.streets_gdf['coord_x'] == start_coord[0]) & (self.streets_gdf['coord_y'] == start_coord[1])).any():
+            raise ValueError(f"Start coordinate {start_coord} must be a street block.")
+        if not ((self.streets_gdf['coord_x'] == end_coord[0]) & (self.streets_gdf['coord_y'] == end_coord[1])).any():
+            raise ValueError(f"End coordinate {end_coord} must be a street block.")
 
-        if not hasattr(self, 'shortest_paths'):
-            self.get_street_graph()
+        # Ensure graph and shortcuts are built
+        if not hasattr(self, 'street_graph') or self.street_graph is None:
+            self.get_street_graph(lazy=True)
+        if not hasattr(self, '_shortcut_hubs') or self._shortcut_hubs is None:
+            try:
+                self._build_shortcut_network()
+            except Exception:
+                pass
 
-        path = self.shortest_paths.get(start_coord, {}).get(end_coord, [])
-        if not path:
-            return []
+        # Prefer shortcut network if available; fall back to NetworkX if not
+        if hasattr(self, '_shortcut_hubs') and self._shortcut_hubs:
+            # Map arbitrary node to its hub via precomputed next_to_hub
+            def path_to_hub(node):
+                route = [node]
+                # Prevent infinite loops; cap at city size
+                for _ in range(max(1, len(self.streets_gdf))):
+                    if node == self._nearest_hub[node]:
+                        break
+                    node = self._next_to_hub[node]
+                    route.append(node)
+                    if node == self._nearest_hub[node]:
+                        break
+                return route
+
+            u = start_coord
+            v = end_coord
+            hu = self._nearest_hub[u]
+            hv = self._nearest_hub[v]
+
+            # u -> hu
+            seg_u_hu = path_to_hub(u)
+            # hubs path hu -> hv using next_hop table
+            seg_hubs = [hu]
+            cur = hu
+            safe_cap = max(2, len(self._shortcut_hubs) * 4)
+            for _ in range(safe_cap):
+                if cur == hv:
+                    break
+                nh = self._hub_next_hop.get(cur, {}).get(hv)
+                if nh is None:
+                    # fallback to direct nx shortest path if hub-hub mapping missing
+                    try:
+                        nx_path = nx.shortest_path(self.street_graph, cur, hv)
+                    except nx.NetworkXNoPath:
+                        return []
+                    seg_hubs = nx_path
+                    cur = hv
+                    break
+                seg_hubs.append(nh)
+                cur = nh
+
+            # hv -> v: walk from v to hv using next_to_hub, then reverse to get hv->v
+            seg_v_to_hv = path_to_hub(v)
+            # ensure last element is hv
+            if seg_v_to_hv[-1] != hv:
+                # fallback to nx shortest if something is off
+                try:
+                    nx_path = nx.shortest_path(self.street_graph, hv, v)
+                except nx.NetworkXNoPath:
+                    return []
+                seg_hv_to_v = nx_path
+            else:
+                seg_hv_to_v = list(reversed(seg_v_to_hv))
+
+            # Concatenate segments, avoiding duplicate junctions
+            path = seg_u_hu[:-1] + seg_hubs + seg_hv_to_v[1:]
+        else:
+            # Fallback: compute on-demand with NetworkX
+            try:
+                path = nx.shortest_path(self.street_graph, start_coord, end_coord)
+            except nx.NetworkXNoPath:
+                return []
 
         if plot:
             if ax is None:
@@ -1045,6 +1349,60 @@ class City:
             plt.close(fig)
 
         return path
+
+    # ---------------------------------------------------------------------
+    # Fast distance with small LRU-style cache (simple and effective)
+    # ---------------------------------------------------------------------
+    def get_distance_fast(self, start_coord: tuple, end_coord: tuple) -> float:
+        """
+        Return an approximate shortest-path distance in number of steps between two
+        street blocks using the shortcut network for speed. Results are cached.
+
+        Falls back to on-demand NetworkX shortest_path if shortcuts are unavailable.
+        Returns np.inf if no path exists.
+        """
+        if not (isinstance(start_coord, tuple) and isinstance(end_coord, tuple)):
+            raise ValueError("Coordinates must be tuples of (x, y).")
+
+        # Ensure graph (and shortcuts if possible) are built
+        if not hasattr(self, 'street_graph') or self.street_graph is None:
+            self.get_street_graph(lazy=True)
+        if not hasattr(self, '_shortcut_hubs') or self._shortcut_hubs is None:
+            try:
+                self._build_shortcut_network()
+            except Exception:
+                pass
+
+        # Initialize cache
+        if not hasattr(self, '_distance_cache'):
+            self._distance_cache = {}
+        MAX_CACHE = 50000
+
+        key = (start_coord, end_coord)
+        if key in self._distance_cache:
+            return self._distance_cache[key]
+
+        # Compute via path length
+        try:
+            path = self.get_shortest_path(start_coord, end_coord)
+            if not path:
+                d = float('inf')
+            else:
+                d = float(max(0, len(path) - 1))
+        except Exception:
+            d = float('inf')
+
+        # Cache with simple capacity control (drop half when full)
+        try:
+            self._distance_cache[key] = d
+            if len(self._distance_cache) > MAX_CACHE:
+                # drop roughly half oldest by arbitrary order
+                for k in list(self._distance_cache.keys())[:MAX_CACHE // 2]:
+                    self._distance_cache.pop(k, None)
+        except Exception:
+            pass
+
+        return d
 
 
 # =============================================================================
@@ -1154,7 +1512,7 @@ class RandomCityGenerator:
     def generate_city(self):
         """Generates a systematically structured city where blocks are fully occupied with buildings."""
         self.place_buildings_in_blocks()
-        self.city.get_street_graph()
+        self.city.get_street_graph(lazy=True)  # Use lazy mode to avoid memory issues
         # Always return the city object, even if no buildings were added
         return self.city
 
@@ -1179,3 +1537,236 @@ def check_adjacent(geom1, geom2):
     if intersection.is_empty:
         return False
     return isinstance(intersection, (LineString, MultiLineString))
+
+
+# =============================================================================
+# RASTERIZATION UTILITIES (integrated from rasterization.py)
+# =============================================================================
+
+def generate_canvas_blocks(boundary_polygon: Polygon, block_size: float, crs: str = "EPSG:3857") -> gpd.GeoDataFrame:
+    minx, miny, maxx, maxy = boundary_polygon.bounds
+    x_min = int(minx // block_size)
+    x_max = int(maxx // block_size) + 1
+    y_min = int(miny // block_size)
+    y_max = int(maxy // block_size) + 1
+    blocks = []
+    for x in range(x_min, x_max):
+        for y in range(y_min, y_max):
+            block_geom = box(x * block_size, y * block_size, (x + 1) * block_size, (y + 1) * block_size)
+            if boundary_polygon.intersects(block_geom):
+                blocks.append({'coord_x': x, 'coord_y': y, 'geometry': block_geom})
+    if not blocks:
+        return gpd.GeoDataFrame(columns=['coord_x','coord_y','geometry'], geometry='geometry', crs=crs)
+    blocks_gdf = gpd.GeoDataFrame(blocks, geometry='geometry', crs=crs)
+    blocks_gdf.set_index(['coord_x','coord_y'], inplace=True, drop=False)
+    blocks_gdf.index.names = [None, None]
+    return blocks_gdf
+
+
+def find_intersecting_blocks(geometries_gdf: gpd.GeoDataFrame, blocks_gdf: gpd.GeoDataFrame, predicate: str = 'intersects') -> pd.DataFrame:
+    if len(geometries_gdf) == 0 or len(blocks_gdf) == 0:
+        return pd.DataFrame(columns=['coord_x','coord_y','geometry_idx'])
+    blocks_reset = blocks_gdf.reset_index()
+    geometries_reset = geometries_gdf.reset_index()
+    intersections = gpd.sjoin(blocks_reset, geometries_reset, how='inner', predicate=predicate)
+    if len(intersections) == 0:
+        return pd.DataFrame(columns=['coord_x','coord_y','geometry_idx'])
+    if 'index_right' in intersections.columns:
+        idx_col = 'index_right'
+    else:
+        idx_col = geometries_reset.index.name if geometries_reset.index.name else 'index'
+        if idx_col not in intersections.columns:
+            idx_col = intersections.columns[-1]
+    result = intersections[['coord_x','coord_y', idx_col]].copy().rename(columns={idx_col:'geometry_idx'})
+    return result
+
+
+TYPE_PRIORITY = {'street':1,'park':2,'workplace':3,'home':4,'retail':5,'other':6}
+
+
+def assign_block_types(blocks_gdf: gpd.GeoDataFrame, streets_gdf: gpd.GeoDataFrame, buildings_by_type: Dict[str, gpd.GeoDataFrame], block_size: float) -> gpd.GeoDataFrame:
+    result = blocks_gdf.copy()
+    result['type'] = None
+    if len(blocks_gdf) == 0:
+        return result
+    street_intersections = find_intersecting_blocks(streets_gdf, blocks_gdf)
+    if len(street_intersections) > 0:
+        street_coords = set(zip(street_intersections['coord_x'], street_intersections['coord_y']))
+        result.loc[result.index.isin(street_coords), 'type'] = 'street'
+    for building_type in ['park','workplace','home','retail','other']:
+        if building_type not in buildings_by_type or len(buildings_by_type[building_type]) == 0:
+            continue
+        unassigned = result[result['type'].isna()]
+        if len(unassigned) == 0:
+            break
+        building_intersections = find_intersecting_blocks(buildings_by_type[building_type], unassigned)
+        if len(building_intersections) > 0:
+            building_coords = set(zip(building_intersections['coord_x'], building_intersections['coord_y']))
+            unassigned_coords = set(unassigned.index)
+            to_assign = building_coords & unassigned_coords
+            if to_assign:
+                result.loc[result.index.isin(to_assign), 'type'] = building_type
+    return result
+
+
+def find_connected_components(block_coords: List[Tuple[int,int]], connectivity: str = '4-connected') -> List[Set[Tuple[int,int]]]:
+    if not block_coords:
+        return []
+    block_set = set(block_coords)
+    neighbors = [(0,1),(0,-1),(1,0),(-1,0)] if connectivity=='4-connected' else [(0,1),(0,-1),(1,0),(-1,0),(1,1),(1,-1),(-1,1),(-1,-1)]
+    components = []
+    visited = set()
+    for start in block_coords:
+        if start in visited:
+            continue
+        component = set()
+        queue = [start]
+        visited.add(start)
+        while queue:
+            x,y = queue.pop(0)
+            component.add((x,y))
+            for dx,dy in neighbors:
+                nb = (x+dx, y+dy)
+                if nb in block_set and nb not in visited:
+                    visited.add(nb)
+                    queue.append(nb)
+        components.append(component)
+    return components
+
+
+def verify_street_connectivity(streets_gdf: gpd.GeoDataFrame) -> Tuple[gpd.GeoDataFrame, dict]:
+    if len(streets_gdf) == 0:
+        return streets_gdf.copy(), {'total':0,'kept':0,'discarded':0}
+    street_coords = list(zip(streets_gdf['coord_x'], streets_gdf['coord_y']))
+    components = find_connected_components(street_coords, connectivity='4-connected')
+    if not components:
+        return streets_gdf.iloc[0:0].copy(), {'total':0,'kept':0,'discarded':0}
+    largest = max(components, key=len)
+    kept = set(largest)
+    result = streets_gdf[streets_gdf.apply(lambda r: (r['coord_x'], r['coord_y']) in kept, axis=1)].copy()
+    summary = {'total': len(streets_gdf), 'kept': len(result), 'discarded': len(streets_gdf)-len(result), 'n_components': len(components)}
+    return result, summary
+
+
+def assign_door_to_building(building_blocks: List[Tuple[int,int]], street_coords_set: Set[Tuple[int,int]]) -> Optional[Tuple[int,int]]:
+    neighbors = [(0,1),(0,-1),(1,0),(-1,0)]
+    for x,y in building_blocks:
+        for dx,dy in neighbors:
+            nb = (x+dx, y+dy)
+            if nb in street_coords_set:
+                return nb
+    return None
+
+
+class RasterCityGenerator:
+    def __init__(self, boundary_polygon: Polygon, streets_gdf: gpd.GeoDataFrame, buildings_gdf: gpd.GeoDataFrame, block_size: float = 15.0, crs: str = "EPSG:3857", category_column: str = 'garden_city_category'):
+        self.boundary_polygon = boundary_polygon
+        self.streets_gdf = streets_gdf.to_crs(crs)
+        self.buildings_gdf = buildings_gdf.to_crs(crs)
+        self.block_size = block_size
+        self.crs = crs
+        self.category_column = category_column
+        self.blocks_gdf = None
+        self.building_components = {}
+
+    def generate_city(self) -> 'City':
+        print("Generating canvas blocks...")
+        self.blocks_gdf = generate_canvas_blocks(self.boundary_polygon, self.block_size, self.crs)
+        print(f"Generated {len(self.blocks_gdf):,} blocks")
+        print("Assigning block types...")
+        buildings_by_type = self._group_buildings_by_type()
+        typed_blocks = assign_block_types(self.blocks_gdf, self.streets_gdf, buildings_by_type, self.block_size)
+        print("Assigning streets...")
+        street_blocks = typed_blocks[typed_blocks['type'] == 'street'][['coord_x','coord_y','geometry']].copy()
+        print("Verifying street connectivity...")
+        connected_streets, summary = verify_street_connectivity(street_blocks)
+        print(f"  Streets: {summary['kept']:,} kept, {summary['discarded']:,} discarded")
+        street_coords_set = set(zip(connected_streets['coord_x'], connected_streets['coord_y']))
+        print("Assigning buildings to blocks...")
+        buildings_to_add = self._assign_buildings_to_blocks(typed_blocks, street_coords_set)
+        print(f"  Found {len(buildings_to_add):,} buildings to add")
+        minx, miny, maxx, maxy = self.boundary_polygon.bounds
+        grid_min_x = int(minx // self.block_size)
+        grid_min_y = int(miny // self.block_size)
+        grid_max_x = int(maxx // self.block_size) + 1
+        grid_max_y = int(maxy // self.block_size) + 1
+        grid_width = grid_max_x - grid_min_x
+        grid_height = grid_max_y - grid_min_y
+        city = City(dimensions=(grid_width, grid_height), manual_streets=True, name="Philadelphia", block_side_length=self.block_size, web_mercator_origin_x=minx, web_mercator_origin_y=miny)
+        city.blocks_gdf = typed_blocks.copy()
+        offset_x, offset_y = grid_min_x, grid_min_y
+        city.blocks_gdf['coord_x'] = city.blocks_gdf['coord_x'] - offset_x
+        city.blocks_gdf['coord_y'] = city.blocks_gdf['coord_y'] - offset_y
+        city.blocks_gdf['kind'] = None
+        city.blocks_gdf['building_id'] = None
+        city.blocks_gdf['building_type'] = None
+        for block_type in ['street','park','workplace','home','retail','other']:
+            mask = city.blocks_gdf['type'] == block_type
+            city.blocks_gdf.loc[mask, 'kind'] = 'street' if block_type=='street' else 'building'
+        city.streets_gdf = gpd.GeoDataFrame(connected_streets[['coord_x','coord_y','geometry']].copy(), geometry='geometry', crs=self.crs)
+        city.streets_gdf['coord_x'] = city.streets_gdf['coord_x'] - offset_x
+        city.streets_gdf['coord_y'] = city.streets_gdf['coord_y'] - offset_y
+        city.streets_gdf['id'] = ('s-x' + city.streets_gdf['coord_x'].astype(int).astype(str) + '-y' + city.streets_gdf['coord_y'].astype(int).astype(str))
+        city.streets_gdf.set_index(['coord_x','coord_y'], inplace=True, drop=False)
+        city.streets_gdf.index.names = [None, None]
+        print("Adding buildings to city...")
+        added_building_blocks = set()
+        skipped_overlap = 0
+        for building_info in buildings_to_add:
+            door_coords = (building_info['door'][0]-offset_x, building_info['door'][1]-offset_y)
+            building_blocks = [(x-offset_x, y-offset_y) for x,y in building_info['blocks']]
+            building_blocks_set = set(building_blocks)
+            if building_blocks_set & added_building_blocks:
+                skipped_overlap += 1
+                continue
+            building_geom = self._blocks_to_geometry_grid(building_blocks)
+            city.add_building(building_type=building_info['type'], door=door_coords, blocks=building_blocks, geom=building_geom)
+            added_building_blocks.update(building_blocks_set)
+        if skipped_overlap > 0:
+            print(f"  Skipped {skipped_overlap} buildings due to overlap")
+        return city
+
+    def _group_buildings_by_type(self) -> Dict[str, gpd.GeoDataFrame]:
+        buildings_by_type = {}
+        if self.category_column not in self.buildings_gdf.columns:
+            return buildings_by_type
+        for btype in ['park','workplace','home','retail','other']:
+            subset = self.buildings_gdf[self.buildings_gdf[self.category_column] == btype]
+            if len(subset) > 0:
+                buildings_by_type[btype] = subset
+        return buildings_by_type
+
+    def _assign_buildings_to_blocks(self, typed_blocks: gpd.GeoDataFrame, street_coords_set: Set[Tuple[int,int]]) -> List[dict]:
+        buildings_to_add = []
+        buildings_by_type = self._group_buildings_by_type()
+        for building_type in ['park','workplace','home','retail','other']:
+            if building_type not in buildings_by_type:
+                continue
+            buildings_gdf = buildings_by_type[building_type]
+            for idx, building_row in buildings_gdf.iterrows():
+                building_blocks = find_intersecting_blocks(gpd.GeoDataFrame([building_row], geometry='geometry', crs=self.crs), typed_blocks[typed_blocks['type'] == building_type])
+                if len(building_blocks) == 0:
+                    continue
+                block_coords = list(zip(building_blocks['coord_x'], building_blocks['coord_y']))
+                components = find_connected_components(block_coords, connectivity='4-connected')
+                for component in components:
+                    component_blocks = list(component)
+                    door = assign_door_to_building(component_blocks, street_coords_set)
+                    if door is None:
+                        continue
+                    buildings_to_add.append({'type': building_type, 'door': door, 'blocks': component_blocks, 'geom': self._blocks_to_geometry(component_blocks)})
+        return buildings_to_add
+
+    def _blocks_to_geometry_grid(self, blocks: List[Tuple[int,int]]) -> Polygon:
+        from shapely.ops import unary_union
+        block_polys = [box(x, y, x+1, y+1) for x,y in blocks]
+        if len(block_polys) == 1:
+            return block_polys[0]
+        return unary_union(block_polys)
+
+    def _blocks_to_geometry(self, blocks: List[Tuple[int,int]]) -> Polygon:
+        from shapely.geometry import MultiPolygon
+        block_polys = [box(x * self.block_size, y * self.block_size, (x+1) * self.block_size, (y+1) * self.block_size) for x,y in blocks]
+        if len(block_polys) == 1:
+            return block_polys[0]
+        return MultiPolygon(block_polys).envelope

@@ -33,6 +33,7 @@ import matplotlib.pyplot as plt
 import contextily as ctx
 
 import nomad.map_utils as nm
+from nomad.city_gen import RasterCityGenerator
 
 
 # %% [markdown]
@@ -147,6 +148,22 @@ rotated_buildings.to_file(RAW_GPKG_PATH, layer="buildings_rotated", driver="GPKG
 rotated_streets.to_file(RAW_GPKG_PATH, layer="streets_rotated", driver="GPKG", mode="a")
 rotated_boundary.to_file(RAW_GPKG_PATH, layer="city_boundary_rotated", driver="GPKG", mode="a")
 
+# %% [markdown]
+# ### A/B check: category counts with and without speculative inference
+
+# %%
+try:
+    def _category_counts(df):
+        return df['category'].value_counts().to_dict() if 'category' in df.columns else {}
+
+    # Re-categorize using internal categorizer (garden_city schema)
+    ab_no_infer = nm._categorize_features(rotated_buildings, schema='garden_city', infer_building_types=False)
+    ab_yes_infer = nm._categorize_features(rotated_buildings, schema='garden_city', infer_building_types=True)
+    print("Category counts (infer_building_types=False):", nm.get_category_summary(ab_no_infer))
+    print("Category counts (infer_building_types=True): ", nm.get_category_summary(ab_yes_infer))
+except Exception as e:
+    print(f"A/B category check skipped: {e}")
+
 
 # %%
 print("Generating diagnostic plots...")
@@ -166,3 +183,68 @@ _plot_streets(axes[1], rotated_streets, f"Rotated Streets ({rotation_deg:.2f}°)
 plt.tight_layout()
 plt.savefig(OUTPUT_DIR / "philadelphia_rotation_diagnostics.png", dpi=200, bbox_inches="tight")
 plt.show()
+
+# %% [markdown]
+# ## 3. Streets-only rasterization and graph timing
+#
+# Baby step: rasterize only the rotated streets and measure graph build time.
+
+# %%
+print("\nStreets-only rasterization and graph timing...")
+rot_streets = gpd.read_file(RAW_GPKG_PATH, layer="streets_rotated")
+rot_buildings = gpd.GeoDataFrame(columns=['geometry'], geometry='geometry', crs=rot_streets.crs)
+rot_boundary = gpd.read_file(RAW_GPKG_PATH, layer="city_boundary_rotated")
+
+boundary_geom = rot_boundary.geometry.iloc[0]
+block_size = 15.0
+
+gen_streets_only = RasterCityGenerator(
+    boundary_polygon=boundary_geom,
+    streets_gdf=rot_streets,
+    buildings_gdf=rot_buildings,
+    block_size=block_size,
+)
+
+import time as _t
+_t0 = _t.time()
+city_streets = gen_streets_only.generate_city()
+streets_only_elapsed = _t.time() - _t0
+print(f"Streets-only rasterization: {streets_only_elapsed:.2f}s; streets={len(city_streets.streets_gdf):,}, blocks={len(city_streets.blocks_gdf):,}")
+
+# Graph build timing (includes shortcut network)
+_t1 = _t.time()
+G = city_streets.get_street_graph(lazy=True)
+graph_elapsed = _t.time() - _t1
+print(f"Street graph build (lazy + shortcuts): {graph_elapsed:.2f}s; nodes={len(G.nodes):,}, edges={len(G.edges):,}")
+
+# %% [markdown]
+# ## 4. Rasterize Rotated City (Scaled)
+#
+# Using the rotated layers, rasterize the full city at 15m block size and persist
+# the resulting `City` layers. This is the next step toward a complete pipeline.
+
+# %%
+print("\nRasterizing rotated city at 15m (buildings + streets)...")
+rot_buildings = gpd.read_file(RAW_GPKG_PATH, layer="buildings_rotated")
+
+boundary_geom = rot_boundary.geometry.iloc[0]
+block_size = 15.0
+
+gen = RasterCityGenerator(
+    boundary_polygon=boundary_geom,
+    streets_gdf=rot_streets,
+    buildings_gdf=rot_buildings,
+    block_size=block_size,
+)
+
+import time as _t
+_t0 = _t.time()
+city = gen.generate_city()
+elapsed = _t.time() - _t0
+print(f"Rasterization completed in {elapsed:.1f}s: blocks={len(city.blocks_gdf):,}, streets={len(city.streets_gdf):,}, buildings={len(city.buildings_gdf):,}")
+
+RASTER_GPKG = OUTPUT_DIR / "philadelphia_rasterized.gpkg"
+if RASTER_GPKG.exists():
+    RASTER_GPKG.unlink()
+city.save_geopackage(str(RASTER_GPKG), persist_blocks=True, persist_city_properties=True)
+print(f"Saved rasterized layers to {RASTER_GPKG}")

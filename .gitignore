@@ -63,3 +63,4 @@ virtual-environments/
 .DS_Store
 Thumbs.db
 *.tmp
+sandbox/sandbox_data.gpkg

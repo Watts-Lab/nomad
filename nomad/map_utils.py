@@ -300,28 +300,36 @@ def _classify_feature(row, schema, infer_building_types=False):
     # Default case: unknown building
     default_category = 'unknown' if schema == 'geolife_plus' else 'other'
     
-    # Optional speculative classification for building=yes cases
+    # Optional inference for building=yes: after all other tags,
+    # if no amenity and height < 20, label as residential
     if infer_building_types and "building" in row and pd.notna(row["building"]):
         building_value = str(row["building"]).lower().strip()
         if building_value == 'yes':
-            # Check if it has amenity tag
-            has_amenity = "amenity" in row and pd.notna(row["amenity"])
-            
-            # Check height (if available)
+            has_amenity = ("amenity" in row and pd.notna(row["amenity"]))
             height = None
             if "height" in row and pd.notna(row["height"]):
                 try:
                     height = float(str(row["height"]))
                 except (ValueError, TypeError):
                     height = None
-            
-            # Speculative classification logic
-            if has_amenity:
-                # Building with amenity -> retail
-                return ('yes', 'commercial', 'retail')
-            elif height is None or height < 20:
-                # Low/no height building without amenity -> residential
-                return ('yes', 'residential', 'residential')
+            # Require an additional residential signal to avoid mass overclassification
+            landuse_val = str(row.get('landuse', '')).lower().strip() if 'landuse' in row and pd.notna(row['landuse']) else ''
+            addr_fields = ['addr:housenumber', 'addr:housename', 'addr:unit']
+            has_addr = any((c in row and pd.notna(row[c])) for c in addr_fields)
+            building_use = str(row.get('building:use', '')).lower().strip() if 'building:use' in row and pd.notna(row['building:use']) else ''
+
+            is_residential_signal = (
+                landuse_val == 'residential' or
+                ('residential' in building_use if building_use else False) or
+                has_addr
+            )
+
+            if (not has_amenity) and (height is not None and height < 20) and is_residential_signal:
+                subtype = 'residential'
+                category = get_category_for_subtype(subtype, schema)
+                return ('yes', subtype, category)
+            # Otherwise, keep unknown/other
+            return ('yes', 'unknown', default_category)
     
     return ('unknown', 'unknown', default_category)
 

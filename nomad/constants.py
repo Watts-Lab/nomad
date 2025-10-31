@@ -272,7 +272,8 @@ SUBTYPE_TO_GARDEN_CITY = {
     'education': 'workplace',
     'entertainment': 'retail',
     'garage': 'other',
-    'hotel': 'residential',
+    # Treat hotel as home-like destination for now; adjust later if needed
+    'hotel': 'home',
     'industrial': 'workplace',
     'medical': 'workplace',
     'military': 'workplace',
@@ -280,7 +281,8 @@ SUBTYPE_TO_GARDEN_CITY = {
     'outbuilding': 'other',
     'parking': 'other',
     'religious': 'retail',
-    'residential': 'residential',
+    # Map residential to home to align with City categories
+    'residential': 'home',
     'service': 'other',
     'transportation': 'workplace',
     'warehouse': 'workplace',
