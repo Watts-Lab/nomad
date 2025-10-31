@@ -119,8 +119,7 @@ def run_audit(gpkg_path: Path) -> int:
 
 
 if __name__ == "__main__":
-    base = Path(__file__).resolve().parent
-    gpkg = base / 'philadelphia_osm_raw.gpkg'
+    gpkg = Path('philadelphia_osm_raw.gpkg')  # Relative path for Jupyter compatibility
     sys.exit(run_audit(gpkg))
 
 

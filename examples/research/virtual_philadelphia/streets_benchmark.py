@@ -12,8 +12,7 @@ from nomad.city_gen import RasterCityGenerator
 
 
 def main():
-    base = Path(__file__).resolve().parent
-    gpkg = base / 'philadelphia_osm_raw.gpkg'
+    gpkg = Path('philadelphia_osm_raw.gpkg')  # Relative path for Jupyter compatibility
     if not gpkg.exists():
         print(f"ERROR: Missing {gpkg}")
         return 1

@@ -46,7 +46,7 @@ from nomad.city_gen import RasterCityGenerator
 
 # %%
 CITY_NAME = "Philadelphia, Pennsylvania, USA"
-OUTPUT_DIR = Path(__file__).resolve().parent
+OUTPUT_DIR = Path(".")  # Relative path for Jupyter compatibility
 RAW_GPKG_PATH = OUTPUT_DIR / "philadelphia_osm_raw.gpkg"
 
 LOAD_FROM_CACHE = RAW_GPKG_PATH.exists()
