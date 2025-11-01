@@ -148,7 +148,7 @@ class City:
         self.dimensions = dimensions
 
         self.buildings_gdf = gpd.GeoDataFrame(
-            columns=['id','type','door_cell_x','door_cell_y','door_point','size','geometry'],
+            columns=['id','building_type','door_cell_x','door_cell_y','door_point','size','geometry'],
             geometry='geometry', crs=None
         )
         self.buildings_gdf.set_index('id', inplace=True, drop=False)
@@ -277,7 +277,7 @@ class City:
                 gdf_row = gpd.GeoDataFrame([gdf_row], geometry='geometry')
             elif not isinstance(gdf_row, gpd.GeoDataFrame) or len(gdf_row) != 1:
                 raise ValueError("gdf_row must be a GeoDataFrame with exactly one row or a pandas Series.")
-            building_type = gdf_row.iloc[0]['type'] if 'type' in gdf_row.columns else building_type
+            building_type = gdf_row.iloc[0]['building_type']
             door = (gdf_row.iloc[0]['door_cell_x'], gdf_row.iloc[0]['door_cell_y']) if 'door_cell_x' in gdf_row.columns else door
             geom = gdf_row.iloc[0]['geometry'] if 'geometry' in gdf_row.columns else geom
 
@@ -390,7 +390,7 @@ class City:
         new_row = gpd.GeoDataFrame([
             {
                 'id': building_id,
-                'type': building_type,
+                'building_type': building_type,
                 'door_cell_x': door[0],
                 'door_cell_y': door[1],
                 'door_point': dpt,
@@ -441,13 +441,13 @@ class City:
         ValueError
             If the GeoDataFrame lacks required columns or contains invalid data.
         """
-        required_columns = ['type', 'door_cell_x', 'door_cell_y', 'geometry']
+        required_columns = ['building_type', 'door_cell_x', 'door_cell_y', 'geometry']
         if not all(col in buildings_gdf.columns for col in required_columns):
             raise ValueError(f"GeoDataFrame must contain columns: {required_columns}")
 
         for _, row in buildings_gdf.iterrows():
             self.add_building(
-                building_type=row['type'],
+                building_type=row['building_type'],
                 door=(row['door_cell_x'], row['door_cell_y']),
                 geom=row['geometry'],
                 gdf_row=buildings_gdf.loc[[row.name]]
@@ -1069,7 +1069,7 @@ class City:
         if not city.buildings_gdf.empty:
             building_bounds = city.buildings_gdf.geometry.bounds
             building_ids = city.buildings_gdf['id'].values
-            building_types = city.buildings_gdf['type'].values if 'type' in city.buildings_gdf.columns else [None] * len(building_ids)
+            building_types = city.buildings_gdf['building_type'].values
             for i, (bid, btype) in enumerate(zip(building_ids, building_types)):
                 minx, miny, maxx, maxy = building_bounds.iloc[i]
                 mask = (city.blocks_gdf['coord_x'] >= int(np.floor(minx))) & (city.blocks_gdf['coord_x'] < int(np.ceil(maxx))) & \
@@ -1194,7 +1194,7 @@ class City:
             'building_id': self.buildings_gdf['id'].values,
             'x': centroids.x.values,
             'y': centroids.y.values,
-            'building_type': self.buildings_gdf['type'].values,
+            'building_type': self.buildings_gdf['building_type'].values,
             'size': self.buildings_gdf['size'].values
         })
         return out
@@ -1692,7 +1692,7 @@ def assign_door_to_building(building_blocks: List[Tuple[int,int]], street_coords
 
 
 class RasterCityGenerator:
-    def __init__(self, boundary_polygon: Polygon, streets_gdf: gpd.GeoDataFrame, buildings_gdf: gpd.GeoDataFrame, block_size: float = 15.0, crs: str = "EPSG:3857", category_column: str = 'garden_city_category'):
+    def __init__(self, boundary_polygon: Polygon, streets_gdf: gpd.GeoDataFrame, buildings_gdf: gpd.GeoDataFrame, block_size: float = 15.0, crs: str = "EPSG:3857", category_column: str = 'building_type'):
         self.boundary_polygon = boundary_polygon
         self.streets_gdf = streets_gdf.to_crs(crs)
         self.buildings_gdf = buildings_gdf.to_crs(crs)

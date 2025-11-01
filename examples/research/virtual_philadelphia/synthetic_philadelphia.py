@@ -108,7 +108,7 @@ else:
     boundary_gdf.to_file(RAW_GPKG_PATH, layer="city_boundary", driver="GPKG", mode="a")
 
 # %%
-category_counts = buildings["garden_city_category"].value_counts().to_dict()
+category_counts = buildings["building_type"].value_counts().to_dict()
 print("\nBuilding category counts:")
 for key, value in sorted(category_counts.items()):
     print(f"  {key}: {value:,}")
@@ -148,7 +148,7 @@ rotated_boundary.to_file(RAW_GPKG_PATH, layer="city_boundary_rotated", driver="G
 # %%
 try:
     def _category_counts(df):
-        return df['category'].value_counts().to_dict() if 'category' in df.columns else {}
+        return df['building_type'].value_counts().to_dict()
 
     # Re-categorize using internal categorizer (garden_city schema)
     ab_no_infer = nm._categorize_features(rotated_buildings, schema='garden_city', infer_building_types=False)

@@ -182,7 +182,7 @@ print(f"City generation: {generation_time:.2f}s; blocks={len(city.blocks_gdf):,}
 
 # %%
 block_type_counts = city.blocks_gdf['type'].value_counts()
-building_type_counts = city.buildings_gdf['type'].value_counts()
+building_type_counts = city.buildings_gdf['building_type'].value_counts()
 summary_df = (
     pd.DataFrame({'count': block_type_counts})
     .assign(percent=lambda d: (100*d['count']/len(city.blocks_gdf)).round(1))

@@ -404,7 +404,7 @@ class Agent:
             # Unknown destination; remain in place
             return np.asarray(start_point, dtype=float), None
         dest_geom = brow.iloc[0]['geometry']
-        dest_type = brow.iloc[0]['type'] if 'type' in brow.columns else 'home'
+        dest_type = brow.iloc[0]['building_type']
         # Door cell and door centroid
         dest_cell = (int(brow.iloc[0]['door_cell_x']), int(brow.iloc[0]['door_cell_y'])) if 'door_cell_x' in brow.columns else (int(np.floor(dest_geom.centroid.x)), int(np.floor(dest_geom.centroid.y)))
         door_poly = box(dest_cell[0], dest_cell[1], dest_cell[0]+1, dest_cell[1]+1)
@@ -614,7 +614,7 @@ class Agent:
             bdf = self.city.buildings_gdf
             visit_freqs = pd.DataFrame({
                 'id': bdf['id'].values,
-                'type': bdf['type'].values if 'type' in bdf.columns else ['home']*len(bdf),
+                'type': bdf['building_type'].values,
                 'freq': 0,
                 'p': 0.0
             }).set_index('id')

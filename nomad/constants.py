@@ -276,8 +276,7 @@ SUBTYPE_TO_GARDEN_CITY = {
     'education': 'workplace',
     'entertainment': 'retail',
     'garage': 'other',
-    # Map hotel into residential bucket for garden_city schema
-    'hotel': 'residential',
+    'hotel': 'home',
     'industrial': 'workplace',
     'medical': 'workplace',
     'military': 'workplace',
@@ -285,8 +284,7 @@ SUBTYPE_TO_GARDEN_CITY = {
     'outbuilding': 'other',
     'parking': 'other',
     'religious': 'retail',
-    # Keep residential as residential in garden_city schema
-    'residential': 'residential',
+    'residential': 'home',
     'service': 'other',
     'transportation': 'workplace',
     'warehouse': 'workplace',
@@ -323,5 +321,5 @@ CATEGORY_SCHEMAS = {
 DEFAULT_CATEGORY_SCHEMA = 'garden_city'
 DEFAULT_CRS = "EPSG:4326"
 
-GARDEN_CITY_CATEGORIES = ['residential', 'retail', 'workplace', 'park', 'other']
+GARDEN_CITY_CATEGORIES = ['home', 'retail', 'workplace', 'park', 'other']
 GEOLIFE_PLUS_CATEGORIES = ['unknown', 'residential', 'commercial', 'school']

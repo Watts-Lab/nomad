@@ -17,7 +17,7 @@ from shapely.geometry import box
 import nomad.map_utils as nm
 
 # Old City Philadelphia bounding box (EPSG:4326)
-OLD_CITY_BBOX = box(-75.1662060, 39.9411582, -75.1456557, 39.9557201)
+OLD_CITY_BBOX = box(-75.1660, 39.9411582, -75.1456557, 39.9559)
 
 # Output directory (relative path for Jupyter compatibility)
 OUTPUT_DIR = Path("sandbox")

@@ -422,7 +422,7 @@ def download_osm_buildings(bbox_or_city,
     
     # Essential columns to keep
     essential_cols = ['geometry', 'osm_type', 'subtype', 'subtype_2', 'subtype_3',
-                     f'{schema}_category', 'category',
+                     'building_type', 'osm_category',
                      'addr:street', 'addr:city', 'addr:state', 'addr:housenumber', 'addr:postcode']
     
     # Categorize buildings
@@ -430,9 +430,9 @@ def download_osm_buildings(bbox_or_city,
         classifications = buildings.apply(lambda row: _classify_feature(row, schema, infer_building_types), axis=1)
         buildings['osm_type'] = classifications.apply(lambda x: x[0])
         buildings['subtype'] = classifications.apply(lambda x: x[1])
-        buildings[f'{schema}_category'] = classifications.apply(lambda x: x[2])
-        # Backward-compatibility: also provide generic 'category' column
-        buildings['category'] = buildings[f'{schema}_category']
+        buildings['building_type'] = classifications.apply(lambda x: x[2])
+        # Keep schema-specific category name for reference (osm_category)
+        buildings['osm_category'] = buildings['building_type']
         buildings = _add_secondary_subtypes_columns(buildings, schema)
         buildings = buildings[[col for col in essential_cols if col in buildings.columns]]
     
@@ -441,15 +441,15 @@ def download_osm_buildings(bbox_or_city,
         classifications = parks.apply(lambda row: _classify_feature(row, schema, infer_building_types), axis=1)
         parks['osm_type'] = classifications.apply(lambda x: x[0])
         parks['subtype'] = classifications.apply(lambda x: x[1])
-        parks[f'{schema}_category'] = classifications.apply(lambda x: x[2])
-        # Backward-compatibility: also provide generic 'category' column
-        parks['category'] = parks[f'{schema}_category']
+        parks['building_type'] = classifications.apply(lambda x: x[2])
+        # Keep schema-specific category name for reference (osm_category)
+        parks['osm_category'] = parks['building_type']
         parks = _add_secondary_subtypes_columns(parks, schema)
         parks = parks[[col for col in essential_cols if col in parks.columns]]
     
     # Combine only AFTER categorization to prevent parks from being misclassified as buildings
     if len(buildings) == 0 and len(parks) == 0:
-        result = gpd.GeoDataFrame(columns=['osm_type', 'subtype', 'category', 'geometry'], crs=crs)
+        result = gpd.GeoDataFrame(columns=['osm_type', 'subtype', 'building_type', 'geometry'], crs=crs)
     elif len(buildings) == 0:
         result = parks
     elif len(parks) == 0:
@@ -761,10 +761,8 @@ def rotate(gdf, rotation_deg=0.0, origin='centroid'):
 # =============================================================================
 
 def get_category_summary(gdf):
-    """Return a dict of category counts."""
-    if 'category' not in gdf.columns or len(gdf) == 0:
-        raise ValueError("Features must be categorized")
-    return gdf['category'].value_counts().to_dict()
+    """Return a dict of building_type counts."""
+    return gdf['building_type'].value_counts().to_dict()
 
 
 def get_subtype_summary(gdf):

@@ -20,16 +20,7 @@ from nomad.constants import SUBTYPE_TO_GARDEN_CITY
 
 
 def summarize_counts(df: gpd.GeoDataFrame) -> dict:
-    # Prefer already-computed garden_city_category if present
-    if 'garden_city_category' in df.columns:
-        cats = df['garden_city_category']
-    elif 'category' in df.columns:
-        cats = df['category']
-    elif 'subtype' in df.columns:
-        # Map subtype -> garden_city categories
-        cats = df['subtype'].map(lambda s: SUBTYPE_TO_GARDEN_CITY.get(str(s), 'other'))
-    else:
-        return {}
+    cats = df['building_type']
     counts = cats.value_counts().to_dict()
     total = int(df.shape[0])
     pct = {k: round(100.0 * v / max(1, total), 2) for k, v in counts.items()}
@@ -101,8 +92,7 @@ def run_audit(gpkg_path: Path) -> int:
         b_no = nm.download_osm_buildings(boundary_poly, crs='EPSG:3857', schema='garden_city', clip=True, infer_building_types=False, explode=True)
         b_yes = nm.download_osm_buildings(boundary_poly, crs='EPSG:3857', schema='garden_city', clip=True, infer_building_types=True, explode=True)
         def _count_gcc(df):
-            col = 'garden_city_category' if 'garden_city_category' in df.columns else ('category' if 'category' in df.columns else None)
-            return df[col].value_counts().to_dict() if col else {}
+            return df['building_type'].value_counts().to_dict()
         live_no = _count_gcc(b_no)
         live_yes = _count_gcc(b_yes)
         print("Live NO_INFER counts:", live_no)
