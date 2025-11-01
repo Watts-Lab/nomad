@@ -390,7 +390,7 @@ building_colors = {
 
 handles2 = []
 for btype, color in building_colors.items():
-    subset = city.buildings_gdf[city.buildings_gdf['type'] == btype]
+    subset = city.buildings_gdf[city.buildings_gdf['building_type'] == btype]
     if len(subset) > 0:
         subset.plot(ax=ax, color=color, alpha=0.7, linewidth=0)
         handles2.append(mpatches.Patch(color=color, label=btype))

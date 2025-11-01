@@ -132,8 +132,8 @@ def generate_agent_trajectory(args):
 # %%
 np.random.seed(100)
 n_agents = 15
-homes = city.buildings_gdf[city.buildings_gdf['type'] == 'home']['id'].tolist()
-workplaces = city.buildings_gdf[city.buildings_gdf['type'] == 'work']['id'].tolist()
+homes = city.buildings_gdf[city.buildings_gdf['building_type'] == 'home']['id'].tolist()
+workplaces = city.buildings_gdf[city.buildings_gdf['building_type'] == 'workplace']['id'].tolist()
 
 agent_params = [
     (f'agent_{i:04d}', 
