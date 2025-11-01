@@ -44,6 +44,14 @@ buildings = nm.download_osm_buildings(
 elapsed = time.time() - start_time
 print(f"Downloaded {len(buildings):,} buildings in {elapsed:.1f}s")
 
+# Validate containment and clip if needed (robustness against provider quirks)
+old_city_polygon = gpd.GeoDataFrame(geometry=[OLD_CITY_BBOX], crs="EPSG:4326").to_crs("EPSG:3857").geometry.iloc[0]
+outside_mask = ~buildings.geometry.within(old_city_polygon)
+if outside_mask.any():
+    n_out = int(outside_mask.sum())
+    print(f"Found {n_out} geometries outside boundary; clipping to boundary.")
+    buildings = gpd.clip(buildings, gpd.GeoDataFrame(geometry=[old_city_polygon], crs="EPSG:3857"))
+
 buildings = nm.remove_overlaps(buildings).reset_index(drop=True)
 
 print("Downloading streets (Web Mercator)...")
@@ -61,7 +69,6 @@ print(f"Downloaded {len(streets):,} streets in {elapsed:.1f}s")
 streets = streets.reset_index(drop=True)
 
 # Convert to Web Mercator for rotation (both are already in EPSG:3857 from download)
-old_city_polygon = gpd.GeoDataFrame(geometry=[OLD_CITY_BBOX], crs="EPSG:4326").to_crs("EPSG:3857").geometry.iloc[0]
 
 print("Estimating optimal rotation for grid alignment...")
 rotation_start = time.time()

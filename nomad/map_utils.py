@@ -49,6 +49,40 @@ def _clip_to_bbox(gdf, bbox, crs=DEFAULT_CRS):
     return result
 
 
+# Lightweight helper: explode multipolygons and clip to an arbitrary mask polygon.
+def _explode_and_clip(gdf: gpd.GeoDataFrame, mask_geom) -> gpd.GeoDataFrame:
+    """Explode MultiPolygons and clip to the provided mask geometry.
+
+    This function first applies a fast bounding-box prefilter to reduce the
+    number of candidate geometries, then explodes multipart geometries and
+    finally clips to the exact mask using GeoPandas' vectorized clip.
+    """
+    if gdf is None or len(gdf) == 0:
+        return gdf.copy()
+
+    # Build mask GeoDataFrame in same CRS
+    mask_gdf = gpd.GeoDataFrame(geometry=[mask_geom], crs=gdf.crs)
+
+    # Fast bbox prefilter (uses spatial index under the hood)
+    minx, miny, maxx, maxy = mask_geom.bounds
+    try:
+        gdf = gdf.cx[minx:maxx, miny:maxy]
+    except Exception:
+        pass
+
+    # Explode before clipping so detached parts outside the mask are dropped
+    try:
+        gdf = gdf.explode(ignore_index=True)
+    except Exception:
+        # Older GeoPandas versions
+        gdf = gdf.explode()
+
+    # Clip to mask; drop empties
+    clipped = gpd.clip(gdf, mask_gdf)
+    if 'geometry' in clipped.columns:
+        clipped = clipped[clipped.geometry.notna() & ~clipped.geometry.is_empty]
+    return clipped.reset_index(drop=True)
+
 # =============================================================================
 # CATEGORIZATION FUNCTIONS
 # =============================================================================
@@ -450,22 +484,30 @@ def download_osm_buildings(bbox_or_city,
     
     # Combine only AFTER categorization to prevent parks from being misclassified as buildings
     if len(buildings) == 0 and len(parks) == 0:
-        # For empty areas, return the generic columns expected by tests
         result = gpd.GeoDataFrame(columns=['osm_type', 'subtype', 'category', 'geometry'], crs=crs)
     elif len(buildings) == 0:
         result = parks
     elif len(parks) == 0:
         result = buildings
     else:
-        result = gpd.GeoDataFrame(
-            pd.concat([buildings, parks], ignore_index=True),
-            crs=crs
-        )
-    
-    # Explode if requested
+        result = gpd.GeoDataFrame(pd.concat([buildings, parks], ignore_index=True), crs=crs)
+
+    # If requested, ensure all geometries are strictly inside the boundary by clipping
+    if clip and len(result) > 0:
+        # Build mask geometry in target CRS from bbox or polygon
+        if city_polygon is not None:
+            mask_geom = gpd.GeoDataFrame(geometry=[city_polygon], crs="EPSG:4326").to_crs(crs).geometry.iloc[0]
+        else:
+            mask_geom = gpd.GeoDataFrame(geometry=[box(*bbox)], crs="EPSG:4326").to_crs(crs).geometry.iloc[0]
+        result = _explode_and_clip(result, mask_geom)
+
+    # Final explode if explicitly requested (after clipping, to keep API behavior)
     if explode and len(result) > 0:
-        result = result.explode(ignore_index=True)
-    
+        try:
+            result = result.explode(ignore_index=True)
+        except Exception:
+            result = result.explode()
+
     return result
 
 
