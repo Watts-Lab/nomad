@@ -171,6 +171,8 @@ class City:
             self.blocks_gdf = self._init_blocks_gdf()
             self.streets_gdf = self._derive_streets_from_blocks()
         # Convenience properties are defined below for GDF-first access
+        # Precomputed building-to-building gravity (optional, built on demand)
+        self.grav = None
 
     def _derive_streets_from_blocks(self):
         """
@@ -754,6 +756,86 @@ class City:
             next_hop[s][s] = s
 
         return next_hop
+
+    # ---------------------------------------------------------------------
+    # Building-to-building gravity (optional precomputation)
+    # ---------------------------------------------------------------------
+    def compute_gravity(self) -> None:
+        """Precompute building-to-building gravity using shortcut hubs.
+
+        For buildings i (door u_i) and j (door u_j):
+          dist(i,j) = manhattan(u_i, h_i) + true_block_dist(h_i, h_j) + manhattan(u_j, h_j)
+          grav(i,j) = 1 / dist(i,j)^2  (0 on diagonal)
+
+        Stores result in self.grav as:
+          {'ids': [id0, id1, ...], 'index': {id -> row_idx}, 'G': np.ndarray (float32) shape (N,N)}
+        """
+        if self.buildings_gdf.empty:
+            self.grav = {'ids': [], 'index': {}, 'G': np.zeros((0, 0), dtype=np.float32)}
+            return
+
+        # Ensure graph and hubs exist
+        if not hasattr(self, 'street_graph') or self.street_graph is None:
+            self.get_street_graph(lazy=True)
+        if not hasattr(self, '_shortcut_hubs') or self._shortcut_hubs is None:
+            self._build_shortcut_network()
+
+        G = self.street_graph
+        bids = self.buildings_gdf['id'].astype(str).tolist()
+        doors = list(zip(self.buildings_gdf['door_cell_x'].astype(int), self.buildings_gdf['door_cell_y'].astype(int)))
+
+        # Filter doors to those that exist as nodes (defensive)
+        valid_mask = [d in G.nodes for d in doors]
+        if not all(valid_mask):
+            bids = [b for b, ok in zip(bids, valid_mask) if ok]
+            doors = [d for d, ok in zip(doors, valid_mask) if ok]
+        n = len(bids)
+        if n == 0:
+            self.grav = {'ids': [], 'index': {}, 'G': np.zeros((0, 0), dtype=np.float32)}
+            return
+
+        # Map each door to its nearest hub and manhattan distance to that hub
+        nearest_hub = self._nearest_hub
+        hubs_for_buildings = [nearest_hub[d] for d in doors]
+        # Unique hubs used by these buildings
+        hub_list = sorted(set(hubs_for_buildings))
+        hub_index = {h: i for i, h in enumerate(hub_list)}
+
+        # Manhattan distance door -> hub
+        def _manhattan(a, b):
+            return abs(int(a[0]) - int(b[0])) + abs(int(a[1]) - int(b[1]))
+        manh_to_hub = np.asarray([_manhattan(doors[i], hubs_for_buildings[i]) for i in range(n)], dtype=np.int32)
+
+        # Compute true block distances between hubs via BFS per hub until all hubs discovered
+        H = len(hub_list)
+        hub_dists = np.full((H, H), np.int32(-1))
+        for idx, h in enumerate(hub_list):
+            # BFS lengths from h
+            lengths = nx.single_source_shortest_path_length(G, source=h)
+            for t in hub_list:
+                d = lengths.get(t)
+                if d is not None:
+                    hub_dists[idx, hub_index[t]] = int(d)
+            hub_dists[idx, idx] = 0
+
+        # Assemble gravity matrix (float32) using vectorization per building row
+        Gmat = np.zeros((n, n), dtype=np.float32)
+        # Precompute hub index per building
+        b_hidx = np.asarray([hub_index[h] for h in hubs_for_buildings], dtype=np.int32)
+        for i in range(n):
+            hi = b_hidx[i]
+            # true distances from hub_i to all hubs for targets
+            hh_row = hub_dists[hi, b_hidx]
+            # total distance: manhattan(i->hi) + hh(hi->hj) + manhattan(j->hj)
+            dist_row = manh_to_hub[i] + hh_row + manh_to_hub
+            # avoid div by zero on diagonal
+            dist_row[i] = 0
+            with np.errstate(divide='ignore', invalid='ignore'):
+                g_row = np.where(dist_row > 0, 1.0 / (dist_row.astype(np.float32) ** 2), 0.0)
+            Gmat[i, :] = g_row
+
+        id_index = {bid: i for i, bid in enumerate(bids)}
+        self.grav = {'ids': bids, 'index': id_index, 'G': Gmat}
 
     def save(self, filename):
         """

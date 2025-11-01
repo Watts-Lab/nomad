@@ -659,30 +659,55 @@ class Agent:
                 # Compute gravity probs from current door cell to unexplored candidates
                 y = visit_freqs.loc[(visit_freqs['type'].isin(allowed)) & (visit_freqs.freq == 0)]
                 if not y.empty and curr in id2cell.index and id2cell[curr] is not None:
-                    curr_cell = id2cell[curr]
-                    dest_cells = [id2cell.get(bid) for bid in y.index]
-                    pairs = [(curr_cell, dc) for dc in dest_cells]
-                    # Compute gravity on-demand using fast distance; fallback to stored gravity
-                    grav = []
-                    for u, v in pairs:
-                        g_val = 0.0
-                        try:
-                            d = self.city.get_distance_fast(u, v)
-                            if np.isfinite(d):
-                                g_val = 1.0 / (d + 1.0)
-                        except Exception:
-                            pass
-                        if g_val == 0.0:
-                            # Fallback to legacy gravity table if available
+                    # Prefer precomputed building-to-building gravity if available
+                    grav_vec = None
+                    if hasattr(self.city, 'grav') and self.city.grav is not None:
+                        meta = self.city.grav
+                        idx_map = meta.get('index', {})
+                        Gmat = meta.get('G', None)
+                        if Gmat is not None and curr in idx_map:
+                            row_idx = idx_map[curr]
+                            # Align weights to candidate y.index
+                            target_indices = [idx_map[bid] for bid in y.index if bid in idx_map]
+                            if target_indices:
+                                w = Gmat[row_idx, target_indices].astype(float)
+                                if w.sum() > 0:
+                                    w = w / w.sum()
+                                    # Map weights back to candidate ids in same order
+                                    # Build a probability vector aligned to y.index
+                                    probs = np.zeros(len(y.index), dtype=float)
+                                    pos = 0
+                                    for k, bid in enumerate(y.index):
+                                        if bid in idx_map:
+                                            probs[k] = Gmat[row_idx, idx_map[bid]]
+                                    if probs.sum() > 0:
+                                        probs = probs / probs.sum()
+                                        curr = rng.choice(y.index, p=probs)
+                                        grav_vec = probs
+                    if grav_vec is None:
+                        # Fallback to fast on-demand distances
+                        curr_cell = id2cell[curr]
+                        dest_cells = [id2cell.get(bid) for bid in y.index]
+                        pairs = [(curr_cell, dc) for dc in dest_cells]
+                        grav = []
+                        for u, v in pairs:
+                            g_val = 0.0
                             try:
-                                g_val = float(self.city.gravity.at[(u, v), 'gravity'])
+                                d = self.city.get_distance_fast(u, v)
+                                if np.isfinite(d):
+                                    g_val = 1.0 / (d + 1.0)
                             except Exception:
-                                g_val = 0.0
-                        grav.append(g_val)
-                    grav = np.asarray(grav, dtype=float)
-                    if grav.sum() > 0:
-                        grav = grav / grav.sum()
-                        curr = rng.choice(y.index, p=grav)
+                                pass
+                            if g_val == 0.0:
+                                try:
+                                    g_val = float(self.city.gravity.at[(u, v), 'gravity'])
+                                except Exception:
+                                    g_val = 0.0
+                            grav.append(g_val)
+                        grav = np.asarray(grav, dtype=float)
+                        if grav.sum() > 0:
+                            grav = grav / grav.sum()
+                            curr = rng.choice(y.index, p=grav)
                     else:
                         # If there are no more buildings to explore, then preferential return
                         if not x.empty and x['freq'].sum() > 0:

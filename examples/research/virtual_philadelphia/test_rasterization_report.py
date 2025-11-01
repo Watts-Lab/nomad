@@ -201,6 +201,12 @@ _tq0 = time.time()
 G = city.get_street_graph(lazy=True)
 _tq_graph = time.time() - _tq0
 
+# Optional: build building-to-building gravity table for O(1) sampling
+_tg0 = time.time()
+city.compute_gravity()
+_tg = time.time() - _tg0
+print(f"Building gravity built in {_tg:.2f}s; matrix shape={city.grav['G'].shape if city.grav else (0,0)}")
+
 # Gather door street blocks from buildings_gdf (no fallbacks)
 bd = city.buildings_gdf[['id','door_cell_x','door_cell_y']].dropna()
 door_nodes = [(int(x), int(y)) for x, y in bd[['door_cell_x','door_cell_y']].itertuples(index=False)]
