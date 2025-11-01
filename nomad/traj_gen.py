@@ -618,18 +618,33 @@ class Agent:
             bdf = self.city.buildings_gdf
             visit_freqs = pd.DataFrame({
                 'id': bdf['id'].values,
-                'type': bdf['building_type'].values,
+                'building_type': bdf['building_type'].values,
                 'freq': 0,
                 'p': 0.0
             }).set_index('id')
 
-            # Initializes past counts randomly
-            if (visit_freqs.type == 'home').any():
-                visit_freqs.loc[visit_freqs.type == 'home', 'freq'] += 2
-            if (visit_freqs.type == 'work').any():
-                visit_freqs.loc[visit_freqs.type == 'work', 'freq'] += 2
-            if (visit_freqs.type == 'park').any():
-                visit_freqs.loc[visit_freqs.type == 'park', 'freq'] += 1
+            # Initialize past counts: seed home/workplace and a few random POIs
+            visit_freqs.loc[self.home, 'freq'] = 20
+            visit_freqs.loc[self.workplace, 'freq'] = 20
+            visit_freqs.loc[visit_freqs.building_type == 'park', 'freq'] = 5
+
+            initial_locs = []
+            # Retail
+            retail_ids = visit_freqs.index[visit_freqs.building_type == 'retail']
+            k = int(rng.poisson(4))
+            if len(retail_ids) > 0 and k > 0:
+                initial_locs += list(rng.choice(retail_ids, size=min(k, len(retail_ids)), replace=False))
+            # Work (current dataset uses 'workplace')
+            work_ids = visit_freqs.index[visit_freqs.building_type == 'workplace']
+            k = int(rng.poisson(2))
+            if len(work_ids) > 0 and k > 0:
+                initial_locs += list(rng.choice(work_ids, size=min(k, len(work_ids)), replace=False))
+            # Home
+            home_ids = visit_freqs.index[visit_freqs.building_type == 'home']
+            k = int(rng.poisson(2))
+            if len(home_ids) > 0 and k > 0:
+                initial_locs += list(rng.choice(home_ids, size=min(k, len(home_ids)), replace=False))
+            visit_freqs.loc[initial_locs, 'freq'] += 2
 
         if self.destination_diary.empty:
             start_time_local = self.last_ping['datetime']
@@ -644,9 +659,9 @@ class Agent:
 
         dest_update = []
         while start_time < end_time:
-            curr_type = visit_freqs.loc[curr, 'type'] if curr in visit_freqs.index else 'home'
+            curr_type = visit_freqs.loc[curr, 'building_type'] if curr in visit_freqs.index else 'home'
             allowed = allowed_buildings(start_time_local)
-            x = visit_freqs.loc[(visit_freqs['type'].isin(allowed)) & (visit_freqs.freq > 0)]
+            x = visit_freqs.loc[(visit_freqs['building_type'].isin(allowed)) & (visit_freqs.freq > 0)]
 
             S = len(x) if len(x) > 0 else 1
 
@@ -660,7 +675,7 @@ class Agent:
             # Exploration
             elif rng.uniform() < p_exp:
                 # Compute gravity probs from current door cell to unexplored candidates
-                y = visit_freqs.loc[(visit_freqs['type'].isin(allowed)) & (visit_freqs.freq == 0)]
+                y = visit_freqs.loc[(visit_freqs['building_type'].isin(allowed)) & (visit_freqs.freq == 0)]
                 if not y.empty and curr in id2cell.index and id2cell[curr] is not None:
                     # Require precomputed building-to-building gravity
                     if not hasattr(self.city, 'grav') or self.city.grav is None:
