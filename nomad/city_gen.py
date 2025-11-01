@@ -173,6 +173,7 @@ class City:
         # Convenience properties are defined below for GDF-first access
         # Precomputed building-to-building gravity (optional, built on demand)
         self.grav = None
+        self.door_dist = None
 
     def _derive_streets_from_blocks(self):
         """
@@ -513,17 +514,22 @@ class City:
         return {'kind': 'unknown', 'building_id': None, 'building_type': None, 'geometry': None}
 
     def get_street_graph(self, lazy=True):
-        """
-        Constructs a graph of street blocks for shortest path calculations.
-        Each street block is a node, and edges connect adjacent street blocks.
-        Uses vectorized operations on `streets_gdf` to determine adjacency.
-        
+        """Build the street graph needed for routing.
+
+        Constructs a grid-adjacency graph where each street block is a node
+        and edges connect cardinally adjacent blocks.
+
         Parameters
         ----------
         lazy : bool, default True
-            If True, only builds the graph structure without precomputing all shortest paths.
-            Paths will be computed on-demand in get_shortest_path(). This avoids O(n²) memory
-            usage for large networks (>10k nodes).
+            If True, only builds the graph structure and a compact shortcut index;
+            no all-pairs shortest paths are precomputed.
+
+        Notes
+        -----
+        - This method also builds a sparse hub-based routing index used by
+          `_get_shortest_path_segments` to achieve fast queries with bounded memory.
+        - All-pairs precomputation is intentionally avoided for scalability.
         """
         if hasattr(self, 'street_graph') and self.street_graph is not None:
             return self.street_graph
@@ -760,18 +766,14 @@ class City:
     # ---------------------------------------------------------------------
     # Building-to-building gravity (optional precomputation)
     # ---------------------------------------------------------------------
-    def compute_gravity(self) -> None:
-        """Precompute building-to-building gravity using shortcut hubs.
+    def compute_door_distances(self) -> None:
+        """Precompute approximate door-to-door block distances via hubs.
 
-        For buildings i (door u_i) and j (door u_j):
-          dist(i,j) = manhattan(u_i, h_i) + true_block_dist(h_i, h_j) + manhattan(u_j, h_j)
-          grav(i,j) = 1 / dist(i,j)^2  (0 on diagonal)
-
-        Stores result in self.grav as:
-          {'ids': [id0, id1, ...], 'index': {id -> row_idx}, 'G': np.ndarray (float32) shape (N,N)}
+        Produces an int32 matrix D[i, j] of distances between building doors.
+        Stores in self.door_dist = {'ids', 'index', 'D'}.
         """
         if self.buildings_gdf.empty:
-            self.grav = {'ids': [], 'index': {}, 'G': np.zeros((0, 0), dtype=np.float32)}
+            self.door_dist = {'ids': [], 'index': {}, 'D': np.zeros((0, 0), dtype=np.int32)}
             return
 
         # Ensure graph and hubs exist
@@ -784,33 +786,29 @@ class City:
         bids = self.buildings_gdf['id'].astype(str).tolist()
         doors = list(zip(self.buildings_gdf['door_cell_x'].astype(int), self.buildings_gdf['door_cell_y'].astype(int)))
 
-        # Filter doors to those that exist as nodes (defensive)
-        valid_mask = [d in G.nodes for d in doors]
-        if not all(valid_mask):
-            bids = [b for b, ok in zip(bids, valid_mask) if ok]
-            doors = [d for d, ok in zip(doors, valid_mask) if ok]
+        # Keep only valid door nodes
+        mask = [d in G.nodes for d in doors]
+        if not all(mask):
+            bids = [b for b, ok in zip(bids, mask) if ok]
+            doors = [d for d, ok in zip(doors, mask) if ok]
         n = len(bids)
         if n == 0:
-            self.grav = {'ids': [], 'index': {}, 'G': np.zeros((0, 0), dtype=np.float32)}
+            self.door_dist = {'ids': [], 'index': {}, 'D': np.zeros((0, 0), dtype=np.int32)}
             return
 
-        # Map each door to its nearest hub and manhattan distance to that hub
         nearest_hub = self._nearest_hub
         hubs_for_buildings = [nearest_hub[d] for d in doors]
-        # Unique hubs used by these buildings
         hub_list = sorted(set(hubs_for_buildings))
         hub_index = {h: i for i, h in enumerate(hub_list)}
 
-        # Manhattan distance door -> hub
         def _manhattan(a, b):
             return abs(int(a[0]) - int(b[0])) + abs(int(a[1]) - int(b[1]))
         manh_to_hub = np.asarray([_manhattan(doors[i], hubs_for_buildings[i]) for i in range(n)], dtype=np.int32)
 
-        # Compute true block distances between hubs via BFS per hub until all hubs discovered
+        # Hub distances (true graph distances)
         H = len(hub_list)
         hub_dists = np.full((H, H), np.int32(-1))
         for idx, h in enumerate(hub_list):
-            # BFS lengths from h
             lengths = nx.single_source_shortest_path_length(G, source=h)
             for t in hub_list:
                 d = lengths.get(t)
@@ -818,24 +816,46 @@ class City:
                     hub_dists[idx, hub_index[t]] = int(d)
             hub_dists[idx, idx] = 0
 
-        # Assemble gravity matrix (float32) using vectorization per building row
-        Gmat = np.zeros((n, n), dtype=np.float32)
-        # Precompute hub index per building
+        # Build distance matrix
+        D = np.zeros((n, n), dtype=np.int32)
         b_hidx = np.asarray([hub_index[h] for h in hubs_for_buildings], dtype=np.int32)
         for i in range(n):
             hi = b_hidx[i]
-            # true distances from hub_i to all hubs for targets
-            hh_row = hub_dists[hi, b_hidx]
-            # total distance: manhattan(i->hi) + hh(hi->hj) + manhattan(j->hj)
-            dist_row = manh_to_hub[i] + hh_row + manh_to_hub
-            # avoid div by zero on diagonal
-            dist_row[i] = 0
-            with np.errstate(divide='ignore', invalid='ignore'):
-                g_row = np.where(dist_row > 0, 1.0 / (dist_row.astype(np.float32) ** 2), 0.0)
-            Gmat[i, :] = g_row
+            hh = hub_dists[hi, b_hidx]
+            # cap negatives (unreachable) to very large number; here use int32 max/2
+            hh = np.where(hh >= 0, hh, np.iinfo(np.int32).max // 2)
+            row = manh_to_hub[i] + hh + manh_to_hub
+            row[i] = 0
+            D[i, :] = row.astype(np.int32)
 
         id_index = {bid: i for i, bid in enumerate(bids)}
-        self.grav = {'ids': bids, 'index': id_index, 'G': Gmat}
+        self.door_dist = {'ids': bids, 'index': id_index, 'D': D}
+
+    def compute_gravity(self, exponent: float = 2.0) -> None:
+        """Precompute building-to-building gravity using shortcut hubs.
+
+        For buildings i (door u_i) and j (door u_j):
+          dist(i,j) = manhattan(u_i, h_i) + true_block_dist(h_i, h_j) + manhattan(u_j, h_j)
+          grav(i,j) = 1 / dist(i,j)^exponent  (0 on diagonal)
+
+        Stores result in self.grav as:
+          {'ids': [id0, id1, ...], 'index': {id -> row_idx}, 'G': np.ndarray (float32) shape (N,N)}
+        """
+        # Build distance table first (reused for gravity builds with different exponents)
+        if not hasattr(self, 'door_dist') or self.door_dist is None:
+            self.compute_door_distances()
+        bids = self.door_dist['ids']
+        D = self.door_dist['D']  # int32 distances
+        n = len(bids)
+        if n == 0:
+            self.grav = {'ids': [], 'index': {}, 'G': np.zeros((0, 0), dtype=np.float32)}
+            return
+        dist = D.astype(np.float32)
+        # Zero diagonal stays zero
+        with np.errstate(divide='ignore', invalid='ignore'):
+            Gmat = np.where(dist > 0.0, 1.0 / (dist ** float(exponent)), 0.0).astype(np.float32)
+        id_index = {bid: i for i, bid in enumerate(bids)}
+        self.grav = {'ids': bids, 'index': id_index, 'G': Gmat, 'exp': float(exponent)}
 
     def save(self, filename):
         """
@@ -1168,6 +1188,13 @@ class City:
     @classmethod
     def from_geopackage(cls, gpkg_path, edges_path: str = None):
         b_gdf = gpd.read_file(gpkg_path, layer='buildings')
+        # Normalize expected columns
+        if 'building_type' not in b_gdf.columns:
+            if 'type' in b_gdf.columns:
+                b_gdf = b_gdf.copy()
+                b_gdf['building_type'] = b_gdf['type']
+            else:
+                raise KeyError("'buildings' layer must have 'building_type' column")
         s_gdf = gpd.read_file(gpkg_path, layer='streets')
         
         bl_gdf = None
@@ -1309,29 +1336,34 @@ class City:
         )
 
     def get_shortest_path(self, start_coord: tuple, end_coord: tuple, plot: bool = False, ax=None):
-        """
-        Retrieves the shortest path between two blocks using tuple coordinates and optionally plots it.
-        Uses lazy computation: paths are computed on-demand to avoid O(n²) memory usage.
+        """Return a block path between two street cells.
 
         Parameters
         ----------
-        start_coord : tuple
-            The starting block coordinates (x, y).
-        end_coord : tuple
-            The ending block coordinates (x, y).
+        start_coord : tuple[int, int]
+            Starting street block (x, y).
+        end_coord : tuple[int, int]
+            Ending street block (x, y).
         plot : bool, optional
-            If True, plots the path on the provided or a new matplotlib axis.
+            Plot the resulting path on the city map when True.
         ax : matplotlib.axes.Axes, optional
-            The axis to plot on. If None and plot is True, a new figure and axis are created.
+            Target axis used when `plot=True`.
 
         Returns
         -------
-        list
-            List of tuple coordinates representing the shortest path from start to end.
+        list[tuple[int, int]]
+            Sequence of street blocks from start to end.
+
         Raises
         ------
         ValueError
-            If the start or end coordinates are not street blocks or not in the city bounds.
+            If either coordinate is not a valid street block.
+
+        Notes
+        -----
+        - Uses the hub-based shortcut index for speed; hub-to-hub segments may
+          be obtained via a local NetworkX shortest path when a direct next-hop
+          entry is unavailable.
         """
         if not (isinstance(start_coord, tuple) and isinstance(end_coord, tuple)):
             raise ValueError("Coordinates must be tuples of (x, y).")

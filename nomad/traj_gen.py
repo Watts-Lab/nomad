@@ -576,24 +576,27 @@ class Agent:
                              rho = 0.4, 
                              gamma = 0.3, 
                              seed = 0):
-        """
-        Exploration and preferential return.
+        """Generate the destination diary (exploration + preferential return).
 
         Parameters
         ----------
         end_time : pd.Timestamp
-            The end time to generate the destination diary until.
+            Generate until this timestamp (inclusive).
         epr_time_res : int
-            The granularity of destination durations in epr generation.
+            Time-step in minutes for each diary entry.
         stay_probs : dict
-            Dictionary containing the probability of staying in the same building.
-            This is modeled as a geometric distribution with `p = 1 - ((1/avg_duration_hrs)/timesteps_in_1_hr)`.
+            Probability of staying put, keyed by building type.
         rho : float
-            Parameter for exploring, influencing the probability of exploration.
+            Exploration parameter; lower values bias toward exploration.
         gamma : float
-            Parameter for exploring, influencing the probability of preferential return.
+            Preferential return parameter; controls decay by visit count.
         seed : int
-            Random seed for reproducibility.
+            RNG seed.
+
+        Notes
+        -----
+        - Requires `city.grav` to be precomputed via `city.compute_gravity(...)`.
+          If absent, this method raises an error rather than computing distances on demand.
         """
         rng = npr.default_rng(seed)
 
@@ -659,55 +662,24 @@ class Agent:
                 # Compute gravity probs from current door cell to unexplored candidates
                 y = visit_freqs.loc[(visit_freqs['type'].isin(allowed)) & (visit_freqs.freq == 0)]
                 if not y.empty and curr in id2cell.index and id2cell[curr] is not None:
-                    # Prefer precomputed building-to-building gravity if available
-                    grav_vec = None
-                    if hasattr(self.city, 'grav') and self.city.grav is not None:
-                        meta = self.city.grav
-                        idx_map = meta.get('index', {})
-                        Gmat = meta.get('G', None)
-                        if Gmat is not None and curr in idx_map:
-                            row_idx = idx_map[curr]
-                            # Align weights to candidate y.index
-                            target_indices = [idx_map[bid] for bid in y.index if bid in idx_map]
-                            if target_indices:
-                                w = Gmat[row_idx, target_indices].astype(float)
-                                if w.sum() > 0:
-                                    w = w / w.sum()
-                                    # Map weights back to candidate ids in same order
-                                    # Build a probability vector aligned to y.index
-                                    probs = np.zeros(len(y.index), dtype=float)
-                                    pos = 0
-                                    for k, bid in enumerate(y.index):
-                                        if bid in idx_map:
-                                            probs[k] = Gmat[row_idx, idx_map[bid]]
-                                    if probs.sum() > 0:
-                                        probs = probs / probs.sum()
-                                        curr = rng.choice(y.index, p=probs)
-                                        grav_vec = probs
-                    if grav_vec is None:
-                        # Fallback to fast on-demand distances
-                        curr_cell = id2cell[curr]
-                        dest_cells = [id2cell.get(bid) for bid in y.index]
-                        pairs = [(curr_cell, dc) for dc in dest_cells]
-                        grav = []
-                        for u, v in pairs:
-                            g_val = 0.0
-                            try:
-                                d = self.city.get_distance_fast(u, v)
-                                if np.isfinite(d):
-                                    g_val = 1.0 / (d + 1.0)
-                            except Exception:
-                                pass
-                            if g_val == 0.0:
-                                try:
-                                    g_val = float(self.city.gravity.at[(u, v), 'gravity'])
-                                except Exception:
-                                    g_val = 0.0
-                            grav.append(g_val)
-                        grav = np.asarray(grav, dtype=float)
-                        if grav.sum() > 0:
-                            grav = grav / grav.sum()
-                            curr = rng.choice(y.index, p=grav)
+                    # Require precomputed building-to-building gravity
+                    if not hasattr(self.city, 'grav') or self.city.grav is None:
+                        raise RuntimeError("city.grav is not available. Call city.compute_gravity() before trajectory generation.")
+                    meta = self.city.grav
+                    idx_map = meta['index']
+                    Gmat = meta['G']
+                    if curr not in idx_map:
+                        raise KeyError(f"Current building id {curr} not in city.grav index.")
+                    row_idx = idx_map[curr]
+                    # Build probability vector aligned to y.index
+                    probs = np.zeros(len(y.index), dtype=float)
+                    for k, bid in enumerate(y.index):
+                        if bid in idx_map:
+                            probs[k] = float(Gmat[row_idx, idx_map[bid]])
+                    s = probs.sum()
+                    if s > 0:
+                        probs = probs / s
+                        curr = rng.choice(y.index, p=probs)
                     else:
                         # If there are no more buildings to explore, then preferential return
                         if not x.empty and x['freq'].sum() > 0:
