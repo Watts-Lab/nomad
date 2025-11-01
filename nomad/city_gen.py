@@ -1186,15 +1186,24 @@ class City:
         return city
 
     @classmethod
-    def from_geopackage(cls, gpkg_path, edges_path: str = None):
+    def from_geopackage(cls, gpkg_path, edges_path: str = None, poi_cols: dict | None = None):
         b_gdf = gpd.read_file(gpkg_path, layer='buildings')
-        # Normalize expected columns
-        if 'building_type' not in b_gdf.columns:
-            if 'type' in b_gdf.columns:
-                b_gdf = b_gdf.copy()
-                b_gdf['building_type'] = b_gdf['type']
-            else:
-                raise KeyError("'buildings' layer must have 'building_type' column")
+        # Optional explicit renaming via poi_cols (e.g., {'building_type':'type'})
+        if poi_cols:
+            rename_map = {}
+            for target, src in poi_cols.items():
+                if target not in b_gdf.columns:
+                    if src in b_gdf.columns:
+                        rename_map[src] = target
+                    else:
+                        raise KeyError(f"poi_cols refers to missing source column '{src}' for target '{target}'.")
+            if rename_map:
+                b_gdf = b_gdf.rename(columns=rename_map)
+        # Enforce required columns strictly
+        required_building_cols = ['id', 'building_type', 'door_cell_x', 'door_cell_y', 'geometry']
+        missing = [c for c in required_building_cols if c not in b_gdf.columns]
+        if missing:
+            raise KeyError(f"'buildings' layer missing required columns {missing}. Provide explicit mappings via column_map kwargs, e.g., building_type='type'.")
         s_gdf = gpd.read_file(gpkg_path, layer='streets')
         
         bl_gdf = None

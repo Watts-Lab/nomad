@@ -26,7 +26,12 @@ def garden_city():
     """Load the Garden City from the data directory."""
     data_dir = Path(__file__).resolve().parent.parent / "data"
     city_path = data_dir / "garden-city.gpkg"
-    return cg.City.from_geopackage(city_path)
+    # Garden-city fixture (legacy) uses 'type' instead of 'building_type'
+    city = cg.City.from_geopackage(city_path, poi_cols={'building_type':'type'})
+    # Normalize legacy labels in fixture to current categories
+    if 'building_type' in city.buildings_gdf.columns:
+        city.buildings_gdf['building_type'] = city.buildings_gdf['building_type'].replace({'work': 'workplace', 'residential': 'home'})
+    return city
 
 
 @pytest.fixture

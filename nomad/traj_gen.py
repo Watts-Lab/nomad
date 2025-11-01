@@ -297,9 +297,9 @@ class Agent:
         self.city = city
 
         if home is None:
-            home = city.buildings_gdf[city.buildings_gdf['type'] == 'home'].sample(n=1, random_state=rng)['id'].iloc[0]
+            home = city.buildings_gdf[city.buildings_gdf['building_type'] == 'home'].sample(n=1, random_state=rng)['id'].iloc[0]
         if workplace is None:
-            workplace = city.buildings_gdf[city.buildings_gdf['type'] == 'work'].sample(n=1, random_state=rng)['id'].iloc[0]
+            workplace = city.buildings_gdf[city.buildings_gdf['building_type'] == 'workplace'].sample(n=1, random_state=rng)['id'].iloc[0]
 
         home_building = city.get_building(identifier=home)
         workplace_building = city.get_building(identifier=workplace)
