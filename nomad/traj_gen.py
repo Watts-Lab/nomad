@@ -597,8 +597,9 @@ class Agent:
         """
         rng = npr.default_rng(seed)
 
-        # Mapping: building id -> door cell
-        id2cell = self.city.id_to_door_cell()
+        # Mapping: building id -> (door_cell_x, door_cell_y) without fallbacks
+        bdf = self.city.buildings_gdf
+        id2cell = pd.Series(list(zip(bdf['door_cell_x'].astype(int), bdf['door_cell_y'].astype(int))), index=bdf['id'])
 
         if end_time.tz is None:
             tz = getattr(self.last_ping['datetime'], 'tz', None)

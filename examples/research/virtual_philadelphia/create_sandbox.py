@@ -13,11 +13,15 @@ from pathlib import Path
 import time
 import geopandas as gpd
 from shapely.geometry import box
+from shapely.affinity import scale as shp_scale
 
 import nomad.map_utils as nm
 
 # Old City Philadelphia bounding box (EPSG:4326)
 OLD_CITY_BBOX = box(-75.1660, 39.9411582, -75.1456557, 39.9559)
+# Expand sandbox boundary by 250% for scalability experiments
+EXPANSION_FACTOR = 2.5
+EXPANDED_BBOX = shp_scale(OLD_CITY_BBOX, xfact=EXPANSION_FACTOR, yfact=EXPANSION_FACTOR, origin=OLD_CITY_BBOX.centroid)
 
 # Output directory (relative path for Jupyter compatibility)
 OUTPUT_DIR = Path("sandbox")
@@ -34,7 +38,7 @@ print("Downloading OSM data for Old City Philadelphia...")
 print("Downloading buildings (Web Mercator)...")
 start_time = time.time()
 buildings = nm.download_osm_buildings(
-    OLD_CITY_BBOX,  # Pass in EPSG:4326, function converts to target CRS
+    EXPANDED_BBOX,  # Expanded bbox in EPSG:4326
     crs="EPSG:3857",
     schema="garden_city",
     clip=True,
@@ -45,7 +49,7 @@ elapsed = time.time() - start_time
 print(f"Downloaded {len(buildings):,} buildings in {elapsed:.1f}s")
 
 # Validate containment and clip if needed (robustness against provider quirks)
-old_city_polygon = gpd.GeoDataFrame(geometry=[OLD_CITY_BBOX], crs="EPSG:4326").to_crs("EPSG:3857").geometry.iloc[0]
+old_city_polygon = gpd.GeoDataFrame(geometry=[EXPANDED_BBOX], crs="EPSG:4326").to_crs("EPSG:3857").geometry.iloc[0]
 outside_mask = ~buildings.geometry.within(old_city_polygon)
 if outside_mask.any():
     n_out = int(outside_mask.sum())
@@ -57,7 +61,7 @@ buildings = nm.remove_overlaps(buildings).reset_index(drop=True)
 print("Downloading streets (Web Mercator)...")
 start_time = time.time()
 streets = nm.download_osm_streets(
-    OLD_CITY_BBOX,  # Pass in EPSG:4326, function converts to target CRS
+    EXPANDED_BBOX,  # Expanded bbox in EPSG:4326
     crs="EPSG:3857",
     clip=True,
     explode=True,

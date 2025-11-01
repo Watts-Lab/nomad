@@ -911,23 +911,7 @@ class City:
         # Return current primary stores
         return self.buildings_gdf.copy(), self.streets_gdf.copy()
 
-    def id_to_door_cell(self):
-        """Return Series mapping building id -> (door_cell_x, door_cell_y) with fallbacks."""
-        if self.buildings_gdf.empty:
-            return pd.Series(dtype=object)
-        df = self.buildings_gdf.copy()
-        if 'door_cell_x' in df.columns and 'door_cell_y' in df.columns:
-            cx = df['door_cell_x']
-            cy = df['door_cell_y']
-        elif 'door_point' in df.columns:
-            cx = np.floor(df['door_point'].x).astype('Int64')
-            cy = np.floor(df['door_point'].y).astype('Int64')
-        else:
-            pts = df.geometry.centroid
-            cx = np.floor(pts.x).astype('Int64')
-            cy = np.floor(pts.y).astype('Int64')
-        tuples = [ (int(x), int(y)) if (pd.notna(x) and pd.notna(y)) else None for x, y in zip(cx, cy) ]
-        return pd.Series(tuples, index=df['id'])
+    # Removed id_to_door_cell: unnecessary fallback logic; use buildings_gdf['door_cell_x','door_cell_y'] directly
 
     def to_file(self, buildings_path=None, streets_path=None, driver='GeoJSON'):
         """
@@ -1166,11 +1150,10 @@ class City:
         elif door_coords is not None:
             # Match by door_cell_x/door_cell_y
             df = self.buildings_gdf
-            if 'door_cell_x' in df.columns and 'door_cell_y' in df.columns:
-                mask = (df['door_cell_x'] == door_coords[0]) & (df['door_cell_y'] == door_coords[1])
-                res = df[mask]
-                if not res.empty:
-                    return res.iloc[[0]]
+            mask = (df['door_cell_x'] == door_coords[0]) & (df['door_cell_y'] == door_coords[1])
+            res = df[mask]
+            if not res.empty:
+                return res.iloc[[0]]
         elif any_coords is not None:
             point = Point(any_coords)
             building = self.buildings_gdf[self.buildings_gdf.geometry.contains(point)]

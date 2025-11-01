@@ -190,6 +190,105 @@ summary_df = (
 print("Block types (count, %):\n" + summary_df.to_string())
 print("\nBuilding types:\n" + building_type_counts.to_string())
 
+# %%
+# Door-to-all query scalability (lazy shortcuts + cache)
+import numpy as _np
+
+print("\nDoor-to-all query scalability (lazy shortcuts + cache)")
+
+# Build (lazy) street graph and shortcut network
+_tq0 = time.time()
+G = city.get_street_graph(lazy=True)
+_tq_graph = time.time() - _tq0
+
+# Gather door street blocks from buildings_gdf (no fallbacks)
+bd = city.buildings_gdf[['id','door_cell_x','door_cell_y']].dropna()
+door_nodes = [(int(x), int(y)) for x, y in bd[['door_cell_x','door_cell_y']].itertuples(index=False)]
+door_nodes = [n for n in door_nodes if n in G.nodes]
+print(f"Door nodes available: {len(door_nodes):,}")
+
+# Select up to 100 seeds
+_rng = _np.random.default_rng(42)
+n_seeds = min(100, len(door_nodes))
+seed_idx = _rng.choice(len(door_nodes), size=n_seeds, replace=False)
+seed_nodes = [door_nodes[i] for i in seed_idx]
+
+# First pass (cold cache)
+_tq1 = time.time()
+pairs_1 = 0
+for s in seed_nodes:
+    for t in door_nodes:
+        if s == t:
+            continue
+        d = city.get_distance_fast(s, t)
+        pairs_1 += 1
+_tq_pass1 = time.time() - _tq1
+
+# Second pass (warm cache)
+_tq2 = time.time()
+pairs_2 = 0
+for s in seed_nodes:
+    for t in door_nodes:
+        if s == t:
+            continue
+        d = city.get_distance_fast(s, t)
+        pairs_2 += 1
+_tq_pass2 = time.time() - _tq2
+
+print(f"Graph build (lazy + shortcuts): {_tq_graph:.2f}s; nodes={len(G.nodes):,}; edges={len(G.edges):,}")
+print(f"Pass1 (cold cache): {pairs_1:,} pairs in {_tq_pass1:.2f}s ({pairs_1/_tq_pass1:.1f} pairs/s)")
+print(f"Pass2 (warm cache): {pairs_2:,} pairs in {_tq_pass2:.2f}s ({pairs_2/_tq_pass2:.1f} pairs/s)")
+if hasattr(city, '_distance_cache'):
+    print(f"Cache size: {len(city._distance_cache):,} entries")
+
+# %%
+# Clip boundary at smaller sizes and repeat (increasing area)
+from shapely.affinity import scale as _scale
+from geopandas import clip as _clip
+
+factors = [0.6, 0.8, 1.0]
+b_base = boundary.geometry.iloc[0]
+
+for f in factors:
+    print(f"\n== Clipped boundary factor {f:.2f} ==")
+    b_clip = _scale(b_base, xfact=f, yfact=f, origin=b_base.centroid)
+    bld = gpd.clip(buildings, gpd.GeoDataFrame(geometry=[b_clip], crs=buildings.crs))
+    strt = gpd.clip(streets, gpd.GeoDataFrame(geometry=[b_clip], crs=streets.crs))
+    bld = bld[bld.geometry.notna() & ~bld.geometry.is_empty].reset_index(drop=True)
+    strt = strt[strt.geometry.notna() & ~strt.geometry.is_empty].reset_index(drop=True)
+
+    gen2 = RasterCityGenerator(boundary_polygon=b_clip, streets_gdf=strt, buildings_gdf=bld, block_size=block_size)
+    _t0 = time.time()
+    city2 = gen2.generate_city()
+    _tc = time.time() - _t0
+
+    _tg0 = time.time()
+    G2 = city2.get_street_graph(lazy=True)
+    _tg = time.time() - _tg0
+
+    bd2 = city2.buildings_gdf[['id','door_cell_x','door_cell_y']].dropna()
+    dn2 = [(int(x), int(y)) for x, y in bd2[['door_cell_x','door_cell_y']].itertuples(index=False)]
+    dn2 = [n for n in dn2 if n in G2.nodes]
+    if not dn2:
+        print("No door nodes in clipped area; skipping.")
+        continue
+    n_seeds2 = min(100, len(dn2))
+    sidx2 = _rng.choice(len(dn2), size=n_seeds2, replace=False)
+    seeds2 = [dn2[i] for i in sidx2]
+
+    _tp0 = time.time()
+    pairs = 0
+    for s in seeds2:
+        for t in dn2:
+            if s == t:
+                continue
+            _ = city2.get_distance_fast(s, t)
+            pairs += 1
+    _tp = time.time() - _tp0
+
+    print(f"Rasterization: {_tc:.2f}s; graph: {_tg:.2f}s; buildings={len(city2.buildings_gdf):,}; nodes={len(G2.nodes):,}")
+    print(f"Queries: {pairs:,} pairs in {_tp:.2f}s ({pairs/_tp:.1f} pairs/s)")
+
 # %% [markdown]
 # ## Street Network Analysis
 #
