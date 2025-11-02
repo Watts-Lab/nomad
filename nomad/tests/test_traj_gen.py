@@ -11,8 +11,11 @@ from nomad.traj_gen import (
     Agent, 
     Population, 
     condense_destinations,
-    sample_hier_nhpp,
+    sample_bursts_gaps,
     parse_agent_attr,
+    generate_ping_times,
+    thin_traj_by_times,
+    _sample_horizontal_noise,
 )
 import nomad.city_gen as cg
 
@@ -28,25 +31,37 @@ def garden_city():
     city_path = data_dir / "garden-city.gpkg"
     # Garden-city fixture (legacy) uses 'type' instead of 'building_type'
     city = cg.City.from_geopackage(city_path, poi_cols={'building_type':'type'})
-    # Normalize legacy labels in fixture to current categories
-    if 'building_type' in city.buildings_gdf.columns:
-        city.buildings_gdf['building_type'] = city.buildings_gdf['building_type'].replace({'work': 'workplace', 'residential': 'home'})
     return city
 
 
 @pytest.fixture
-def simple_dest_diary():
+def default_ids(garden_city):
+    b = garden_city.buildings_gdf
+    homes = b[b['building_type'] == 'home']['id'].tolist()
+    works = b[b['building_type'] == 'work']['id'].tolist()
+    print("DEBUG home ids (first 10):", homes[:10])
+    print("DEBUG work ids (first 10):", works[:10])
+    assert homes and works, "Regenerated garden city must contain home and work buildings"
+    return {
+        'home': homes[0],
+        'home2': homes[1] if len(homes) > 1 else homes[0],
+        'work': works[0],
+        'work2': works[1] if len(works) > 1 else works[0],
+    }
+
+
+@pytest.fixture
+def simple_dest_diary(default_ids):
     """Create a simple destination diary for testing."""
     tz = ZoneInfo("America/New_York")
     start_time = pd.date_range(start='2024-06-01 00:00', periods=4, freq='60min', tz=tz)
     ts = [int(t.timestamp()) for t in start_time]
     duration = [60] * 4  # in minutes
-    location = ['h-x1-y15', 'h-x6-y5', 'w-x24-y15', 'w-x14-y15']
-    
+    location = [default_ids['home'], default_ids['home2'], default_ids['work'], default_ids['work2']]
     return pd.DataFrame({
         "datetime": start_time,
-         "timestamp": ts,
-         "duration": duration,
+        "timestamp": ts,
+        "duration": duration,
         "location": location
     })
 
@@ -63,7 +78,7 @@ def temp_output_dir():
 # TESTS
 # =============================================================================
 
-def test_complete_workflow(garden_city, simple_dest_diary, temp_output_dir):
+def test_complete_workflow(garden_city, simple_dest_diary, temp_output_dir, default_ids):
     """
     Integration test for the complete trajectory generation workflow.
     Tests: Population creation, agent generation, trajectory generation,
@@ -75,8 +90,8 @@ def test_complete_workflow(garden_city, simple_dest_diary, temp_output_dir):
         N=3,
         seed=42,
         name_count=2,
-        agent_homes='h-x1-y15',
-        agent_workplaces='w-x24-y15'
+        agent_homes=default_ids['home'],
+        agent_workplaces=default_ids['work']
     )
     
     assert len(pop.roster) == 3
@@ -142,26 +157,26 @@ def test_complete_workflow(garden_city, simple_dest_diary, temp_output_dir):
     assert len(list(sparse_path.glob("*.parquet"))) > 0
 
 
-def test_invalid_building_ids(garden_city, simple_dest_diary):
+def test_invalid_building_ids(garden_city, simple_dest_diary, default_ids):
     """
     Test that invalid building IDs raise appropriate errors.
     Edge case: Non-existent building IDs should be caught.
     """
     # Test invalid home
     with pytest.raises(ValueError, match="not found in city buildings"):
-        Agent(
+            Agent(
             identifier="test_agent",
             city=garden_city,
-            home='invalid-building-id',
-            workplace='w-x24-y15'
+                home='invalid-building-id',
+                workplace=default_ids['work']
         )
     
     # Test invalid workplace
     with pytest.raises(ValueError, match="not found in city buildings"):
-        Agent(
+            Agent(
             identifier="test_agent",
             city=garden_city,
-            home='h-x1-y15',
+                home=default_ids['home'],
             workplace='invalid-workplace-id'
         )
     
@@ -169,8 +184,8 @@ def test_invalid_building_ids(garden_city, simple_dest_diary):
     agent = Agent(
         identifier="test_agent",
         city=garden_city,
-        home='h-x1-y15',
-        workplace='w-x24-y15'
+        home=default_ids['home'],
+        workplace=default_ids['work']
     )
     
     bad_diary = simple_dest_diary.copy()
@@ -180,7 +195,7 @@ def test_invalid_building_ids(garden_city, simple_dest_diary):
         agent.generate_trajectory(destination_diary=bad_diary, dt=1, seed=42)
 
 
-def test_empty_and_edge_case_trajectories(garden_city):
+def test_empty_and_edge_case_trajectories(garden_city, default_ids):
     """
     Test handling of empty data and edge cases.
     Edge cases: Empty destination diaries, very short trajectories, no pings sampled.
@@ -188,8 +203,8 @@ def test_empty_and_edge_case_trajectories(garden_city):
     agent = Agent(
         identifier="test_agent",
         city=garden_city,
-        home='h-x1-y15',
-        workplace='w-x24-y15'
+        home=default_ids['home'],
+        workplace=default_ids['work']
     )
     
     # Test with EPR generation (needs end_time when destination_diary is empty)
@@ -222,7 +237,7 @@ def test_empty_and_edge_case_trajectories(garden_city):
         'timestamp': [1717214400, 1717214401]
     })
     
-    result = sample_hier_nhpp(
+    result = sample_bursts_gaps(
         short_traj,
         beta_start=1000,  # Very low probability
         beta_durations=0.1,
@@ -236,7 +251,7 @@ def test_empty_and_edge_case_trajectories(garden_city):
     assert all(col in result.columns for col in short_traj.columns)
 
 
-def test_trajectory_monotonicity_and_data_quality(garden_city, simple_dest_diary):
+def test_trajectory_monotonicity_and_data_quality(garden_city, simple_dest_diary, default_ids):
     """
     Test that generated and sampled trajectories maintain data quality.
     Tests: Monotonic timestamps, proper deduplication, timestamp integrity.
@@ -244,8 +259,8 @@ def test_trajectory_monotonicity_and_data_quality(garden_city, simple_dest_diary
     agent = Agent(
         identifier="test_agent",
         city=garden_city,
-        home='h-x1-y15',
-        workplace='w-x24-y15'
+        home=default_ids['home'],
+        workplace=default_ids['work']
     )
     
     # Generate trajectory
@@ -278,7 +293,7 @@ def test_trajectory_monotonicity_and_data_quality(garden_city, simple_dest_diary
     assert (agent.sparse_traj['ha'] <= 20).all()  # Below cap
 
 
-def test_agent_state_management(garden_city, simple_dest_diary):
+def test_agent_state_management(garden_city, simple_dest_diary, default_ids):
     """
     Test agent state management: reset, trajectory replacement, caching.
     Tests: reset_trajectory, replace_sparse_traj, cache_traj.
@@ -286,8 +301,8 @@ def test_agent_state_management(garden_city, simple_dest_diary):
     agent = Agent(
         identifier="test_agent",
         city=garden_city,
-        home='h-x1-y15',
-        workplace='w-x24-y15'
+        home=default_ids['home'],
+        workplace=default_ids['work']
     )
     
     # Generate initial trajectory
@@ -346,7 +361,7 @@ def test_parse_agent_attr_validation():
         parse_agent_attr(123, 5, "test")
 
 
-def test_population_agent_generation(garden_city):
+def test_population_agent_generation(garden_city, default_ids):
     """
     Test population agent generation with various configurations.
     Tests: Fixed homes/workplaces, list-based assignments, random assignments.
@@ -354,16 +369,17 @@ def test_population_agent_generation(garden_city):
     pop = Population(garden_city)
     
     # Test basic generation with fixed home/workplace
-    pop.generate_agents(N=5, seed=42, name_count=2, agent_homes='h-x1-y15', agent_workplaces='w-x24-y15')
+    pop.generate_agents(N=5, seed=42, name_count=2, agent_homes=default_ids['home'], agent_workplaces=default_ids['work'])
     assert len(pop.roster) == 5
     for agent in pop.roster.values():
-        assert agent.home == 'h-x1-y15'
-        assert agent.workplace == 'w-x24-y15'
+        assert agent.home == default_ids['home']
+        assert agent.workplace == default_ids['work']
     
     # Test with list of homes/workplaces
     pop2 = Population(garden_city)
-    homes = ['h-x1-y15', 'h-x6-y5', 'h-x1-y25']
-    workplaces = ['w-x24-y15', 'w-x14-y15', 'w-x1-y0']
+    b = garden_city.buildings_gdf
+    homes = b[b['building_type']=='home']['id'].head(3).tolist()
+    workplaces = b[b['building_type']=='work']['id'].head(3).tolist()
     
     pop2.generate_agents(N=3, seed=42, name_count=2, agent_homes=homes, agent_workplaces=workplaces)
     
@@ -396,13 +412,13 @@ def test_sample_hier_nhpp_edge_cases():
     })
     
     # Test basic sampling
-    result = sample_hier_nhpp(traj, beta_ping=5, seed=42, ha=0.75)
+    result = sample_bursts_gaps(traj, beta_ping=5, seed=42, ha=0.75)
     assert len(result) > 0
     assert len(result) <= len(traj)
     assert 'ha' in result.columns
     
     # Test with bursts
-    sampled, bursts = sample_hier_nhpp(
+    sampled, bursts = sample_bursts_gaps(
         traj,
         beta_start=30,
         beta_durations=20,
@@ -415,12 +431,80 @@ def test_sample_hier_nhpp_edge_cases():
     assert 'end_time' in bursts.columns
     
     # Test deduplication
-    result_dedup = sample_hier_nhpp(traj, beta_ping=1, seed=42, ha=0.75, deduplicate=True)
+    result_dedup = sample_bursts_gaps(traj, beta_ping=1, seed=42, ha=0.75, deduplicate=True)
     assert len(result_dedup['timestamp'].unique()) == len(result_dedup)
     
     # Test ha validation
     with pytest.raises(ValueError, match="ha must exceed"):
-        sample_hier_nhpp(traj, beta_ping=5, ha=0.4, seed=42)
+        sample_bursts_gaps(traj, beta_ping=5, ha=0.4, seed=42)
+
+
+def test_generate_ping_times_and_thinning():
+    tz = ZoneInfo("America/New_York")
+    times = pd.date_range(start='2024-06-01 00:00', periods=120, freq='1s', tz=tz)
+    traj = pd.DataFrame({
+        'x': np.linspace(0, 1, 120),
+        'y': np.linspace(0, 1, 120),
+        'datetime': times,
+        'timestamp': [int(t.timestamp()) for t in times]
+    })
+
+    t0 = int(traj['timestamp'].iloc[0])
+    t_end = int(traj['timestamp'].iloc[-1])
+
+    pts = generate_ping_times(t0, t_end, beta_ping=0.1, seed=123)
+    assert isinstance(pts, np.ndarray)
+    assert np.all((pts >= t0) & (pts <= t_end)) or pts.size == 0
+    if pts.size:
+        assert np.all(np.diff(pts) >= 0)
+
+    thinned = thin_traj_by_times(traj, pts, deduplicate=True)
+    assert set(['x','y','datetime','timestamp']).issubset(set(thinned.columns))
+    if pts.size:
+        # After thinning with dedup, timestamps align one-to-one with rows
+        assert len(thinned) == len(np.unique(np.searchsorted(traj['timestamp'].to_numpy(), pts, side='right') - 1))
+
+
+def test_sample_horizontal_noise_basic():
+    n = 100
+    ha_realized, noise = _sample_horizontal_noise(n, ha=0.75, rng=np.random.default_rng(123))
+    assert len(ha_realized) == n
+    assert noise.shape == (n, 2)
+    assert np.isfinite(ha_realized).all()
+    assert np.isfinite(noise).all()
+    assert (noise >= -250).all() and (noise <= 250).all()
+
+
+def test_bursts_info_nonempty_and_tz():
+    tz = ZoneInfo("America/New_York")
+    times = pd.date_range(start='2024-06-01 00:00', periods=600, freq='1s', tz=tz)
+    traj = pd.DataFrame({
+        'x': np.linspace(0, 1, 600),
+        'y': np.linspace(0, 1, 600),
+        'datetime': times,
+        'timestamp': [int(t.timestamp()) for t in times]
+    })
+
+    sampled, bursts = sample_bursts_gaps(
+        traj,
+        beta_start=0.2,      # bursts every ~12s on average
+        beta_durations=0.1,  # durations ~6s
+        beta_ping=0.1,       # ping mean ~6s
+        seed=123,
+        ha=0.75,
+        output_bursts=True
+    )
+
+    assert 'start_time' in bursts.columns and 'end_time' in bursts.columns
+    assert not bursts.empty
+    # tz-aware
+    assert getattr(bursts['start_time'].dt.tz, 'key', None) == tz.key
+    assert getattr(bursts['end_time'].dt.tz, 'key', None) == tz.key
+    # within window
+    t0 = traj['datetime'].iloc[0]
+    t1 = traj['datetime'].iloc[-1]
+    assert bursts['start_time'].min() >= t0
+    assert bursts['end_time'].max() <= t1
 
 
 def test_condense_destinations_logic(simple_dest_diary):
@@ -454,13 +538,13 @@ def test_condense_destinations_logic(simple_dest_diary):
     pd.testing.assert_frame_equal(result, result2)
 
 
-def test_coordinate_reprojection(garden_city, simple_dest_diary):
+def test_coordinate_reprojection(garden_city, simple_dest_diary, default_ids):
     """
     Test coordinate reprojection from Garden City to Web Mercator.
     Tests: Transformation accuracy, ha scaling, preservation of other columns.
     """
     pop = Population(garden_city)
-    pop.generate_agents(N=1, seed=42, name_count=2, agent_homes='h-x1-y15', agent_workplaces='w-x24-y15')
+    pop.generate_agents(N=1, seed=42, name_count=2, agent_homes=default_ids['home'], agent_workplaces=default_ids['work'])
     
     agent = list(pop.roster.values())[0]
     agent.generate_trajectory(destination_diary=simple_dest_diary, dt=0.5, seed=42)

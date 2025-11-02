@@ -74,7 +74,7 @@ def parse_agent_attr(attr, N, name):
     else:
         raise ValueError(f"{name} must be either a string, a list of length {N}, or None")
 
-def sample_hier_nhpp(traj,
+def sample_bursts_gaps(traj,
                      beta_start=None,
                      beta_durations=None,
                      beta_ping=5,
@@ -111,117 +111,48 @@ def sample_hier_nhpp(traj,
     """
     rng = npr.default_rng(seed)
 
-    # convert minutes→seconds
-    beta_ping   = beta_ping   * 60
-    if beta_start    is not None: beta_start    *= 60
-    if beta_durations is not None: beta_durations *= 60
-
     # absolute window
     t0   = int(traj['timestamp'].iloc[0])
     t_end = int(traj['timestamp'].iloc[-1])
-
-    # 1) bursts in continuous seconds
-    if beta_start is None and beta_durations is None:
-        burst_start_points = np.array([0.0])
-        burst_end_points   = np.array([t_end - t0], dtype=float)
-    else:
-        # draw at least 3× the mean number of bursts + 10
-        est_n = int(3 * (t_end - t0) / beta_start) + 10
-        inter_arrival_times = rng.exponential(scale=beta_start, size=est_n)
-        burst_start_points = np.cumsum(inter_arrival_times)
-        # keep only those inside the window
-        burst_start_points = burst_start_points[burst_start_points < (t_end - t0)]
-
-        # durations
-        burst_durations = rng.exponential(scale=beta_durations,
-                                          size=burst_start_points.size)
-        burst_end_points = burst_start_points + burst_durations
-
-        # handle cases where no bursts are generated
-        if burst_end_points.size == 0:
-            empty_traj = pd.DataFrame(columns=traj.columns)
-            empty_burst_info = pd.DataFrame(columns=['start_time','end_time'])
-            if output_bursts:
-                return empty_traj, empty_burst_info
-            return empty_traj
-
-        # forbid overlap: each burst_end ≤ next burst_start
-        burst_end_points[:-1] = np.minimum(burst_end_points[:-1], burst_start_points[1:])
-        # clip last end point
-        burst_end_points[-1] = min(burst_end_points[-1], t_end - t0)
-
-    # 2) pings continuously
-    ping_times = []
-    burst_info = []
+    # Step 1: generate ping_times (and bursts if requested)
     tz = traj['datetime'].dt.tz
+    if output_bursts:
+        ping_times, bursts = generate_ping_times(
+            t0, t_end,
+            beta_start=beta_start,
+            beta_durations=beta_durations,
+            beta_ping=beta_ping,
+            seed=seed,
+            return_bursts=True,
+            tz=tz,
+        )
+    else:
+        ping_times = generate_ping_times(
+            t0, t_end,
+            beta_start=beta_start,
+            beta_durations=beta_durations,
+            beta_ping=beta_ping,
+            seed=seed,
+        )
 
-    for start, end in zip(burst_start_points, burst_end_points):
+    # Step 2: thin trajectory
+    sampled_traj = thin_traj_by_times(traj, ping_times, deduplicate=deduplicate)
+    if sampled_traj.empty:
+        empty = sampled_traj
         if output_bursts:
-            burst_info.append([
-                pd.to_datetime(t0 + start, unit='s', utc=True)
-                  .tz_convert(tz),
-                pd.to_datetime(t0 + end, unit='s', utc=True)
-                  .tz_convert(tz)
-            ])
-
-        dur = end - start
-        if dur <= 0:
-            continue
-
-        # oversample ping intervals, then clip
-        est_pings = int(3 * dur / beta_ping) + 10
-        ping_intervals = rng.exponential(scale=beta_ping, size=est_pings)
-        times_rel = np.cumsum(ping_intervals)
-        times_rel = times_rel[times_rel < dur]
-
-        ping_times.append(t0 + start + times_rel)
-
-    if not ping_times:
-        empty = pd.DataFrame(columns=traj.columns)
-        if output_bursts:
-            return empty, pd.DataFrame(burst_info, columns=['start_time','end_time'])
+            return empty, pd.DataFrame(columns=['start_time','end_time'])
         return empty
 
-    ping_times = np.concatenate(ping_times).astype(int)
-
-    # 3) map to last tick via two-index searchsorted
-    traj_ts = traj['timestamp'].to_numpy()
-    idx = np.searchsorted(traj_ts, ping_times, side='right') - 1
-    valid = idx >= 0
-    idx = idx[valid]
-    ping_times = ping_times[valid]
-
-    if deduplicate:
-        _, keep = np.unique(idx, return_index=True)
-        idx = idx[keep]
-        ping_times = ping_times[keep]
-
-    sampled_traj = traj.iloc[idx].copy()
-    sampled_traj['timestamp'] = ping_times
-    sampled_traj['datetime'] = (
-        pd.to_datetime(ping_times, unit='s', utc=True)
-          .tz_convert(tz)
-    )
-
-    # realized horizontal accuracy
-
-    x_m = 8/15
-    if ha <= x_m:
-        raise ValueError("ha must exceed 8 m / 15 m ≈ 0.533 blocks")
-    alpha = ha / (ha - x_m)
+    # Step 3: add horizontal noise
+    rng = npr.default_rng(seed)
     n = len(sampled_traj)
-    ha_realized = (rng.pareto(alpha, size=n) + 1) * x_m
-    ha_realized = np.minimum(ha_realized, 20, out=ha_realized) # no unrealistic ha (in blocks)
-    sampled_traj['ha'] = ha_realized    
-    sigma = ha_realized / 1.515
-    # spatial noise
-    noise = rng.standard_normal((n, 2)) * sigma[:, None]
-    np.clip(noise, -250, 250, out=noise)
+    ha_realized, noise = _sample_horizontal_noise(n, ha=ha, rng=rng)
+    sampled_traj['ha'] = ha_realized
     sampled_traj[['x', 'y']] += noise
 
     if output_bursts:
-        burst_info = pd.DataFrame(burst_info, columns=['start_time','end_time'])
-        return sampled_traj, burst_info
+        burst_df = pd.DataFrame(bursts, columns=['start_time','end_time'])
+        return sampled_traj, burst_df
 
     return sampled_traj
 
@@ -299,7 +230,7 @@ class Agent:
         if home is None:
             home = city.buildings_gdf[city.buildings_gdf['building_type'] == 'home'].sample(n=1, random_state=rng)['id'].iloc[0]
         if workplace is None:
-            workplace = city.buildings_gdf[city.buildings_gdf['building_type'] == 'workplace'].sample(n=1, random_state=rng)['id'].iloc[0]
+            workplace = city.buildings_gdf[city.buildings_gdf['building_type'] == 'work'].sample(n=1, random_state=rng)['id'].iloc[0]
 
         home_building = city.get_building(identifier=home)
         workplace_building = city.get_building(identifier=workplace)
@@ -623,28 +554,16 @@ class Agent:
                 'p': 0.0
             }).set_index('id')
 
-            # Initialize past counts: seed home/workplace and a few random POIs
-            visit_freqs.loc[self.home, 'freq'] = 20
-            visit_freqs.loc[self.workplace, 'freq'] = 20
-            visit_freqs.loc[visit_freqs.building_type == 'park', 'freq'] = 5
-
-            initial_locs = []
-            # Retail
-            retail_ids = visit_freqs.index[visit_freqs.building_type == 'retail']
-            k = int(rng.poisson(4))
-            if len(retail_ids) > 0 and k > 0:
-                initial_locs += list(rng.choice(retail_ids, size=min(k, len(retail_ids)), replace=False))
-            # Work (current dataset uses 'workplace')
-            work_ids = visit_freqs.index[visit_freqs.building_type == 'workplace']
-            k = int(rng.poisson(2))
-            if len(work_ids) > 0 and k > 0:
-                initial_locs += list(rng.choice(work_ids, size=min(k, len(work_ids)), replace=False))
-            # Home
-            home_ids = visit_freqs.index[visit_freqs.building_type == 'home']
-            k = int(rng.poisson(2))
-            if len(home_ids) > 0 and k > 0:
-                initial_locs += list(rng.choice(home_ids, size=min(k, len(home_ids)), replace=False))
-            visit_freqs.loc[initial_locs, 'freq'] += 2
+            # Initialize past counts using uniform seeding over types
+            visit_freqs = _initialize_visits_unif(
+                visit_freqs,
+                rng,
+                self.home,
+                self.workplace,
+                home_work_freq=20,
+                initial_k={'retail': 4, 'work': 2, 'home': 2, 'park': 2},
+                other_locs_freq=2,
+            )
 
         if self.destination_diary.empty:
             start_time_local = self.last_ping['datetime']
@@ -899,7 +818,7 @@ class Agent:
         if not self.trajectory.timestamp.is_monotonic_increasing:
             raise ValueError("The input trajectory is not sorted chronologically.")
             
-        result = sample_hier_nhpp(
+        result = sample_bursts_gaps(
             self.trajectory, 
             beta_start, 
             beta_durations, 
@@ -993,6 +912,122 @@ def condense_destinations(destination_diary, *, time_cols=None):
         condensed_df = condensed_df.rename(columns={ts_col: 'timestamp'})
 
     return condensed_df
+
+
+def generate_ping_times(t0: int,
+                        t_end: int,
+                        *,
+                        beta_start: float | None = None,
+                        beta_durations: float | None = None,
+                        beta_ping: float = 5,
+                        seed: int | None = None,
+                        return_bursts: bool = False,
+                        tz=None):
+    """Generate absolute ping timestamps (seconds) within [t0, t_end].
+
+    If return_bursts is True, also returns a list of (start_time, end_time)
+    for bursts that produced at least one ping. If tz is provided, start/end
+    are timezone-aware pandas Timestamps; otherwise they are Unix seconds (int).
+    """
+    rng = npr.default_rng(seed)
+
+    # convert minutes→seconds
+    beta_ping_s = beta_ping * 60
+    beta_start_s = beta_start * 60 if beta_start is not None else None
+    beta_dur_s = beta_durations * 60 if beta_durations is not None else None
+
+    if beta_start_s is None and beta_dur_s is None:
+        burst_start_points = np.array([0.0])
+        burst_end_points = np.array([t_end - t0], dtype=float)
+    else:
+        est_n = int(3 * (t_end - t0) / beta_start_s) + 10
+        inter_arrival_times = rng.exponential(scale=beta_start_s, size=est_n)
+        burst_start_points = np.cumsum(inter_arrival_times)
+        burst_start_points = burst_start_points[burst_start_points < (t_end - t0)]
+        burst_durations = rng.exponential(scale=beta_dur_s, size=burst_start_points.size)
+        burst_end_points = burst_start_points + burst_durations
+        if burst_end_points.size > 0:
+            burst_end_points[:-1] = np.minimum(burst_end_points[:-1], burst_start_points[1:])
+            burst_end_points[-1] = min(burst_end_points[-1], t_end - t0)
+
+    ping_times_chunks: list[np.ndarray] = []
+    bursts_out = [] if return_bursts else None
+    for start, end in zip(burst_start_points, burst_end_points):
+        dur = end - start
+        if dur <= 0:
+            continue
+        est_pings = int(3 * dur / beta_ping_s) + 10
+        ping_intervals = rng.exponential(scale=beta_ping_s, size=est_pings)
+        times_rel = np.cumsum(ping_intervals)
+        times_rel = times_rel[times_rel < dur]
+        if times_rel.size:
+            ping_times_chunks.append(t0 + start + times_rel)
+            if return_bursts:
+                if tz is not None:
+                    sdt = pd.to_datetime(t0 + start, unit='s', utc=True).tz_convert(tz)
+                    edt = pd.to_datetime(t0 + end, unit='s', utc=True).tz_convert(tz)
+                else:
+                    sdt = int(t0 + start)
+                    edt = int(t0 + end)
+                bursts_out.append([sdt, edt])
+
+    if not ping_times_chunks:
+        if return_bursts:
+            return np.array([], dtype=int), []
+        return np.array([], dtype=int)
+    ping = np.concatenate(ping_times_chunks).astype(int)
+    if return_bursts:
+        return ping, bursts_out
+    return ping
+
+
+def thin_traj_by_times(traj: pd.DataFrame,
+                       ping_times: np.ndarray,
+                       *,
+                       deduplicate: bool = True) -> pd.DataFrame:
+    """Apply ping_times to a dense traj via searchsorted thinning."""
+    if ping_times.size == 0:
+        return pd.DataFrame(columns=traj.columns)
+
+    traj_ts = traj['timestamp'].to_numpy()
+    tz = traj['datetime'].dt.tz
+
+    idx = np.searchsorted(traj_ts, ping_times, side='right') - 1
+    valid = idx >= 0
+    idx = idx[valid]
+    ping_times = ping_times[valid]
+
+    if deduplicate:
+        _, keep = np.unique(idx, return_index=True)
+        idx = idx[keep]
+        ping_times = ping_times[keep]
+
+    sampled_traj = traj.iloc[idx].copy()
+    sampled_traj['timestamp'] = ping_times
+    sampled_traj['datetime'] = (
+        pd.to_datetime(ping_times, unit='s', utc=True)
+          .tz_convert(tz)
+    )
+    return sampled_traj
+
+
+def _sample_horizontal_noise(n: int,
+                             *,
+                             ha: float = 3/4,
+                             rng=None):
+    """Sample per-ping horizontal accuracy and Gaussian noise (internal)."""
+    if rng is None:
+        rng = npr.default_rng()
+    x_m = 8/15
+    if ha <= x_m:
+        raise ValueError("ha must exceed 8 m / 15 m ≈ 0.533 blocks")
+    alpha = ha / (ha - x_m)
+    ha_realized = (rng.pareto(alpha, size=n) + 1) * x_m
+    ha_realized = np.minimum(ha_realized, 20, out=ha_realized)
+    sigma = ha_realized / 1.515
+    noise = rng.standard_normal((n, 2)) * sigma[:, None]
+    np.clip(noise, -250, 250, out=noise)
+    return ha_realized, noise
 
 
 def _cartesian_coords(multilines, distance, offset, eps=0.001):
@@ -1318,3 +1353,41 @@ def allowed_buildings(local_ts):
     """
     hour = local_ts.hour
     return ALLOWED_BUILDINGS[hour]
+
+
+def _initialize_visits_unif(visit_freqs: pd.DataFrame,
+                            rng: np.random.Generator,
+                            home: str,
+                            workplace: str,
+                            *,
+                            home_work_freq: int = 20,
+                            initial_k: dict = None,
+                            other_locs_freq: int = 2) -> pd.DataFrame:
+    """Seed initial visit frequencies uniformly per type (internal)."""
+    # Defaults: number of extra initial locations per canonical type
+    if initial_k is None:
+        initial_k = {'retail': 4, 'work': 2, 'home': 2, 'park': 2}
+
+    # Strong prior for agent's home/work
+    if home in visit_freqs.index:
+        visit_freqs.loc[home, 'freq'] = int(home_work_freq)
+    if workplace in visit_freqs.index:
+        visit_freqs.loc[workplace, 'freq'] = int(home_work_freq)
+
+    # Seed additional locations per type
+    for btype, k in initial_k.items():
+        k = max(0, int(k))
+        if k == 0:
+            continue
+
+        ids = visit_freqs.index[visit_freqs.building_type == btype].tolist()
+        # Exclude the agent's own home/work from the booster sample
+        ids = [i for i in ids if i not in (home, workplace)]
+        if not ids:
+            continue
+
+        size = min(k, len(ids))
+        chosen = rng.choice(ids, size=size, replace=False)
+        visit_freqs.loc[chosen, 'freq'] = visit_freqs.loc[chosen, 'freq'] + int(other_locs_freq)
+
+    return visit_freqs
