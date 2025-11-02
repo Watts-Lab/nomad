@@ -161,7 +161,6 @@ def sample_bursts_gaps(traj,
 # AGENT CLASS
 # =============================================================================
 
-
 class Agent:
     """
     Represents an agent in the city simulation.
@@ -329,15 +328,14 @@ class Agent:
         """
         city = self.city
 
-        # Resolve destination building geometry and attributes
+        # Resolve destination building geometry and attributes (strict schema)
         brow = city.buildings_gdf[city.buildings_gdf['id'] == dest_building_id]
         if brow.empty:
-            # Unknown destination; remain in place
-            return np.asarray(start_point, dtype=float), None
+            raise ValueError(f"Destination {dest_building_id} not found in city buildings.")
         dest_geom = brow.iloc[0]['geometry']
         dest_type = brow.iloc[0]['building_type']
-        # Door cell and door centroid
-        dest_cell = (int(brow.iloc[0]['door_cell_x']), int(brow.iloc[0]['door_cell_y'])) if 'door_cell_x' in brow.columns else (int(np.floor(dest_geom.centroid.x)), int(np.floor(dest_geom.centroid.y)))
+        # Door cell and door centroid (no fallbacks)
+        dest_cell = (int(brow.iloc[0]['door_cell_x']), int(brow.iloc[0]['door_cell_y']))
         door_poly = box(dest_cell[0], dest_cell[1], dest_cell[0]+1, dest_cell[1]+1)
         door_line = dest_geom.intersection(door_poly)
         dest_door_centroid = dest_geom.centroid if door_line.is_empty else door_line.centroid
@@ -375,15 +373,14 @@ class Agent:
         # If currently inside a building, first move towards its door centroid
         if start_info['kind'] == 'building' and start_info['building_id'] is not None:
             srow = city.buildings_gdf[city.buildings_gdf['id'] == start_info['building_id']]
-            if not srow.empty:
-                s_cell = (int(srow.iloc[0]['door_cell_x']), int(srow.iloc[0]['door_cell_y'])) if 'door_cell_x' in srow.columns else start_block
-                s_door_poly = box(s_cell[0], s_cell[1], s_cell[0]+1, s_cell[1]+1)
-                s_door_line = srow.iloc[0]['geometry'].intersection(s_door_poly)
-                s_door_centroid = srow.iloc[0]['geometry'].centroid if s_door_line.is_empty else s_door_line.centroid
-                start_segment = [tuple(start_point_arr.tolist()), (s_door_centroid.x, s_door_centroid.y)]
-                start_node = s_cell
-            else:
-                start_node = start_block
+            if srow.empty:
+                raise ValueError(f"Start building {start_info['building_id']} not found in city buildings.")
+            s_cell = (int(srow.iloc[0]['door_cell_x']), int(srow.iloc[0]['door_cell_y']))
+            s_door_poly = box(s_cell[0], s_cell[1], s_cell[0]+1, s_cell[1]+1)
+            s_door_line = srow.iloc[0]['geometry'].intersection(s_door_poly)
+            s_door_centroid = srow.iloc[0]['geometry'].centroid if s_door_line.is_empty else s_door_line.centroid
+            start_segment = [tuple(start_point_arr.tolist()), (s_door_centroid.x, s_door_centroid.y)]
+            start_node = s_cell
         else:
             start_node = start_block
 
