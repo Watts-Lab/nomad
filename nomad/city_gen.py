@@ -280,7 +280,9 @@ class City:
                 gdf_row = gpd.GeoDataFrame([gdf_row], geometry='geometry')
             elif not isinstance(gdf_row, gpd.GeoDataFrame) or len(gdf_row) != 1:
                 raise ValueError("gdf_row must be a GeoDataFrame with exactly one row or a pandas Series.")
-            building_type = gdf_row.iloc[0]['building_type']
+            # Use explicit column if present; otherwise rely on provided argument
+            if 'building_type' in gdf_row.columns:
+                building_type = gdf_row.iloc[0]['building_type']
             door = (gdf_row.iloc[0]['door_cell_x'], gdf_row.iloc[0]['door_cell_y']) if 'door_cell_x' in gdf_row.columns else door
             geom = gdf_row.iloc[0]['geometry'] if 'geometry' in gdf_row.columns else geom
 
@@ -960,7 +962,7 @@ class City:
         elif not self.buildings_gdf.empty:
             for _, b in self.buildings_gdf.iterrows():
                 geom = b.geometry
-                bcolor = colors.get(b['type'], colors['default'])
+                bcolor = colors.get(b['building_type'], colors['default'])
                 if isinstance(geom, (Polygon, MultiPolygon)):
                     polys = [geom] if isinstance(geom, Polygon) else list(geom.geoms)
                     for poly in polys:

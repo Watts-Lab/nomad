@@ -138,7 +138,7 @@ def test_add_building_with_gdf_row():
     geom = Polygon([(0, 0), (0, 1), (1, 1), (1, 0)])
     gdf_row = gpd.GeoDataFrame({
         'id': ['test-building'],
-        'type': ['test'],
+        'building_type': ['test'],
         'geometry': [geom],
         'door_cell_x': [0],
         'door_cell_y': [0]
@@ -167,7 +167,7 @@ def test_add_buildings_from_gdf():
     geom2 = Polygon([(street_coords[1][0], street_coords[1][1]), (street_coords[1][0], street_coords[1][1]+1), (street_coords[1][0]+1, street_coords[1][1]+1), (street_coords[1][0]+1, street_coords[1][1])])
     gdf = gpd.GeoDataFrame({
         'id': ['test1', 'test2'],
-        'type': ['test', 'test'],
+        'building_type': ['test', 'test'],
         'geometry': [geom1, geom2],
         'door_cell_x': [street_coords[0][0], street_coords[1][0]],
         'door_cell_y': [street_coords[0][1], street_coords[1][1]]
