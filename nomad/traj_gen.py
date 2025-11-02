@@ -384,20 +384,10 @@ class Agent:
         else:
             start_node = start_block
 
-        # Shortest path between street blocks (door cells)
-        try:
-            street_path = city.get_shortest_path(start_node, dest_cell)
-        except ValueError:
-            street_path = []
+        # Shortest path between street blocks (door cells) — must exist
+        street_path = city.get_shortest_path(start_node, dest_cell)
         if not street_path:
-            # No path; step straight towards destination door centroid
-            direction = np.asarray([dest_door_centroid.x, dest_door_centroid.y]) - start_point_arr
-            norm = np.linalg.norm(direction)
-            if norm == 0:
-                return start_point_arr, None
-            step = (direction / norm) * (0.5 * dt)
-            coord = start_point_arr + step
-            return coord, location
+            raise ValueError(f"get_shortest_path returned no path between {start_node} and {dest_cell}.")
 
         # Build continuous path through block centers, include start/end segments
         path = [(x + 0.5, y + 0.5) for (x, y) in street_path]
@@ -528,7 +518,7 @@ class Agent:
         """
         rng = npr.default_rng(seed)
 
-        # Mapping: building id -> (door_cell_x, door_cell_y) without fallbacks
+        # Mapping: building id -> (door_cell_x, door_cell_y)
         bdf = self.city.buildings_gdf
         id2cell = pd.Series(list(zip(bdf['door_cell_x'].astype(int), bdf['door_cell_y'].astype(int))), index=bdf['id'])
 
@@ -618,7 +608,7 @@ class Agent:
                         else:
                             curr = rng.choice(visit_freqs.index)
                 else:
-                    # Fallback: preferential return
+                    #preferential return
                     if not x.empty and x['freq'].sum() > 0:
                         curr = rng.choice(x.index, p=x['freq']/x['freq'].sum())
                     else:
