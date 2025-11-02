@@ -1114,7 +1114,9 @@ class City:
 
         # Adopt input GeoDataFrames with required columns
         city.buildings_gdf = gpd.GeoDataFrame(buildings_gdf, geometry='geometry', crs=buildings_gdf.crs)
-        missing_cols = set(['id','type','door_cell_x','door_cell_y','door_point','size']) - set(city.buildings_gdf.columns)
+        if 'building_type' not in city.buildings_gdf.columns:
+            raise KeyError("buildings_gdf must contain 'building_type'.")
+        missing_cols = set(['id','door_cell_x','door_cell_y','door_point','size']) - set(city.buildings_gdf.columns)
         for col in missing_cols:
             if col == 'size':
                 city.buildings_gdf[col] = 0
@@ -1876,7 +1878,7 @@ class RasterCityGenerator:
             dpt = Point(door_coords[0] + 0.5, door_coords[1] + 0.5)
             new_building_rows.append({
                 'id': building_id,
-                'type': building_info['type'],
+                'building_type': building_info['type'],
                 'door_cell_x': door_coords[0],
                 'door_cell_y': door_coords[1],
                 'door_point': dpt,
