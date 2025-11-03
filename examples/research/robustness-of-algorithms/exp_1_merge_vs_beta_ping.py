@@ -6,11 +6,11 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.1
+#       jupytext_version: 1.17.3
 #   kernelspec:
-#     display_name: Python 3.10 (daphme)
+#     display_name: Python (nomad repo venv)
 #     language: python
-#     name: daphme
+#     name: nomad-repo-venv
 # ---
 
 # %%
@@ -71,7 +71,7 @@ with open('config_low_ha.json', 'r', encoding='utf-8') as f:
 with open('config_high_ha.json', 'r', encoding='utf-8') as f:
     config2 = json.load(f)
 
-config=config1
+config=config2
 
 
 # %%
@@ -98,7 +98,7 @@ config["algos"] = {
 # ## Load sparse data and diaries
 
 # %%
-poi_table = gpd.read_file('../../garden_city.gpkg').rename(columns={"building_id":"location"})
+poi_table = gpd.read_file(config["city_file"]).rename(columns={"id":"location"})
 
 sparse_path=config["output_files"]["sparse_path"]
 diaries_path=config["output_files"]["diaries_path"]
@@ -144,7 +144,8 @@ ax.text(
 )
 
 plt.tight_layout()
-plt.show()
+plt.show(block=False)
+plt.close()
 
 # %% [markdown]
 # ## Stop detection
@@ -239,7 +240,8 @@ def plot_metric(metric, title, ax=None, save_individual=True):
         plt.tight_layout()
         plt.savefig(f"figures/exp1_{metric}.svg", bbox_inches='tight')
         plt.savefig(f"figures/exp1_{metric}.png", dpi=600, bbox_inches='tight')
-        plt.show()
+        plt.show(block=False)
+        plt.close()
 
 # Individual plots
 metrics = {
@@ -259,6 +261,7 @@ for i, (metric, title) in enumerate(metrics.items()):
 plt.tight_layout(pad=2.0, h_pad=1.5, w_pad=1.5)
 plt.savefig("figures/exp1_all_metrics_grid.svg", bbox_inches='tight')
 plt.savefig("figures/exp1_all_metrics_grid.png", dpi=600, bbox_inches='tight')
-plt.show()
+plt.show(block=False)
+plt.close()
 
 # %%
