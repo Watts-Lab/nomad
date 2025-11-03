@@ -61,6 +61,8 @@ Installation
    source/tadbscan_demo
    source/hdbscan_demo
    source/grid_based_demo
+   source/poi_synthetic
+   source/poi_osm
 
 Modules Overview
 ----------------
