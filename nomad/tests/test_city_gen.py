@@ -2,9 +2,19 @@ import pandas as pd
 import numpy as np
 import geopandas as gpd
 from shapely.geometry import box
+from pathlib import Path
 
-from nomad.city_gen import City, RandomCityGenerator
+from nomad.city_gen import City, RandomCityGenerator, RasterCityGenerator
 from nomad.map_utils import blocks_to_mercator, mercator_to_blocks
+
+def _load_sandbox():
+    repo_root = Path(__file__).resolve().parents[2]
+    gpkg = repo_root / "examples" / "research" / "virtual_philadelphia" / "sandbox" / "sandbox_data.gpkg"
+    assert gpkg.exists(), f"Missing sandbox geopackage: {gpkg}"
+    buildings = gpd.read_file(gpkg, layer="buildings")
+    streets = gpd.read_file(gpkg, layer="streets")
+    boundary = gpd.read_file(gpkg, layer="boundary")
+    return buildings, streets, boundary.geometry.iloc[0]
 
 def test_city_to_geodataframes_and_persist(tmp_path):
     # Small deterministic city
@@ -296,5 +306,22 @@ def test_city_persistence_with_properties(tmp_path):
     assert city3.block_side_length == 15.0
     assert city3.web_mercator_origin_x == -4265699.0
     assert city3.web_mercator_origin_y == 4392976.0
+
+
+def test_compute_gravity():
+    buildings, streets, boundary = _load_sandbox()
+    buildings = buildings.head(100)
+    
+    gen = RasterCityGenerator(boundary, streets, buildings, block_size=15.0)
+    city = gen.generate_city()
+    
+    city._build_hub_network(hub_size=16)
+    city.compute_gravity(exponent=2.0)
+    
+    n_buildings = len(city.buildings_gdf)
+    assert city.grav.shape == (n_buildings, n_buildings)
+    
+    mask = ~np.eye(n_buildings, dtype=bool)
+    assert (city.grav.values[mask] > 0).all()
 
 

@@ -99,9 +99,9 @@ def sample_bursts_gaps(traj,
         scale parameter (mean) of Exponential distribution modeling ping inter-arrival times
         within a burst, where 1/beta_ping is the rate of events (pings) per minute.
     ha: float
-        Mean horizontal-accuracy radius *in 15 m blocks*. The actual per-ping accuracy is random: ha ≥ 8 m/15 m and follows a
-        Pareto distribution with that mean.  For each ping the positional error (ε_x, ε_y) is drawn i.i.d. N(0, σ²) with σ = HA / 1.515 so that
-        |ε| ≤ HA with 68 % probability.
+        Mean horizontal-accuracy radius *in 15 m blocks*. The actual per-ping accuracy is random: ha ≥ 8 m/15m
+        and follows a Pareto distribution with that mean. For each ping the spatial noise (ε_x, ε_y) is drawn
+        i.i.d. N(0, σ²) with σ = HA / 1.515 so that |ε| ≤ HA with 68 % probability.
     seed : int0
         The seed for random number generation.
     output_bursts : bool
@@ -582,33 +582,14 @@ class Agent:
             elif rng.uniform() < p_exp:
                 # Compute gravity probs from current door cell to unexplored candidates
                 y = visit_freqs.loc[(visit_freqs['building_type'].isin(allowed)) & (visit_freqs.freq == 0)]
-                if not y.empty and curr in id2cell.index and id2cell[curr] is not None:
-                    # Require precomputed building-to-building gravity
+                if not y.empty and curr in self.city.grav.index:
                     if not hasattr(self.city, 'grav') or self.city.grav is None:
                         raise RuntimeError("city.grav is not available. Call city.compute_gravity() before trajectory generation.")
-                    meta = self.city.grav
-                    idx_map = meta['index']
-                    Gmat = meta['G']
-                    if curr not in idx_map:
-                        raise KeyError(f"Current building id {curr} not in city.grav index.")
-                    row_idx = idx_map[curr]
-                    # Build probability vector aligned to y.index
-                    probs = np.zeros(len(y.index), dtype=float)
-                    for k, bid in enumerate(y.index):
-                        if bid in idx_map:
-                            probs[k] = float(Gmat[row_idx, idx_map[bid]])
-                    s = probs.sum()
-                    if s > 0:
-                        probs = probs / s
-                        curr = rng.choice(y.index, p=probs)
-                    else:
-                        # If there are no more buildings to explore, then preferential return
-                        if not x.empty and x['freq'].sum() > 0:
-                            curr = rng.choice(x.index, p=x['freq']/x['freq'].sum())
-                        else:
-                            curr = rng.choice(visit_freqs.index)
+                    probs = self.city.grav.loc[curr, y.index].values
+                    probs = probs / probs.sum()
+                    curr = rng.choice(y.index, p=probs)
                 else:
-                    #preferential return
+                    # Preferential return
                     if not x.empty and x['freq'].sum() > 0:
                         curr = rng.choice(x.index, p=x['freq']/x['freq'].sum())
                     else:
