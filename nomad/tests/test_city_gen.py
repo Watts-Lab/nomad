@@ -5,7 +5,7 @@ from shapely.geometry import box, Polygon, shape
 from shapely import wkt
 from pathlib import Path
 
-from nomad.city_gen import City, RandomCityGenerator, RasterCityGenerator
+from nomad.city_gen import City, RandomCityGenerator, RasterCity
 from nomad.map_utils import blocks_to_mercator, mercator_to_blocks
 
 def _load_sandbox():
@@ -300,8 +300,7 @@ def test_compute_gravity():
     buildings, streets, boundary = _load_sandbox()
     buildings = buildings.head(100)
     
-    gen = RasterCityGenerator(boundary, streets, buildings, block_size=15.0)
-    city = gen.generate_city()
+    city = RasterCity(boundary, streets, buildings, block_size=15.0)
     
     city._build_hub_network(hub_size=16)
     city.compute_gravity(exponent=2.0)

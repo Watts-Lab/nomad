@@ -8,7 +8,7 @@ Usage:
 from pathlib import Path
 import time
 import geopandas as gpd
-from nomad.city_gen import RasterCityGenerator
+from nomad.city_gen import RasterCity
 
 
 def main():
@@ -27,10 +27,8 @@ def main():
     boundary_geom = boundary.geometry.iloc[0]
     block_size = 15.0
 
-    gen = RasterCityGenerator(boundary_geom, streets, rot_buildings, block_size=block_size)
-
     t0 = time.time()
-    city = gen.generate_city()
+    city = RasterCity(boundary_geom, streets, rot_buildings, block_size=block_size)
     t_raster = time.time() - t0
     print(f"Streets-only rasterization: {t_raster:.2f}s; streets={len(city.streets_gdf):,}; blocks={len(city.blocks_gdf):,}")
 

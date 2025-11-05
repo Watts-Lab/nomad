@@ -33,7 +33,7 @@ import matplotlib.pyplot as plt
 import contextily as ctx
 
 import nomad.map_utils as nm
-from nomad.city_gen import RasterCityGenerator
+from nomad.city_gen import RasterCity
 
 
 # %% [markdown]
@@ -192,16 +192,14 @@ rot_boundary = gpd.read_file(RAW_GPKG_PATH, layer="city_boundary_rotated")
 boundary_geom = rot_boundary.geometry.iloc[0]
 block_size = 15.0
 
-gen_streets_only = RasterCityGenerator(
+import time as _t
+_t0 = _t.time()
+city_streets = RasterCity(
     boundary_polygon=boundary_geom,
     streets_gdf=rot_streets,
     buildings_gdf=rot_buildings,
     block_size=block_size,
 )
-
-import time as _t
-_t0 = _t.time()
-city_streets = gen_streets_only.generate_city()
 streets_only_elapsed = _t.time() - _t0
 print(f"Streets-only rasterization: {streets_only_elapsed:.2f}s; streets={len(city_streets.streets_gdf):,}, blocks={len(city_streets.blocks_gdf):,}")
 
@@ -224,16 +222,14 @@ rot_buildings = gpd.read_file(RAW_GPKG_PATH, layer="buildings_rotated")
 boundary_geom = rot_boundary.geometry.iloc[0]
 block_size = 15.0
 
-gen = RasterCityGenerator(
+import time as _t
+_t0 = _t.time()
+city = RasterCity(
     boundary_polygon=boundary_geom,
     streets_gdf=rot_streets,
     buildings_gdf=rot_buildings,
     block_size=block_size,
 )
-
-import time as _t
-_t0 = _t.time()
-city = gen.generate_city()
 elapsed = _t.time() - _t0
 print(f"Rasterization completed in {elapsed:.1f}s: blocks={len(city.blocks_gdf):,}, streets={len(city.streets_gdf):,}, buildings={len(city.buildings_gdf):,}")
 

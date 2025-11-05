@@ -1662,65 +1662,90 @@ def assign_door_to_building(building_blocks: List[Tuple[int,int]], street_coords
     return None
 
 
-class RasterCityGenerator:
-    def __init__(self, boundary_polygon: Polygon, streets_gdf: gpd.GeoDataFrame, buildings_gdf: gpd.GeoDataFrame, block_size: float = 15.0, crs: str = "EPSG:3857", category_column: str = 'building_type'):
-        self.boundary_polygon = boundary_polygon
-        self.streets_gdf = streets_gdf.to_crs(crs)
-        self.buildings_gdf = buildings_gdf.to_crs(crs)
-        self.block_size = block_size
-        self.crs = crs
-        self.category_column = category_column
-        self.blocks_gdf = None
-        self.building_components = {}
-
-    def generate_city(self) -> 'City':
-        import time as _t
-        _t0 = _t.time()
-        print("Generating canvas blocks...")
-        self.blocks_gdf = generate_canvas_blocks(self.boundary_polygon, self.block_size, self.crs)
-        print(f"Generated {len(self.blocks_gdf):,} blocks (in {_t.time()-_t0:.2f}s)")
-        _t1 = _t.time()
-        print("Assigning block types...")
-        buildings_by_type = self._group_buildings_by_type()
-        typed_blocks = assign_block_types(self.blocks_gdf, self.streets_gdf, buildings_by_type, self.block_size)
-        print(f"Block types assigned (in {_t.time()-_t1:.2f}s)")
-        _t2 = _t.time()
-        print("Assigning streets...")
-        street_blocks = typed_blocks[typed_blocks['type'] == 'street'][['coord_x','coord_y','geometry']].copy()
-        print("Verifying street connectivity...")
-        connected_streets, summary = verify_street_connectivity(street_blocks)
-        print(f"  Streets: {summary['kept']:,} kept, {summary['discarded']:,} discarded (in {_t.time()-_t2:.2f}s)")
-        street_coords_set = set(zip(connected_streets['coord_x'], connected_streets['coord_y']))
-        _t3 = _t.time()
-        print("Assigning buildings to blocks...")
-        buildings_to_add = self._assign_buildings_to_blocks(typed_blocks, street_coords_set)
-        print(f"  Found {len(buildings_to_add):,} buildings to add (in {_t.time()-_t3:.2f}s)")
-        minx, miny, maxx, maxy = self.boundary_polygon.bounds
-        grid_min_x = int(minx // self.block_size)
-        grid_min_y = int(miny // self.block_size)
-        grid_max_x = int(maxx // self.block_size) + 1
-        grid_max_y = int(maxy // self.block_size) + 1
+class RasterCity(City):
+    def __init__(self, boundary_polygon: Polygon, streets_gdf: gpd.GeoDataFrame, buildings_gdf: gpd.GeoDataFrame, block_size: float = 15.0, crs: str = "EPSG:3857", category_column: str = 'building_type', name: str = "Rasterized City", verbose: bool = True):
+        minx, miny, maxx, maxy = boundary_polygon.bounds
+        grid_min_x = int(minx // block_size)
+        grid_min_y = int(miny // block_size)
+        grid_max_x = int(maxx // block_size) + 1
+        grid_max_y = int(maxy // block_size) + 1
         grid_width = grid_max_x - grid_min_x
         grid_height = grid_max_y - grid_min_y
-        city = City(dimensions=(grid_width, grid_height), manual_streets=True, name="Philadelphia", block_side_length=self.block_size, web_mercator_origin_x=minx, web_mercator_origin_y=miny)
-        city.blocks_gdf = typed_blocks.copy()
+        
+        super().__init__(
+            dimensions=(grid_width, grid_height),
+            manual_streets=True,
+            name=name,
+            block_side_length=block_size,
+            web_mercator_origin_x=minx,
+            web_mercator_origin_y=miny
+        )
+        
+        self.boundary_polygon = boundary_polygon
+        self.crs = crs
+        self.category_column = category_column
+        self.streets_gdf_input = streets_gdf.to_crs(crs)
+        self.buildings_gdf_input = buildings_gdf.to_crs(crs)
+        
+        self._rasterize(verbose=verbose)
+
+    def _rasterize(self, verbose: bool = True):
+        import time as _t
+        _t0 = _t.time()
+        if verbose:
+            print("Generating canvas blocks...")
+        blocks_gdf = generate_canvas_blocks(self.boundary_polygon, self.block_side_length, self.crs)
+        if verbose:
+            print(f"Generated {len(blocks_gdf):,} blocks (in {_t.time()-_t0:.2f}s)")
+        _t1 = _t.time()
+        if verbose:
+            print("Assigning block types...")
+        buildings_by_type = self._group_buildings_by_type()
+        typed_blocks = assign_block_types(blocks_gdf, self.streets_gdf_input, buildings_by_type, self.block_side_length)
+        if verbose:
+            print(f"Block types assigned (in {_t.time()-_t1:.2f}s)")
+        _t2 = _t.time()
+        if verbose:
+            print("Assigning streets...")
+        street_blocks = typed_blocks[typed_blocks['type'] == 'street'][['coord_x','coord_y','geometry']].copy()
+        if verbose:
+            print("Verifying street connectivity...")
+        connected_streets, summary = verify_street_connectivity(street_blocks)
+        if verbose:
+            print(f"  Streets: {summary['kept']:,} kept, {summary['discarded']:,} discarded (in {_t.time()-_t2:.2f}s)")
+        street_coords_set = set(zip(connected_streets['coord_x'], connected_streets['coord_y']))
+        _t3 = _t.time()
+        if verbose:
+            print("Assigning buildings to blocks...")
+        buildings_to_add = self._assign_buildings_to_blocks(typed_blocks, street_coords_set)
+        if verbose:
+            print(f"  Found {len(buildings_to_add):,} buildings to add (in {_t.time()-_t3:.2f}s)")
+        
+        minx, miny, maxx, maxy = self.boundary_polygon.bounds
+        grid_min_x = int(minx // self.block_side_length)
+        grid_min_y = int(miny // self.block_side_length)
         offset_x, offset_y = grid_min_x, grid_min_y
-        city.blocks_gdf['coord_x'] = city.blocks_gdf['coord_x'] - offset_x
-        city.blocks_gdf['coord_y'] = city.blocks_gdf['coord_y'] - offset_y
-        city.blocks_gdf['kind'] = None
-        city.blocks_gdf['building_id'] = None
-        city.blocks_gdf['building_type'] = None
+        
+        self.blocks_gdf = typed_blocks.copy()
+        self.blocks_gdf['coord_x'] = self.blocks_gdf['coord_x'] - offset_x
+        self.blocks_gdf['coord_y'] = self.blocks_gdf['coord_y'] - offset_y
+        self.blocks_gdf['kind'] = None
+        self.blocks_gdf['building_id'] = None
+        self.blocks_gdf['building_type'] = None
         for block_type in ['street','park','workplace','home','retail','other']:
-            mask = city.blocks_gdf['type'] == block_type
-            city.blocks_gdf.loc[mask, 'kind'] = 'street' if block_type=='street' else 'building'
-        city.streets_gdf = gpd.GeoDataFrame(connected_streets[['coord_x','coord_y','geometry']].copy(), geometry='geometry', crs=self.crs)
-        city.streets_gdf['coord_x'] = city.streets_gdf['coord_x'] - offset_x
-        city.streets_gdf['coord_y'] = city.streets_gdf['coord_y'] - offset_y
-        city.streets_gdf['id'] = ('s-x' + city.streets_gdf['coord_x'].astype(int).astype(str) + '-y' + city.streets_gdf['coord_y'].astype(int).astype(str))
-        city.streets_gdf.set_index(['coord_x','coord_y'], inplace=True, drop=False)
-        city.streets_gdf.index.names = [None, None]
+            mask = self.blocks_gdf['type'] == block_type
+            self.blocks_gdf.loc[mask, 'kind'] = 'street' if block_type=='street' else 'building'
+        
+        self.streets_gdf = gpd.GeoDataFrame(connected_streets[['coord_x','coord_y','geometry']].copy(), geometry='geometry', crs=self.crs)
+        self.streets_gdf['coord_x'] = self.streets_gdf['coord_x'] - offset_x
+        self.streets_gdf['coord_y'] = self.streets_gdf['coord_y'] - offset_y
+        self.streets_gdf['id'] = ('s-x' + self.streets_gdf['coord_x'].astype(int).astype(str) + '-y' + self.streets_gdf['coord_y'].astype(int).astype(str))
+        self.streets_gdf.set_index(['coord_x','coord_y'], inplace=True, drop=False)
+        self.streets_gdf.index.names = [None, None]
+        
         _t4 = _t.time()
-        print("Adding buildings to city...")
+        if verbose:
+            print("Adding buildings to city...")
         added_building_blocks = set()
         skipped_overlap = 0
         new_building_rows = []
@@ -1732,9 +1757,7 @@ class RasterCityGenerator:
             if building_blocks_set & added_building_blocks:
                 skipped_overlap += 1
                 continue
-            # Create geometry on grid units
             building_geom = self._blocks_to_geometry_grid(building_blocks)
-            # Build building row (fast path)
             building_id = f"{building_info['type'][0]}-x{door_coords[0]}-y{door_coords[1]}"
             dpt = Point(door_coords[0] + 0.5, door_coords[1] + 0.5)
             new_building_rows.append({
@@ -1746,45 +1769,40 @@ class RasterCityGenerator:
                 'size': len(building_blocks),
                 'geometry': building_geom,
             })
-            # Queue block updates
             for (cx, cy) in building_blocks:
                 block_updates.append({'coord_x': cx, 'coord_y': cy, 'kind': 'building', 'building_id': building_id, 'building_type': building_info['type']})
             added_building_blocks.update(building_blocks_set)
 
-        # Apply updates in batch
         if new_building_rows:
-            nb_gdf = gpd.GeoDataFrame(new_building_rows, geometry='geometry', crs=city.buildings_gdf.crs)
+            nb_gdf = gpd.GeoDataFrame(new_building_rows, geometry='geometry', crs=self.buildings_gdf.crs)
             nb_gdf.set_index('id', inplace=True, drop=False)
             nb_gdf.index.name = None
-            if city.buildings_gdf.empty:
-                city.buildings_gdf = nb_gdf
+            if self.buildings_gdf.empty:
+                self.buildings_gdf = nb_gdf
             else:
-                city.buildings_gdf = pd.concat([city.buildings_gdf, nb_gdf], axis=0, ignore_index=False)
+                self.buildings_gdf = pd.concat([self.buildings_gdf, nb_gdf], axis=0, ignore_index=False)
 
         if block_updates:
             upd_df = pd.DataFrame(block_updates)
             upd_df.set_index(['coord_x','coord_y'], inplace=True)
-            # Align indices present in blocks_gdf
-            common_idx = city.blocks_gdf.index.intersection(upd_df.index)
+            common_idx = self.blocks_gdf.index.intersection(upd_df.index)
             if len(common_idx) > 0:
                 cols = ['kind','building_id','building_type']
-                city.blocks_gdf.loc[common_idx, cols] = upd_df.loc[common_idx, cols].values
-            # Drop updated coords from streets_gdf if present
-            if hasattr(city, 'streets_gdf') and not city.streets_gdf.empty:
-                drop_idx = city.streets_gdf.index.intersection(upd_df.index)
+                self.blocks_gdf.loc[common_idx, cols] = upd_df.loc[common_idx, cols].values
+            if not self.streets_gdf.empty:
+                drop_idx = self.streets_gdf.index.intersection(upd_df.index)
                 if len(drop_idx) > 0:
-                    city.streets_gdf = city.streets_gdf.drop(index=drop_idx)
+                    self.streets_gdf = self.streets_gdf.drop(index=drop_idx)
 
-        if skipped_overlap > 0:
+        if skipped_overlap > 0 and verbose:
             print(f"  Skipped {skipped_overlap} buildings due to overlap (adding took {_t.time()-_t4:.2f}s)")
-        return city
 
     def _group_buildings_by_type(self) -> Dict[str, gpd.GeoDataFrame]:
         buildings_by_type = {}
-        if self.category_column not in self.buildings_gdf.columns:
+        if self.category_column not in self.buildings_gdf_input.columns:
             return buildings_by_type
         for btype in ['park','workplace','home','retail','other']:
-            subset = self.buildings_gdf[self.buildings_gdf[self.category_column] == btype]
+            subset = self.buildings_gdf_input[self.buildings_gdf_input[self.category_column] == btype]
             if len(subset) > 0:
                 buildings_by_type[btype] = subset
         return buildings_by_type
@@ -1829,7 +1847,7 @@ class RasterCityGenerator:
 
     def _blocks_to_geometry(self, blocks: List[Tuple[int,int]]) -> Polygon:
         from shapely.geometry import MultiPolygon
-        block_polys = [box(x * self.block_size, y * self.block_size, (x+1) * self.block_size, (y+1) * self.block_size) for x,y in blocks]
+        block_polys = [box(x * self.block_side_length, y * self.block_side_length, (x+1) * self.block_side_length, (y+1) * self.block_side_length) for x,y in blocks]
         if len(block_polys) == 1:
             return block_polys[0]
         return MultiPolygon(block_polys).envelope

@@ -52,7 +52,7 @@ import geopandas as gpd
 import pandas as pd
 import numpy as np
 
-from nomad.city_gen import RasterCityGenerator
+from nomad.city_gen import RasterCity
 
 SANDBOX_PATH = Path("sandbox/sandbox_data.gpkg")
 USE_SUBSET = False  # Set to True for faster testing
@@ -79,8 +79,7 @@ else:
 
 # %%
 t0 = time.time()
-gen = RasterCityGenerator(boundary.geometry.iloc[0], streets, buildings, block_size=15.0)
-city = gen.generate_city()
+city = RasterCity(boundary.geometry.iloc[0], streets, buildings, block_size=15.0)
 gen_time = time.time() - t0
 
 print(f"\nCity generation: {gen_time:.2f}s")

@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from nomad.city_gen import (
-    RasterCityGenerator,
+    RasterCity,
     generate_canvas_blocks,
     find_connected_components,
 )
@@ -25,10 +25,8 @@ def _load_fixture():
 
 def test_raster_city_generate_and_graph():
     buildings, streets, boundary_geom = _load_fixture()
-    gen = RasterCityGenerator(boundary_geom, streets, buildings, block_size=15.0)
-
     t0 = time.time()
-    city = gen.generate_city()
+    city = RasterCity(boundary_geom, streets, buildings, block_size=15.0)
     elapsed = time.time() - t0
     assert elapsed < 30.0  # sanity bound for CI
 
@@ -56,7 +54,7 @@ def test_raster_city_generate_and_graph():
 
 def test_shortest_path_and_fast_distance():
     buildings, streets, boundary_geom = _load_fixture()
-    city = RasterCityGenerator(boundary_geom, streets, buildings, block_size=15.0).generate_city()
+    city = RasterCity(boundary_geom, streets, buildings, block_size=15.0)
     G = city.get_street_graph()
     nodes = list(G.nodes)
     assert len(nodes) >= 2
