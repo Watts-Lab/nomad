@@ -1732,6 +1732,7 @@ class RasterCity(City):
         self.blocks_gdf['kind'] = self.blocks_gdf['type'].where(self.blocks_gdf['type'] == 'street', 'building')
         self.blocks_gdf['building_id'] = None
         self.blocks_gdf['building_type'] = None
+        self.blocks_gdf.drop(columns=['type'], inplace=True)
         
         self.streets_gdf = gpd.GeoDataFrame(connected_streets[['coord_x','coord_y','geometry']].copy(), geometry='geometry', crs=self.crs)
         self.streets_gdf['coord_x'] = self.streets_gdf['coord_x'] - offset_x
