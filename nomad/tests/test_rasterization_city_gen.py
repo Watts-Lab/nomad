@@ -12,26 +12,19 @@ from nomad.city_gen import (
 )
 
 
-def _sandbox_paths():
-    # repo_root/ examples / research / virtual_philadelphia / sandbox / sandbox_data.gpkg
-    repo_root = Path(__file__).resolve().parents[2]
-    gpkg = repo_root / "examples" / "research" / "virtual_philadelphia" / "sandbox" / "sandbox_data.gpkg"
-    return gpkg
-
-
-def _load_sandbox():
-    gpkg = _sandbox_paths()
-    assert gpkg.exists(), f"Missing sandbox geopackage: {gpkg}"
+def _load_fixture():
+    """Load minimal city fixture data from nomad/data/."""
+    test_dir = Path(__file__).resolve().parent
+    gpkg = test_dir.parent / "data" / "city_fixture.gpkg"
+    assert gpkg.exists(), f"Missing city fixture: {gpkg}. Run: python nomad/data/generate_fixture.py"
     buildings = gpd.read_file(gpkg, layer="buildings")
     streets = gpd.read_file(gpkg, layer="streets")
     boundary = gpd.read_file(gpkg, layer="boundary")
     return buildings, streets, boundary.geometry.iloc[0]
 
 
-def test_raster_city_generate_and_graph_smoke():
-    buildings, streets, boundary_geom = _load_sandbox()
-    # Keep test fast
-    buildings = buildings.head(500)
+def test_raster_city_generate_and_graph():
+    buildings, streets, boundary_geom = _load_fixture()
     gen = RasterCityGenerator(boundary_geom, streets, buildings, block_size=15.0)
 
     t0 = time.time()
@@ -44,7 +37,7 @@ def test_raster_city_generate_and_graph_smoke():
     assert len(city.streets_gdf) > 0
 
     # Street graph builds and is connected (single component)
-    G = city.get_street_graph(lazy=True)
+    G = city.get_street_graph()
     assert G.number_of_nodes() > 0
     # Quick connected components test via BFS on a sample
     from collections import deque
@@ -62,10 +55,9 @@ def test_raster_city_generate_and_graph_smoke():
 
 
 def test_shortest_path_and_fast_distance():
-    buildings, streets, boundary_geom = _load_sandbox()
-    buildings = buildings.head(300)
+    buildings, streets, boundary_geom = _load_fixture()
     city = RasterCityGenerator(boundary_geom, streets, buildings, block_size=15.0).generate_city()
-    G = city.get_street_graph(lazy=True)
+    G = city.get_street_graph()
     nodes = list(G.nodes)
     assert len(nodes) >= 2
     u, v = nodes[10], nodes[-10]

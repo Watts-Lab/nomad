@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import geopandas as gpd
-from shapely.geometry import box
+from shapely.geometry import box, Polygon
 from pathlib import Path
 
 from nomad.city_gen import City, RandomCityGenerator, RasterCityGenerator
@@ -65,14 +65,12 @@ def test_geopackage_roundtrip(tmp_path):
     assert len(s1) == len(s2)
 
 
-def test_street_adjacency_edges_smoke():
+def test_street_graph_connectivity():
     rcg = RandomCityGenerator(width=8, height=8, street_spacing=4, seed=2)
     city = rcg.generate_city()
-    edges = city.street_adjacency_edges()
-    # Basic properties: DataFrame with u and v columns; non-negative count
-    assert hasattr(edges, 'columns')
-    assert len(edges.columns) > 0  # Check if there are any columns
-    assert len(edges) > 0  # Ensure there are edges in the DataFrame
+    G = city.get_street_graph()
+    assert G.number_of_nodes() > 0
+    assert G.number_of_edges() > 0
 
 
 def test_from_geodataframes_roundtrip_nonsquare(tmp_path):
@@ -91,61 +89,48 @@ def test_shortest_path():
     rcg = RandomCityGenerator(width=10, height=10, street_spacing=5, seed=1)
     city = rcg.generate_city()
     
-    # Test with valid street coordinates
-    if not city.streets_gdf.empty:
-        # Temporarily reset index to access coord_x and coord_y as columns
-        streets_temp = city.streets_gdf.reset_index(drop=True)
-        street_coords = []
-        for _, row in streets_temp.iterrows():
-            coord = (int(row['coord_x']), int(row['coord_y']))
-            # Check if this coordinate tuple is in the index of streets_gdf
-            if coord in city.streets_gdf.index:
-                street_coords.append(coord)
-            if len(street_coords) >= 2:
-                break
+    # Get two street coordinates
+    streets_temp = city.streets_gdf.reset_index(drop=True)
+    street_coords = []
+    for _, row in streets_temp.iterrows():
+        coord = (int(row['coord_x']), int(row['coord_y']))
+        if coord in city.streets_gdf.index:
+            street_coords.append(coord)
         if len(street_coords) >= 2:
-            start_coord = street_coords[0]
-            end_coord = street_coords[1]
-            path = city.get_shortest_path(start_coord, end_coord)
-            assert isinstance(path, list)
-            assert len(path) > 0
-            assert path[0] == start_coord
-            assert path[-1] == end_coord
-        else:
-            print("Skipping shortest path test: Not enough street coordinates found in index")
-            return
-    else:
-        print("Skipping shortest path test: No streets available")
-        return
+            break
+    
+    start_coord = street_coords[0]
+    end_coord = street_coords[1]
+    path = city.get_shortest_path(start_coord, end_coord)
+    assert isinstance(path, list)
+    assert len(path) > 0
+    assert path[0] == start_coord
+    assert path[-1] == end_coord
     
     # Test with non-street coordinates (should raise ValueError)
     try:
-        invalid_coord = (100, 100)  # Out of bounds
+        invalid_coord = (100, 100)
         city.get_shortest_path(start_coord, invalid_coord)
         assert False, "Expected ValueError for out-of-bounds coordinates"
     except ValueError:
         pass
 
-    # Test with non-street block (building)
-    building_coords = None
-    for idx, row in city.buildings_gdf.iterrows():
-        building_coords = (int(row['door_cell_x']), int(row['door_cell_y']))
-        break
-    if building_coords and building_coords in city.blocks_gdf.index and city.blocks_gdf.loc[building_coords, 'kind'] == 'building':
+    # Test with non-street block (building door cell)
+    first_building = city.buildings_gdf.iloc[0]
+    building_door = (int(first_building['door_cell_x']), int(first_building['door_cell_y']))
+    if building_door in city.blocks_gdf.index and city.blocks_gdf.loc[building_door, 'kind'] == 'building':
         try:
-            city.get_shortest_path(start_coord, building_coords)
+            city.get_shortest_path(start_coord, building_door)
             assert False, "Expected ValueError for non-street block"
         except ValueError:
             pass
 
 
 def test_add_building_with_gdf_row():
-    city = City()
     rcg = RandomCityGenerator(width=10, height=10, street_spacing=2, seed=42)
     city = rcg.generate_city()
-    # Create a sample GeoDataFrame row for a building
-    from shapely.geometry import Polygon
-    geom = Polygon([(0, 0), (0, 1), (1, 1), (1, 0)])
+    # Create a building adjacent to a street cell, not overlapping the door
+    geom = Polygon([(1, 0), (1, 1), (2, 1), (2, 0)])
     gdf_row = gpd.GeoDataFrame({
         'id': ['test-building'],
         'building_type': ['test'],
@@ -157,33 +142,37 @@ def test_add_building_with_gdf_row():
     assert not city.buildings_gdf[city.buildings_gdf['id'] == 'test-building'].empty
 
 def test_add_buildings_from_gdf():
-    city = City()
     rcg = RandomCityGenerator(width=10, height=10, street_spacing=2, seed=42)
     city = rcg.generate_city()
-    # Create a sample GeoDataFrame with multiple buildings
-    from shapely.geometry import Polygon
-    # Dynamically select door coordinates from streets_gdf
-    street_coords = [(row['coord_x'], row['coord_y']) for _, row in city.streets_gdf.head(2).iterrows()]
-    if len(street_coords) < 2:
-        print("Not enough street coordinates to test multiple buildings, adding streets")
-        for x in range(0, 10, 2):
-            for y in range(0, 10, 2):
-                city.add_street((x, y))
-        city.streets_gdf = city._derive_streets_from_blocks()
-        street_coords = [(row['coord_x'], row['coord_y']) for _, row in city.streets_gdf.head(2).iterrows()]
-    if len(street_coords) < 2:
-        print("Still not enough street coordinates, test may fail")
-    geom1 = Polygon([(street_coords[0][0], street_coords[0][1]), (street_coords[0][0], street_coords[0][1]+1), (street_coords[0][0]+1, street_coords[0][1]+1), (street_coords[0][0]+1, street_coords[0][1])])
-    geom2 = Polygon([(street_coords[1][0], street_coords[1][1]), (street_coords[1][0], street_coords[1][1]+1), (street_coords[1][0]+1, street_coords[1][1]+1), (street_coords[1][0]+1, street_coords[1][1])])
+    # Create two non-overlapping buildings, each adjacent to a different street cell
+    # Building 1: adjacent to street (0,0), occupies cells (1,0)-(2,1)
+    geom1 = Polygon([(1, 0), (1, 1), (2, 1), (2, 0)])
+    # Building 2: adjacent to street (0,2), occupies cells (1,2)-(2,3)
+    geom2 = Polygon([(1, 2), (1, 3), (2, 3), (2, 2)])
     gdf = gpd.GeoDataFrame({
         'id': ['test1', 'test2'],
         'building_type': ['test', 'test'],
         'geometry': [geom1, geom2],
-        'door_cell_x': [street_coords[0][0], street_coords[1][0]],
-        'door_cell_y': [street_coords[0][1], street_coords[1][1]]
+        'door_cell_x': [0, 0],
+        'door_cell_y': [0, 2]
     })
     city.add_buildings_from_gdf(gdf)
     assert len(city.buildings_gdf[city.buildings_gdf['id'].isin(['test1', 'test2'])]) == 2
+
+
+def test_add_building_overlap_error():
+    rcg = RandomCityGenerator(width=10, height=10, street_spacing=2, seed=42)
+    city = rcg.generate_city()
+    # Add first building
+    geom1 = Polygon([(1, 0), (1, 1), (2, 1), (2, 0)])
+    city.add_building(building_type='test', door=(0, 0), geom=geom1)
+    # Try to add overlapping building
+    geom2 = Polygon([(1, 0), (1, 1), (2, 1), (2, 0)])  # Same location
+    try:
+        city.add_building(building_type='test', door=(0, 0), geom=geom2)
+        assert False, "Expected ValueError for overlapping building"
+    except ValueError as e:
+        assert "overlaps" in str(e).lower()
 
 
 def test_coordinate_roundtrip(tmp_path):

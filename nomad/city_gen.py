@@ -272,8 +272,6 @@ class City:
             If the door is not on an existing street, if the building overlaps with existing buildings,
             or if the geometry/blocks do not align with the grid.
         """
-        def check_adjacent(geom1, geom2):
-            return geom1.touches(geom2) or geom1.intersects(geom2)
 
         if gdf_row is not None:
             if isinstance(gdf_row, pd.Series):
@@ -316,15 +314,14 @@ class City:
         # Compute door centroid via intersection with target street
         door_poly = box(door[0], door[1], door[0]+1, door[1]+1)
         door_line = geom.intersection(door_poly)
-        if door_line.is_empty:
+        # Require true line adjacency (not area overlap) to the door cell
+        if door_line.is_empty or not isinstance(door_line, LineString):
             raise ValueError(f"Door {door} must be adjacent to new building.")
         else:
             door_centroid = (door_line.centroid.x, door_line.centroid.y)
 
-        # Validate adjacency using streets_gdf geometry at door
-        srow = self.streets_gdf.loc[(door[0], door[1])] if (door[0], door[1]) in self.streets_gdf.index else None
-        if srow is None or isinstance(srow, pd.DataFrame) and srow.empty:
-            raise ValueError(f"Door {door} must be on an existing street cell.")
+        # Note: street network adjacency is no longer required. Door adjacency
+        # is validated via door_line above.
         
         if blocks is not None and len(blocks) > 0:
             building_blocks_set = set(blocks)
@@ -345,19 +342,6 @@ class City:
                     "New building overlaps with existing buildings."
                 )
 
-        if not check_adjacent(geom, street_geom):
-            if blocks is not None:
-                neighbors = [(0, 1), (0, -1), (1, 0), (-1, 0)]
-                is_adjacent_to_blocks = any(
-                    (x + dx, y + dy) == door
-                    for x, y in blocks
-                    for dx, dy in neighbors
-                )
-                if not is_adjacent_to_blocks:
-                    raise ValueError(f"Door {door} must be adjacent to new building.")
-            else:
-                raise ValueError(f"Door {door} must be adjacent to new building.")
-
         # Derive blocks from geom if not provided
         if blocks is None:
             minx, miny, maxx, maxy = geom.bounds
@@ -366,11 +350,19 @@ class City:
                       if minx <= x < maxx and miny <= y < maxy]
 
         # add building
-        # Prefer explicit id from gdf_row when provided
+
         if gdf_row is not None and isinstance(gdf_row, gpd.GeoDataFrame) and 'id' in gdf_row.columns:
             building_id = str(gdf_row.iloc[0]['id'])
         else:
-            building_id = f"{building_type[0]}-x{door[0]}-y{door[1]}"
+            # pick building block adjacent to door using adjacency helper
+            candidate = None
+            if blocks is not None and len(blocks) > 0:
+                mask = self.check_adjacent(blocks, door)  # list[bool]
+                idx = next((i for i, m in enumerate(mask) if m), None)
+                candidate = blocks[idx] if idx is not None else blocks[0]
+            if candidate is None:
+                candidate = door
+            building_id = f"{building_type[0]}-x{int(candidate[0])}-y{int(candidate[1])}"
         self.buildings_outline = unary_union([self.buildings_outline, geom])
         # Append to buildings_gdf
         dpt = Point(door_centroid[0], door_centroid[1])
@@ -472,6 +464,38 @@ class City:
                 'geometry': row['geometry']
             }
         return {'kind': 'unknown', 'building_id': None, 'building_type': None, 'geometry': None}
+
+    def check_adjacent(self, geom1, geom2, graph=None):
+        """Adjacency on a grid of 1x1 blocks. Returns list[bool]."""
+        # Case 1: geom2 is a block cell (x, y)
+        if isinstance(geom2, tuple):
+            bx, by = int(geom2[0]), int(geom2[1])
+            if graph is not None:
+                nb = set(graph.neighbors((bx, by)))
+            else:
+                nb = {(bx+1, by), (bx-1, by), (bx, by+1), (bx, by-1)}
+
+            if isinstance(geom1, tuple):
+                cx, cy = int(geom1[0]), int(geom1[1])
+                return [((cx, cy) in nb)]
+            if isinstance(geom1, list):
+                return [((int(b[0]), int(b[1])) in nb) for b in geom1]
+            if isinstance(geom1, (Polygon, MultiPolygon)):
+                cell_poly = box(bx, by, bx+1, by+1)
+                return [isinstance(geom1.intersection(cell_poly), LineString)]
+            raise TypeError("geom1 must be a block tuple, list of block tuples, or shapely (Multi)Polygon when geom2 is a block")
+
+        # Case 2: geom2 is a geometry
+        if hasattr(geom2, 'intersection'):
+            if isinstance(geom1, tuple):
+                cx, cy = int(geom1[0]), int(geom1[1])
+                poly = box(cx, cy, cx+1, cy+1)
+                return [isinstance(poly.intersection(geom2), LineString)]
+            if isinstance(geom1, list):
+                return [isinstance(box(int(b[0]), int(b[1]), int(b[0])+1, int(b[1])+1).intersection(geom2), LineString) for b in geom1]
+            return [isinstance(geom1.intersection(geom2), LineString)]
+
+        raise TypeError("Unsupported types: geom1 must be block tuple/list or shapely geometry; geom2 must be block tuple or shapely geometry")
 
     def get_street_graph(self):
         """Build the street graph needed for routing.
@@ -1513,11 +1537,6 @@ def save(city, filename):
         pickle.dump(city, file)
 
 
-def check_adjacent(geom1, geom2):
-    intersection = geom1.intersection(geom2)
-    if intersection.is_empty:
-        return False
-    return isinstance(intersection, (LineString, MultiLineString))
 
 
 # =============================================================================
@@ -1574,8 +1593,6 @@ TYPE_PRIORITY = {'street':1,'park':2,'workplace':3,'home':4,'retail':5,'other':6
 def assign_block_types(blocks_gdf: gpd.GeoDataFrame, streets_gdf: gpd.GeoDataFrame, buildings_by_type: Dict[str, gpd.GeoDataFrame], block_size: float) -> gpd.GeoDataFrame:
     result = blocks_gdf.copy()
     result['type'] = None
-    if len(blocks_gdf) == 0:
-        return result
     street_intersections = find_intersecting_blocks(streets_gdf, blocks_gdf)
     if len(street_intersections) > 0:
         street_coords = set(zip(street_intersections['coord_x'], street_intersections['coord_y']))
