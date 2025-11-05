@@ -1,7 +1,8 @@
 import pandas as pd
 import numpy as np
 import geopandas as gpd
-from shapely.geometry import box, Polygon
+from shapely.geometry import box, Polygon, shape
+from shapely import wkt
 from pathlib import Path
 
 from nomad.city_gen import City, RandomCityGenerator, RasterCityGenerator
@@ -118,13 +119,13 @@ def test_shortest_path():
     
     # Find an actual building block to test routing error
     building_blocks = city.blocks_gdf[city.blocks_gdf['kind'] == 'building']
-    if not building_blocks.empty:
-        building_block = building_blocks.index[0]
-        try:
-            city.get_shortest_path(start_coord, building_block)
-            assert False, "Expected ValueError for non-street block"
-        except ValueError:
-            pass
+    assert not building_blocks.empty, "RandomCityGenerator must create building blocks"
+    building_block = building_blocks.index[0]
+    try:
+        city.get_shortest_path(start_coord, building_block)
+        assert False, "Expected ValueError for non-street block"
+    except ValueError:
+        pass
 
 
 def test_add_building_with_gdf_row():
@@ -245,9 +246,6 @@ def test_city_persistence_with_properties(tmp_path):
     assert city2.web_mercator_origin_y == 5000000.0
     
     # Verify geometries were preserved (compare bounds since geometries may be loaded differently)
-    from shapely.geometry import shape
-    from shapely import wkt
-    
     # Handle case where geometry might be WKT string
     if isinstance(city2.city_boundary, str):
         city2_boundary = wkt.loads(city2.city_boundary)
