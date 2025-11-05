@@ -249,7 +249,7 @@ class City:
             row = {'coord_x': x, 'coord_y': y, 'id': sid, 'geometry': box(x, y, x+1, y+1)}
             self.streets_gdf = pd.concat([self.streets_gdf, gpd.GeoDataFrame([row], geometry='geometry', crs=self.streets_gdf.crs)], ignore_index=True)
 
-    def add_building(self, building_type: str, door: tuple, geom: Polygon = None, blocks=None, gdf_row=None):
+    def add_building(self, building_type, door, geom=None, blocks=None, gdf_row=None):
         """
         Adds a building to the city with the specified type, door location, and geometry.
 
@@ -281,12 +281,11 @@ class City:
             elif not isinstance(gdf_row, gpd.GeoDataFrame) or len(gdf_row) != 1:
                 raise ValueError("gdf_row must be a GeoDataFrame with exactly one row or a pandas Series.")
             # Use explicit column if present; otherwise rely on provided argument
-            if 'building_type' in gdf_row.columns:
-                building_type = gdf_row.iloc[0]['building_type']
-            door = (gdf_row.iloc[0]['door_cell_x'], gdf_row.iloc[0]['door_cell_y']) if 'door_cell_x' in gdf_row.columns else door
+            building_type = gdf_row.iloc[0]['building_type']
+            door = (gdf_row.iloc[0]['door_cell_x'], gdf_row.iloc[0]['door_cell_y'])
             geom = gdf_row.iloc[0]['geometry'] if 'geometry' in gdf_row.columns else geom
 
-        # If geom is actually a list of blocks, reassign it to blocks
+        # If geom is a list of blocks, reassign it to blocks
         if isinstance(geom, list):
             blocks = geom
             geom = None
@@ -318,30 +317,14 @@ class City:
         door_poly = box(door[0], door[1], door[0]+1, door[1]+1)
         door_line = geom.intersection(door_poly)
         if door_line.is_empty:
-            if blocks is not None:
-                neighbors = [(0, 1), (0, -1), (1, 0), (-1, 0)]
-                is_adjacent_to_blocks = any(
-                    (x + dx, y + dy) == door
-                    for x, y in blocks
-                    for dx, dy in neighbors
-                )
-                if is_adjacent_to_blocks:
-                    door_centroid = (door[0] + 0.5, door[1] + 0.5)
-                else:
-                    raise ValueError(f"Door {door} must be adjacent to new building.")
-            else:
-                raise ValueError(f"Door {door} must be adjacent to new building.")
+            raise ValueError(f"Door {door} must be adjacent to new building.")
         else:
             door_centroid = (door_line.centroid.x, door_line.centroid.y)
-
-        # Validate index presence without noisy prints
-        in_index = (door[0], door[1]) in self.streets_gdf.index if isinstance(door, tuple) else door in self.streets_gdf.index
 
         # Validate adjacency using streets_gdf geometry at door
         srow = self.streets_gdf.loc[(door[0], door[1])] if (door[0], door[1]) in self.streets_gdf.index else None
         if srow is None or isinstance(srow, pd.DataFrame) and srow.empty:
             raise ValueError(f"Door {door} must be on an existing street cell.")
-        street_geom = srow.geometry if isinstance(srow, pd.Series) else srow.iloc[0].geometry
         
         if blocks is not None and len(blocks) > 0:
             building_blocks_set = set(blocks)

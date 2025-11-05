@@ -12,6 +12,7 @@ from shapely.affinity import rotate as shapely_rotate
 import warnings
 from osmnx._errors import InsufficientResponseError
 import os
+import pdb
 
 from nomad.constants import (
     OSM_BUILDING_TO_SUBTYPE, OSM_AMENITY_TO_SUBTYPE, OSM_TOURISM_TO_SUBTYPE,
@@ -520,7 +521,10 @@ def download_osm_streets(bbox_or_city,
         if city_polygon is not None:
             G = ox.graph_from_polygon(city_polygon, custom_filter=custom_filter, simplify=True)
         else:
-            G = ox.graph_from_bbox(bbox=bbox, custom_filter=custom_filter, truncate_by_edge=bool(clip), simplify=True)
+            G = ox.graph_from_bbox(bbox=bbox,
+                                   custom_filter=custom_filter,
+                                   truncate_by_edge=clip,
+                                   simplify=True)
 
         # Optional additional truncation by another GDF's bounds
         if clip_to_gdf is not None and len(clip_to_gdf) > 0:
@@ -528,40 +532,21 @@ def download_osm_streets(bbox_or_city,
             west2, south2, east2, north2 = cb[0], cb[1], cb[2], cb[3]
             G = ox.truncate.truncate_graph_bbox(G, north2, south2, east2, west2, truncate_by_edge=True)
 
-        # Project for metric tolerance/lengths and consolidate intersections
-        Gp = ox.project_graph(G)
-        try:
-            Gc = ox.simplification.consolidate_intersections(
-                Gp,
-                tolerance=INTERSECTION_CONSOLIDATION_TOLERANCE_M,
-                rebuild_graph=True
-            )
-        except Exception:
-            Gc = Gp
+        # Project to UTM (why) and consolidate intersections
+        Gp = ox.project_graph(G, to_crs=crs)
+        Gc = ox.simplification.consolidate_intersections(
+            Gp,
+            tolerance=INTERSECTION_CONSOLIDATION_TOLERANCE_M,
+            rebuild_graph=True
+        )
 
-        # Optionally persist the consolidated OSMnx graph as GraphML (projected CRS)
         if graphml_path:
-            try:
-                # OSMnx API: save_graphml at top-level
-                ox.save_graphml(Gc, filepath=str(graphml_path))
-            except Exception:
-                pass
-
-        # Ensure edge lengths exist (meters in projected CRS)
-        try:
-            ox.distance.add_edge_lengths(Gc)
-        except Exception:
-            pass
+            # OSMnx API: save_graphml at top-level
+            ox.save_graphml(Gc, filepath=str(graphml_path))
 
         # Extract nodes/edges, prune short edges, then return edges GDF
-        nodes_gdf, edges_gdf = ox.graph_to_gdfs(Gc)
-        if 'length' in edges_gdf.columns:
-            edges_gdf = edges_gdf[edges_gdf['length'] >= STREET_MIN_LENGTH_M]
-        else:
-            # Fallback by geometry length in projected CRS
-            edges_gdf = edges_gdf[edges_gdf.geometry.length >= STREET_MIN_LENGTH_M]
-
-        streets = edges_gdf
+        nodes_gdf, streets = ox.graph_to_gdfs(Gc)
+        streets = streets[streets['length'] >= STREET_MIN_LENGTH_M]
 
     except InsufficientResponseError:
         return gpd.GeoDataFrame(columns=['geometry'], crs=crs)
@@ -570,13 +555,6 @@ def download_osm_streets(bbox_or_city,
 
     if len(streets) == 0:
         return gpd.GeoDataFrame(columns=['geometry'], crs=crs)
-
-    # Convert to target CRS
-    streets = streets.to_crs(crs)
-
-    # Normalize highway values that may be lists into simple strings for downstream tests
-    if 'highway' in streets.columns:
-        streets['highway'] = streets['highway'].apply(lambda v: v[0] if isinstance(v, list) and len(v) > 0 else v)
 
     # Explode if requested
     if explode and len(streets) > 0:
