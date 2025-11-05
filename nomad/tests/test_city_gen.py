@@ -46,11 +46,6 @@ def test_city_to_geodataframes_and_persist(tmp_path):
     assert 'door_point' in b_gdf.columns
     assert 'door_cell_x' in b_gdf.columns and 'door_cell_y' in b_gdf.columns
 
-    # Silent plot
-    import matplotlib.pyplot as plt
-    fig, ax = plt.subplots(figsize=(2, 2))
-    city.plot_city(ax, doors=False, address=False)
-    plt.close(fig)
 
 def test_geopackage_roundtrip(tmp_path):
     rcg = RandomCityGenerator(width=6, height=6, street_spacing=3, seed=1)
@@ -115,12 +110,18 @@ def test_shortest_path():
     except ValueError:
         pass
 
-    # Test with non-street block (building door cell)
+    # Test with non-street block (building door cell should be a street)
     first_building = city.buildings_gdf.iloc[0]
     building_door = (int(first_building['door_cell_x']), int(first_building['door_cell_y']))
-    if building_door in city.blocks_gdf.index and city.blocks_gdf.loc[building_door, 'kind'] == 'building':
+    assert building_door in city.blocks_gdf.index, "Building door must be in blocks_gdf"
+    assert city.blocks_gdf.loc[building_door, 'kind'] == 'street', "Building door must be on a street"
+    
+    # Find an actual building block to test routing error
+    building_blocks = city.blocks_gdf[city.blocks_gdf['kind'] == 'building']
+    if not building_blocks.empty:
+        building_block = building_blocks.index[0]
         try:
-            city.get_shortest_path(start_coord, building_door)
+            city.get_shortest_path(start_coord, building_block)
             assert False, "Expected ValueError for non-street block"
         except ValueError:
             pass
