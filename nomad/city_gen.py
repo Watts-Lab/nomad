@@ -1692,7 +1692,7 @@ def assign_door_to_building(building_blocks, available_blocks, graph=None):
 
 
 class RasterCity(City):
-    def __init__(self, boundary_polygon, streets_gdf, buildings_gdf, block_side_length=15.0, crs="EPSG:3857", building_type_col='building_type', name="Rasterized City", verbose=True):
+    def __init__(self, boundary_polygon, streets_gdf, buildings_gdf, block_side_length=15.0, crs="EPSG:3857", building_type_col='building_type', name="Rasterized City", resolve_overlaps=False, verbose=True):
         minx, miny, maxx, maxy = boundary_polygon.bounds
         grid_min_x = int(minx // block_side_length)
         grid_min_y = int(miny // block_side_length)
@@ -1739,6 +1739,7 @@ class RasterCity(City):
         self.streets_gdf_input['geometry'] = self.streets_gdf_input['geometry'].translate(xoff=-offset_meters[0], yoff=-offset_meters[1])
         self.buildings_gdf_input['geometry'] = self.buildings_gdf_input['geometry'].translate(xoff=-offset_meters[0], yoff=-offset_meters[1])
         
+        self.resolve_overlaps = resolve_overlaps
         self._rasterize(verbose=verbose)
 
     def _rasterize(self, verbose=True):
@@ -1772,22 +1773,27 @@ class RasterCity(City):
             print("Adding buildings to city...")
         added_building_blocks = set()
         skipped_overlap = 0
+        resolved_overlap = 0
         new_building_rows = []
         block_updates = []
-        building_types = self.buildings_gdf_input['building_type'].unique()
+        
+        building_types = [t for t in TYPE_PRIORITY if t in self.buildings_gdf_input['building_type'].values]
+        
         for building_type in building_types:
-            if building_type == 'street' or pd.isna(building_type):
-                continue
             subset = self.buildings_gdf_input[self.buildings_gdf_input['building_type'] == building_type]
             tb_type = self.blocks_gdf[self.blocks_gdf['building_type'] == building_type]
             joins = find_intersecting_blocks(subset, tb_type)
-            if len(joins) == 0:
-                continue
             grouped = joins.groupby('geometry_idx')
             for bidx, grp in grouped:
                 block_coords = list(zip(grp['coord_x'], grp['coord_y']))
-                if not block_coords:
-                    continue
+                
+                if self.resolve_overlaps:
+                    block_coords_set = set(block_coords) - added_building_blocks
+                    if not block_coords_set:
+                        resolved_overlap += 1
+                        continue
+                    block_coords = list(block_coords_set)
+                
                 components = find_connected_components(block_coords, connectivity='4-connected')
                 for component in components:
                     building_blocks = list(component)
@@ -1837,7 +1843,8 @@ class RasterCity(City):
                     self.streets_gdf = self.streets_gdf.drop(index=drop_idx)
 
         if verbose:
-            print(f"  Added {len(new_building_rows)} buildings, skipped {skipped_overlap} due to overlap (adding took {time.time()-_t3:.2f}s)")
+            overlap_count = resolved_overlap if self.resolve_overlaps else skipped_overlap
+            print(f"  Added {len(new_building_rows)} buildings, skipped {overlap_count} due to overlap (adding took {time.time()-_t3:.2f}s)")
         
         if len(new_building_rows) == 0:
             raise ValueError(f"No buildings were added to city. Input had {len(self.buildings_gdf_input)} buildings.")

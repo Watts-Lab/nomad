@@ -324,5 +324,5 @@ DEFAULT_CRS = "EPSG:4326"
 GARDEN_CITY_CATEGORIES = ['home', 'retail', 'workplace', 'park', 'other']
 GEOLIFE_PLUS_CATEGORIES = ['unknown', 'residential', 'commercial', 'school']
 
-# Building type priority for rasterization (lower number = higher priority)
-TYPE_PRIORITY = {'street': 1, 'park': 2, 'workplace': 3, 'home': 4, 'retail': 5, 'other': 6}
+# Building type priority for rasterization (first = highest priority)
+TYPE_PRIORITY = ['street', 'park', 'workplace', 'home', 'retail', 'other']

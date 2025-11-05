@@ -64,8 +64,8 @@ SMALL_BOX = box(-75.1545, 39.946, -75.1425, 39.9535)
 MEDIUM_BOX = box(-75.1665, 39.9385, -75.1425, 39.9535)
 LARGE_BOX  = box(-75.1905, 39.9235, -75.1425, 39.9535)
 
-# PHILLY_BOX = SMALL_BOX
-PHILLY_BOX = MEDIUM_BOX
+PHILLY_BOX = SMALL_BOX
+# PHILLY_BOX = MEDIUM_BOX
 # PHILLY_BOX = LARGE_BOX
 
 BLOCK_SIDE_LENGTH = 10.0  # meters
@@ -181,9 +181,9 @@ hub_time = time.time() - t2
 print(f"Hub network:        {hub_time:>6.2f}s")
 
 t3 = time.time()
-city.compute_gravity(exponent=2.0)
+city.compute_gravity(exponent=2.0, callable_only=True)
 grav_time = time.time() - t3
-print(f"Gravity matrix:     {grav_time:>6.2f}s")
+print(f"Gravity computation: {grav_time:>6.2f}s")
 
 raster_time = gen_time + graph_time + hub_time + grav_time
 print("-"*50)
@@ -209,7 +209,7 @@ def get_size_mb(obj):
         return 0.0
 
 summary_df = pd.DataFrame({
-    'Component': ['Blocks', 'Streets', 'Buildings', 'Graph Nodes', 'Graph Edges', 'Hub Network', 'Gravity Matrix'],
+    'Component': ['Blocks', 'Streets', 'Buildings', 'Graph Nodes', 'Graph Edges', 'Hub Network', 'Hub Info', 'Nearby Doors', 'Gravity (callable)'],
     'Count/Shape': [
         f"{len(city.blocks_gdf):,}",
         f"{len(city.streets_gdf):,}",
@@ -217,7 +217,9 @@ summary_df = pd.DataFrame({
         f"{len(G.nodes):,}",
         f"{len(G.edges):,}",
         f"{city.hub_df.shape[0]}×{city.hub_df.shape[1]}",
-        f"{city.grav.shape[0]}×{city.grav.shape[1]}"
+        f"{city.grav_hub_info.shape[0]}×{city.grav_hub_info.shape[1]}",
+        f"{len(city.mh_dist_nearby_doors):,} pairs",
+        "function"
     ],
     'Memory (MB)': [
         f"{get_size_mb(city.blocks_gdf):.1f}",
@@ -226,7 +228,9 @@ summary_df = pd.DataFrame({
         f"{get_size_mb(G):.1f}",
         "-",
         f"{get_size_mb(city.hub_df):.1f}",
-        f"{get_size_mb(city.grav):.1f}"
+        f"{get_size_mb(city.grav_hub_info):.1f}",
+        f"{get_size_mb(city.mh_dist_nearby_doors):.1f}",
+        "<0.1"
     ]
 })
 print("\n" + summary_df.to_string(index=False))
