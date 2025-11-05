@@ -21,6 +21,7 @@ import time
 from typing import Dict, List, Tuple, Optional, Set
 
 from nomad.map_utils import blocks_to_mercator, mercator_to_blocks
+from nomad.constants import TYPE_PRIORITY
 
 # =============================================================================
 # STREET CLASS
@@ -1595,9 +1596,6 @@ def find_intersecting_blocks(geometries_gdf: gpd.GeoDataFrame, blocks_gdf: gpd.G
             idx_col = intersections.columns[-1]
     result = intersections[['coord_x','coord_y', idx_col]].copy().rename(columns={idx_col:'geometry_idx'})
     return result
-
-
-TYPE_PRIORITY = {'street':1,'park':2,'workplace':3,'home':4,'retail':5,'other':6}
 
 
 def assign_block_types(blocks_gdf, streets_gdf, buildings_gdf_input):
