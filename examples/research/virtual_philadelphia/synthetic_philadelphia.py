@@ -21,7 +21,7 @@
 #   - home
 #   - work
 #   - retail
-#
+#   - other (will be randomly assigned to one of the above categories)
 # It also identifies which rotation best aligns a random sample of streets with a N-S, E-W grid. 
 
 # %%
@@ -31,6 +31,7 @@ import time
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import contextily as ctx
+from shapely.geometry.geo import box
 
 import nomad.map_utils as nm
 from nomad.city_gen import RasterCity
@@ -45,12 +46,18 @@ from nomad.city_gen import RasterCity
 
 
 # %%
-CITY_NAME = "Philadelphia, Pennsylvania, USA"
-OUTPUT_DIR = Path(".")  # Relative path for Jupyter compatibility
-RAW_GPKG_PATH = OUTPUT_DIR / "philadelphia_osm_raw.gpkg"
-
-LOAD_FROM_CACHE = RAW_GPKG_PATH.exists()
-
+# if 
+FULL_CITY = False
+if FULL_CITY:
+    CITY_NAME = "Philadelphia, Pennsylvania, USA"
+    OUTPUT_DIR = Path(".")  # Relative path for Jupyter compatibility
+    RAW_GPKG_PATH = OUTPUT_DIR / "philadelphia_osm_raw.gpkg"
+    LOAD_FROM_CACHE = RAW_GPKG_PATH.exists()
+    POLY = CITY_NAME
+else:
+    LARGE_BOX  = box(-75.1905, 39.9235, -75.1425, 39.9535)
+    POLY = LARGE_BOX
+    
 if LOAD_FROM_CACHE:
     print("Loading persisted data from GeoPackage...")
     buildings = gpd.read_file(RAW_GPKG_PATH, layer="buildings")
@@ -210,31 +217,116 @@ graph_elapsed = _t.time() - _t1
 print(f"Street graph build (lazy + shortcuts): {graph_elapsed:.2f}s; nodes={len(G.nodes):,}, edges={len(G.edges):,}")
 
 # %% [markdown]
-# ## 4. Rasterize Rotated City (Scaled)
+# ## 4. Rasterize City with Gravity Computation
 #
-# Using the rotated layers, rasterize the full city at 15m block size and persist
-# the resulting `City` layers. This is the next step toward a complete pipeline.
+# Rasterize the city, build hub network, and compute gravity using callable_only=True
+# for memory efficiency.
 
 # %%
-print("\nRasterizing rotated city at 15m (buildings + streets)...")
+print("\nRasterizing city...")
 rot_buildings = gpd.read_file(RAW_GPKG_PATH, layer="buildings_rotated")
+rot_streets = gpd.read_file(RAW_GPKG_PATH, layer="streets_rotated")
+rot_boundary = gpd.read_file(RAW_GPKG_PATH, layer="city_boundary_rotated")
 
 boundary_geom = rot_boundary.geometry.iloc[0]
-block_side_length = 15.0
+block_side_length = 10.0
+hub_size = 100
 
-import time as _t
-_t0 = _t.time()
+_t0 = time.time()
 city = RasterCity(
     boundary_polygon=boundary_geom,
     streets_gdf=rot_streets,
     buildings_gdf=rot_buildings,
     block_side_length=block_side_length,
+    resolve_overlaps=True
 )
-elapsed = _t.time() - _t0
-print(f"Rasterization completed in {elapsed:.1f}s: blocks={len(city.blocks_gdf):,}, streets={len(city.streets_gdf):,}, buildings={len(city.buildings_gdf):,}")
+gen_time = time.time() - _t0
+print(f"City generation: {gen_time:.2f}s")
+print(f"  Blocks: {len(city.blocks_gdf):,}")
+print(f"  Streets: {len(city.streets_gdf):,}")
+print(f"  Buildings: {len(city.buildings_gdf):,}")
+
+_t1 = time.time()
+G = city.get_street_graph()
+graph_time = time.time() - _t1
+print(f"Street graph: {graph_time:.2f}s ({len(G.nodes):,} nodes, {len(G.edges):,} edges)")
+
+_t2 = time.time()
+city._build_hub_network(hub_size=hub_size)
+hub_time = time.time() - _t2
+print(f"Hub network: {hub_time:.2f}s ({hub_size}×{hub_size})")
+
+_t3 = time.time()
+city.compute_gravity(exponent=2.0, callable_only=True)
+grav_time = time.time() - _t3
+print(f"Gravity computation: {grav_time:.2f}s (callable)")
+
+total_time = gen_time + graph_time + hub_time + grav_time
+print(f"Total rasterization: {total_time:.2f}s")
 
 RASTER_GPKG = OUTPUT_DIR / "philadelphia_rasterized.gpkg"
 if RASTER_GPKG.exists():
     RASTER_GPKG.unlink()
 city.save_geopackage(str(RASTER_GPKG), persist_blocks=True, persist_city_properties=True)
-print(f"Saved rasterized layers to {RASTER_GPKG}")
+print(f"Saved rasterized city to {RASTER_GPKG}")
+
+# %% [markdown]
+# ## 5. Generate Population and Destination Diaries
+#
+# Create 10 agents and generate destination diaries using EPR for 1 week.
+
+# %%
+import json
+import pandas as pd
+from nomad.traj_gen import Population
+
+print("\nGenerating population and destination diaries...")
+
+config = {
+    "city_file": str(RASTER_GPKG),
+    "block_side_length": block_side_length,
+    "hub_size": hub_size,
+    "N": 10,
+    "name_seed": 42,
+    "name_count": 2,
+    "epr_params": {
+        "end_time": "2024-01-08 00:00-05:00",
+        "epr_time_res": 15,
+        "rho": 0.4,
+        "gamma": 0.3,
+        "seed_base": 100
+    },
+    "output_dir": str(OUTPUT_DIR / "diaries")
+}
+
+config_path = OUTPUT_DIR / "simulation_config.json"
+with open(config_path, 'w') as f:
+    json.dump(config, f, indent=2)
+print(f"Saved config to {config_path}")
+
+population = Population(city)
+population.generate_agents(
+    N=config["N"],
+    seed=config["name_seed"],
+    name_count=config["name_count"]
+)
+print(f"Generated {len(population.roster)} agents")
+
+end_time = pd.Timestamp(config["epr_params"]["end_time"])
+output_dir = Path(config["output_dir"])
+output_dir.mkdir(parents=True, exist_ok=True)
+
+for i, agent in enumerate(population.roster.values()):
+    agent.generate_dest_diary(
+        end_time=end_time,
+        epr_time_res=config["epr_params"]["epr_time_res"],
+        rho=config["epr_params"]["rho"],
+        gamma=config["epr_params"]["gamma"],
+        seed=config["epr_params"]["seed_base"] + i
+    )
+    
+    diary_path = output_dir / f"{agent.identifier}_diary.csv"
+    agent.destination_diary.to_csv(diary_path, index=False)
+    print(f"  Saved {agent.identifier} diary ({len(agent.destination_diary)} entries) to {diary_path}")
+
+print(f"\nAll destination diaries saved to {output_dir}")

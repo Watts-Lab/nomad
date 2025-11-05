@@ -712,16 +712,45 @@ class City:
             'dist_to_hub': dist_to_closest_hub
         }, index=building_ids)
         
-        door_to_door_manhattan = self._pairwise_manhattan(door_x, door_y, door_x, door_y).astype(np.int32)
+        # Compute close pairs in chunks to avoid memory issues
+        n = len(building_ids)
+        n_chunks = 10
+        chunk_size = max(1, n // n_chunks)
+        close_pairs_list = []
         
-        i_idx, j_idx = np.triu_indices(len(building_ids), k=1)
-        min_hub_dist = np.minimum(dist_to_closest_hub[:, None], dist_to_closest_hub[None, :])
-        close_mask = (door_to_door_manhattan < min_hub_dist)[i_idx, j_idx]
+        for i_start in range(0, n, chunk_size):
+            i_end = min(i_start + chunk_size, n)
+            
+            chunk_dist = self._pairwise_manhattan(
+                door_x[i_start:i_end], door_y[i_start:i_end],
+                door_x, door_y
+            ).astype(np.int32)
+            
+            min_hub_dist = np.minimum(
+                dist_to_closest_hub[i_start:i_end, None],
+                dist_to_closest_hub[None, :]
+            )
+            is_close = chunk_dist < min_hub_dist
+            
+            i_local, j_global = np.where(is_close)
+            i_global = i_local + i_start
+            upper_mask = i_global < j_global
+            
+            if upper_mask.any():
+                close_pairs_list.append(pd.DataFrame({
+                    'bid_i': building_ids[i_global[upper_mask]],
+                    'bid_j': building_ids[j_global[upper_mask]],
+                    'dist': chunk_dist[i_local[upper_mask], j_global[upper_mask]]
+                }))
         
-        self.mh_dist_nearby_doors = pd.Series(
-            door_to_door_manhattan[i_idx[close_mask], j_idx[close_mask]],
-            index=pd.MultiIndex.from_arrays([building_ids[i_idx[close_mask]], building_ids[j_idx[close_mask]]])
-        )
+        if close_pairs_list:
+            close_pairs_df = pd.concat(close_pairs_list, ignore_index=True)
+            self.mh_dist_nearby_doors = pd.Series(
+                close_pairs_df['dist'].values,
+                index=pd.MultiIndex.from_arrays([close_pairs_df['bid_i'], close_pairs_df['bid_j']])
+            )
+        else:
+            self.mh_dist_nearby_doors = pd.Series([], dtype=np.int32, index=pd.MultiIndex.from_arrays([[], []]))
         
         # Part 2: Create dense matrix or callable
         if callable_only:
