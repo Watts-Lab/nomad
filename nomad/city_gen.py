@@ -1639,7 +1639,7 @@ def find_connected_components(block_coords: List[Tuple[int,int]], connectivity: 
     return components
 
 
-def verify_street_connectivity(streets_gdf: gpd.GeoDataFrame) -> Tuple[gpd.GeoDataFrame, dict]:
+def verify_street_connectivity(streets_gdf):
     if len(streets_gdf) == 0:
         return streets_gdf.copy(), {'total':0,'kept':0,'discarded':0}
     street_coords = list(zip(streets_gdf['coord_x'], streets_gdf['coord_y']))
@@ -1653,13 +1653,20 @@ def verify_street_connectivity(streets_gdf: gpd.GeoDataFrame) -> Tuple[gpd.GeoDa
     return result, summary
 
 
-def assign_door_to_building(building_blocks: List[Tuple[int,int]], street_coords_set: Set[Tuple[int,int]]) -> Optional[Tuple[int,int]]:
-    neighbors = [(0,1),(0,-1),(1,0),(-1,0)]
-    for x,y in building_blocks:
-        for dx,dy in neighbors:
-            nb = (x+dx, y+dy)
-            if nb in street_coords_set:
-                return nb
+def assign_door_to_building(building_blocks, available_blocks, graph=None):
+    """Find adjacent block that can serve as door (not occupied by buildings)."""
+    if graph is not None:
+        for x, y in building_blocks:
+            for nb in graph.neighbors((x, y)):
+                if nb in available_blocks:
+                    return nb
+    else:
+        neighbors = [(0,1),(0,-1),(1,0),(-1,0)]
+        for x, y in building_blocks:
+            for dx, dy in neighbors:
+                nb = (x+dx, y+dy)
+                if nb in available_blocks:
+                    return nb
     return None
 
 
@@ -1719,7 +1726,6 @@ class RasterCity(City):
         connected_streets, summary = verify_street_connectivity(street_blocks)
         if verbose:
             print(f"  Streets: {summary['kept']:,} kept, {summary['discarded']:,} discarded (in {time.time()-_t2:.2f}s)")
-        street_coords_set = set(zip(connected_streets['coord_x'], connected_streets['coord_y']))
         
         minx, miny, maxx, maxy = self.boundary_polygon.bounds
         grid_min_x = int(minx // self.block_side_length)
@@ -1740,6 +1746,8 @@ class RasterCity(City):
         self.streets_gdf['id'] = ('s-x' + self.streets_gdf['coord_x'].astype(int).astype(str) + '-y' + self.streets_gdf['coord_y'].astype(int).astype(str))
         self.streets_gdf.set_index(['coord_x','coord_y'], inplace=True, drop=False)
         self.streets_gdf.index.names = [None, None]
+        
+        available_for_doors = self.blocks_gdf[self.blocks_gdf['kind'] == 'street'].index
         
         _t3 = time.time()
         if verbose:
@@ -1766,24 +1774,23 @@ class RasterCity(City):
                 components = find_connected_components(block_coords, connectivity='4-connected')
                 for component in components:
                     component_blocks = list(component)
-                    door = assign_door_to_building(component_blocks, street_coords_set)
+                    building_blocks = [(x-offset_x, y-offset_y) for x,y in component_blocks]
+                    door = assign_door_to_building(building_blocks, available_for_doors)
                     if door is None:
                         continue
-                    door_coords = (door[0]-offset_x, door[1]-offset_y)
-                    building_blocks = [(x-offset_x, y-offset_y) for x,y in component_blocks]
                     building_blocks_set = set(building_blocks)
                     if building_blocks_set & added_building_blocks:
                         skipped_overlap += 1
                         continue
                     block_polys = [box(x, y, x+1, y+1) for x,y in building_blocks]
                     building_geom = block_polys[0] if len(block_polys) == 1 else unary_union(block_polys)
-                    building_id = f"{building_type[0]}-x{door_coords[0]}-y{door_coords[1]}"
-                    dpt = Point(door_coords[0] + 0.5, door_coords[1] + 0.5)
+                    building_id = f"{building_type[0]}-x{door[0]}-y{door[1]}"
+                    dpt = Point(door[0] + 0.5, door[1] + 0.5)
                     new_building_rows.append({
                         'id': building_id,
                         'building_type': building_type,
-                        'door_cell_x': door_coords[0],
-                        'door_cell_y': door_coords[1],
+                        'door_cell_x': door[0],
+                        'door_cell_y': door[1],
                         'door_point': dpt,
                         'size': len(building_blocks),
                         'geometry': building_geom,
