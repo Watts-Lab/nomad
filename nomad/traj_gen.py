@@ -487,7 +487,53 @@ class Agent:
         self.destination_diary = destination_diary.drop(destination_diary.index)
         return None
 
-    def _generate_dest_diary(self, 
+    def _initialize_visits_unif(self,
+                                rng=None,
+                                home_work_freq=20,
+                                initial_k=None,
+                                other_locs_freq=2):
+        """Seed initial visit frequencies uniformly per building type
+
+        Builds a fresh visit_freqs DataFrame from self.city.buildings_gdf and
+        returns it. Does not mutate self.visit_freqs. Warns if an existing
+        self.visit_freqs appears to already contain positive frequencies.
+        """
+        if rng is None:
+            rng = npr.default_rng()
+        if initial_k is None:
+            initial_k = {'retail': 4, 'work': 2, 'home': 2, 'park': 2}
+
+        # Warn if existing frequencies are already set
+        if getattr(self, 'visit_freqs', None) is not None:
+            if (self.visit_freqs['freq'] > 0).any():
+                warnings.warn("Existing visit frequencies are non-zero; re-initializing will overwrite them.")
+
+        bdf = self.city.buildings_gdf
+        visit_freqs = pd.DataFrame({
+            'id': bdf['id'].values,
+            'building_type': bdf['building_type'].values,
+            'freq': 0,
+        }).set_index('id')
+
+        # Strong prior for agent's home/work
+        visit_freqs.loc[self.home, 'freq'] = int(home_work_freq)
+        visit_freqs.loc[self.workplace, 'freq'] = int(home_work_freq)
+
+        # Seed additional locations per type
+        for btype, k in initial_k.items():
+            k = int(k)
+            ids = visit_freqs.index[visit_freqs.building_type == btype]
+            # Exclude agent's own home/work
+            excl = [self.home, self.workplace]
+            ids = ids.difference(excl)
+
+            size = min(k, len(ids))
+            chosen = rng.choice(ids.to_numpy(), size=size, replace=False)
+            visit_freqs.loc[chosen, 'freq'] = visit_freqs.loc[chosen, 'freq'] + int(other_locs_freq)
+
+        return visit_freqs
+
+    def generate_dest_diary(self, 
                              end_time, 
                              epr_time_res = 15,
                              stay_probs = DEFAULT_STAY_PROBS,
@@ -513,14 +559,15 @@ class Agent:
 
         Notes
         -----
-        - Requires `city.grav` to be precomputed via `city.compute_gravity(...)`.
-          If absent, this method raises an error rather than computing distances on demand.
+        - Requires `city.grav` to be precomputed via `city.compute_gravity(...)`
         """
         rng = npr.default_rng(seed)
 
+        # Early check: gravity matrix required for EPR generation
+        if (not hasattr(self.city, 'grav')) or (self.city.grav is None):
+            raise RuntimeError("city.grav is not available. Call city.compute_gravity() before trajectory generation.")
+
         # Mapping: building id -> (door_cell_x, door_cell_y)
-        bdf = self.city.buildings_gdf
-        id2cell = pd.Series(list(zip(bdf['door_cell_x'].astype(int), bdf['door_cell_y'].astype(int))), index=bdf['id'])
 
         if end_time.tz is None:
             tz = getattr(self.last_ping['datetime'], 'tz', None)
@@ -532,21 +579,10 @@ class Agent:
 
         # Create visit frequency table if user does not already have one
         visit_freqs = self.visit_freqs
-        if visit_freqs is None:
-            bdf = self.city.buildings_gdf
-            visit_freqs = pd.DataFrame({
-                'id': bdf['id'].values,
-                'building_type': bdf['building_type'].values,
-                'freq': 0,
-                'p': 0.0
-            }).set_index('id')
-
+        if (visit_freqs is None) or (not (visit_freqs['freq'] > 0).any()):
             # Initialize past counts using uniform seeding over types
-            visit_freqs = _initialize_visits_unif(
-                visit_freqs,
-                rng,
-                self.home,
-                self.workplace,
+            visit_freqs = self._initialize_visits_unif(
+                rng=rng,
                 home_work_freq=20,
                 initial_k={'retail': 4, 'work': 2, 'home': 2, 'park': 2},
                 other_locs_freq=2,
@@ -560,10 +596,17 @@ class Agent:
         else:
             last_entry = self.destination_diary.iloc[-1]
             start_time_local = last_entry.datetime + timedelta(minutes=int(last_entry.duration))
-            start_time = int(last_entry.timestamp + last_entry.duration*60)
+            # Derive timestamp from datetime if not present
+            if 'timestamp' in self.destination_diary.columns:
+                start_time = int(last_entry.timestamp + last_entry.duration*60)
+            else:
+                start_time = int(last_entry.datetime.timestamp()) + int(last_entry.duration*60)
             curr = last_entry.location
 
         dest_update = []
+        # Informative message
+        print(f"Generating destination diary via EPR (rho={rho}, gamma={gamma}, epr_time_res={epr_time_res} min, seed={seed})")
+
         while start_time < end_time:
             curr_type = visit_freqs.loc[curr, 'building_type'] if curr in visit_freqs.index else 'home'
             allowed = allowed_buildings(start_time_local)
@@ -583,8 +626,6 @@ class Agent:
                 # Compute gravity probs from current door cell to unexplored candidates
                 y = visit_freqs.loc[(visit_freqs['building_type'].isin(allowed)) & (visit_freqs.freq == 0)]
                 if not y.empty and curr in self.city.grav.index:
-                    if not hasattr(self.city, 'grav') or self.city.grav is None:
-                        raise RuntimeError("city.grav is not available. Call city.compute_gravity() before trajectory generation.")
                     probs = self.city.grav.loc[curr, y.index].values
                     probs = probs / probs.sum()
                     curr = rng.choice(y.index, p=probs)
@@ -641,17 +682,27 @@ class Agent:
         Parameters
         ----------
         destination_diary : pandas.DataFrame, optional (default=None)
-            DataFrame containing the following columns: 'timestamp', 'datetime', 'duration', 'location'.
+            DataFrame containing 'location' and 'datetime' columns (required),
+            and optionally 'timestamp' and 'duration'. If 'timestamp' is missing,
+            it will be derived from 'datetime'.
         end_time : pd.Timestamp, optional
-            The end time to generate the trajectory until.
+            The end time to generate the trajectory until. Required if
+            destination_diary is empty.
         epr_time_res : int, optional
-            The granularity of destination durations in epr generation.
+            The granularity of destination durations in epr generation (minutes).
+        dt : float, optional
+            Time step duration for trajectory simulation (minutes).
         seed : int, optional
             Random seed for reproducibility.
+        step_seed : int, optional
+            Random seed for trajectory steps. If None, uses seed.
+        verbose : bool, optional
+            Whether to print verbose warnings.
         kwargs : dict, optional
-            Additional keyword arguments for trajectory generation.
-            Can include 'x', 'y', 'datetime', 'timestamp', 'tz'
-            These are used to set the initial position of the agent.
+            Additional keyword arguments for setting initial position.
+            Can include 'x', 'y', 'location', 'datetime', 'timestamp'.
+            If 'x' and 'y' are provided, used directly. Otherwise, if 'location'
+            is provided, uses that building's centroid. If neither, uses agent's home.
 
         Returns
         -------
@@ -665,65 +716,48 @@ class Agent:
 
         # handle destination diary
         if destination_diary is not None:
+            if not self.destination_diary.empty:
+                warnings.warn("Overwriting existing destination_diary with new one.")
             self.destination_diary = destination_diary
-            # warning for overwriting agent's destination diary if it exists?
 
-            loc = destination_diary.iloc[0]['location']
-            loc_row = self.city.buildings_gdf[self.city.buildings_gdf['id'] == loc]
-            if loc_row.empty:
-                raise ValueError(f"Location {loc} not found in city buildings.")
-            loc_centroid = loc_row.iloc[0]['geometry'].centroid
+            row = destination_diary.iloc[0] #first destination 
+            loc_centroid = self.city.buildings_gdf[self.city.buildings_gdf['id'] == row['location']].iloc[0]['geometry'].centroid
             x_coord, y_coord = loc_centroid.x, loc_centroid.y
-            if 'datetime' in destination_diary.columns:
-                datetime = destination_diary.iloc[0]['datetime']
-            elif 'local_timestamp' in destination_diary.columns:
-                datetime = destination_diary.iloc[0]['local_timestamp']
-            else:
-                raise KeyError("Neither 'datetime' nor 'local_timestamp' found in destination_diary columns")
-            unix_timestamp = int(datetime.timestamp())
+            
+            datetime = row['datetime']
+            timestamp = int(row.get('timestamp', datetime.timestamp()))
+            
             self.last_ping = pd.Series({
                 'x': x_coord,
                 'y': y_coord,
                 'datetime': datetime,
-                'timestamp': unix_timestamp,
+                'timestamp': timestamp,
                 'user_id': self.identifier
                 })
             self.trajectory = pd.DataFrame([self.last_ping])
 
         # ensure last ping
         if self.trajectory is None:
-            if _xy_or_loc_col(kwargs.keys(), verbose) == "location":
-                loc_row = self.city.buildings_gdf[self.city.buildings_gdf['id'] == kwargs['location']]
-                if loc_row.empty:
-                    raise ValueError(f"Location {kwargs['location']} not found in city buildings.")
-                loc_centroid = loc_row.iloc[0]['geometry'].centroid
-                x_coord, y_coord = loc_centroid.x, loc_centroid.y
-            elif _xy_or_loc_col(kwargs.keys(), verbose) == "xy":
+            if 'x' in kwargs and 'y' in kwargs:
                 x_coord, y_coord = kwargs['x'], kwargs['y']
             else:
-                home_row = self.city.buildings_gdf[self.city.buildings_gdf['id'] == self.home]
-                if home_row.empty:
-                    raise ValueError(f"Home location {self.home} not found in city buildings.")
-                loc_centroid = home_row.iloc[0]['geometry'].centroid
+                loc = kwargs.get('location', self.home)
+                loc_centroid = self.city.buildings_gdf[self.city.buildings_gdf['id'] == loc].iloc[0]['geometry'].centroid
                 x_coord, y_coord = loc_centroid.x, loc_centroid.y
-                if 'datetime' in kwargs:
-                    datetime = kwargs['datetime']
-                else:
-                    datetime = pd.Timestamp.now(tz='America/New_York')
-                if 'timestamp' in kwargs:
-                    unix_timestamp = kwargs['timestamp']
-                else:
-                    unix_timestamp = int(datetime.timestamp())
-                self.last_ping = pd.Series({
-                    'x': x_coord,
-                    'y': y_coord,
-                    'datetime': datetime,
-                    'timestamp': unix_timestamp,
-                    'user_id': self.identifier
-                    })
-                self.trajectory = pd.DataFrame([self.last_ping])
+                
+            datetime = kwargs.get('datetime', pd.Timestamp.now(tz='America/New_York'))
+            timestamp = int(kwargs.get('timestamp', datetime.timestamp()))
+                
+            self.last_ping = pd.Series({
+                'x': x_coord,
+                'y': y_coord,
+                'datetime': datetime,
+                'timestamp': timestamp,
+                'user_id': self.identifier
+                })
+            self.trajectory = pd.DataFrame([self.last_ping])
         else:
-            if ('x' in kwargs)or('y' in kwargs)or('datetime'in kwargs)or('timestamp' in kwargs):
+            if ('x' in kwargs) or ('y' in kwargs) or ('datetime' in kwargs) or ('timestamp' in kwargs):
                 raise ValueError(
                     "Keywords arguments conflict with existing trajectory or destination diary,\
                     use Agent.reset_trajectory() or do not provide keyword arguments"
@@ -735,14 +769,12 @@ class Agent:
                 raise ValueError(
                     "Destination diary is empty. Provide an end_time to generate a trajectory."
                 )
-            self._generate_dest_diary(end_time=end_time,
+            self.generate_dest_diary(end_time=end_time,
                                       epr_time_res=epr_time_res,
                                       seed=seed)
 
-        if step_seed:
-            self._traj_from_dest_diary(dt=dt, seed=step_seed)
-        else:
-            self._traj_from_dest_diary(dt=dt, seed=seed)
+        s = step_seed if step_seed else seed
+        self._traj_from_dest_diary(dt=dt, seed=s)
 
         return None
 
@@ -1323,39 +1355,4 @@ def allowed_buildings(local_ts):
     return ALLOWED_BUILDINGS[hour]
 
 
-def _initialize_visits_unif(visit_freqs: pd.DataFrame,
-                            rng: np.random.Generator,
-                            home: str,
-                            workplace: str,
-                            *,
-                            home_work_freq: int = 20,
-                            initial_k: dict = None,
-                            other_locs_freq: int = 2) -> pd.DataFrame:
-    """Seed initial visit frequencies uniformly per type (internal)."""
-    # Defaults: number of extra initial locations per canonical type
-    if initial_k is None:
-        initial_k = {'retail': 4, 'work': 2, 'home': 2, 'park': 2}
-
-    # Strong prior for agent's home/work
-    if home in visit_freqs.index:
-        visit_freqs.loc[home, 'freq'] = int(home_work_freq)
-    if workplace in visit_freqs.index:
-        visit_freqs.loc[workplace, 'freq'] = int(home_work_freq)
-
-    # Seed additional locations per type
-    for btype, k in initial_k.items():
-        k = max(0, int(k))
-        if k == 0:
-            continue
-
-        ids = visit_freqs.index[visit_freqs.building_type == btype].tolist()
-        # Exclude the agent's own home/work from the booster sample
-        ids = [i for i in ids if i not in (home, workplace)]
-        if not ids:
-            continue
-
-        size = min(k, len(ids))
-        chosen = rng.choice(ids, size=size, replace=False)
-        visit_freqs.loc[chosen, 'freq'] = visit_freqs.loc[chosen, 'freq'] + int(other_locs_freq)
-
-    return visit_freqs
+## moved into Agent as _initialize_visits_unif
