@@ -57,6 +57,12 @@ Installation
    :hidden:
 
    source/benchmarking_of_stop_detection_algorithms
+   source/lachesis_demo
+   source/tadbscan_demo
+   source/hdbscan_demo
+   source/grid_based_demo
+   source/poi_synthetic
+   source/poi_osm
 
 Modules Overview
 ----------------
