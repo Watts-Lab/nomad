@@ -1720,38 +1720,6 @@ class RasterCity(City):
         if verbose:
             print(f"  Streets: {summary['kept']:,} kept, {summary['discarded']:,} discarded (in {time.time()-_t2:.2f}s)")
         street_coords_set = set(zip(connected_streets['coord_x'], connected_streets['coord_y']))
-        _t3 = time.time()
-        if verbose:
-            print("Assigning buildings to blocks...")
-        buildings_to_add = []
-        btype_col = self.building_type_col
-        if btype_col in self.buildings_gdf_input.columns:
-            for building_type in ['park','workplace','home','retail','other']:
-                subset = self.buildings_gdf_input[self.buildings_gdf_input[btype_col] == building_type]
-                if len(subset) == 0:
-                    continue
-                tb_type = typed_blocks[typed_blocks['type'] == building_type]
-                if len(tb_type) == 0:
-                    continue
-                joins = find_intersecting_blocks(subset, tb_type)
-                if len(joins) == 0:
-                    continue
-                grouped = joins.groupby('geometry_idx')
-                for bidx, grp in grouped:
-                    block_coords = list(zip(grp['coord_x'], grp['coord_y']))
-                    if not block_coords:
-                        continue
-                    components = find_connected_components(block_coords, connectivity='4-connected')
-                    for component in components:
-                        component_blocks = list(component)
-                        door = assign_door_to_building(component_blocks, street_coords_set)
-                        if door is None:
-                            continue
-                        block_polys = [box(x * self.block_side_length, y * self.block_side_length, (x+1) * self.block_side_length, (y+1) * self.block_side_length) for x,y in component_blocks]
-                        geom = block_polys[0] if len(block_polys) == 1 else MultiPolygon(block_polys).envelope
-                        buildings_to_add.append({'type': building_type, 'door': door, 'blocks': component_blocks, 'geom': geom})
-        if verbose:
-            print(f"  Found {len(buildings_to_add):,} buildings to add (in {time.time()-_t3:.2f}s)")
         
         minx, miny, maxx, maxy = self.boundary_polygon.bounds
         grid_min_x = int(minx // self.block_side_length)
@@ -1761,12 +1729,9 @@ class RasterCity(City):
         self.blocks_gdf = typed_blocks.copy()
         self.blocks_gdf['coord_x'] = self.blocks_gdf['coord_x'] - offset_x
         self.blocks_gdf['coord_y'] = self.blocks_gdf['coord_y'] - offset_y
-        self.blocks_gdf['kind'] = None
+        self.blocks_gdf['kind'] = self.blocks_gdf['type'].where(self.blocks_gdf['type'] == 'street', 'building')
         self.blocks_gdf['building_id'] = None
         self.blocks_gdf['building_type'] = None
-        for block_type in ['street','park','workplace','home','retail','other']:
-            mask = self.blocks_gdf['type'] == block_type
-            self.blocks_gdf.loc[mask, 'kind'] = 'street' if block_type=='street' else 'building'
         
         self.streets_gdf = gpd.GeoDataFrame(connected_streets[['coord_x','coord_y','geometry']].copy(), geometry='geometry', crs=self.crs)
         self.streets_gdf['coord_x'] = self.streets_gdf['coord_x'] - offset_x
@@ -1775,36 +1740,56 @@ class RasterCity(City):
         self.streets_gdf.set_index(['coord_x','coord_y'], inplace=True, drop=False)
         self.streets_gdf.index.names = [None, None]
         
-        _t4 = time.time()
+        _t3 = time.time()
         if verbose:
             print("Adding buildings to city...")
         added_building_blocks = set()
         skipped_overlap = 0
         new_building_rows = []
         block_updates = []
-        for building_info in buildings_to_add:
-            door_coords = (building_info['door'][0]-offset_x, building_info['door'][1]-offset_y)
-            building_blocks = [(x-offset_x, y-offset_y) for x,y in building_info['blocks']]
-            building_blocks_set = set(building_blocks)
-            if building_blocks_set & added_building_blocks:
-                skipped_overlap += 1
+        for building_type in ['park','workplace','home','retail','other']:
+            if building_type not in buildings_by_type:
                 continue
-            block_polys = [box(x, y, x+1, y+1) for x,y in building_blocks]
-            building_geom = block_polys[0] if len(block_polys) == 1 else unary_union(block_polys)
-            building_id = f"{building_info['type'][0]}-x{door_coords[0]}-y{door_coords[1]}"
-            dpt = Point(door_coords[0] + 0.5, door_coords[1] + 0.5)
-            new_building_rows.append({
-                'id': building_id,
-                'building_type': building_info['type'],
-                'door_cell_x': door_coords[0],
-                'door_cell_y': door_coords[1],
-                'door_point': dpt,
-                'size': len(building_blocks),
-                'geometry': building_geom,
-            })
-            for (cx, cy) in building_blocks:
-                block_updates.append({'coord_x': cx, 'coord_y': cy, 'kind': 'building', 'building_id': building_id, 'building_type': building_info['type']})
-            added_building_blocks.update(building_blocks_set)
+            subset = buildings_by_type[building_type]
+            tb_type = typed_blocks[typed_blocks['type'] == building_type]
+            if len(tb_type) == 0:
+                continue
+            joins = find_intersecting_blocks(subset, tb_type)
+            if len(joins) == 0:
+                continue
+            grouped = joins.groupby('geometry_idx')
+            for bidx, grp in grouped:
+                block_coords = list(zip(grp['coord_x'], grp['coord_y']))
+                if not block_coords:
+                    continue
+                components = find_connected_components(block_coords, connectivity='4-connected')
+                for component in components:
+                    component_blocks = list(component)
+                    door = assign_door_to_building(component_blocks, street_coords_set)
+                    if door is None:
+                        continue
+                    door_coords = (door[0]-offset_x, door[1]-offset_y)
+                    building_blocks = [(x-offset_x, y-offset_y) for x,y in component_blocks]
+                    building_blocks_set = set(building_blocks)
+                    if building_blocks_set & added_building_blocks:
+                        skipped_overlap += 1
+                        continue
+                    block_polys = [box(x, y, x+1, y+1) for x,y in building_blocks]
+                    building_geom = block_polys[0] if len(block_polys) == 1 else unary_union(block_polys)
+                    building_id = f"{building_type[0]}-x{door_coords[0]}-y{door_coords[1]}"
+                    dpt = Point(door_coords[0] + 0.5, door_coords[1] + 0.5)
+                    new_building_rows.append({
+                        'id': building_id,
+                        'building_type': building_type,
+                        'door_cell_x': door_coords[0],
+                        'door_cell_y': door_coords[1],
+                        'door_point': dpt,
+                        'size': len(building_blocks),
+                        'geometry': building_geom,
+                    })
+                    for (cx, cy) in building_blocks:
+                        block_updates.append({'coord_x': cx, 'coord_y': cy, 'kind': 'building', 'building_id': building_id, 'building_type': building_type})
+                    added_building_blocks.update(building_blocks_set)
 
         if new_building_rows:
             nb_gdf = gpd.GeoDataFrame(new_building_rows, geometry='geometry', crs=self.buildings_gdf.crs)
@@ -1828,4 +1813,4 @@ class RasterCity(City):
                     self.streets_gdf = self.streets_gdf.drop(index=drop_idx)
 
         if skipped_overlap > 0 and verbose:
-            print(f"  Skipped {skipped_overlap} buildings due to overlap (adding took {time.time()-_t4:.2f}s)")
+            print(f"  Skipped {skipped_overlap} buildings due to overlap (adding took {time.time()-_t3:.2f}s)")
