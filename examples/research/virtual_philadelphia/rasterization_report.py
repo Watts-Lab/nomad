@@ -25,7 +25,7 @@
 #
 # ## Key Implementation Details
 #
-# **RasterCityGenerator** handles the conversion:
+# **RasterCity** handles the conversion:
 # - Generates a grid aligned to the city boundary (not a full bounding box, which would waste memory)
 # - Assigns block types based on intersection priority (streets > parks > other buildings)
 # - Splits buildings that span disconnected components
@@ -51,50 +51,137 @@ import time
 import geopandas as gpd
 import pandas as pd
 import numpy as np
+from shapely.geometry import box
 
 from nomad.city_gen import RasterCity
-
-SANDBOX_PATH = Path("sandbox/sandbox_data.gpkg")
-buildings = gpd.read_file(SANDBOX_PATH, layer="buildings")
-streets = gpd.read_file(SANDBOX_PATH, layer="streets")
-boundary = gpd.read_file(SANDBOX_PATH, layer="boundary")
+import nomad.map_utils as nm
 
 # %% [markdown]
-# ## Benchmark: Sequential Pipeline Timing
-#
-# Times each step of the city generation pipeline sequentially
+# ## Configuration
 
 # %%
+SMALL_BOX = box(-75.1545, 39.9460, -75.1425, 39.9535)
+MEDIUM_BOX = box(-75.1665, 39.9460, -75.1425, 39.9610)
+LARGE_BOX = box(-75.1905, 39.9460, -75.1425, 39.9760)
+
+PHILLY_BOX = SMALL_BOX
+# PHILLY_BOX = MEDIUM_BOX
+# PHILLY_BOX = LARGE_BOX
+
+OUTPUT_DIR = Path("sandbox")
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+SANDBOX_GPKG = OUTPUT_DIR / "sandbox_data.gpkg"
+
+REGENERATE_DATA = False  # Set to True to re-download OSM data
+
+# %% [markdown]
+# ## Benchmark: Data Generation (OSM Download + Rotation)
+
+# %%
+if REGENERATE_DATA or not SANDBOX_GPKG.exists():
+    print("="*50)
+    print("DATA GENERATION")
+    print("="*50)
+    
+    t0 = time.time()
+    buildings = nm.download_osm_buildings(
+        PHILLY_BOX,
+        crs="EPSG:3857",
+        schema="garden_city",
+        clip=True,
+        infer_building_types=True,
+        explode=True,
+    )
+    download_buildings_time = time.time() - t0
+    print(f"Buildings download: {download_buildings_time:>6.2f}s ({len(buildings):,} buildings)")
+    
+    boundary_polygon = gpd.GeoDataFrame(geometry=[PHILLY_BOX], crs="EPSG:4326").to_crs("EPSG:3857").geometry.iloc[0]
+    outside_mask = ~buildings.geometry.within(boundary_polygon)
+    if outside_mask.any():
+        buildings = gpd.clip(buildings, gpd.GeoDataFrame(geometry=[boundary_polygon], crs="EPSG:3857"))
+    buildings = nm.remove_overlaps(buildings).reset_index(drop=True)
+    
+    t1 = time.time()
+    streets = nm.download_osm_streets(
+        PHILLY_BOX,
+        crs="EPSG:3857",
+        clip=True,
+        explode=True,
+        graphml_path=OUTPUT_DIR / "streets_consolidated.graphml",
+    )
+    download_streets_time = time.time() - t1
+    print(f"Streets download:   {download_streets_time:>6.2f}s ({len(streets):,} streets)")
+    
+    streets = streets.reset_index(drop=True)
+    
+    t2 = time.time()
+    rotated_streets, rotation_deg = nm.rotate_streets_to_align(streets, k=200)
+    rotation_time = time.time() - t2
+    print(f"Grid rotation:      {rotation_time:>6.2f}s ({rotation_deg:.2f}°)")
+    
+    rotated_buildings = nm.rotate(buildings, rotation_deg=rotation_deg)
+    rotated_boundary = nm.rotate(
+        gpd.GeoDataFrame(geometry=[boundary_polygon], crs="EPSG:3857"),
+        rotation_deg=rotation_deg
+    )
+    
+    if SANDBOX_GPKG.exists():
+        SANDBOX_GPKG.unlink()
+    
+    rotated_buildings.to_file(SANDBOX_GPKG, layer="buildings", driver="GPKG")
+    rotated_streets.to_file(SANDBOX_GPKG, layer="streets", driver="GPKG", mode="a")
+    rotated_boundary.to_file(SANDBOX_GPKG, layer="boundary", driver="GPKG", mode="a")
+    
+    data_gen_time = download_buildings_time + download_streets_time + rotation_time
+    print("-"*50)
+    print(f"Data generation:    {data_gen_time:>6.2f}s")
+    print("="*50 + "\n")
+else:
+    print(f"Loading existing data from {SANDBOX_GPKG}")
+    data_gen_time = 0.0
+
+buildings = gpd.read_file(SANDBOX_GPKG, layer="buildings")
+streets = gpd.read_file(SANDBOX_GPKG, layer="streets")
+boundary = gpd.read_file(SANDBOX_GPKG, layer="boundary")
+
+# %% [markdown]
+# ## Benchmark: Rasterization Pipeline
+
+# %%
+print("="*50)
+print("RASTERIZATION PIPELINE")
+print("="*50)
+
 hub_size = 100
 
 t0 = time.time()
 city = RasterCity(boundary.geometry.iloc[0], streets, buildings, block_side_length=15.0)
 gen_time = time.time() - t0
+print(f"City generation:    {gen_time:>6.2f}s")
 
 t1 = time.time()
 G = city.get_street_graph()
 graph_time = time.time() - t1
+print(f"Street graph:       {graph_time:>6.2f}s")
 
 t2 = time.time()
 city._build_hub_network(hub_size=hub_size)
 hub_time = time.time() - t2
+print(f"Hub network:        {hub_time:>6.2f}s")
 
 t3 = time.time()
 city.compute_gravity(exponent=2.0)
 grav_time = time.time() - t3
-
-total_time = gen_time + graph_time + hub_time + grav_time
-
-print("\n" + "="*50)
-print("TIMING SUMMARY")
-print("="*50)
-print(f"City generation:    {gen_time:>6.2f}s")
-print(f"Street graph:       {graph_time:>6.2f}s")
-print(f"Hub network:        {hub_time:>6.2f}s")
 print(f"Gravity matrix:     {grav_time:>6.2f}s")
+
+raster_time = gen_time + graph_time + hub_time + grav_time
 print("-"*50)
-print(f"Total:              {total_time:>6.2f}s")
+print(f"Rasterization:      {raster_time:>6.2f}s")
 print("="*50)
+
+if data_gen_time > 0:
+    total_time = data_gen_time + raster_time
+    print(f"\nTotal (with data):  {total_time:>6.2f}s")
 
 # %% [markdown]
 # ## Summary: City Structure

@@ -1811,8 +1811,8 @@ class RasterCity(City):
                 if len(drop_idx) > 0:
                     self.streets_gdf = self.streets_gdf.drop(index=drop_idx)
 
-        if skipped_overlap > 0 and verbose:
-            print(f"  Skipped {skipped_overlap} buildings due to overlap (adding took {time.time()-_t3:.2f}s)")
+        if verbose:
+            print(f"  Added {len(new_building_rows)} buildings, skipped {skipped_overlap} due to overlap (adding took {time.time()-_t3:.2f}s)")
         
         if len(new_building_rows) == 0:
             raise ValueError(f"No buildings were added to city. Input had {len(self.buildings_gdf_input)} buildings.")
