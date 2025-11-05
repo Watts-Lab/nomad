@@ -183,42 +183,41 @@ class Agent:
     """
 
     def __init__(self, 
-                 identifier: str, 
-                 city: City,
-                 home: str = None,
-                 workplace: str = None,
-                 still_probs: dict = DEFAULT_STILL_PROBS, 
-                 speeds: dict = DEFAULT_SPEEDS,
-                 destination_diary: pd.DataFrame = None,
-                 trajectory: pd.DataFrame = None,
-                 diary: pd.DataFrame = None,
-                 seed: int = 0):
+                 identifier, 
+                 city,
+                 home=None,
+                 workplace=None,
+                 still_probs=DEFAULT_STILL_PROBS, 
+                 speeds=DEFAULT_SPEEDS,
+                 destination_diary=None,
+                 trajectory=None,
+                 diary=None,
+                 seed=0):
         """
-        Initializes an agent in the city simulation with a trajectory and diary.
-        If `trajectory` is not provided, the agent initialize with a ping at their home.
+        Initialize an agent in the city simulation, with optional existing data.
 
         Parameters
         ----------
         identifier : str
-            Name of the agent.
-        home : str
-            Building ID representing the home location.
-        workplace : str
-            Building ID representing the workplace location.
+            Agent identifier.
         city : City
-            The city object containing relevant information about the city's layout and properties.
-        still_probs : dict, optional (default=DEFAULT_STILL_PROBS)
-            Dictionary containing probabilities of the agent staying still.
-        speeds : dict, optional (default=DEFAULT_SPEEDS)
-            Dictionary containing possible speeds of the agent.
-        destination_diary : pandas.DataFrame, optional (default=None)
-            DataFrame containing the following columns: 'timestamp', 'datetime', 'duration', 'location'.
-        trajectory : pandas.DataFrame, optional (default=None)
-            DataFrame containing the following columns: 'x', 'y', 'datetime', 'timestamp', 'identifier'.
-        diary : pandas.DataFrame,  optional (default=None)
-            DataFrame containing the following columns: 'timestamp', 'datetime', 'duration', 'location'.
-        dt : float, optional (default=1)
-            Time step duration.
+            City object with buildings and topology.
+        home : str, optional
+            Building ID for the agent's home. If None, sampled from `city.buildings_gdf`.
+        workplace : str, optional
+            Building ID for the agent's workplace. If None, sampled from `city.buildings_gdf`.
+        still_probs : dict, optional
+            Per-building-type probabilities of staying still (default: DEFAULT_STILL_PROBS).
+        speeds : dict, optional
+            Per-building-type movement scalars (default: DEFAULT_SPEEDS).
+        destination_diary : pandas.DataFrame, optional
+            If provided, a DataFrame with columns ['datetime','timestamp','duration','location'].
+        trajectory : pandas.DataFrame, optional
+            If provided, a DataFrame with columns ['x','y','datetime','timestamp','identifier'].
+        diary : pandas.DataFrame, optional
+            If provided, a DataFrame with columns ['datetime','timestamp','duration','location'].
+        seed : int, optional
+            RNG seed used for sampling fallback home/work locations.
         """
 
         rng = npr.default_rng(seed)
