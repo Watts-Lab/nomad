@@ -55,113 +55,36 @@ import numpy as np
 from nomad.city_gen import RasterCity
 
 SANDBOX_PATH = Path("sandbox/sandbox_data.gpkg")
-USE_SUBSET = False  # Set to True for faster testing
-SUBSET_SIZE = 5000
-
-# %% [markdown]
-# ## Load Data
-
-# %%
 buildings = gpd.read_file(SANDBOX_PATH, layer="buildings")
 streets = gpd.read_file(SANDBOX_PATH, layer="streets")
 boundary = gpd.read_file(SANDBOX_PATH, layer="boundary")
 
-if USE_SUBSET:
-    buildings = buildings.head(SUBSET_SIZE)
-    print(f"Using subset: {len(buildings):,} buildings")
-else:
-    print(f"Full dataset: {len(buildings):,} buildings, {len(streets):,} streets")
-
 # %% [markdown]
-# ## Generate City
+# ## Benchmark: Sequential Pipeline Timing
 #
-# Converts vector geometries into discrete grid (block_size = 15 meters)
+# Times each step of the city generation pipeline sequentially
 
 # %%
+hub_size = 100
+
 t0 = time.time()
 city = RasterCity(boundary.geometry.iloc[0], streets, buildings, block_side_length=15.0)
 gen_time = time.time() - t0
 
-print(f"\nCity generation: {gen_time:.2f}s")
-print(f"  Blocks: {len(city.blocks_gdf):,}")
-print(f"  Streets: {len(city.streets_gdf):,}")
-print(f"  Buildings: {len(city.buildings_gdf):,}")
-
-# %% [markdown]
-# ## Street Graph
-#
-# NetworkX graph for pathfinding
-
-# %%
-t0 = time.time()
+t1 = time.time()
 G = city.get_street_graph()
-graph_time = time.time() - t0
+graph_time = time.time() - t1
 
-print(f"\nStreet graph: {graph_time:.2f}s")
-print(f"  Nodes: {len(G.nodes):,}")
-print(f"  Edges: {len(G.edges):,}")
-
-# %% [markdown]
-# ## Hub Network
-#
-# Sparse hub-to-hub distance matrix for efficient routing shortcuts
-
-# %%
-hub_size = 100
-t0 = time.time()
+t2 = time.time()
 city._build_hub_network(hub_size=hub_size)
-hub_time = time.time() - t0
+hub_time = time.time() - t2
 
-print(f"\nHub network ({hub_size} hubs): {hub_time:.2f}s")
-print(f"  Matrix shape: {city.hub_df.shape}")
-print(f"\nSample (first 5x5):")
-print(city.hub_df.iloc[:5, :5])
-
-# %% [markdown]
-# ## Gravity Matrix
-#
-# Building-to-building gravity using vectorized Manhattan distances + hub shortcuts
-
-# %%
-t0 = time.time()
+t3 = time.time()
 city.compute_gravity(exponent=2.0)
-grav_time = time.time() - t0
+grav_time = time.time() - t3
 
-print(f"\nGravity matrix: {grav_time:.2f}s")
-print(f"  Shape: {city.grav.shape}")
-
-# Detailed diagnostics
-diag = np.diag(city.grav.values)
-diag_zeros = (diag == 0).all()
-print(f"  Diagonal all zeros: {diag_zeros}")
-if not diag_zeros:
-    nonzero_diag = np.where(diag != 0)[0]
-    print(f"    Non-zero diagonal entries: {len(nonzero_diag)}")
-    print(f"    Example diagonal values: {diag[nonzero_diag[:5]]}")
-    print(f"    Corresponding building IDs: {[city.grav.index[i] for i in nonzero_diag[:5]]}")
-
-mask = ~np.eye(len(city.grav), dtype=bool)
-offdiag = city.grav.values[mask]
-offdiag_positive = (offdiag > 0).all()
-print(f"  Off-diagonal all positive: {offdiag_positive}")
-if not offdiag_positive:
-    nonpositive = np.where(offdiag <= 0)[0]
-    print(f"    Non-positive off-diagonal entries: {len(nonpositive)} / {len(offdiag)}")
-    print(f"    Min off-diagonal value: {offdiag.min()}")
-    print(f"    Max off-diagonal value: {offdiag.max()}")
-    # Find a specific example
-    rows, cols = np.where((city.grav.values <= 0) & ~np.eye(len(city.grav), dtype=bool))
-    if len(rows) > 0:
-        print(f"    Example: grav[{city.grav.index[rows[0]]}][{city.grav.columns[cols[0]]}] = {city.grav.iloc[rows[0], cols[0]]}")
-
-print(f"\nSample (first building to 5 others):")
-print(city.grav.iloc[0, :5])
-
-# %% [markdown]
-# ## Summary
-
-# %%
 total_time = gen_time + graph_time + hub_time + grav_time
+
 print("\n" + "="*50)
 print("TIMING SUMMARY")
 print("="*50)
@@ -172,3 +95,53 @@ print(f"Gravity matrix:     {grav_time:>6.2f}s")
 print("-"*50)
 print(f"Total:              {total_time:>6.2f}s")
 print("="*50)
+
+# %% [markdown]
+# ## Debugging: Structure and Diagnostics
+#
+# Print all structural info and validation checks
+
+# %%
+print("\nCITY STRUCTURE")
+print(f"  Blocks: {len(city.blocks_gdf):,}")
+print(f"  Streets: {len(city.streets_gdf):,}")
+print(f"  Buildings: {len(city.buildings_gdf):,}")
+
+print("\nSTREET GRAPH")
+print(f"  Nodes: {len(G.nodes):,}")
+print(f"  Edges: {len(G.edges):,}")
+
+print(f"\nHUB NETWORK ({hub_size} hubs)")
+print(f"  Matrix shape: {city.hub_df.shape}")
+print(f"  Sample (first 5x5):")
+print(city.hub_df.iloc[:5, :5])
+
+print("\nGRAVITY MATRIX")
+print(f"  Shape: {city.grav.shape}")
+
+# Diagonal should be all zeros (no self-gravity)
+diag = np.diag(city.grav.values)
+diag_zeros = (diag == 0).all()
+print(f"  Diagonal all zeros: {diag_zeros}")
+if not diag_zeros:
+    nonzero_diag = np.where(diag != 0)[0]
+    print(f"    WARNING: Non-zero diagonal entries: {len(nonzero_diag)}")
+    print(f"    Example diagonal values: {diag[nonzero_diag[:5]]}")
+    print(f"    Corresponding building IDs: {[city.grav.index[i] for i in nonzero_diag[:5]]}")
+
+# Off-diagonal should all be positive (gravity between distinct buildings)
+mask = ~np.eye(len(city.grav), dtype=bool)
+offdiag = city.grav.values[mask]
+offdiag_positive = (offdiag > 0).all()
+print(f"  Off-diagonal all positive: {offdiag_positive}")
+if not offdiag_positive:
+    nonpositive = np.where(offdiag <= 0)[0]
+    print(f"    WARNING: Non-positive off-diagonal entries: {len(nonpositive)} / {len(offdiag)}")
+    print(f"    Min off-diagonal value: {offdiag.min()}")
+    print(f"    Max off-diagonal value: {offdiag.max()}")
+    rows, cols = np.where((city.grav.values <= 0) & ~np.eye(len(city.grav), dtype=bool))
+    if len(rows) > 0:
+        print(f"    Example: grav[{city.grav.index[rows[0]]}][{city.grav.columns[cols[0]]}] = {city.grav.iloc[rows[0], cols[0]]}")
+
+print(f"  Sample (first building to 5 others):")
+print(city.grav.iloc[0, :5])
