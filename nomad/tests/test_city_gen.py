@@ -312,3 +312,26 @@ def test_compute_gravity():
     assert (city.grav.values[mask] > 0).all()
 
 
+def test_compute_gravity_callable():
+    buildings, streets, boundary = _load_sandbox()
+    buildings = buildings.head(100)
+    
+    city_dense = RasterCity(boundary, streets, buildings, block_side_length=15.0)
+    city_dense._build_hub_network(hub_size=16)
+    city_dense.compute_gravity(exponent=2.0, callable_only=False)
+    
+    city_callable = RasterCity(boundary, streets, buildings, block_side_length=15.0)
+    city_callable._build_hub_network(hub_size=16)
+    city_callable.compute_gravity(exponent=2.0, callable_only=True)
+    
+    assert callable(city_callable.grav)
+    
+    rng = np.random.default_rng(42)
+    test_buildings = rng.choice(city_dense.buildings_gdf['id'].values, size=5, replace=False)
+    
+    for bid in test_buildings:
+        dense_row = city_dense.grav.loc[bid].values
+        callable_row = city_callable.grav(bid).values
+        assert np.allclose(dense_row, callable_row, atol=1e-5)
+
+

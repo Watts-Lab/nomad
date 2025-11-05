@@ -624,8 +624,11 @@ class Agent:
             elif rng.uniform() < p_exp:
                 # Compute gravity probs from current door cell to unexplored candidates
                 y = visit_freqs.loc[(visit_freqs['building_type'].isin(allowed)) & (visit_freqs.freq == 0)]
-                if not y.empty and curr in self.city.grav.index:
-                    probs = self.city.grav.loc[curr, y.index].values
+                if not y.empty:
+                    if callable(self.city.grav):
+                        probs = self.city.grav(curr).loc[y.index].values
+                    else:
+                        probs = self.city.grav.loc[curr, y.index].values
                     probs = probs / probs.sum()
                     curr = rng.choice(y.index, p=probs)
                 else:

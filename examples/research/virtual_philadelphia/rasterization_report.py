@@ -60,17 +60,28 @@ import nomad.map_utils as nm
 # ## Configuration
 
 # %%
-SMALL_BOX = box(-75.1545, 39.9460, -75.1425, 39.9535)
-MEDIUM_BOX = box(-75.1665, 39.9460, -75.1425, 39.9610)
-LARGE_BOX = box(-75.1905, 39.9460, -75.1425, 39.9760)
+SMALL_BOX = box(-75.1545, 39.946, -75.1425, 39.9535)
+MEDIUM_BOX = box(-75.1665, 39.9385, -75.1425, 39.9535)
+LARGE_BOX  = box(-75.1905, 39.9235, -75.1425, 39.9535)
 
-PHILLY_BOX = SMALL_BOX
-# PHILLY_BOX = MEDIUM_BOX
+# PHILLY_BOX = SMALL_BOX
+PHILLY_BOX = MEDIUM_BOX
 # PHILLY_BOX = LARGE_BOX
+
+BLOCK_SIDE_LENGTH = 10.0  # meters
 
 OUTPUT_DIR = Path("sandbox")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-SANDBOX_GPKG = OUTPUT_DIR / "sandbox_data.gpkg"
+
+# Determine which box we're using and set appropriate filename
+if PHILLY_BOX == SMALL_BOX:
+    BOX_NAME = "small"
+elif PHILLY_BOX == MEDIUM_BOX:
+    BOX_NAME = "medium"
+else:
+    BOX_NAME = "large"
+
+SANDBOX_GPKG = OUTPUT_DIR / f"sandbox_data_{BOX_NAME}.gpkg"
 
 REGENERATE_DATA = False  # Set to True to re-download OSM data
 
@@ -155,7 +166,7 @@ print("="*50)
 hub_size = 100
 
 t0 = time.time()
-city = RasterCity(boundary.geometry.iloc[0], streets, buildings, block_side_length=15.0)
+city = RasterCity(boundary.geometry.iloc[0], streets, buildings, block_side_length=BLOCK_SIDE_LENGTH)
 gen_time = time.time() - t0
 print(f"City generation:    {gen_time:>6.2f}s")
 
@@ -187,6 +198,16 @@ if data_gen_time > 0:
 # ## Summary: City Structure
 
 # %%
+def get_size_mb(obj):
+    """Estimate memory size in MB for common objects."""
+    if isinstance(obj, (pd.DataFrame, gpd.GeoDataFrame)):
+        return obj.memory_usage(deep=True).sum() / 1024**2
+    elif hasattr(obj, 'nodes') and hasattr(obj, 'edges'):  # NetworkX graph
+        # Approximate: 64 bytes per node + 96 bytes per edge
+        return (len(obj.nodes) * 64 + len(obj.edges) * 96) / 1024**2
+    else:
+        return 0.0
+
 summary_df = pd.DataFrame({
     'Component': ['Blocks', 'Streets', 'Buildings', 'Graph Nodes', 'Graph Edges', 'Hub Network', 'Gravity Matrix'],
     'Count/Shape': [
@@ -197,6 +218,15 @@ summary_df = pd.DataFrame({
         f"{len(G.edges):,}",
         f"{city.hub_df.shape[0]}×{city.hub_df.shape[1]}",
         f"{city.grav.shape[0]}×{city.grav.shape[1]}"
+    ],
+    'Memory (MB)': [
+        f"{get_size_mb(city.blocks_gdf):.1f}",
+        f"{get_size_mb(city.streets_gdf):.1f}",
+        f"{get_size_mb(city.buildings_gdf):.1f}",
+        f"{get_size_mb(G):.1f}",
+        "-",
+        f"{get_size_mb(city.hub_df):.1f}",
+        f"{get_size_mb(city.grav):.1f}"
     ]
 })
 print("\n" + summary_df.to_string(index=False))

@@ -680,11 +680,9 @@ class City:
         dy = np.abs(y1[:, None] - y2[None, :])
         return dx + dy
 
-    def compute_gravity(self, exponent=2.0):
+    def compute_gravity(self, exponent=2.0, callable_only=False):
         """Precompute building-to-building gravity using Manhattan distances and hub shortcuts.
-        
-        NOTE: This function will replace compute_door_distances() once fully implemented.
-        
+                
         Uses only self.streets_gdf and self.hub_df to compute gravity matrix.
         For each pair of buildings, estimates distance using hub-based shortcuts:
           dist(i,j) = manhattan(door_i, hub_i) + hub_distance(hub_i, hub_j) + manhattan(door_j, hub_j)
@@ -694,49 +692,76 @@ class City:
         ----------
         exponent : float
             The gravity decay exponent (default 2.0)
+        callable_only : bool
+            If True, store callable function instead of dense matrix (default False)
         
-        Stores result in self.grav as:
-          {'ids': [id0, id1, ...], 'index': {id -> row_idx}, 'G': np.ndarray (float32) shape (N,N)}
+        Stores result in self.grav as DataFrame (callable_only=False) or callable (callable_only=True)
         """
-        # Step 1: Get building door coordinates and verify they're in streets_gdf
-        doors_df = self.buildings_gdf[['id', 'door_cell_x', 'door_cell_y']].copy()
-        door_x = doors_df['door_cell_x'].astype(int).to_numpy()
-        door_y = doors_df['door_cell_y'].astype(int).to_numpy()
-        doors = list(zip(door_x, door_y))
+        # Part 1: Compute lean distance structures
+        building_ids = self.buildings_gdf['id'].to_numpy()
+        door_x = self.buildings_gdf['door_cell_x'].astype(int).to_numpy()
+        door_y = self.buildings_gdf['door_cell_y'].astype(int).to_numpy()
         
-        invalid_doors = [d for d in doors if d not in self.streets_gdf.index]
-        if invalid_doors:
-            raise ValueError(f"Building doors not in streets_gdf: {invalid_doors}")
-        
-        # Step 2: Compute manhattan distance from each door to each hub
         hubs = np.array(self.hubs)
         door_to_hub_dist = self._pairwise_manhattan(door_x, door_y, hubs[:, 0], hubs[:, 1])
-        closest_hub_idx = door_to_hub_dist.argmin(axis=1)
+        closest_hub_idx = door_to_hub_dist.argmin(axis=1).astype(np.int32)
+        dist_to_closest_hub = door_to_hub_dist.min(axis=1).astype(np.int32)
         
-        doors_df['dist_to_closest_hub'] = door_to_hub_dist.min(axis=1)
-        doors_df['closest_hub'] = [tuple(hubs[i]) for i in closest_hub_idx]
+        self.grav_hub_info = pd.DataFrame({
+            'closest_hub_idx': closest_hub_idx,
+            'dist_to_hub': dist_to_closest_hub
+        }, index=building_ids)
         
-        # Step 3: Compute manhattan distance between each pair of doors
-        door_to_door_manhattan = self._pairwise_manhattan(door_x, door_y, door_x, door_y)
+        door_to_door_manhattan = self._pairwise_manhattan(door_x, door_y, door_x, door_y).astype(np.int32)
         
-        # Step 4: Compute proxy distance using hub-based shortcuts
-        dist_to_hub = doors_df['dist_to_closest_hub'].to_numpy()
-        hub_to_hub = self.hub_df.values[closest_hub_idx[:, None], closest_hub_idx[None, :]]
+        i_idx, j_idx = np.triu_indices(len(building_ids), k=1)
+        min_hub_dist = np.minimum(dist_to_closest_hub[:, None], dist_to_closest_hub[None, :])
+        close_mask = (door_to_door_manhattan < min_hub_dist)[i_idx, j_idx]
         
-        # Use manhattan if both doors close to hubs, else route through hub network
-        both_close = (dist_to_hub[:, None] < door_to_door_manhattan) & (dist_to_hub[None, :] < door_to_door_manhattan)
-        dist = np.where(both_close, door_to_door_manhattan, dist_to_hub[:, None] + hub_to_hub + dist_to_hub[None, :])
+        self.mh_dist_nearby_doors = pd.Series(
+            door_to_door_manhattan[i_idx[close_mask], j_idx[close_mask]],
+            index=pd.MultiIndex.from_arrays([building_ids[i_idx[close_mask]], building_ids[j_idx[close_mask]]])
+        )
         
-        # Set diagonal to zero (distance to self)
-        np.fill_diagonal(dist, 0)
-        
-        # Step 5: Compute gravity matrix
-        with np.errstate(divide='ignore', invalid='ignore'):
-            gravity = np.where(dist > 0, 1.0 / (dist ** exponent), 0.0)
-        
-        # Step 6: Store as DataFrame for easy lookup by building_id
-        building_ids = doors_df['id'].tolist()
-        self.grav = pd.DataFrame(gravity, index=building_ids, columns=building_ids)
+        # Part 2: Create dense matrix or callable
+        if callable_only:
+            bid_to_idx = {bid: i for i, bid in enumerate(building_ids)}
+            hub_to_hub = self.hub_df.values
+            
+            def compute_gravity_row(building_id):
+                idx = bid_to_idx[building_id]
+                hub_i = closest_hub_idx[idx]
+                dist_to_hub_i = dist_to_closest_hub[idx]
+                
+                distances = dist_to_hub_i + hub_to_hub[hub_i, closest_hub_idx] + dist_to_closest_hub
+                
+                for (bid_i, bid_j), d in self.mh_dist_nearby_doors.items():
+                    if bid_i == building_id:
+                        distances[bid_to_idx[bid_j]] = d
+                    elif bid_j == building_id:
+                        distances[bid_to_idx[bid_i]] = d
+                
+                distances[idx] = 0
+                gravity_row = 1.0 / (distances ** exponent)
+                gravity_row[idx] = 0.0
+                
+                return pd.Series(gravity_row, index=building_ids)
+            
+            self.grav = compute_gravity_row
+        else:
+            hub_to_hub = self.hub_df.values
+            dist_matrix = dist_to_closest_hub[:, None] + hub_to_hub[closest_hub_idx[:, None], closest_hub_idx[None, :]] + dist_to_closest_hub[None, :]
+            
+            bid_to_idx = {bid: i for i, bid in enumerate(building_ids)}
+            for (bid_i, bid_j), d in self.mh_dist_nearby_doors.items():
+                i, j = bid_to_idx[bid_i], bid_to_idx[bid_j]
+                dist_matrix[i, j] = dist_matrix[j, i] = d
+            
+            np.fill_diagonal(dist_matrix, 0)
+            gravity = 1.0 / (dist_matrix ** exponent)
+            np.fill_diagonal(gravity, 0.0)
+            
+            self.grav = pd.DataFrame(gravity, index=building_ids, columns=building_ids)
 
     def save(self, filename):
         """
