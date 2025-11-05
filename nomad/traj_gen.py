@@ -350,7 +350,7 @@ class Agent:
         start_point_arr = np.asarray(start_point, dtype=float)
 
         # If already at destination building area or at door centroid, stay-within-building dynamics
-        if (start_info['kind'] == 'building' and start_info['building_id'] == dest_building_id) or \
+        if (start_info['building_type'] is not None and start_info['building_type'] != 'street' and start_info['building_id'] == dest_building_id) or \
            (abs(start_point_arr[0] - dest_door_centroid.x) < 1e-9 and abs(start_point_arr[1] - dest_door_centroid.y) < 1e-9):
             location = dest_building_id
             p = self.still_probs.get(dest_type, 0.5)
@@ -370,7 +370,7 @@ class Agent:
         location = None
         start_segment = []
         # If currently inside a building, first move towards its door centroid
-        if start_info['kind'] == 'building' and start_info['building_id'] is not None:
+        if start_info['building_type'] is not None and start_info['building_type'] != 'street' and start_info['building_id'] is not None:
             srow = city.buildings_gdf[city.buildings_gdf['id'] == start_info['building_id']]
             if srow.empty:
                 raise ValueError(f"Start building {start_info['building_id']} not found in city buildings.")
@@ -591,7 +591,7 @@ class Agent:
             start_time_local = self.last_ping['datetime']
             start_time = int(self.last_ping['timestamp'])
             curr_info = self.city.get_block((int(np.floor(self.last_ping['x'])), int(np.floor(self.last_ping['y']))))
-            curr = curr_info['building_id'] if curr_info['kind'] == 'building' and curr_info['building_id'] is not None else self.home
+            curr = curr_info['building_id'] if curr_info['building_type'] is not None and curr_info['building_type'] != 'street' and curr_info['building_id'] is not None else self.home
         else:
             last_entry = self.destination_diary.iloc[-1]
             start_time_local = last_entry.datetime + timedelta(minutes=int(last_entry.duration))

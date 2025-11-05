@@ -115,10 +115,10 @@ def test_shortest_path():
     first_building = city.buildings_gdf.iloc[0]
     building_door = (int(first_building['door_cell_x']), int(first_building['door_cell_y']))
     assert building_door in city.blocks_gdf.index, "Building door must be in blocks_gdf"
-    assert city.blocks_gdf.loc[building_door, 'kind'] == 'street', "Building door must be on a street"
+    assert city.blocks_gdf.loc[building_door, 'building_type'] == 'street', "Building door must be on a street"
     
     # Find an actual building block to test routing error
-    building_blocks = city.blocks_gdf[city.blocks_gdf['kind'] == 'building']
+    building_blocks = city.blocks_gdf[(city.blocks_gdf['building_type'].notna()) & (city.blocks_gdf['building_type'] != 'street')]
     assert not building_blocks.empty, "RandomCityGenerator must create building blocks"
     building_block = building_blocks.index[0]
     try:

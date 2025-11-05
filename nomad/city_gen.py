@@ -182,7 +182,7 @@ class City:
         """
         if not hasattr(self, 'blocks_gdf') or self.blocks_gdf.empty:
             self.blocks_gdf = self._init_blocks_gdf()
-        streets = self.blocks_gdf[self.blocks_gdf['kind'] == 'street'].copy()
+        streets = self.blocks_gdf[self.blocks_gdf['building_type'] == 'street'].copy()
         if not streets.empty:
             streets['id'] = streets['coord_x'].astype(int).astype(str) + '-y' + streets['coord_y'].astype(int).astype(str)
             streets['id'] = 's-x' + streets['id']
@@ -207,9 +207,8 @@ class City:
         df = pd.DataFrame(index=multi_index).reset_index()
         
         # Add other columns
-        df['kind'] = 'street'
+        df['building_type'] = 'street'
         df['building_id'] = None
-        df['building_type'] = None
         df['geometry'] = df.apply(lambda row: box(row['coord_x'], row['coord_y'], row['coord_x']+1, row['coord_y']+1), axis=1)
         
         blocks_gdf = gpd.GeoDataFrame(df, geometry='geometry', crs=None)
@@ -329,7 +328,7 @@ class City:
             existing_building_blocks = set()
             if hasattr(self, 'blocks_gdf') and not self.blocks_gdf.empty:
                 existing_building_blocks = set(
-                    self.blocks_gdf[self.blocks_gdf['kind'] == 'building'].index.tolist()
+                    self.blocks_gdf[(self.blocks_gdf['building_type'].notna()) & (self.blocks_gdf['building_type'] != 'street')].index.tolist()
                 )
             
             if building_blocks_set & existing_building_blocks:
@@ -459,12 +458,11 @@ class City:
         if (x, y) in self.blocks_gdf.index:
             row = self.blocks_gdf.loc[(x, y)]
             return {
-                'kind': row['kind'],
-                'building_id': row['building_id'],
                 'building_type': row['building_type'],
+                'building_id': row['building_id'],
                 'geometry': row['geometry']
             }
-        return {'kind': 'unknown', 'building_id': None, 'building_type': None, 'geometry': None}
+        return {'building_type': None, 'building_id': None, 'geometry': None}
 
     def check_adjacent(self, geom1, geom2, graph=None):
         """Adjacency on a grid of 1x1 blocks. Returns list[bool]."""
@@ -1602,22 +1600,16 @@ def find_intersecting_blocks(geometries_gdf: gpd.GeoDataFrame, blocks_gdf: gpd.G
 TYPE_PRIORITY = {'street':1,'park':2,'workplace':3,'home':4,'retail':5,'other':6}
 
 
-def assign_block_types(blocks_gdf, streets_gdf, buildings_by_type, block_size):
+def assign_block_types(blocks_gdf, streets_gdf, buildings_gdf_input):
     street_intersections = find_intersecting_blocks(streets_gdf, blocks_gdf)
     street_coords = set(zip(street_intersections['coord_x'], street_intersections['coord_y']))
     blocks_gdf.loc[blocks_gdf.index.isin(street_coords), 'building_type'] = 'street'
     for building_type in ['park','workplace','home','retail','other']:
-        if building_type not in buildings_by_type or len(buildings_by_type[building_type]) == 0:
-            continue
+        subset = buildings_gdf_input[buildings_gdf_input['building_type'] == building_type]
         unassigned = blocks_gdf[blocks_gdf['building_type'].isna()]
-        if len(unassigned) == 0:
-            break
-        building_intersections = find_intersecting_blocks(buildings_by_type[building_type], unassigned)
+        building_intersections = find_intersecting_blocks(subset, unassigned)
         building_coords = set(zip(building_intersections['coord_x'], building_intersections['coord_y']))
-        unassigned_coords = set(unassigned.index)
-        to_assign = building_coords & unassigned_coords
-        if to_assign:
-            blocks_gdf.loc[blocks_gdf.index.isin(to_assign), 'building_type'] = building_type
+        blocks_gdf.loc[blocks_gdf.index.isin(building_coords), 'building_type'] = building_type
 
 
 def find_connected_components(block_coords: List[Tuple[int,int]], connectivity: str = '4-connected') -> List[Set[Tuple[int,int]]]:
@@ -1697,11 +1689,32 @@ class RasterCity(City):
         
         self.boundary_polygon = boundary_polygon
         self.crs = crs
-        self.building_type_col = building_type_col
         self.streets_gdf_input = streets_gdf.to_crs(crs)
-        self.buildings_gdf_input = buildings_gdf.to_crs(crs)
+        
+        buildings_gdf = buildings_gdf.to_crs(crs)
+        if building_type_col != 'building_type':
+            buildings_gdf = buildings_gdf.rename(columns={building_type_col: 'building_type'})
+        if 'building_type' not in buildings_gdf.columns:
+            raise ValueError(f"buildings_gdf must have a 'building_type' column (or specify building_type_col parameter)")
+        self.buildings_gdf_input = buildings_gdf
         
         self.blocks_gdf = generate_canvas_blocks(self.boundary_polygon, self.block_side_length, self.crs, verbose=verbose)
+        
+        # Calculate offset and apply to all gdfs
+        minx, miny, maxx, maxy = self.boundary_polygon.bounds
+        self.offset_x = int(minx // self.block_side_length)
+        self.offset_y = int(miny // self.block_side_length)
+        offset_meters = (self.offset_x * self.block_side_length, self.offset_y * self.block_side_length)
+        
+        self.blocks_gdf['coord_x'] = self.blocks_gdf['coord_x'] - self.offset_x
+        self.blocks_gdf['coord_y'] = self.blocks_gdf['coord_y'] - self.offset_y
+        self.blocks_gdf['building_id'] = None
+        self.blocks_gdf['geometry'] = self.blocks_gdf['geometry'].translate(xoff=-offset_meters[0], yoff=-offset_meters[1])
+        self.blocks_gdf.set_index(['coord_x','coord_y'], inplace=True, drop=False)
+        self.blocks_gdf.index.names = [None, None]
+        
+        self.streets_gdf_input['geometry'] = self.streets_gdf_input['geometry'].translate(xoff=-offset_meters[0], yoff=-offset_meters[1])
+        self.buildings_gdf_input['geometry'] = self.buildings_gdf_input['geometry'].translate(xoff=-offset_meters[0], yoff=-offset_meters[1])
         
         self._rasterize(verbose=verbose)
 
@@ -1711,14 +1724,7 @@ class RasterCity(City):
         _t1 = time.time()
         if verbose:
             print("Assigning block types...")
-        buildings_by_type = {}
-        btype_col = self.building_type_col
-        if btype_col in self.buildings_gdf_input.columns:
-            for btype in ['park','workplace','home','retail','other']:
-                subset = self.buildings_gdf_input[self.buildings_gdf_input[btype_col] == btype]
-                if len(subset) > 0:
-                    buildings_by_type[btype] = subset
-        assign_block_types(self.blocks_gdf, self.streets_gdf_input, buildings_by_type, self.block_side_length)
+        assign_block_types(self.blocks_gdf, self.streets_gdf_input, self.buildings_gdf_input)
         if verbose:
             print(f"Block types assigned (in {time.time()-_t1:.2f}s)")
         _t2 = time.time()
@@ -1731,26 +1737,12 @@ class RasterCity(City):
         if verbose:
             print(f"  Streets: {summary['kept']:,} kept, {summary['discarded']:,} discarded (in {time.time()-_t2:.2f}s)")
         
-        minx, miny, maxx, maxy = self.boundary_polygon.bounds
-        grid_min_x = int(minx // self.block_side_length)
-        grid_min_y = int(miny // self.block_side_length)
-        offset_x, offset_y = grid_min_x, grid_min_y
-        
-        self.blocks_gdf['coord_x'] = self.blocks_gdf['coord_x'] - offset_x
-        self.blocks_gdf['coord_y'] = self.blocks_gdf['coord_y'] - offset_y
-        self.blocks_gdf['kind'] = self.blocks_gdf['building_type'].where(self.blocks_gdf['building_type'] == 'street', 'building')
-        self.blocks_gdf['building_id'] = None
-        self.blocks_gdf.set_index(['coord_x','coord_y'], inplace=True, drop=False)
-        self.blocks_gdf.index.names = [None, None]
-        
         self.streets_gdf = gpd.GeoDataFrame(connected_streets[['coord_x','coord_y','geometry']].copy(), geometry='geometry', crs=self.crs)
-        self.streets_gdf['coord_x'] = self.streets_gdf['coord_x'] - offset_x
-        self.streets_gdf['coord_y'] = self.streets_gdf['coord_y'] - offset_y
         self.streets_gdf['id'] = ('s-x' + self.streets_gdf['coord_x'].astype(int).astype(str) + '-y' + self.streets_gdf['coord_y'].astype(int).astype(str))
         self.streets_gdf.set_index(['coord_x','coord_y'], inplace=True, drop=False)
         self.streets_gdf.index.names = [None, None]
         
-        available_for_doors = self.blocks_gdf[self.blocks_gdf['kind'] == 'street'].index
+        available_for_doors = self.blocks_gdf[self.blocks_gdf['building_type'] == 'street'].index
         
         _t3 = time.time()
         if verbose:
@@ -1759,13 +1751,12 @@ class RasterCity(City):
         skipped_overlap = 0
         new_building_rows = []
         block_updates = []
-        for building_type in ['park','workplace','home','retail','other']:
-            if building_type not in buildings_by_type:
+        building_types = self.buildings_gdf_input['building_type'].unique()
+        for building_type in building_types:
+            if building_type == 'street' or pd.isna(building_type):
                 continue
-            subset = buildings_by_type[building_type]
+            subset = self.buildings_gdf_input[self.buildings_gdf_input['building_type'] == building_type]
             tb_type = self.blocks_gdf[self.blocks_gdf['building_type'] == building_type]
-            if len(tb_type) == 0:
-                continue
             joins = find_intersecting_blocks(subset, tb_type)
             if len(joins) == 0:
                 continue
@@ -1776,8 +1767,7 @@ class RasterCity(City):
                     continue
                 components = find_connected_components(block_coords, connectivity='4-connected')
                 for component in components:
-                    component_blocks = list(component)
-                    building_blocks = [(x-offset_x, y-offset_y) for x,y in component_blocks]
+                    building_blocks = list(component)
                     door = assign_door_to_building(building_blocks, available_for_doors)
                     if door is None:
                         continue
@@ -1799,7 +1789,7 @@ class RasterCity(City):
                         'geometry': building_geom,
                     })
                     for (cx, cy) in building_blocks:
-                        block_updates.append({'coord_x': cx, 'coord_y': cy, 'kind': 'building', 'building_id': building_id, 'building_type': building_type})
+                        block_updates.append({'coord_x': cx, 'coord_y': cy, 'building_id': building_id, 'building_type': building_type})
                     added_building_blocks.update(building_blocks_set)
 
         if new_building_rows:
@@ -1816,7 +1806,7 @@ class RasterCity(City):
             upd_df.set_index(['coord_x','coord_y'], inplace=True)
             common_idx = self.blocks_gdf.index.intersection(upd_df.index)
             if len(common_idx) > 0:
-                cols = ['kind','building_id','building_type']
+                cols = ['building_id','building_type']
                 self.blocks_gdf.loc[common_idx, cols] = upd_df.loc[common_idx, cols].values
             if not self.streets_gdf.empty:
                 drop_idx = self.streets_gdf.index.intersection(upd_df.index)
@@ -1825,3 +1815,6 @@ class RasterCity(City):
 
         if skipped_overlap > 0 and verbose:
             print(f"  Skipped {skipped_overlap} buildings due to overlap (adding took {time.time()-_t3:.2f}s)")
+        
+        if len(new_building_rows) == 0:
+            raise ValueError(f"No buildings were added to city. Input had {len(self.buildings_gdf_input)} buildings.")
