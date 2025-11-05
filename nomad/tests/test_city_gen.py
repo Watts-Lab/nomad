@@ -335,3 +335,18 @@ def test_compute_gravity_callable():
         assert np.allclose(dense_row, callable_row, atol=1e-5)
 
 
+def test_resolve_overlaps():
+    buildings, streets, boundary = _load_sandbox()
+    buildings = buildings.head(100)
+    
+    city_default = RasterCity(boundary, streets, buildings, block_side_length=15.0, resolve_overlaps=False)
+    city_resolved = RasterCity(boundary, streets, buildings, block_side_length=15.0, resolve_overlaps=True)
+    
+    n_default = len(city_default.buildings_gdf)
+    n_resolved = len(city_resolved.buildings_gdf)
+    
+    assert n_resolved >= n_default
+    assert n_resolved > 0
+    assert n_default > 0
+
+

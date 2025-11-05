@@ -164,9 +164,10 @@ print("RASTERIZATION PIPELINE")
 print("="*50)
 
 hub_size = 100
+resolve_overlaps = True
 
 t0 = time.time()
-city = RasterCity(boundary.geometry.iloc[0], streets, buildings, block_side_length=BLOCK_SIDE_LENGTH)
+city = RasterCity(boundary.geometry.iloc[0], streets, buildings, block_side_length=BLOCK_SIDE_LENGTH, resolve_overlaps=resolve_overlaps)
 gen_time = time.time() - t0
 print(f"City generation:    {gen_time:>6.2f}s")
 
