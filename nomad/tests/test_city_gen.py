@@ -300,7 +300,7 @@ def test_compute_gravity():
     buildings, streets, boundary = _load_sandbox()
     buildings = buildings.head(100)
     
-    city = RasterCity(boundary, streets, buildings, block_size=15.0)
+    city = RasterCity(boundary, streets, buildings, block_side_length=15.0)
     
     city._build_hub_network(hub_size=16)
     city.compute_gravity(exponent=2.0)

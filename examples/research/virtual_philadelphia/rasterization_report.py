@@ -79,7 +79,7 @@ else:
 
 # %%
 t0 = time.time()
-city = RasterCity(boundary.geometry.iloc[0], streets, buildings, block_size=15.0)
+city = RasterCity(boundary.geometry.iloc[0], streets, buildings, block_side_length=15.0)
 gen_time = time.time() - t0
 
 print(f"\nCity generation: {gen_time:.2f}s")

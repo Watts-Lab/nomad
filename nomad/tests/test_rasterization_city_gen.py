@@ -26,7 +26,7 @@ def _load_fixture():
 def test_raster_city_generate_and_graph():
     buildings, streets, boundary_geom = _load_fixture()
     t0 = time.time()
-    city = RasterCity(boundary_geom, streets, buildings, block_size=15.0)
+    city = RasterCity(boundary_geom, streets, buildings, block_side_length=15.0)
     elapsed = time.time() - t0
     assert elapsed < 30.0  # sanity bound for CI
 
@@ -54,7 +54,7 @@ def test_raster_city_generate_and_graph():
 
 def test_shortest_path_and_fast_distance():
     buildings, streets, boundary_geom = _load_fixture()
-    city = RasterCity(boundary_geom, streets, buildings, block_size=15.0)
+    city = RasterCity(boundary_geom, streets, buildings, block_side_length=15.0)
     G = city.get_street_graph()
     nodes = list(G.nodes)
     assert len(nodes) >= 2

@@ -25,10 +25,10 @@ def main():
     rot_buildings = gpd.GeoDataFrame(columns=['geometry'], geometry='geometry', crs=streets.crs)
 
     boundary_geom = boundary.geometry.iloc[0]
-    block_size = 15.0
+    block_side_length = 15.0
 
     t0 = time.time()
-    city = RasterCity(boundary_geom, streets, rot_buildings, block_size=block_size)
+    city = RasterCity(boundary_geom, streets, rot_buildings, block_side_length=block_side_length)
     t_raster = time.time() - t0
     print(f"Streets-only rasterization: {t_raster:.2f}s; streets={len(city.streets_gdf):,}; blocks={len(city.blocks_gdf):,}")
 

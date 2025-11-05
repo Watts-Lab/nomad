@@ -190,7 +190,7 @@ rot_buildings = gpd.GeoDataFrame(columns=['geometry'], geometry='geometry', crs=
 rot_boundary = gpd.read_file(RAW_GPKG_PATH, layer="city_boundary_rotated")
 
 boundary_geom = rot_boundary.geometry.iloc[0]
-block_size = 15.0
+block_side_length = 15.0
 
 import time as _t
 _t0 = _t.time()
@@ -198,7 +198,7 @@ city_streets = RasterCity(
     boundary_polygon=boundary_geom,
     streets_gdf=rot_streets,
     buildings_gdf=rot_buildings,
-    block_size=block_size,
+    block_side_length=block_side_length,
 )
 streets_only_elapsed = _t.time() - _t0
 print(f"Streets-only rasterization: {streets_only_elapsed:.2f}s; streets={len(city_streets.streets_gdf):,}, blocks={len(city_streets.blocks_gdf):,}")
@@ -220,7 +220,7 @@ print("\nRasterizing rotated city at 15m (buildings + streets)...")
 rot_buildings = gpd.read_file(RAW_GPKG_PATH, layer="buildings_rotated")
 
 boundary_geom = rot_boundary.geometry.iloc[0]
-block_size = 15.0
+block_side_length = 15.0
 
 import time as _t
 _t0 = _t.time()
@@ -228,7 +228,7 @@ city = RasterCity(
     boundary_polygon=boundary_geom,
     streets_gdf=rot_streets,
     buildings_gdf=rot_buildings,
-    block_size=block_size,
+    block_side_length=block_side_length,
 )
 elapsed = _t.time() - _t0
 print(f"Rasterization completed in {elapsed:.1f}s: blocks={len(city.blocks_gdf):,}, streets={len(city.streets_gdf):,}, buildings={len(city.buildings_gdf):,}")
