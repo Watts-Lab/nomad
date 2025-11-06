@@ -57,6 +57,7 @@ Installation
    :hidden:
 
    source/benchmarking_of_stop_detection_algorithms
+   source/ingesting-data
 
 Modules Overview
 ----------------
