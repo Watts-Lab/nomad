@@ -33,7 +33,7 @@ from nomad.traj_gen import Population
 
 # %%
 # Configuration
-BOX_SIZE = 'small'  # 'small' or 'medium'
+BOX_SIZE = 'small'  # 'small', 'medium', or 'large'
 BLOCK_SIDE_LENGTH = 10.0
 HUB_SIZE = 100
 MAX_MANHATTAN_DIST = 30
