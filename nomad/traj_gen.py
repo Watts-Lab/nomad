@@ -266,7 +266,7 @@ class Agent:
             
             # Determine initial time
             if datetime is not None:
-                init_time = datetime
+                init_time = pd.to_datetime(datetime) if not isinstance(datetime, pd.Timestamp) else datetime
             else:
                 init_time = pd.Timestamp.now(tz='America/New_York')
             
@@ -635,7 +635,8 @@ class Agent:
             curr = curr_info['building_id'] if curr_info['building_type'] is not None and curr_info['building_type'] != 'street' and curr_info['building_id'] is not None else self.home
         else:
             last_entry = self.destination_diary.iloc[-1]
-            start_time_local = last_entry.datetime + timedelta(minutes=int(last_entry.duration))
+            last_datetime = pd.to_datetime(last_entry.datetime) if not isinstance(last_entry.datetime, pd.Timestamp) else last_entry.datetime
+            start_time_local = last_datetime + timedelta(minutes=int(last_entry.duration))
             # Derive timestamp from datetime if not present
             if 'timestamp' in self.destination_diary.columns:
                 start_time = int(last_entry.timestamp + last_entry.duration*60)
