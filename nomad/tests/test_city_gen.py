@@ -24,11 +24,11 @@ def test_city_to_geodataframes_and_persist(tmp_path):
     city = rcg.generate_city()
 
     # Ensure buildings exist
-    b_gdf, s_gdf = city.to_geodataframes()
+    b_gdf = city.buildings_gdf
+    s_gdf = city.streets_gdf
     assert len(b_gdf) > 0
 
-    # Convert to GeoDataFrames
-    b_gdf, s_gdf = city.to_geodataframes()
+    # Verify GeoDataFrames
     assert isinstance(b_gdf, gpd.GeoDataFrame)
     assert isinstance(s_gdf, gpd.GeoDataFrame)
     assert 'geometry' in b_gdf.columns and 'geometry' in s_gdf.columns
@@ -56,10 +56,8 @@ def test_geopackage_roundtrip(tmp_path):
     city.save_geopackage(str(gpkg))
     city2 = City.from_geopackage(str(gpkg))
 
-    b1, s1 = city.to_geodataframes()
-    b2, s2 = city2.to_geodataframes()
-    assert len(b1) == len(b2)
-    assert len(s1) == len(s2)
+    assert len(city.buildings_gdf) == len(city2.buildings_gdf)
+    assert len(city.streets_gdf) == len(city2.streets_gdf)
 
 
 def test_street_graph_connectivity():
@@ -76,10 +74,8 @@ def test_from_geodataframes_roundtrip_nonsquare(tmp_path):
     gpkg = tmp_path / 'ns_city.gpkg'
     city.save_geopackage(str(gpkg))
     city2 = City.from_geopackage(str(gpkg))
-    b1, s1 = city.to_geodataframes()
-    b2, s2 = city2.to_geodataframes()
-    assert len(b1) == len(b2)
-    assert len(s1) == len(s2)
+    assert len(city.buildings_gdf) == len(city2.buildings_gdf)
+    assert len(city.streets_gdf) == len(city2.streets_gdf)
 
 
 def test_shortest_path():
@@ -554,7 +550,7 @@ def test_to_file_reverse_affine_transformation(tmp_path):
         buildings_path=str(buildings_wm),
         streets_path=str(streets_wm),
         driver='GPKG',
-        reverse_affine_transformation=True
+        reverse_affine=True
     )
     
     # Read back

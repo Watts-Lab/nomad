@@ -910,3 +910,136 @@ def mercator_to_blocks(data, block_size=15.0, false_easting=-4265699.0, false_no
         result['ha'] = result['ha'] / block_size
     
     return result
+
+
+def blocks_to_mercator_gdf(gdf, block_size, false_easting, false_northing, 
+                           offset_x=0, offset_y=0, rotation_deg=0.0, 
+                           drop_garden_cols=True):
+    """
+    Transform GeoDataFrame from garden city block units to Web Mercator meters.
+    
+    Parameters
+    ----------
+    gdf : gpd.GeoDataFrame
+        Input with geometries in garden city block units
+    block_size : float
+        Block side length in meters
+    false_easting : float
+        Web Mercator origin x
+    false_northing : float
+        Web Mercator origin y
+    offset_x : int, default 0
+        Grid offset in block units along x-axis
+    offset_y : int, default 0
+        Grid offset in block units along y-axis
+    rotation_deg : float, default 0.0
+        Rotation applied to input (will be undone by rotating -rotation_deg)
+    drop_garden_cols : bool, default True
+        If True, drop coord_x, coord_y, door_cell_x, door_cell_y columns
+    
+    Returns
+    -------
+    gpd.GeoDataFrame
+        Transformed GeoDataFrame with CRS='EPSG:3857'
+    
+    Notes
+    -----
+    Transformation sequence:
+    1. Scale geometries by block_size
+    2. Translate by offset * block_size
+    3. Rotate by -rotation_deg (undo rotation around centroid)
+    4. Set CRS to EPSG:3857
+    5. Optionally drop garden city columns
+    """
+    from shapely.affinity import scale, rotate as shapely_rotate
+    
+    result = gdf.copy()
+    
+    if drop_garden_cols:
+        drop_cols = [c for c in ['coord_x', 'coord_y', 'door_cell_x', 'door_cell_y'] 
+                    if c in result.columns]
+        result = result.drop(columns=drop_cols)
+    
+    # Scale from garden city units to meters
+    result['geometry'] = result['geometry'].apply(
+        lambda g: scale(g, xfact=block_size, yfact=block_size, origin=(0, 0))
+    )
+    
+    # Translate by offset
+    result['geometry'] = result['geometry'].translate(
+        xoff=offset_x * block_size,
+        yoff=offset_y * block_size
+    )
+    
+    # Undo rotation (rotate by negative angle around centroid)
+    if rotation_deg != 0.0:
+        all_geoms = result.geometry.union_all()
+        origin_point = all_geoms.centroid
+        result['geometry'] = result['geometry'].apply(
+            lambda g: shapely_rotate(g, -rotation_deg, origin=(origin_point.x, origin_point.y))
+        )
+    
+    result = result.set_crs('EPSG:3857', allow_override=True)
+    return result
+
+
+def mercator_to_blocks_gdf(gdf, block_size, false_easting, false_northing,
+                           offset_x=0, offset_y=0, rotation_deg=0.0):
+    """
+    Transform GeoDataFrame from Web Mercator meters to garden city block units.
+    
+    Parameters
+    ----------
+    gdf : gpd.GeoDataFrame
+        Input with geometries in Web Mercator (EPSG:3857)
+    block_size : float
+        Block side length in meters
+    false_easting : float
+        Web Mercator origin x
+    false_northing : float
+        Web Mercator origin y
+    offset_x : int, default 0
+        Grid offset in block units along x-axis
+    offset_y : int, default 0
+        Grid offset in block units along y-axis
+    rotation_deg : float, default 0.0
+        Rotation to apply (degrees counterclockwise)
+    
+    Returns
+    -------
+    gpd.GeoDataFrame
+        Transformed GeoDataFrame with CRS=None (garden city units)
+    
+    Notes
+    -----
+    Transformation sequence (inverse of blocks_to_mercator_gdf):
+    1. Rotate by rotation_deg around centroid
+    2. Translate by -offset * block_size
+    3. Scale geometries by 1/block_size
+    4. Set CRS to None (abstract units)
+    """
+    from shapely.affinity import scale, rotate as shapely_rotate
+    
+    result = gdf.copy()
+    
+    # Apply rotation around centroid
+    if rotation_deg != 0.0:
+        all_geoms = result.geometry.union_all()
+        origin_point = all_geoms.centroid
+        result['geometry'] = result['geometry'].apply(
+            lambda g: shapely_rotate(g, rotation_deg, origin=(origin_point.x, origin_point.y))
+        )
+    
+    # Translate by negative offset
+    result['geometry'] = result['geometry'].translate(
+        xoff=-offset_x * block_size,
+        yoff=-offset_y * block_size
+    )
+    
+    # Scale from meters to garden city units
+    result['geometry'] = result['geometry'].apply(
+        lambda g: scale(g, xfact=1.0/block_size, yfact=1.0/block_size, origin=(0, 0))
+    )
+    
+    result = result.set_crs(None, allow_override=True)
+    return result

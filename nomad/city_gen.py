@@ -960,58 +960,63 @@ class City:
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
 
-    def to_geodataframes(self):
-        """
-        Return buildings and streets as GeoDataFrames without altering existing structures.
-
-        Returns
-        -------
-        (gpd.GeoDataFrame, gpd.GeoDataFrame)
-            buildings_gdf with columns: id, type, door_point, door_cell_x, door_cell_y, size, geometry
-            streets_gdf with columns: coord_x, coord_y, id, geometry
-        """
-        # Return current primary stores
-        return self.buildings_gdf.copy(), self.streets_gdf.copy()
-
-    # Removed id_to_door_cell: unnecessary fallback logic; use buildings_gdf['door_cell_x','door_cell_y'] directly
-
-    def to_file(self, buildings_path=None, streets_path=None, driver='GeoJSON'):
-        """
-        Persist city layers to disk. Writes only layers whose path is provided.
-        """
-        b_gdf, s_gdf = self.to_geodataframes()
-        if buildings_path:
-            b_gdf.to_file(buildings_path, driver=driver)
-        if streets_path:
-            s_gdf.to_file(streets_path, driver=driver)
-
     def save_geopackage(self, gpkg_path, persist_blocks: bool = False, 
                         persist_city_properties: bool = True, persist_gravity_data: bool = True,
+                        reverse_affine: bool = False,
                         edges_path: str = None, street_graphml_path: str = None):
-        """Save buildings/streets/properties to a GeoPackage; optionally persist blocks, edges,
-        and write the internal street graph to GraphML.
+        """Save city to GeoPackage with all spatial objects for simulation continuity.
 
         Parameters
         ----------
         gpkg_path : str
-            Path to GeoPackage (.gpkg) to write `buildings` and `streets` layers.
+            Path to GeoPackage (.gpkg) for buildings, streets, and auxiliary layers
         persist_blocks : bool, default False
-            If True and `blocks_gdf` is available, persist as `blocks` layer.
+            If True, save blocks_gdf layer
         persist_city_properties : bool, default True
-            If True, persist city properties (name, block_side_length, web_mercator_origin,
-            city_boundary, buildings_outline) as `city_properties` layer.
+            If True, save city properties (name, block_side_length, origins, etc.)
         persist_gravity_data : bool, default True
-            If True and gravity infrastructure exists, persist hubs, hub distances, and nearby doors.
+            If True, save gravity infrastructure (hubs, distances, nearby doors)
+        reverse_affine : bool, default False
+            If True, transform geometries from garden city units to Web Mercator meters
         edges_path : str, optional
-            If provided and gravity is available, writes an edges parquet with columns
-            [ox, oy, dx, dy, distance, gravity].
+            Path to save edges parquet (ox, oy, dx, dy, distance, gravity)
         street_graphml_path : str, optional
-            If provided, writes the city's internal street graph (grid adjacency) to GraphML.
-            Nodes are labeled as "x_y" with integer attributes x and y; edges retain 'weight'.
+            Path to save street graph as GraphML
+        
+        Notes
+        -----
+        This method saves everything needed to reload and continue a simulation.
+        Use from_geopackage() to reload.
         """
-        b_gdf, s_gdf = self.to_geodataframes()
-        b_gdf.to_file(gpkg_path, layer='buildings', driver='GPKG')
-        s_gdf.to_file(gpkg_path, layer='streets', driver='GPKG')
+        from nomad.map_utils import blocks_to_mercator_gdf
+        
+        if reverse_affine:
+            buildings_gdf = blocks_to_mercator_gdf(
+                self.buildings_gdf,
+                block_size=self.block_side_length,
+                false_easting=self.web_mercator_origin_x,
+                false_northing=self.web_mercator_origin_y,
+                offset_x=self.offset_x,
+                offset_y=self.offset_y,
+                rotation_deg=self.rotation_deg,
+                drop_garden_cols=False
+            )
+            streets_gdf = blocks_to_mercator_gdf(
+                self.streets_gdf,
+                block_size=self.block_side_length,
+                false_easting=self.web_mercator_origin_x,
+                false_northing=self.web_mercator_origin_y,
+                offset_x=self.offset_x,
+                offset_y=self.offset_y,
+                rotation_deg=self.rotation_deg,
+                drop_garden_cols=False
+            )
+        else:
+            buildings_gdf = self.buildings_gdf
+            streets_gdf = self.streets_gdf
+        
+        buildings_gdf.to_file(gpkg_path, layer='buildings', driver='GPKG')
+        streets_gdf.to_file(gpkg_path, layer='streets', driver='GPKG')
         if persist_blocks and hasattr(self, 'blocks_gdf') and not self.blocks_gdf.empty:
             self.blocks_gdf.to_file(gpkg_path, layer='blocks', driver='GPKG')
         
@@ -1411,17 +1416,9 @@ class City:
     
     def to_file(self, buildings_path=None, streets_path=None, 
                 street_graphml_path=None, driver='GeoJSON',
-                to_crs=None, reverse_affine_transformation=False):
+                to_crs=None, reverse_affine=False):
         """
-        Export city layers to file.
-        
-        Coordinate System Flow
-        ----------------------
-        INTERNAL: Garden city block units (coord_x from 0, geometry in units)
-          ↓ Optional reverse_affine_transformation
-        OUTPUT: Web Mercator meters (scaled, translated, rotated back)
-          ↓ Optional to_crs
-        FINAL: Target CRS (e.g., EPSG:4326 for GeoJSON)
+        Export city layers to file with optional coordinate transformations.
         
         Parameters
         ----------
@@ -1435,65 +1432,42 @@ class City:
             Output format: 'GeoJSON', 'GPKG', 'Parquet', 'ESRI Shapefile'
         to_crs : str or CRS, optional
             Target CRS for reprojection (e.g., 'EPSG:4326')
-        reverse_affine_transformation : bool, default False
-            If True, converts geometries from garden city block units back to
-            original Web Mercator coordinates by scaling, translating, and rotating.
-            Garden city columns (coord_x, coord_y, door_cell_x, door_cell_y) are dropped.
+        reverse_affine : bool, default False
+            If True, transform from garden city units to Web Mercator meters
+            using self.block_side_length, offset_x, offset_y, rotation_deg
         
         Notes
         -----
-        Internal geometries are stored in garden city block units (1 block = 1 unit).
-        Use reverse_affine_transformation=True to convert back to meters.
-        For GeoJSON output, final CRS must be EPSG:4326 (enforced).
+        For GeoJSON output, to_crs='EPSG:4326' is required if reverse_affine=True.
         """
-        # GraphML: no transformations
+        from nomad.map_utils import blocks_to_mercator_gdf
+        
         if street_graphml_path:
             G = self.get_street_graph()
             nx.write_graphml(G, street_graphml_path)
         
         def transform_gdf(gdf):
-            gdf = gdf.copy()
+            if reverse_affine:
+                gdf = blocks_to_mercator_gdf(
+                    gdf, 
+                    block_size=self.block_side_length,
+                    false_easting=self.web_mercator_origin_x,
+                    false_northing=self.web_mercator_origin_y,
+                    offset_x=self.offset_x,
+                    offset_y=self.offset_y,
+                    rotation_deg=self.rotation_deg,
+                    drop_garden_cols=True
+                )
+            else:
+                gdf = gdf.copy()
             
-            if reverse_affine_transformation:
-                # Drop garden city coordinate columns
-                drop_cols = [c for c in ['coord_x', 'coord_y', 'door_cell_x', 'door_cell_y'] 
-                            if c in gdf.columns]
-                gdf = gdf.drop(columns=drop_cols)
-                
-                # Scale from garden city units to meters
-                gdf['geometry'] = gdf['geometry'].apply(
-                    lambda g: scale(g, xfact=self.block_side_length, 
-                                  yfact=self.block_side_length, origin=(0, 0))
-                )
-                
-                # Translate back to original position
-                gdf['geometry'] = gdf['geometry'].translate(
-                    xoff=self.offset_x * self.block_side_length,
-                    yoff=self.offset_y * self.block_side_length
-                )
-                
-                # Undo rotation (rotate by negative angle around current centroid)
-                all_geoms = gdf.geometry.union_all()
-                origin_point = all_geoms.centroid
-                gdf['geometry'] = gdf['geometry'].apply(
-                    lambda g: shapely_rotate(g, -self.rotation_deg, 
-                                            origin=(origin_point.x, origin_point.y))
-                )
-                
-                # Set CRS to Web Mercator after transformation
-                gdf = gdf.set_crs('EPSG:3857', allow_override=True)
-            
-            # Reproject if requested
             if to_crs:
                 gdf = gdf.to_crs(to_crs)
             
-            # Validate GeoJSON CRS requirement
             if driver == 'GeoJSON':
-                result_crs = CRS.from_user_input(gdf.crs) if gdf.crs else None
-                if result_crs and not result_crs.equals(CRS.from_epsg(4326)):
+                if gdf.crs and gdf.crs.to_epsg() != 4326:
                     raise ValueError(
-                        f"GeoJSON requires EPSG:4326, got {result_crs}. "
-                        f"Use to_crs='EPSG:4326' to reproject."
+                        f"GeoJSON requires EPSG:4326. Use to_crs='EPSG:4326'."
                     )
             
             return gdf
