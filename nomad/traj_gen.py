@@ -288,6 +288,10 @@ class Agent:
         self.diary = diary if diary is not None else pd.DataFrame(
             columns=['datetime', 'timestamp', 'duration', 'location', 'identifier'])
         self.sparse_traj = None
+        
+        # Geometry cache for _sample_step optimization
+        self._cached_geom = None
+        self._cached_geom_id = None
 
 
     def reset_trajectory(self, trajectory = True, sparse = True, last_ping = True, diary = True):
@@ -363,6 +367,12 @@ class Agent:
             The building ID if the step is a stay, or `None` if the step is a move.
         """
         city = self.city
+        
+        # Check if start_point is in cached geometry (diagnostic only, no effect yet)
+        if self._cached_geom is not None:
+            in_cache = self._cached_geom.contains(Point(start_point))
+            if in_cache:
+                pass  # Could reuse cached geometry here
 
         # Resolve destination building geometry and attributes (strict schema)
         brow = city.buildings_gdf[city.buildings_gdf['id'] == dest_building_id]
@@ -401,6 +411,10 @@ class Agent:
                     coord = rng.normal(loc=start_point_arr, scale=sigma*np.sqrt(dt), size=2)
                     if dest_geom.contains(Point(coord)):
                         break
+            
+            # Cache building geometry for potential reuse
+            self._cached_geom = dest_geom
+            self._cached_geom_id = dest_building_id
             return coord, location
 
         # Otherwise, move along streets toward destination door cell
@@ -451,7 +465,14 @@ class Agent:
 
             if bound_poly.contains(Point(coord)):
                 break
-
+        
+        # Cache path geometry for potential reuse
+        # For path movements, create ID from start and destination
+        if start_info['building_id'] is not None:
+            self._cached_geom_id = (start_info['building_id'], dest_building_id)
+        else:
+            self._cached_geom_id = (start_node, dest_building_id)
+        self._cached_geom = bound_poly
         return coord, location
 
 
@@ -472,6 +493,9 @@ class Agent:
             self.diary = self.diary.iloc[:-1]
 
         tick_secs = int(60*dt)
+        
+        # Track previous building for cache optimization
+        previous_building_id = None
 
         entry_update = []
         for i in range(destination_diary.shape[0]):
@@ -508,6 +532,9 @@ class Agent:
                                      'user_id': self.identifier}
                 else:
                     current_entry['duration'] += 1*dt  # add one tick to the duration
+            
+            # Update previous_building_id after completing this destination segment
+            previous_building_id = building_id
 
         if self.trajectory is None:
             self.trajectory = pd.DataFrame(trajectory_update)
