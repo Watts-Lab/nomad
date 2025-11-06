@@ -354,14 +354,49 @@ agent.sample_trajectory(beta_start=300, beta_durations=60, beta_ping=10)
 
 ## Recommendations
 
+### Critical Update: The Two Hub Network Systems
+
+**YOU CREATED**: `_build_hub_network()` (lines 557-584) + `compute_gravity()` (lines 695-823)
+- **Purpose**: Compute building-to-building **distances** for gravity model
+- **Storage**: Lean structures (hubs, hub distances, nearby doors)
+- **Used by**: `traj_gen` destination diary generation (gravity-based sampling)
+- **Output**: Dense or callable `self.grav` (gravity values, not paths)
+
+**AI SLOP EXISTS**: `get_shortest_path()` hub routing (lines 1522-1593)  
+- **References**: `_shortcut_hubs`, `_nearest_hub`, `_next_to_hub`, `_hub_next_hop`
+- **Problem**: These attributes are NEVER SET by `_build_hub_network()`!
+- **Reality**: Falls back to line 1588-1593:
+```python
+else:
+    # Fallback: compute on-demand with NetworkX
+    try:
+        path = nx.shortest_path(self.get_street_graph(), start_coord, end_coord)
+    except nx.NetworkXNoPath:
+        return []
+```
+- **Conclusion**: The "hub-based routing" is **fiction**. It's just `nx.shortest_path()` on demand.
+
+### What Actually Happens in Garden City
+
+**From `prescribed_trajectory_exp_1.py`**:
+1. Load city: `City.from_geopackage('garden-city.gpkg')` (line 38, 145)
+2. Generate agents with prescribed destination diary (lines 156-163)
+3. `agent.generate_trajectory(destination_diary=destinations)` (lines 166-170)
+4. Each trajectory step calls `_sample_step()` which calls `city.get_shortest_path()`
+5. `get_shortest_path()` tries to use hub shortcuts (lines 1525-1529), **fails**, falls back to NetworkX (line 1591)
+6. **Result**: Every step computes path on-demand with `nx.shortest_path()`
+7. **Works for garden city** because graph is tiny (~400 streets in 101x101 grid)
+
 ### Immediate (This Week)
 
-1. **Remove line 1190** (`all_pairs_shortest_path`) - Easy win, no downside
-2. **Profile `_sample_step`** on large city to quantify geometry overhead
-3. **Benchmark**: 
-   - Time per `_sample_step` call
+1. **Remove line 1190** (`all_pairs_shortest_path` in `from_geodataframes`) - Never used
+2. **Remove AI slop hub routing** (lines 1522-1587) - Replace with direct NetworkX call
+3. **Keep your hub network** for gravity computation - That's the real work
+4. **Profile `_sample_step`** on large city to quantify geometry overhead
+5. **Benchmark**: 
+   - Time per `_sample_step` call on RasterCity (LARGE_BOX)
    - Path length distribution
-   - Geometry operation breakdown
+   - Geometry operation breakdown (unary_union, MultiLineString, contains)
 
 ### Short-term (Next Sprint)
 
