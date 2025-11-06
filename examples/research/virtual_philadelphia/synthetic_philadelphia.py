@@ -25,10 +25,13 @@ import json
 import geopandas as gpd
 import pandas as pd
 from shapely.geometry import box
+import matplotlib.pyplot as plt
+import contextily as cx
 
 import nomad.map_utils as nm
 from nomad.city_gen import RasterCity
 from nomad.traj_gen import Population
+from nomad.io.base import from_file
 from tqdm import tqdm
 
 # %% [markdown]
@@ -379,45 +382,37 @@ poi_data = pd.DataFrame({
     'y': (city.buildings_gdf['door_cell_y'].astype(float) + 0.5).values if 'door_cell_y' in city.buildings_gdf.columns else cent.y.values
 })
 
-print("Reprojecting trajectories to Web Mercator...")
-t1 = time.time()
-population.reproject_to_mercator(sparse_traj=True, full_traj=True, diaries=True, poi_data=poi_data)
-reproject_time = time.time() - t1
-print(f"Reprojection:       {reproject_time:>6.2f}s")
+print("Reprojecting sparse trajectories to Web Mercator...")
+population.reproject_to_mercator(sparse_traj=True, full_traj=False, diaries=True, poi_data=poi_data)
 
-print("Saving output files...")
-t2 = time.time()
+print("Saving sparse trajectories and diaries...")
 population.save_pop(
     sparse_path=OUTPUT_DIR / f"sparse_traj_{BOX_NAME}",
-    full_path=OUTPUT_DIR / f"full_traj_{BOX_NAME}",
     diaries_path=OUTPUT_DIR / f"diaries_{BOX_NAME}",
     partition_cols=["date"],
     fmt='parquet'
 )
-persist_time = time.time() - t2
-print(f"Persistence:        {persist_time:>6.2f}s")
 print("-"*50)
-print(f"Total I/O:          {reproject_time + persist_time:>6.2f}s")
 print("="*50)
 
 # %% [markdown]
-# ## Visualize Full Trajectories
+# ## Visualize Sparse Trajectories
 
 # %%
 print("\n" + "="*50)
 print("VISUALIZATION")
 print("="*50)
 
-# Read full trajectories
-full_traj_df = pd.read_parquet(OUTPUT_DIR / f"full_traj_{BOX_NAME}")
-print(f"Loaded {len(full_traj_df):,} trajectory points for {config['N']} agents")
+# Read sparse trajectories
+sparse_traj_df = from_file(OUTPUT_DIR / f"sparse_traj_{BOX_NAME}", format="parquet")
+print(f"Loaded {len(sparse_traj_df):,} sparse trajectory points for {config['N']} agents")
 
 # Plot with contextily basemap
 fig, ax = plt.subplots(figsize=(12, 10))
 
 # Plot each agent with different color
-for agent_id in full_traj_df['user_id'].unique():
-    agent_traj = full_traj_df[full_traj_df['user_id'] == agent_id]
+for agent_id in sparse_traj_df['user_id'].unique():
+    agent_traj = sparse_traj_df[sparse_traj_df['user_id'] == agent_id]
     ax.scatter(agent_traj['x'], agent_traj['y'], s=1, alpha=0.5, label=agent_id)
 
 # Add basemap
@@ -425,11 +420,11 @@ cx.add_basemap(ax, crs="EPSG:3857", source=cx.providers.CartoDB.Positron)
 
 ax.set_xlabel('X (Web Mercator)')
 ax.set_ylabel('Y (Web Mercator)')
-ax.set_title(f'Full Trajectories - {config["N"]} Agents, 7 Days')
+ax.set_title(f'Sparse Trajectories - {config["N"]} Agents, 7 Days')
 ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', markerscale=10)
 plt.tight_layout()
-plt.savefig(OUTPUT_DIR / f"trajectories_{BOX_NAME}.png", dpi=150, bbox_inches='tight')
-print(f"Saved plot to {OUTPUT_DIR / f'trajectories_{BOX_NAME}.png'}")
+plt.savefig(OUTPUT_DIR / f"sparse_trajectories_{BOX_NAME}.png", dpi=150, bbox_inches='tight')
+print(f"Saved plot to {OUTPUT_DIR / f'sparse_trajectories_{BOX_NAME}.png'}")
 plt.show()
 
 # %%

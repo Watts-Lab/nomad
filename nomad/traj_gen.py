@@ -1275,6 +1275,8 @@ class Population:
         """
         if full_path:
             full_df = pd.concat([agent.trajectory for agent in self.roster.values()], ignore_index=True)
+            if partition_cols and 'date' in partition_cols and 'date' not in full_df.columns:
+                full_df['date'] = pd.to_datetime(full_df['timestamp']).dt.date.astype(str)
             full_df = from_df(full_df, traj_cols=traj_cols, mixed_timezone_behavior=mixed_timezone_behavior)
             to_file(full_df,
                     path=full_path,
@@ -1285,6 +1287,8 @@ class Population:
     
         if sparse_path:
             sparse_df = pd.concat([agent.sparse_traj for agent in self.roster.values()], ignore_index=True)
+            if partition_cols and 'date' in partition_cols and 'date' not in sparse_df.columns:
+                sparse_df['date'] = pd.to_datetime(sparse_df['timestamp']).dt.date.astype(str)
             sparse_df = from_df(sparse_df, traj_cols=traj_cols, mixed_timezone_behavior=mixed_timezone_behavior)
             to_file(sparse_df,
                     path=sparse_path,
@@ -1296,6 +1300,8 @@ class Population:
     
         if diaries_path:
             diaries_df = pd.concat([agent.diary for agent in self.roster.values()], ignore_index=True)
+            if partition_cols and 'date' in partition_cols and 'date' not in diaries_df.columns:
+                diaries_df['date'] = pd.to_datetime(diaries_df['timestamp']).dt.date.astype(str)
             diaries_df = from_df(diaries_df, traj_cols=traj_cols, mixed_timezone_behavior=mixed_timezone_behavior)
             to_file(diaries_df,
                     path=diaries_path,
