@@ -24,19 +24,26 @@
 # %%
 import time
 import numpy as np
+import pandas as pd
 import geopandas as gpd
 from pathlib import Path
 
 from nomad.city_gen import RasterCity
-from nomad.traj_gen import Agent, Population
+from nomad.traj_gen import Population
 
 # %%
 # Configuration
 BOX_SIZE = 'small'  # 'small' or 'medium'
 BLOCK_SIDE_LENGTH = 10.0
 HUB_SIZE = 100
-MAX_MANHATTAN_DIST = 20  # For benchmark pairs
-NUM_PATH_QUERIES = 100   # Number of get_shortest_path calls to benchmark
+MAX_MANHATTAN_DIST = 30
+NUM_PATH_QUERIES = 100
+SIMULATION_HOURS = 24
+DT = 0.5  # minutes
+EPR_TIME_RES = 15
+RHO = 0.4
+GAMMA = 0.3
+SEED = 42
 
 # %%
 print("="*60)
@@ -154,51 +161,68 @@ print(f"  Mean path length: {path_lengths.mean():.1f} blocks")
 print(f"  Median path length: {np.median(path_lengths):.1f} blocks")
 
 # %% [markdown]
-# ## Benchmark 2: Trajectory Generation (8 hours)
+# ## Benchmark 2: Destination Diary Generation
 
 # %%
 print("\n" + "="*60)
-print("BENCHMARK 2: Trajectory Generation")
+print("BENCHMARK 2: Destination Diary Generation")
 print("="*60)
 
-# Create population with single agent
 population = Population(city)
 population.generate_agents(
     N=1,
-    seed=42,
+    seed=SEED,
     name_count=1,
-    datetimes="2024-01-01 08:00-05:00"
+    datetimes="2024-01-01 00:00-05:00"
 )
 
 agent = list(population.roster.values())[0]
+end_time = pd.Timestamp("2024-01-01 00:00-05:00") + pd.Timedelta(hours=SIMULATION_HOURS)
 
-# Generate trajectory for 8 hours without pre-computing destination diary
-# This directly invokes _sample_step repeatedly
-import pandas as pd
+print(f"\nGenerating {SIMULATION_HOURS}-hour destination diary...")
+print(f"  Start: {agent.last_ping['datetime']}")
+print(f"  End: {end_time}")
 
-end_time = pd.Timestamp("2024-01-01 16:00-05:00")  # 8 hours later
-dt = 0.5  # 30 seconds per step
-seed = 123
+t0 = time.time()
+agent.generate_dest_diary(
+    end_time=end_time,
+    epr_time_res=EPR_TIME_RES,
+    rho=RHO,
+    gamma=GAMMA,
+    seed=SEED
+)
+elapsed = time.time() - t0
 
-print(f"\nGenerating 8-hour trajectory...")
-print(f"  Start time: {agent.last_ping['datetime']}")
-print(f"  End time: {end_time}")
-print(f"  Time step (dt): {dt} minutes")
+print(f"\nResults:")
+print(f"  Time: {elapsed:.2f}s")
+print(f"  Diary entries: {len(agent.destination_diary):,}")
+
+# %% [markdown]
+# ## Benchmark 3: Trajectory Generation from Diary
+
+# %%
+print("\n" + "="*60)
+print("BENCHMARK 3: Trajectory Generation from Diary")
+print("="*60)
+
+print(f"\nGenerating trajectory from destination diary...")
+print(f"  Diary entries: {len(agent.destination_diary):,}")
+print(f"  Time step (dt): {DT} minutes")
 
 t0 = time.time()
 agent.generate_trajectory(
-    end_time=end_time,
-    dt=dt,
-    seed=seed
+    destination_diary=agent.destination_diary,
+    dt=DT,
+    seed=SEED
 )
 elapsed = time.time() - t0
 
 trajectory = agent.trajectory
 
 print(f"\nResults:")
-print(f"  Total time: {elapsed:.2f}s")
+print(f"  Time: {elapsed:.2f}s")
 print(f"  Trajectory points: {len(trajectory):,}")
 print(f"  Points per second: {len(trajectory)/elapsed:.1f}")
-print(f"  Average time per point: {1000*elapsed/len(trajectory):.2f} ms")
+print(f"  Time per point: {1000*elapsed/len(trajectory):.2f} ms")
 
 # %%
