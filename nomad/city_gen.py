@@ -188,6 +188,8 @@ class City:
         # Precomputed building-to-building gravity (optional, built on demand)
         self.grav = None
         self.door_dist = None
+        # Precomputed shortest paths (optional, built on demand via compute_shortest_paths)
+        self.shortest_paths = None
 
     def _derive_streets_from_blocks(self):
         """
@@ -550,6 +552,40 @@ class City:
         self.street_graph = G
         
         return self.street_graph
+
+    def compute_shortest_paths(self, callable_only=False):
+        """
+        Compute shortest paths between street blocks.
+        
+        Parameters
+        ----------
+        callable_only : bool, default False
+            If False, precompute all-pairs shortest paths (only for small cities)
+            If True, store on-demand callable (placeholder for hub-based routing)
+        
+        Notes
+        -----
+        Callable mode currently uses nx.shortest_path() on demand—this is a 
+        PLACEHOLDER. Production use with _sample_step requires hub-based routing 
+        for scalability (billions of calls). Current implementation too slow for 
+        large-scale trajectory generation.
+        
+        Stores result in self.shortest_paths as dict or callable
+        """
+        G = self.get_street_graph()
+        
+        if callable_only:
+            # TODO: Replace with hub-based routing for production use
+            # Current on-demand nx.shortest_path is too slow for billion+ calls in _sample_step
+            def compute_path(start_coord, end_coord):
+                try:
+                    return nx.shortest_path(G, start_coord, end_coord)
+                except nx.NetworkXNoPath:
+                    return []
+            self.shortest_paths = compute_path
+        else:
+            # Dense storage for small cities only
+            self.shortest_paths = dict(nx.all_pairs_shortest_path(G))
 
     # ---------------------------------------------------------------------
     # Shortcut ("highway") network for fast on-demand routing
@@ -1502,13 +1538,13 @@ class City:
         Raises
         ------
         ValueError
-            If either coordinate is not a valid street block.
+            If either coordinate is not a valid street block or if shortest_paths
+            has not been computed.
 
         Notes
         -----
-        - Uses the hub-based shortcut index for speed; hub-to-hub segments may
-          be obtained via a local NetworkX shortest path when a direct next-hop
-          entry is unavailable.
+        Requires compute_shortest_paths() to be called first. Uses precomputed
+        paths (dict) or on-demand callable depending on mode.
         """
         if not (isinstance(start_coord, tuple) and isinstance(end_coord, tuple)):
             raise ValueError("Coordinates must be tuples of (x, y).")
@@ -1519,78 +1555,18 @@ class City:
         if not ((self.streets_gdf['coord_x'] == end_coord[0]) & (self.streets_gdf['coord_y'] == end_coord[1])).any():
             raise ValueError(f"End coordinate {end_coord} must be a street block.")
 
-        # Ensure graph and shortcuts are built
-        if not hasattr(self, 'street_graph') or self.street_graph is None:
-            self.get_street_graph(lazy=True)
-        if not hasattr(self, '_shortcut_hubs') or self._shortcut_hubs is None:
-            try:
-                self._build_hub_network()
-            except Exception:
-                pass
-
-        # Prefer shortcut network if available; fall back to NetworkX if not
-        if hasattr(self, '_shortcut_hubs') and self._shortcut_hubs:
-            # Map arbitrary node to its hub via precomputed next_to_hub
-            def path_to_hub(node):
-                route = [node]
-                # Prevent infinite loops; cap at city size
-                for _ in range(max(1, len(self.streets_gdf))):
-                    if node == self._nearest_hub[node]:
-                        break
-                    node = self._next_to_hub[node]
-                    route.append(node)
-                    if node == self._nearest_hub[node]:
-                        break
-                return route
-
-            u = start_coord
-            v = end_coord
-            hu = self._nearest_hub[u]
-            hv = self._nearest_hub[v]
-
-            # u -> hu
-            seg_u_hu = path_to_hub(u)
-            # hubs path hu -> hv using next_hop table
-            seg_hubs = [hu]
-            cur = hu
-            safe_cap = max(2, len(self._shortcut_hubs) * 4)
-            for _ in range(safe_cap):
-                if cur == hv:
-                    break
-                nh = self._hub_next_hop.get(cur, {}).get(hv)
-                if nh is None:
-                    # fallback to direct nx shortest path if hub-hub mapping missing
-                    try:
-                        nx_path = nx.shortest_path(self.get_street_graph(), cur, hv)
-                    except nx.NetworkXNoPath:
-                        return []
-                    seg_hubs = nx_path
-                    cur = hv
-                    break
-                seg_hubs.append(nh)
-                cur = nh
-
-            # hv -> v: walk from v to hv using next_to_hub, then reverse to get hv->v
-            seg_v_to_hv = path_to_hub(v)
-            # ensure last element is hv
-            if seg_v_to_hv[-1] != hv:
-                # fallback to nx shortest if something is off
-                try:
-                    nx_path = nx.shortest_path(self.get_street_graph(), hv, v)
-                except nx.NetworkXNoPath:
-                    return []
-                seg_hv_to_v = nx_path
-            else:
-                seg_hv_to_v = list(reversed(seg_v_to_hv))
-
-            # Concatenate segments, avoiding duplicate junctions
-            path = seg_u_hu[:-1] + seg_hubs + seg_hv_to_v[1:]
+        # Check if shortest_paths has been computed
+        if not hasattr(self, 'shortest_paths') or self.shortest_paths is None:
+            raise ValueError("Must call compute_shortest_paths() before using get_shortest_path().")
+        
+        # Get path from either dict or callable
+        if callable(self.shortest_paths):
+            path = self.shortest_paths(start_coord, end_coord)
         else:
-            # Fallback: compute on-demand with NetworkX
-            try:
-                path = nx.shortest_path(self.get_street_graph(), start_coord, end_coord)
-            except nx.NetworkXNoPath:
+            # Dict mode: lookup precomputed path
+            if start_coord not in self.shortest_paths:
                 return []
+            path = self.shortest_paths[start_coord].get(end_coord, [])
 
         if plot:
             if ax is None:
@@ -1620,49 +1596,54 @@ class City:
         return path
 
     # ---------------------------------------------------------------------
-    # Fast distance with small LRU-style cache (simple and effective)
+    # DEPRECATED: Cached path retrieval (kept for potential future use)
     # ---------------------------------------------------------------------
-    def get_distance_fast(self, start_coord: tuple, end_coord: tuple) -> float:
+    def get_paths_fast(self, start_coord: tuple, end_coord: tuple):
         """
-        Return an approximate shortest-path distance in number of steps between two
-        street blocks using the shortcut network for speed. Results are cached.
+        DEPRECATED: Return shortest path with LRU-style caching.
+        
+        This method wraps get_shortest_path() with a simple cache. May be useful
+        for future optimizations but currently not sufficient for large-scale
+        trajectory generation needs.
 
-        Falls back to on-demand NetworkX shortest_path if shortcuts are unavailable.
-        Returns np.inf if no path exists.
+        Parameters
+        ----------
+        start_coord : tuple[int, int]
+            Starting street block (x, y).
+        end_coord : tuple[int, int]
+            Ending street block (x, y).
+
+        Returns
+        -------
+        list[tuple[int, int]]
+            Sequence of street blocks from start to end, or empty list if no path.
         """
         if not (isinstance(start_coord, tuple) and isinstance(end_coord, tuple)):
             raise ValueError("Coordinates must be tuples of (x, y).")
 
         # Initialize cache
-        if not hasattr(self, '_distance_cache'):
-            self._distance_cache = {}
+        if not hasattr(self, '_paths_cache'):
+            self._paths_cache = {}
         MAX_CACHE = 50000
 
         key = (start_coord, end_coord)
-        if key in self._distance_cache:
-            return self._distance_cache[key]
+        if key in self._paths_cache:
+            return self._paths_cache[key]
 
-        # Compute via path length
+        # Compute path
         try:
             path = self.get_shortest_path(start_coord, end_coord)
-            if not path:
-                d = float('inf')
-            else:
-                d = float(max(0, len(path) - 1))
         except Exception:
-            d = float('inf')
+            path = []
 
         # Cache with simple capacity control (drop half when full)
-        try:
-            self._distance_cache[key] = d
-            if len(self._distance_cache) > MAX_CACHE:
-                # drop roughly half oldest by arbitrary order
-                for k in list(self._distance_cache.keys())[:MAX_CACHE // 2]:
-                    self._distance_cache.pop(k, None)
-        except Exception:
-            pass
+        self._paths_cache[key] = path
+        if len(self._paths_cache) > MAX_CACHE:
+            # drop roughly half oldest by arbitrary order
+            for k in list(self._paths_cache.keys())[:MAX_CACHE // 2]:
+                self._paths_cache.pop(k, None)
 
-        return d
+        return path
 
 
 # =============================================================================

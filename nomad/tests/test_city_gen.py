@@ -81,6 +81,7 @@ def test_from_geodataframes_roundtrip_nonsquare(tmp_path):
 def test_shortest_path():
     rcg = RandomCityGenerator(width=10, height=10, street_spacing=5, seed=1)
     city = rcg.generate_city()
+    city.compute_shortest_paths(callable_only=False)
     
     # Get two street coordinates
     streets_temp = city.streets_gdf.reset_index(drop=True)
