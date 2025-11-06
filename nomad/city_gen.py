@@ -556,11 +556,11 @@ class City:
         # Build edge list with hub tuples as indices
         rows = []
         for origin in hubs:
+            distances = nx.single_source_shortest_path_length(G, origin)
             for dest in hubs:
                 if origin == dest:
                     continue
-                distance = nx.shortest_path_length(G, origin, dest)
-                rows.append({'origin': origin, 'dest': dest, 'distance': distance})
+                rows.append({'origin': origin, 'dest': dest, 'distance': distances[dest]})
         
         edge_list = pd.DataFrame(rows)
         # Pivot to dense adjacency matrix with hub tuples as row/column indices
