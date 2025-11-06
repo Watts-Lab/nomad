@@ -281,11 +281,6 @@ print(f"\nConfig saved to {config_path}")
 print(f"Diaries saved to {diary_dir}")
 
 # %%
-agent.destination_diary
-
-# %%
-import pandas as pd
-datetime = "2024-01-01 00:00-05:00"
-pd.api.types.is_datetime64_any_dtype(datetime)
+city.buildings_gdf.index.is_unique
 
 # %%

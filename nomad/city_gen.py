@@ -18,6 +18,7 @@ import warnings
 import geopandas as gpd
 import os
 import time
+import pdb
 from typing import Dict, List, Tuple, Optional, Set
 
 from nomad.map_utils import blocks_to_mercator, mercator_to_blocks
@@ -762,6 +763,13 @@ class City:
                 dist_to_hub_i = dist_to_closest_hub[idx]
                 
                 distances = dist_to_hub_i + hub_to_hub[hub_i, closest_hub_idx] + dist_to_closest_hub
+                
+                zero_mask = (distances == 0)
+                if zero_mask.sum() > 1:
+                    print(f"DEBUG: Building {building_id} has {zero_mask.sum()} zero distances BEFORE nearby override")
+                    print(f"  Zero distance building IDs: {building_ids[zero_mask]}")
+                    print(f"  idx={idx}, hub_i={hub_i}, dist_to_hub_i={dist_to_hub_i}")
+                    pdb.set_trace()
                 
                 for (bid_i, bid_j), d in self.mh_dist_nearby_doors.items():
                     if bid_i == building_id:

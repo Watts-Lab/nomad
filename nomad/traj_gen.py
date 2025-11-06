@@ -678,6 +678,15 @@ class Agent:
                         probs = self.city.grav(curr).loc[y.index].values
                     else:
                         probs = self.city.grav.loc[curr, y.index].values
+                    
+                    print(f"DEBUG: curr={curr}, y.shape={y.shape}, probs.shape={probs.shape}")
+                    print(f"  probs sum={probs.sum()}, inf count={np.isinf(probs).sum()}, nan count={np.isnan(probs).sum()}")
+                    print(f"  zero count={(probs == 0).sum()}, positive count={(probs > 0).sum()}")
+                    if np.isinf(probs).any() or np.isnan(probs).any() or probs.sum() == 0:
+                        print(f"  y.index (first 10): {y.index[:10].tolist()}")
+                        print(f"  probs (first 10): {probs[:10]}")
+                        pdb.set_trace()
+                    
                     probs = probs / probs.sum()
                     curr = rng.choice(y.index, p=probs)
                 else:
