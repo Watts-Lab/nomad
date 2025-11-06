@@ -8,10 +8,11 @@ from pathlib import Path
 from nomad.city_gen import City, RandomCityGenerator, RasterCity
 from nomad.map_utils import blocks_to_mercator, mercator_to_blocks
 
-def _load_sandbox():
-    repo_root = Path(__file__).resolve().parents[2]
-    gpkg = repo_root / "examples" / "research" / "virtual_philadelphia" / "sandbox" / "sandbox_data.gpkg"
-    assert gpkg.exists(), f"Missing sandbox geopackage: {gpkg}"
+def _load_fixture():
+    """Load the test fixture from nomad/data/city_fixture.gpkg"""
+    data_dir = Path(__file__).resolve().parent.parent / "data"
+    gpkg = data_dir / "city_fixture.gpkg"
+    assert gpkg.exists(), f"Missing test fixture: {gpkg}. Run 'python nomad/data/generate_fixture.py' to create it."
     buildings = gpd.read_file(gpkg, layer="buildings")
     streets = gpd.read_file(gpkg, layer="streets")
     boundary = gpd.read_file(gpkg, layer="boundary")
@@ -297,7 +298,7 @@ def test_city_persistence_with_properties(tmp_path):
 
 
 def test_compute_gravity():
-    buildings, streets, boundary = _load_sandbox()
+    buildings, streets, boundary = _load_fixture()
     buildings = buildings.head(100)
     
     city = RasterCity(boundary, streets, buildings, block_side_length=15.0)
@@ -313,7 +314,7 @@ def test_compute_gravity():
 
 
 def test_compute_gravity_callable():
-    buildings, streets, boundary = _load_sandbox()
+    buildings, streets, boundary = _load_fixture()
     buildings = buildings.head(100)
     
     city_dense = RasterCity(boundary, streets, buildings, block_side_length=15.0)
@@ -336,7 +337,7 @@ def test_compute_gravity_callable():
 
 
 def test_resolve_overlaps():
-    buildings, streets, boundary = _load_sandbox()
+    buildings, streets, boundary = _load_fixture()
     buildings = buildings.head(100)
     
     city_default = RasterCity(boundary, streets, buildings, block_side_length=15.0, resolve_overlaps=False)
@@ -426,7 +427,7 @@ def test_unique_building_ids():
     Building IDs are based on an internal building block adjacent to the door,
     ensuring uniqueness since buildings cannot overlap.
     """
-    buildings_gdf, streets_gdf, boundary = _load_sandbox()
+    buildings_gdf, streets_gdf, boundary = _load_fixture()
     
     city = RasterCity(
         boundary_polygon=boundary,
