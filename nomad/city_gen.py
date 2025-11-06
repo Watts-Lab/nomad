@@ -1,6 +1,6 @@
 from shapely.geometry import box, Polygon, LineString, MultiLineString, Point, MultiPolygon
 from shapely import wkt
-from shapely.affinity import scale
+from shapely.affinity import scale, translate, rotate as shapely_rotate
 from shapely.ops import unary_union
 from shapely.prepared import prep
 import pickle
@@ -18,6 +18,7 @@ import os
 import time
 import pdb
 from typing import List, Tuple, Set
+from pyproj import CRS
 
 from nomad.map_utils import blocks_to_mercator, mercator_to_blocks
 from nomad.constants import TYPE_PRIORITY
@@ -110,7 +111,10 @@ class City:
                  name: str = "Garden City",
                  block_side_length: float = 15.0,
                  web_mercator_origin_x: float = -4265699.0,
-                 web_mercator_origin_y: float = 4392976.0):
+                 web_mercator_origin_y: float = 4392976.0,
+                 rotation_deg: float = 0.0,
+                 offset_x: int = 0,
+                 offset_y: int = 0):
         
         """
         Initializes the City object with given dimensions and optionally manual streets.
@@ -130,12 +134,21 @@ class City:
             False easting for Web Mercator projection (default: -4265699.0).
         web_mercator_origin_y : float, optional
             False northing for Web Mercator projection (default: 4392976.0).
+        rotation_deg : float, optional
+            Rotation applied to input data in degrees counterclockwise (default: 0.0).
+        offset_x : int, optional
+            Grid offset in block units along x-axis (default: 0).
+        offset_y : int, optional
+            Grid offset in block units along y-axis (default: 0).
         """
 
         self.name = name
         self.block_side_length = block_side_length
         self.web_mercator_origin_x = web_mercator_origin_x
         self.web_mercator_origin_y = web_mercator_origin_y
+        self.rotation_deg = rotation_deg
+        self.offset_x = offset_x
+        self.offset_y = offset_y
 
         self.buildings_outline = Polygon()
 
@@ -1395,6 +1408,103 @@ class City:
             false_easting=self.web_mercator_origin_x,
             false_northing=self.web_mercator_origin_y
         )
+    
+    def to_file(self, buildings_path=None, streets_path=None, 
+                street_graphml_path=None, driver='GeoJSON',
+                to_crs=None, reverse_affine_transformation=False):
+        """
+        Export city layers to file.
+        
+        Coordinate System Flow
+        ----------------------
+        INTERNAL: Garden city block units (coord_x from 0, geometry in units)
+          ↓ Optional reverse_affine_transformation
+        OUTPUT: Web Mercator meters (scaled, translated, rotated back)
+          ↓ Optional to_crs
+        FINAL: Target CRS (e.g., EPSG:4326 for GeoJSON)
+        
+        Parameters
+        ----------
+        buildings_path : str, optional
+            Path to save buildings layer
+        streets_path : str, optional
+            Path to save streets layer
+        street_graphml_path : str, optional
+            Path to save street graph as GraphML
+        driver : str, default 'GeoJSON'
+            Output format: 'GeoJSON', 'GPKG', 'Parquet', 'ESRI Shapefile'
+        to_crs : str or CRS, optional
+            Target CRS for reprojection (e.g., 'EPSG:4326')
+        reverse_affine_transformation : bool, default False
+            If True, converts geometries from garden city block units back to
+            original Web Mercator coordinates by scaling, translating, and rotating.
+            Garden city columns (coord_x, coord_y, door_cell_x, door_cell_y) are dropped.
+        
+        Notes
+        -----
+        Internal geometries are stored in garden city block units (1 block = 1 unit).
+        Use reverse_affine_transformation=True to convert back to meters.
+        For GeoJSON output, final CRS must be EPSG:4326 (enforced).
+        """
+        # GraphML: no transformations
+        if street_graphml_path:
+            G = self.get_street_graph()
+            nx.write_graphml(G, street_graphml_path)
+        
+        def transform_gdf(gdf):
+            gdf = gdf.copy()
+            
+            if reverse_affine_transformation:
+                # Drop garden city coordinate columns
+                drop_cols = [c for c in ['coord_x', 'coord_y', 'door_cell_x', 'door_cell_y'] 
+                            if c in gdf.columns]
+                gdf = gdf.drop(columns=drop_cols)
+                
+                # Scale from garden city units to meters
+                gdf['geometry'] = gdf['geometry'].apply(
+                    lambda g: scale(g, xfact=self.block_side_length, 
+                                  yfact=self.block_side_length, origin=(0, 0))
+                )
+                
+                # Translate back to original position
+                gdf['geometry'] = gdf['geometry'].translate(
+                    xoff=self.offset_x * self.block_side_length,
+                    yoff=self.offset_y * self.block_side_length
+                )
+                
+                # Undo rotation (rotate by negative angle around current centroid)
+                all_geoms = gdf.geometry.union_all()
+                origin_point = all_geoms.centroid
+                gdf['geometry'] = gdf['geometry'].apply(
+                    lambda g: shapely_rotate(g, -self.rotation_deg, 
+                                            origin=(origin_point.x, origin_point.y))
+                )
+                
+                # Set CRS to Web Mercator after transformation
+                gdf = gdf.set_crs('EPSG:3857', allow_override=True)
+            
+            # Reproject if requested
+            if to_crs:
+                gdf = gdf.to_crs(to_crs)
+            
+            # Validate GeoJSON CRS requirement
+            if driver == 'GeoJSON':
+                result_crs = CRS.from_user_input(gdf.crs) if gdf.crs else None
+                if result_crs and not result_crs.equals(CRS.from_epsg(4326)):
+                    raise ValueError(
+                        f"GeoJSON requires EPSG:4326, got {result_crs}. "
+                        f"Use to_crs='EPSG:4326' to reproject."
+                    )
+            
+            return gdf
+        
+        if buildings_path:
+            gdf = transform_gdf(self.buildings_gdf)
+            gdf.to_file(buildings_path, driver=driver)
+        
+        if streets_path:
+            gdf = transform_gdf(self.streets_gdf)
+            gdf.to_file(streets_path, driver=driver)
 
     def get_shortest_path(self, start_coord: tuple, end_coord: tuple, plot: bool = False, ax=None):
         """Return a block path between two street cells.
@@ -1838,9 +1948,17 @@ def assign_door_to_building(building_blocks, available_blocks, graph=None):
 
 
 class RasterCity(City):
-    def __init__(self, boundary_polygon, streets_gdf, buildings_gdf, block_side_length=15.0, crs="EPSG:3857", building_type_col='building_type', name="Rasterized City", resolve_overlaps=False, other_building_behavior="keep", verbose=True):
+    def __init__(self, boundary_polygon, streets_gdf, buildings_gdf, block_side_length=15.0, crs="EPSG:3857", building_type_col='building_type', name="Rasterized City", resolve_overlaps=False, other_building_behavior="keep", rotation_deg=0.0, verbose=True):
         """
         Create a rasterized city from OSM data.
+        
+        Coordinate System Flow
+        ----------------------
+        INPUT: Web Mercator meters (EPSG:3857), possibly rotated
+          ↓ Rotate by rotation_deg, translate by -offset to align grid at origin
+        INTERNAL: Garden city block units (coord_x, coord_y from 0, geometries in units)
+          ↓ All rasterization, spatial queries, and simulation logic
+        OUTPUT: Transform back via reverse_affine_transformation in to_file()
         
         Parameters
         ----------
@@ -1862,8 +1980,16 @@ class RasterCity(City):
             If True, resolve overlapping buildings by removing overlapping blocks (default: False)
         other_building_behavior : str, optional
             How to handle buildings with type 'other': 'keep', 'filter', or 'randomize' (default: 'keep')
+        rotation_deg : float, optional
+            Rotation applied to input geometries in degrees counterclockwise (default: 0.0)
         verbose : bool, optional
             Print progress messages (default: True)
+        
+        Note
+        ----
+        Input geometries are transformed to garden city block units. A canvas is
+        generated to match rotated/shifted input data. Future: transform inputs
+        to match a garden city canvas for clearer flow.
         """
         if other_building_behavior == "randomize":
             raise NotImplementedError("randomize option not yet implemented")
@@ -1882,7 +2008,10 @@ class RasterCity(City):
             name=name,
             block_side_length=block_side_length,
             web_mercator_origin_x=minx,
-            web_mercator_origin_y=miny
+            web_mercator_origin_y=miny,
+            rotation_deg=rotation_deg,
+            offset_x=0,
+            offset_y=0
         )
         
         self.boundary_polygon = boundary_polygon
@@ -1907,6 +2036,10 @@ class RasterCity(City):
         self.offset_x = int(minx // self.block_side_length)
         self.offset_y = int(miny // self.block_side_length)
         offset_meters = (self.offset_x * self.block_side_length, self.offset_y * self.block_side_length)
+        
+        # Update Web Mercator origins to match actual offset
+        self.web_mercator_origin_x = self.offset_x * self.block_side_length
+        self.web_mercator_origin_y = self.offset_y * self.block_side_length
         
         self.blocks_gdf['coord_x'] = self.blocks_gdf['coord_x'] - self.offset_x
         self.blocks_gdf['coord_y'] = self.blocks_gdf['coord_y'] - self.offset_y
@@ -1940,7 +2073,13 @@ class RasterCity(City):
         if verbose:
             print(f"  Streets: {summary['kept']:,} kept, {summary['discarded']:,} discarded (in {time.time()-_t2:.2f}s)")
         
-        self.streets_gdf = gpd.GeoDataFrame(connected_streets[['coord_x','coord_y','geometry']].copy(), geometry='geometry', crs=self.crs)
+        # Streets: create geometry from block coordinates (garden city units)
+        self.streets_gdf = gpd.GeoDataFrame(connected_streets[['coord_x','coord_y']].copy(), crs=None)
+        self.streets_gdf['geometry'] = gpd.GeoSeries(
+            [box(x, y, x+1, y+1) for x, y in zip(self.streets_gdf['coord_x'], self.streets_gdf['coord_y'])],
+            crs=None
+        )
+        self.streets_gdf = self.streets_gdf.set_geometry('geometry')
         self.streets_gdf['id'] = ('s-x' + self.streets_gdf['coord_x'].astype(int).astype(str) + '-y' + self.streets_gdf['coord_y'].astype(int).astype(str))
         self.streets_gdf.set_index(['coord_x','coord_y'], inplace=True, drop=False)
         self.streets_gdf.index.names = [None, None]
@@ -2007,7 +2146,7 @@ class RasterCity(City):
                     added_building_blocks.update(building_blocks_set)
 
         if new_building_rows:
-            nb_gdf = gpd.GeoDataFrame(new_building_rows, geometry='geometry', crs=self.buildings_gdf.crs)
+            nb_gdf = gpd.GeoDataFrame(new_building_rows, geometry='geometry', crs=None)
             nb_gdf.set_index('id', inplace=True, drop=False)
             nb_gdf.index.name = None
             if self.buildings_gdf.empty:
