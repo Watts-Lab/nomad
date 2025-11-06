@@ -420,3 +420,28 @@ def test_gravity_persistence_no_data(tmp_path):
     assert not hasattr(city2, 'grav') or city2.grav is None or not callable(city2.grav)
 
 
+def test_unique_building_ids():
+    """
+    Regression test: RasterCity must generate unique building IDs.
+    Building IDs are based on an internal building block adjacent to the door,
+    ensuring uniqueness since buildings cannot overlap.
+    """
+    buildings_gdf, streets_gdf, boundary = _load_sandbox()
+    
+    city = RasterCity(
+        boundary_polygon=boundary,
+        streets_gdf=streets_gdf,
+        buildings_gdf=buildings_gdf,
+        block_side_length=10.0,
+        resolve_overlaps=True,
+        verbose=False
+    )
+    
+    building_ids = city.buildings_gdf['id'].tolist()
+    unique_ids = set(building_ids)
+    
+    assert len(building_ids) == len(unique_ids), \
+        f"Found {len(building_ids) - len(unique_ids)} duplicate building IDs"
+    assert city.buildings_gdf.index.is_unique, "buildings_gdf index contains duplicates"
+
+

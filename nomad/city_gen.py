@@ -1939,7 +1939,13 @@ class RasterCity(City):
                         continue
                     block_polys = [box(x, y, x+1, y+1) for x,y in building_blocks]
                     building_geom = block_polys[0] if len(block_polys) == 1 else unary_union(block_polys)
-                    building_id = f"{building_type[0]}-x{door[0]}-y{door[1]}"
+                    
+                    # Pick building block adjacent to door for unique ID
+                    mask = self.check_adjacent(building_blocks, door)
+                    idx = next((i for i, m in enumerate(mask) if m), None)
+                    candidate = building_blocks[idx] if idx is not None else building_blocks[0]
+                    building_id = f"{building_type[0]}-x{int(candidate[0])}-y{int(candidate[1])}"
+                    
                     dpt = Point(door[0] + 0.5, door[1] + 0.5)
                     new_building_rows.append({
                         'id': building_id,
