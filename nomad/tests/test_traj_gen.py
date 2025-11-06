@@ -574,3 +574,81 @@ def test_coordinate_reprojection(garden_city, simple_dest_diary, default_ids):
     
     # Check full trajectory also transformed
     assert abs(agent.trajectory['x'].iloc[0]) > 1000  # In Mercator range
+
+
+def test_agent_last_ping_initialization(garden_city, default_ids):
+    """
+    Test various ways to initialize Agent.last_ping.
+    Covers: trajectory, x/y coords, location, datetime (string vs Timestamp), timestamp.
+    """
+    home_id = default_ids['home']
+    work_id = default_ids['work']
+    tz = ZoneInfo("America/New_York")
+    
+    # Case 1: Default initialization (no kwargs)
+    agent1 = Agent('agent1', garden_city, home=home_id, workplace=work_id)
+    assert agent1.last_ping is not None
+    assert 'x' in agent1.last_ping
+    assert 'y' in agent1.last_ping
+    assert 'datetime' in agent1.last_ping
+    assert 'timestamp' in agent1.last_ping
+    assert isinstance(agent1.last_ping['datetime'], pd.Timestamp)
+    assert hasattr(agent1.last_ping['datetime'], 'hour')
+    
+    # Case 2: Initialize with x, y coordinates
+    agent2 = Agent('agent2', garden_city, home=home_id, workplace=work_id, x=100.5, y=200.5)
+    assert agent2.last_ping['x'] == 100.5
+    assert agent2.last_ping['y'] == 200.5
+    assert isinstance(agent2.last_ping['datetime'], pd.Timestamp)
+    
+    # Case 3: Initialize with location (building ID)
+    agent3 = Agent('agent3', garden_city, home=home_id, workplace=work_id, location=work_id)
+    work_centroid = garden_city.buildings_gdf[garden_city.buildings_gdf['id'] == work_id].iloc[0]['geometry'].centroid
+    assert abs(agent3.last_ping['x'] - work_centroid.x) < 1e-6
+    assert abs(agent3.last_ping['y'] - work_centroid.y) < 1e-6
+    
+    # Case 4: Initialize with datetime as string
+    agent4 = Agent('agent4', garden_city, home=home_id, workplace=work_id, 
+                   datetime='2024-01-15 14:30:00')
+    assert isinstance(agent4.last_ping['datetime'], pd.Timestamp)
+    assert agent4.last_ping['datetime'].hour == 14
+    assert agent4.last_ping['datetime'].minute == 30
+    
+    # Case 5: Initialize with datetime as pd.Timestamp
+    dt = pd.Timestamp('2024-02-20 09:15:00', tz=tz)
+    agent5 = Agent('agent5', garden_city, home=home_id, workplace=work_id, datetime=dt)
+    assert isinstance(agent5.last_ping['datetime'], pd.Timestamp)
+    assert agent5.last_ping['datetime'].hour == 9
+    assert agent5.last_ping['datetime'].minute == 15
+    
+    # Case 6: Initialize with timestamp
+    ts = 1704085200  # 2024-01-01 00:00:00 EST
+    agent6 = Agent('agent6', garden_city, home=home_id, workplace=work_id, timestamp=ts)
+    assert agent6.last_ping['timestamp'] == ts
+    
+    # Case 7: Initialize with trajectory (takes precedence)
+    traj = pd.DataFrame({
+        'x': [10.0, 20.0, 30.0],
+        'y': [15.0, 25.0, 35.0],
+        'datetime': pd.date_range('2024-03-01', periods=3, freq='1h', tz=tz),
+        'timestamp': [1709251200, 1709254800, 1709258400],
+        'user_id': ['agent7'] * 3
+    })
+    agent7 = Agent('agent7', garden_city, home=home_id, workplace=work_id, trajectory=traj)
+    assert agent7.last_ping['x'] == 30.0
+    assert agent7.last_ping['y'] == 35.0
+    assert agent7.last_ping['timestamp'] == 1709258400
+    
+    # Case 8: Trajectory takes precedence over kwargs (should warn)
+    with pytest.warns(UserWarning, match="trajectory and position kwargs provided"):
+        agent8 = Agent('agent8', garden_city, home=home_id, workplace=work_id, 
+                      trajectory=traj, x=999.0, datetime='2025-01-01')
+    assert agent8.last_ping['x'] == 30.0  # From trajectory, not 999.0
+    
+    # Case 9: Combined x, y, and datetime (string with timezone)
+    agent9 = Agent('agent9', garden_city, home=home_id, workplace=work_id,
+                   x=50.0, y=60.0, datetime='2024-04-10 16:45:00-04:00')
+    assert agent9.last_ping['x'] == 50.0
+    assert agent9.last_ping['y'] == 60.0
+    assert isinstance(agent9.last_ping['datetime'], pd.Timestamp)
+    assert agent9.last_ping['datetime'].hour == 16
