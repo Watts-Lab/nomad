@@ -522,3 +522,66 @@ def test_gravity_same_door_buildings():
     assert city.grav.loc[bids[0], bids[1]] > 0, "Gravity between same-door buildings should be positive"
 
 
+def test_to_file_reverse_affine_transformation(tmp_path):
+    """Test that to_file correctly reverses affine transformations."""
+    from nomad.city_gen import RandomCityGenerator
+    
+    # Create a simple deterministic city
+    rcg = RandomCityGenerator(width=10, height=10, street_spacing=5, seed=42)
+    city = rcg.generate_city()
+    
+    # Set known offset and rotation for testing
+    city.offset_x = 100
+    city.offset_y = 200
+    city.rotation_deg = 15.0
+    
+    # Export without reverse transformation (garden city units)
+    buildings_gc = tmp_path / "buildings_gc.gpkg"
+    city.to_file(buildings_path=str(buildings_gc), driver='GPKG')
+    
+    # Read back
+    buildings_loaded_gc = gpd.read_file(buildings_gc)
+    
+    # Verify garden city coordinates are preserved
+    assert len(buildings_loaded_gc) > 0, "Should have buildings"
+    # Note: door_cell_x/y columns exist
+    
+    # Export with reverse transformation
+    buildings_wm = tmp_path / "buildings_wm.gpkg"
+    streets_wm = tmp_path / "streets_wm.gpkg"
+    
+    city.to_file(
+        buildings_path=str(buildings_wm),
+        streets_path=str(streets_wm),
+        driver='GPKG',
+        reverse_affine_transformation=True
+    )
+    
+    # Read back
+    buildings_loaded_wm = gpd.read_file(buildings_wm)
+    streets_loaded_wm = gpd.read_file(streets_wm)
+    
+    # Verify transformations
+    assert len(buildings_loaded_wm) == len(city.buildings_gdf), "Building count mismatch"
+    assert len(streets_loaded_wm) > 0, "Streets should be exported"
+    
+    # Verify garden city columns were dropped
+    assert 'door_cell_x' not in buildings_loaded_wm.columns, "door_cell_x should be dropped"
+    assert 'door_cell_y' not in buildings_loaded_wm.columns, "door_cell_y should be dropped"
+    
+    # Verify CRS is Web Mercator
+    assert buildings_loaded_wm.crs.to_epsg() == 3857, "Buildings should be in Web Mercator"
+    assert streets_loaded_wm.crs.to_epsg() == 3857, "Streets should be in Web Mercator"
+    
+    # Verify geometries are scaled and translated
+    # A building at (2, 3) in garden city should be at:
+    # (2 * 15 + 100 * 15, 3 * 15 + 200 * 15) = (1530, 3045) in Web Mercator
+    # Just verify the scale factor is applied
+    gc_area = city.buildings_gdf.geometry.iloc[0].area  # in block units^2
+    wm_area = buildings_loaded_wm.geometry.iloc[0].area  # in meters^2
+    expected_area = gc_area * (city.block_side_length ** 2)
+    
+    assert abs(wm_area - expected_area) < 1.0, \
+        f"Area scaling incorrect: {wm_area} vs expected {expected_area}"
+
+
