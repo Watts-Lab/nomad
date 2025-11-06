@@ -29,6 +29,7 @@ from shapely.geometry import box
 import nomad.map_utils as nm
 from nomad.city_gen import RasterCity
 from nomad.traj_gen import Population
+from tqdm import tqdm
 
 # %% [markdown]
 # ## Configuration
@@ -53,13 +54,13 @@ REGENERATE_DATA = False
 config = {
     "box_name": BOX_NAME,
     "block_side_length": 15.0,
-    "hub_size": 100,
-    "N": 10,
+    "hub_size": 600,
+    "N": 100,
     "name_seed": 42,
     "name_count": 2,
     "epr_params": {
         "datetime": "2024-01-01 00:00-05:00",
-        "end_time": "2024-01-08 00:00-05:00",
+        "end_time": "2024-04-01 00:00-05:00",
         "epr_time_res": 15,
         "rho": 0.4,
         "gamma": 0.3,
@@ -157,7 +158,8 @@ city = RasterCity(
     streets,
     buildings,
     block_side_length=config["block_side_length"],
-    resolve_overlaps=True
+    resolve_overlaps=True,
+    other_building_behavior="filter"
 )
 gen_time = time.time() - t0
 print(f"City generation:    {gen_time:>6.2f}s")
@@ -224,15 +226,10 @@ summary_df = pd.DataFrame({
     ]
 })
 print("\n" + summary_df.to_string(index=False))
+print(city.buildings_gdf.building_type.value_counts())
 
 # %% [markdown]
 # ## Generate Population and Destination Diaries
-
-# %%
-# %load_ext autoreload
-# %autoreload 2
-from tqdm import tqdm
-from nomad.traj_gen import Population
 
 # %%
 print("\n" + "="*50)
@@ -243,7 +240,6 @@ config_path = OUTPUT_DIR / f"config_{BOX_NAME}.json"
 with open(config_path, 'w') as f:
     json.dump(config, f, indent=2)
 
-
 population = Population(city)
 population.generate_agents(
     N=config["N"],
@@ -253,12 +249,9 @@ population.generate_agents(
 )
 
 end_time = pd.Timestamp(config["epr_params"]["end_time"])
-diary_dir = OUTPUT_DIR / f"diaries_{BOX_NAME}"
-diary_dir.mkdir(parents=True, exist_ok=True)
 
 t1 = time.time()
 for i, agent in tqdm(enumerate(population.roster.values()), total=config["N"]):
-    print(agent.identifier)
     agent.generate_dest_diary(
         end_time=end_time,
         epr_time_res=config["epr_params"]["epr_time_res"],
@@ -266,21 +259,39 @@ for i, agent in tqdm(enumerate(population.roster.values()), total=config["N"]):
         gamma=config["epr_params"]["gamma"],
         seed=config["epr_params"]["seed_base"] + i
     )
-    agent.destination_diary.to_csv(diary_dir / f"{agent.identifier}.csv", index=False)
 
 diary_gen_time = time.time() - t1
 print(f"Diary generation:   {diary_gen_time:>6.2f}s")
 
 total_entries = sum(len(agent.destination_diary) for agent in population.roster.values())
 print(f"Total entries:      {total_entries:,}")
+
+dest_diaries_path = OUTPUT_DIR / f"dest_diaries_{BOX_NAME}"
+t2 = time.time()
+population.save_pop(
+    dest_diaries_path=dest_diaries_path,
+    partition_cols=["date"],
+    fmt='parquet',
+    traj_cols={'geohash': 'location'}
+)
+persist_time = time.time() - t2
+print(f"Persistence:        {persist_time:>6.2f}s")
 print("-"*50)
 print(f"Total EPR:          {diary_gen_time:>6.2f}s")
 print("="*50)
 
 print(f"\nConfig saved to {config_path}")
-print(f"Diaries saved to {diary_dir}")
+print(f"Destination diaries saved to {dest_diaries_path}")
 
 # %%
-city.buildings_gdf.index.is_unique
+import geopandas as gpd
+import contextily as cx
+import matplotlib.pyplot as plt
+
+box = gpd.GeoSeries(city.boundary_polygon)
+fig, ax = plt.subplots()
+box.plot(ax=ax, facecolor="None")
+cx.add_basemap(ax, crs=box.crs)
+plt.show()
 
 # %%

@@ -1,6 +1,5 @@
-from shapely.geometry import box, Polygon, LineString, MultiLineString, Point, MultiPoint, MultiPolygon, GeometryCollection
+from shapely.geometry import box, Polygon, LineString, MultiLineString, Point, MultiPolygon
 from shapely import wkt
-from math import floor, ceil
 from shapely.affinity import scale
 from shapely.ops import unary_union
 from shapely.prepared import prep
@@ -14,12 +13,11 @@ from matplotlib import cm
 from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
 import networkx as nx
-import warnings
 import geopandas as gpd
 import os
 import time
 import pdb
-from typing import Dict, List, Tuple, Optional, Set
+from typing import List, Tuple, Set
 
 from nomad.map_utils import blocks_to_mercator, mercator_to_blocks
 from nomad.constants import TYPE_PRIORITY
@@ -716,7 +714,9 @@ class City:
         # Compute close pairs in chunks to avoid memory issues
         n = len(building_ids)
         chunk_size = max(1, n // n_chunks)
-        close_pairs_list = []
+        bid_i_list = []
+        bid_j_list = []
+        dist_list = []
         
         for i_start in range(0, n, chunk_size):
             i_end = min(i_start + chunk_size, n)
@@ -730,27 +730,39 @@ class City:
                 dist_to_closest_hub[i_start:i_end, None],
                 dist_to_closest_hub[None, :]
             )
-            is_close = chunk_dist < min_hub_dist
+            is_close = chunk_dist <= min_hub_dist
             
             i_local, j_global = np.where(is_close)
             i_global = i_local + i_start
             upper_mask = i_global < j_global
             
             if upper_mask.any():
-                close_pairs_list.append(pd.DataFrame({
-                    'bid_i': building_ids[i_global[upper_mask]],
-                    'bid_j': building_ids[j_global[upper_mask]],
-                    'dist': chunk_dist[i_local[upper_mask], j_global[upper_mask]]
-                }))
+                bid_i_list.append(building_ids[i_global[upper_mask]])
+                bid_j_list.append(building_ids[j_global[upper_mask]])
+                dist_list.append(chunk_dist[i_local[upper_mask], j_global[upper_mask]])
         
-        if close_pairs_list:
-            close_pairs_df = pd.concat(close_pairs_list, ignore_index=True)
+        if bid_i_list:
             self.mh_dist_nearby_doors = pd.Series(
-                close_pairs_df['dist'].values,
-                index=pd.MultiIndex.from_arrays([close_pairs_df['bid_i'], close_pairs_df['bid_j']])
+                np.concatenate(dist_list),
+                index=pd.MultiIndex.from_arrays([
+                    np.concatenate(bid_i_list),
+                    np.concatenate(bid_j_list)
+                ])
             )
         else:
             self.mh_dist_nearby_doors = pd.Series([], dtype=np.int32, index=pd.MultiIndex.from_arrays([[], []]))
+        
+        # Fix: Buildings sharing same door have Manhattan distance 0, set to 1 to avoid inf gravity
+        # Note: Future improvement - use Manhattan distance between door centroids for true uniqueness
+        door_groups = self.buildings_gdf.groupby(['door_cell_x', 'door_cell_y'])['id']
+        same_door_mask = door_groups.transform('size') > 1
+        same_door_buildings = set(self.buildings_gdf[same_door_mask]['id'].values)
+        
+        if same_door_buildings and len(self.mh_dist_nearby_doors) > 0:
+            zero_dist_mask = (self.mh_dist_nearby_doors == 0)
+            for (bid_i, bid_j) in self.mh_dist_nearby_doors[zero_dist_mask].index:
+                if bid_i in same_door_buildings and bid_j in same_door_buildings:
+                    self.mh_dist_nearby_doors.loc[(bid_i, bid_j)] = 1
         
         # Part 2: Create dense matrix or callable
         if callable_only:
@@ -764,22 +776,15 @@ class City:
                 
                 distances = dist_to_hub_i + hub_to_hub[hub_i, closest_hub_idx] + dist_to_closest_hub
                 
-                zero_mask = (distances == 0)
-                if zero_mask.sum() > 1:
-                    print(f"DEBUG: Building {building_id} has {zero_mask.sum()} zero distances BEFORE nearby override")
-                    print(f"  Zero distance building IDs: {building_ids[zero_mask]}")
-                    print(f"  idx={idx}, hub_i={hub_i}, dist_to_hub_i={dist_to_hub_i}")
-                    pdb.set_trace()
-                
                 for (bid_i, bid_j), d in self.mh_dist_nearby_doors.items():
                     if bid_i == building_id:
                         distances[bid_to_idx[bid_j]] = d
                     elif bid_j == building_id:
                         distances[bid_to_idx[bid_i]] = d
                 
-                distances[idx] = 0
+                distances[idx] = 1  # Temporary non-zero to avoid divide-by-zero warning
                 gravity_row = 1.0 / (distances ** exponent)
-                gravity_row[idx] = 0.0
+                gravity_row[idx] = 0.0  # Self-gravity is always 0
                 
                 return pd.Series(gravity_row, index=building_ids)
             
@@ -793,9 +798,9 @@ class City:
                 i, j = bid_to_idx[bid_i], bid_to_idx[bid_j]
                 dist_matrix[i, j] = dist_matrix[j, i] = d
             
-            np.fill_diagonal(dist_matrix, 0)
+            np.fill_diagonal(dist_matrix, 1)  # Temporary non-zero to avoid divide-by-zero warning
             gravity = 1.0 / (dist_matrix ** exponent)
-            np.fill_diagonal(gravity, 0.0)
+            np.fill_diagonal(gravity, 0.0)  # Self-gravity is always 0
             
             self.grav = pd.DataFrame(gravity, index=building_ids, columns=building_ids)
 
@@ -1277,9 +1282,9 @@ class City:
                         elif bid_j == building_id:
                             distances[bid_to_idx[bid_i]] = d
                     
-                    distances[idx] = 0
+                    distances[idx] = 1  # Temporary non-zero to avoid divide-by-zero warning
                     gravity_row = 1.0 / (distances ** exponent)
-                    gravity_row[idx] = 0.0
+                    gravity_row[idx] = 0.0  # Self-gravity is always 0
                     
                     return pd.Series(gravity_row, index=building_ids)
                 
@@ -1833,7 +1838,36 @@ def assign_door_to_building(building_blocks, available_blocks, graph=None):
 
 
 class RasterCity(City):
-    def __init__(self, boundary_polygon, streets_gdf, buildings_gdf, block_side_length=15.0, crs="EPSG:3857", building_type_col='building_type', name="Rasterized City", resolve_overlaps=False, verbose=True):
+    def __init__(self, boundary_polygon, streets_gdf, buildings_gdf, block_side_length=15.0, crs="EPSG:3857", building_type_col='building_type', name="Rasterized City", resolve_overlaps=False, other_building_behavior="keep", verbose=True):
+        """
+        Create a rasterized city from OSM data.
+        
+        Parameters
+        ----------
+        boundary_polygon : shapely.geometry.Polygon
+            Boundary polygon for the city
+        streets_gdf : gpd.GeoDataFrame
+            Streets GeoDataFrame
+        buildings_gdf : gpd.GeoDataFrame
+            Buildings GeoDataFrame
+        block_side_length : float, optional
+            Side length of each block in meters (default: 15.0)
+        crs : str, optional
+            Coordinate reference system (default: "EPSG:3857")
+        building_type_col : str, optional
+            Column name for building type (default: 'building_type')
+        name : str, optional
+            Name of the city (default: "Rasterized City")
+        resolve_overlaps : bool, optional
+            If True, resolve overlapping buildings by removing overlapping blocks (default: False)
+        other_building_behavior : str, optional
+            How to handle buildings with type 'other': 'keep', 'filter', or 'randomize' (default: 'keep')
+        verbose : bool, optional
+            Print progress messages (default: True)
+        """
+        if other_building_behavior == "randomize":
+            raise NotImplementedError("randomize option not yet implemented")
+        
         minx, miny, maxx, maxy = boundary_polygon.bounds
         grid_min_x = int(minx // block_side_length)
         grid_min_y = int(miny // block_side_length)
@@ -1860,6 +1894,10 @@ class RasterCity(City):
             buildings_gdf = buildings_gdf.rename(columns={building_type_col: 'building_type'})
         if 'building_type' not in buildings_gdf.columns:
             raise ValueError(f"buildings_gdf must have a 'building_type' column (or specify building_type_col parameter)")
+        
+        if other_building_behavior == "filter":
+            buildings_gdf = buildings_gdf[buildings_gdf['building_type'] != 'other']
+        
         self.buildings_gdf_input = buildings_gdf
         
         self.blocks_gdf = generate_canvas_blocks(self.boundary_polygon, self.block_side_length, self.crs, verbose=verbose)

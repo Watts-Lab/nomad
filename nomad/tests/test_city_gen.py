@@ -446,3 +446,79 @@ def test_unique_building_ids():
     assert city.buildings_gdf.index.is_unique, "buildings_gdf index contains duplicates"
 
 
+def test_gravity_same_door_buildings():
+    """
+    Test that gravity computation handles buildings with the same door correctly.
+    Buildings sharing a door have Manhattan distance 0, which should be set to 1 to avoid inf gravity.
+    """
+    buildings_gdf, streets_gdf, boundary = _load_fixture()
+    
+    city = RasterCity(boundary, streets_gdf, buildings_gdf, block_side_length=15.0)
+    
+    # First, try to find two buildings that naturally share a door
+    door_counts = city.buildings_gdf.groupby(['door_cell_x', 'door_cell_y']).size()
+    shared_doors = door_counts[door_counts > 1]
+    
+    if len(shared_doors) > 0:
+        # Found buildings with shared door
+        door_x, door_y = shared_doors.index[0]
+        same_door_buildings = city.buildings_gdf[
+            (city.buildings_gdf['door_cell_x'] == door_x) & 
+            (city.buildings_gdf['door_cell_y'] == door_y)
+        ]
+        bids = same_door_buildings['id'].tolist()[:2]
+    else:
+        # Create two buildings with the same door by finding a street block adjacent to two buildings
+        if len(city.buildings_gdf) < 2:
+            return  # Not enough buildings to test
+        
+        # Find a street block adjacent to at least two different buildings
+        street_coords = set(zip(city.streets_gdf['coord_x'], city.streets_gdf['coord_y']))
+        building_coords = {}
+        for idx, row in city.buildings_gdf.iterrows():
+            geom = row['geometry']
+            minx, miny, maxx, maxy = geom.bounds
+            coords = [(int(x), int(y)) for x in range(int(minx), int(maxx)+1) 
+                      for y in range(int(miny), int(maxy)+1)]
+            building_coords[row['id']] = set(coords)
+        
+        # Find a street block adjacent to multiple buildings
+        shared_door = None
+        adjacent_buildings = []
+        for sx, sy in street_coords:
+            neighbors = [(sx+1, sy), (sx-1, sy), (sx, sy+1), (sx, sy-1)]
+            adj_bids = []
+            for bid, coords in building_coords.items():
+                if any(n in coords for n in neighbors):
+                    adj_bids.append(bid)
+            if len(adj_bids) >= 2:
+                shared_door = (sx, sy)
+                adjacent_buildings = adj_bids[:2]
+                break
+        
+        if shared_door is None:
+            return  # Could not create test scenario
+        
+        # Assign the shared door to both buildings
+        bids = adjacent_buildings
+        for bid in bids:
+            city.buildings_gdf.loc[bid, 'door_cell_x'] = shared_door[0]
+            city.buildings_gdf.loc[bid, 'door_cell_y'] = shared_door[1]
+            city.buildings_gdf.loc[bid, 'door_point'] = Point(shared_door[0] + 0.5, shared_door[1] + 0.5)
+    
+    city._build_hub_network(hub_size=16)
+    
+    # Test callable gravity
+    city.compute_gravity(exponent=2.0, callable_only=True)
+    grav_row = city.grav(bids[0])
+    assert not np.isinf(grav_row).any(), "Callable gravity contains inf values"
+    assert not np.isnan(grav_row).any(), "Callable gravity contains NaN values"
+    assert grav_row.loc[bids[1]] > 0, "Gravity between same-door buildings should be positive"
+    
+    # Test dense gravity
+    city.compute_gravity(exponent=2.0, callable_only=False)
+    assert not np.isinf(city.grav.values).any(), "Dense gravity contains inf values"
+    assert not np.isnan(city.grav.values).any(), "Dense gravity contains NaN values"
+    assert city.grav.loc[bids[0], bids[1]] > 0, "Gravity between same-door buildings should be positive"
+
+

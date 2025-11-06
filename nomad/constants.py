@@ -325,4 +325,4 @@ GARDEN_CITY_CATEGORIES = ['home', 'retail', 'workplace', 'park', 'other']
 GEOLIFE_PLUS_CATEGORIES = ['unknown', 'residential', 'commercial', 'school']
 
 # Building type priority for rasterization (first = highest priority)
-TYPE_PRIORITY = ['street', 'park', 'workplace', 'home', 'retail', 'other']
+TYPE_PRIORITY = ['street', 'park', 'workplace', 'retail','home', 'other']

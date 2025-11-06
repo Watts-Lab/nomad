@@ -83,7 +83,7 @@ else:
 
 SANDBOX_GPKG = OUTPUT_DIR / f"sandbox_data_{BOX_NAME}.gpkg"
 
-REGENERATE_DATA = True  # Set to True to re-download OSM data
+REGENERATE_DATA = False  # Set to True to re-download OSM data
 
 # %% [markdown]
 # ## Benchmark: Data Generation (OSM Download + Rotation)

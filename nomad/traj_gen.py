@@ -6,10 +6,8 @@ from shapely.geometry import box, Point, MultiLineString
 from shapely.ops import unary_union
 from shapely import distance as shp_distance
 from datetime import timedelta
-from zoneinfo import ZoneInfo
 import warnings
 import funkybob
-import s3fs
 import pyarrow as pa
 import pyarrow.dataset as ds
 import pdb
@@ -577,7 +575,8 @@ class Agent:
                              stay_probs = DEFAULT_STAY_PROBS,
                              rho = 0.4, 
                              gamma = 0.3, 
-                             seed = 0):
+                             seed = 0,
+                             verbose = False):
         """Generate the destination diary (exploration + preferential return).
 
         Parameters
@@ -653,8 +652,9 @@ class Agent:
             return
         
         dest_update = []
-        # Informative message
-        print(f"Generating destination diary via EPR (rho={rho}, gamma={gamma}, epr_time_res={epr_time_res} min, seed={seed})")
+        # verbosity
+        if verbose:
+            print(f"Generating destination diary via EPR (rho={rho}, gamma={gamma}, epr_time_res={epr_time_res} min, seed={seed})")
         while start_time < end_time:
             curr_type = visit_freqs.loc[curr, 'building_type'] if curr in visit_freqs.index else 'home'
             allowed = allowed_buildings(start_time_local)
@@ -678,14 +678,6 @@ class Agent:
                         probs = self.city.grav(curr).loc[y.index].values
                     else:
                         probs = self.city.grav.loc[curr, y.index].values
-                    
-                    print(f"DEBUG: curr={curr}, y.shape={y.shape}, probs.shape={probs.shape}")
-                    print(f"  probs sum={probs.sum()}, inf count={np.isinf(probs).sum()}, nan count={np.isnan(probs).sum()}")
-                    print(f"  zero count={(probs == 0).sum()}, positive count={(probs > 0).sum()}")
-                    if np.isinf(probs).any() or np.isnan(probs).any() or probs.sum() == 0:
-                        print(f"  y.index (first 10): {y.index[:10].tolist()}")
-                        print(f"  probs (first 10): {probs[:10]}")
-                        pdb.set_trace()
                     
                     probs = probs / probs.sum()
                     curr = rng.choice(y.index, p=probs)
@@ -1252,6 +1244,7 @@ class Population:
                  full_path=None,
                  homes_path=None,
                  diaries_path=None,
+                 dest_diaries_path=None,
                  partition_cols=None,
                  mixed_timezone_behavior="naive",
                  filesystem=None,
@@ -1270,6 +1263,8 @@ class Population:
             Destination path for the homes table.
         diaries_path : str or Path, optional
             Destination path for diaries.
+        dest_diaries_path : str or Path, optional
+            Destination path for destination diaries.
         partition_cols : list of partition column names.
         filesystem : pyarrow.fs.FileSystem or None
             Optional filesystem object (e.g., s3fs.S3FileSystem). If None, inferred automatically.
@@ -1309,6 +1304,27 @@ class Population:
                     filesystem=filesystem,
                     existing_data_behavior='delete_matching',
                     traj_cols=traj_cols)
+    
+        if dest_diaries_path:
+            # TODO: from_df should be made compatible with destination diaries
+            dest_diaries_list = []
+            for agent in self.roster.values():
+                if agent.destination_diary is not None and not agent.destination_diary.empty:
+                    df = agent.destination_diary.copy()
+                    df['identifier'] = agent.identifier
+                    dest_diaries_list.append(df)
+            
+            if dest_diaries_list:
+                dest_diaries_df = pd.concat(dest_diaries_list, ignore_index=True)
+                dest_diaries_df['date'] = pd.to_datetime(dest_diaries_df['datetime']).dt.date.astype(str)
+                dest_diaries_df = from_df(dest_diaries_df, traj_cols=traj_cols, mixed_timezone_behavior=mixed_timezone_behavior)
+                to_file(dest_diaries_df,
+                        path=dest_diaries_path,
+                        format=fmt,
+                        partition_by=partition_cols,
+                        filesystem=filesystem,
+                        existing_data_behavior='delete_matching',
+                        traj_cols=traj_cols)
     
         if homes_path:
             homes_df = self._build_agent_static_data(**kwargs)
