@@ -257,7 +257,7 @@ class City:
         Parameters
         ----------
         building_type : str
-            The type of the building ('home', 'work', 'retail', 'park').
+            The type of the building ('home', 'workplace', 'retail', 'park').
         door : tuple
             A tuple representing the (x, y) coordinates of the door of the building.
         geom : shapely.geometry.polygon.Polygon, optional
@@ -680,7 +680,7 @@ class City:
         dy = np.abs(y1[:, None] - y2[None, :])
         return dx + dy
 
-    def compute_gravity(self, exponent=2.0, callable_only=False):
+    def compute_gravity(self, exponent=2.0, callable_only=False, n_chunks=10):
         """Precompute building-to-building gravity using Manhattan distances and hub shortcuts.
                 
         Uses only self.streets_gdf and self.hub_df to compute gravity matrix.
@@ -714,7 +714,6 @@ class City:
         
         # Compute close pairs in chunks to avoid memory issues
         n = len(building_ids)
-        n_chunks = 10
         chunk_size = max(1, n // n_chunks)
         close_pairs_list = []
         
@@ -834,7 +833,7 @@ class City:
             colors = {
                 'street': 'white',
                 'home': 'skyblue',
-                'work': '#C9A0DC',
+                'workplace': '#C9A0DC',
                 'retail': 'lightgrey',
                 'park': 'lightgreen',
                 'default': 'lightcoral'
@@ -961,8 +960,8 @@ class City:
             s_gdf.to_file(streets_path, driver=driver)
 
     def save_geopackage(self, gpkg_path, persist_blocks: bool = False, 
-                        persist_city_properties: bool = True, edges_path: str = None,
-                        street_graphml_path: str = None):
+                        persist_city_properties: bool = True, persist_gravity_data: bool = True,
+                        edges_path: str = None, street_graphml_path: str = None):
         """Save buildings/streets/properties to a GeoPackage; optionally persist blocks, edges,
         and write the internal street graph to GraphML.
 
@@ -975,6 +974,8 @@ class City:
         persist_city_properties : bool, default True
             If True, persist city properties (name, block_side_length, web_mercator_origin,
             city_boundary, buildings_outline) as `city_properties` layer.
+        persist_gravity_data : bool, default True
+            If True and gravity infrastructure exists, persist hubs, hub distances, and nearby doors.
         edges_path : str, optional
             If provided and gravity is available, writes an edges parquet with columns
             [ox, oy, dx, dy, distance, gravity].
@@ -1000,6 +1001,48 @@ class City:
                 'geometry': [self.city_boundary]  # Primary geometry column
             }, crs=self.buildings_gdf.crs)
             city_props_gdf.to_file(gpkg_path, layer='city_properties', driver='GPKG')
+        
+        # Persist gravity infrastructure
+        if persist_gravity_data and hasattr(self, 'hubs') and self.hubs is not None:
+            # Save hubs as DataFrame
+            hubs_df = pd.DataFrame(self.hubs, columns=['hub_x', 'hub_y'])
+            hubs_gdf = gpd.GeoDataFrame(
+                hubs_df,
+                geometry=gpd.points_from_xy(hubs_df['hub_x'], hubs_df['hub_y']),
+                crs=self.buildings_gdf.crs
+            )
+            hubs_gdf.to_file(gpkg_path, layer='hubs', driver='GPKG')
+            
+            # Save hub_df (hub-to-hub distances) as flattened array
+            if hasattr(self, 'hub_df') and self.hub_df is not None:
+                n_hubs = len(self.hubs)
+                hub_dist_flat = self.hub_df.values.flatten()
+                hub_dist_df = pd.DataFrame({
+                    'hub_dist_flat': hub_dist_flat,
+                    'n_hubs': [n_hubs] * len(hub_dist_flat)
+                })
+                hub_dist_gdf = gpd.GeoDataFrame(hub_dist_df, geometry=[Point(0, 0)] * len(hub_dist_df), crs=self.buildings_gdf.crs)
+                hub_dist_gdf.to_file(gpkg_path, layer='hub_distances', driver='GPKG')
+            
+            # Save grav_hub_info (building -> closest hub info)
+            if hasattr(self, 'grav_hub_info') and self.grav_hub_info is not None:
+                grav_hub_gdf = gpd.GeoDataFrame(
+                    self.grav_hub_info.reset_index(),
+                    geometry=[Point(0, 0)] * len(self.grav_hub_info),
+                    crs=self.buildings_gdf.crs
+                )
+                grav_hub_gdf.to_file(gpkg_path, layer='grav_hub_info', driver='GPKG')
+            
+            # Save mh_dist_nearby_doors (nearby door pairs)
+            if hasattr(self, 'mh_dist_nearby_doors') and self.mh_dist_nearby_doors is not None and len(self.mh_dist_nearby_doors) > 0:
+                nearby_df = self.mh_dist_nearby_doors.reset_index()
+                nearby_df.columns = ['bid_i', 'bid_j', 'dist']
+                nearby_gdf = gpd.GeoDataFrame(
+                    nearby_df,
+                    geometry=[Point(0, 0)] * len(nearby_df),
+                    crs=self.buildings_gdf.crs
+                )
+                nearby_gdf.to_file(gpkg_path, layer='nearby_doors', driver='GPKG')
         
         # Optional edges persistence (parquet)
         if edges_path and hasattr(self, 'gravity') and self.gravity is not None and len(self.gravity) > 0:
@@ -1121,7 +1164,7 @@ class City:
         return city
 
     @classmethod
-    def from_geopackage(cls, gpkg_path, edges_path: str = None, poi_cols: dict | None = None):
+    def from_geopackage(cls, gpkg_path, edges_path: str = None, poi_cols: dict | None = None, load_gravity: bool = True):
         b_gdf = gpd.read_file(gpkg_path, layer='buildings')
         # Optional explicit renaming via poi_cols (e.g., {'building_type':'type'})
         if poi_cols:
@@ -1175,6 +1218,67 @@ class City:
         
         for key, value in city_props.items():
             setattr(city, key, value)
+        
+        # Load gravity infrastructure if requested
+        if load_gravity:
+            try:
+                hubs_gdf = gpd.read_file(gpkg_path, layer='hubs')
+                city.hubs = list(zip(hubs_gdf['hub_x'].astype(int), hubs_gdf['hub_y'].astype(int)))
+                
+                hub_dist_gdf = gpd.read_file(gpkg_path, layer='hub_distances')
+                hub_dist_gdf = hub_dist_gdf.drop(columns=['geometry'])
+                n_hubs = int(hub_dist_gdf['n_hubs'].iloc[0])
+                hub_dist_flat = hub_dist_gdf['hub_dist_flat'].values.astype(np.int32)
+                hub_dist_matrix = hub_dist_flat.reshape((n_hubs, n_hubs))
+                city.hub_df = pd.DataFrame(hub_dist_matrix, index=city.hubs, columns=city.hubs)
+                
+                grav_hub_gdf = gpd.read_file(gpkg_path, layer='grav_hub_info')
+                grav_hub_gdf = grav_hub_gdf.drop(columns=['geometry'])
+                city.grav_hub_info = grav_hub_gdf.set_index('index')
+                city.grav_hub_info.index.name = None
+                city.grav_hub_info['closest_hub_idx'] = city.grav_hub_info['closest_hub_idx'].astype(np.int32)
+                city.grav_hub_info['dist_to_hub'] = city.grav_hub_info['dist_to_hub'].astype(np.int32)
+                
+                try:
+                    nearby_gdf = gpd.read_file(gpkg_path, layer='nearby_doors')
+                    nearby_gdf = nearby_gdf.drop(columns=['geometry'])
+                    city.mh_dist_nearby_doors = pd.Series(
+                        nearby_gdf['dist'].values.astype(np.int32),
+                        index=pd.MultiIndex.from_arrays([nearby_gdf['bid_i'], nearby_gdf['bid_j']])
+                    )
+                except Exception:
+                    city.mh_dist_nearby_doors = pd.Series([], dtype=np.int32, index=pd.MultiIndex.from_arrays([[], []]))
+                
+                # Reconstruct callable gravity function
+                building_ids = city.buildings_gdf['id'].to_numpy()
+                bid_to_idx = {bid: i for i, bid in enumerate(building_ids)}
+                hub_to_hub = city.hub_df.values
+                closest_hub_idx = city.grav_hub_info['closest_hub_idx'].to_numpy()
+                dist_to_closest_hub = city.grav_hub_info['dist_to_hub'].to_numpy()
+                
+                def compute_gravity_row(building_id, exponent=2.0):
+                    idx = bid_to_idx[building_id]
+                    hub_i = closest_hub_idx[idx]
+                    dist_to_hub_i = dist_to_closest_hub[idx]
+                    
+                    distances = dist_to_hub_i + hub_to_hub[hub_i, closest_hub_idx] + dist_to_closest_hub
+                    
+                    for (bid_i, bid_j), d in city.mh_dist_nearby_doors.items():
+                        if bid_i == building_id:
+                            distances[bid_to_idx[bid_j]] = d
+                        elif bid_j == building_id:
+                            distances[bid_to_idx[bid_i]] = d
+                    
+                    distances[idx] = 0
+                    gravity_row = 1.0 / (distances ** exponent)
+                    gravity_row[idx] = 0.0
+                    
+                    return pd.Series(gravity_row, index=building_ids)
+                
+                city.grav = compute_gravity_row
+                
+            except Exception:
+                pass
         
         return city
 
@@ -1485,7 +1589,7 @@ class RandomCityGenerator:
         self.streets = self.generate_streets()
         self.building_sizes = {
             'home': [(2, 2), (1, 2), (2, 1), (1, 1)],  # Mixed sizes
-            'work': [(1, 3), (3, 1), (4, 4), (3, 3), (4, 2), (2, 4)],
+            'workplace': [(1, 3), (3, 1), (4, 4), (3, 3), (4, 2), (2, 4)],
             'retail': [(1, 3), (3, 1), (4, 4), (3, 3), (2, 4), (4, 2)],
             'park': [(6, 6), (5, 5), (4, 4)]
         }
@@ -1500,7 +1604,7 @@ class RandomCityGenerator:
     def get_block_type(self, x, y):
         """Dynamically assigns a block type instead of storing all in memory."""
         npr.seed(self.seed + x * self.width + y)  # Ensure consistency
-        return npr.choice(['home', 'work', 'retail', 'park'], 
+        return npr.choice(['home', 'workplace', 'retail', 'park'], 
                           p=[self.home_ratio, self.work_ratio, self.retail_ratio, self.park_ratio])
     
     def fill_block(self, block_x, block_y, block_type):

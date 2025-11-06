@@ -38,15 +38,15 @@ def garden_city():
 def default_ids(garden_city):
     b = garden_city.buildings_gdf
     homes = b[b['building_type'] == 'home']['id'].tolist()
-    works = b[b['building_type'] == 'work']['id'].tolist()
+    workplaces = b[b['building_type'] == 'workplace']['id'].tolist()
     print("DEBUG home ids (first 10):", homes[:10])
-    print("DEBUG work ids (first 10):", works[:10])
-    assert homes and works, "Regenerated garden city must contain home and work buildings"
+    print("DEBUG workplace ids (first 10):", workplaces[:10])
+    assert homes and workplaces, "Regenerated garden city must contain home and workplace buildings"
     return {
         'home': homes[0],
         'home2': homes[1] if len(homes) > 1 else homes[0],
-        'work': works[0],
-        'work2': works[1] if len(works) > 1 else works[0],
+        'work': workplaces[0],
+        'work2': workplaces[1] if len(workplaces) > 1 else workplaces[0],
     }
 
 
@@ -379,7 +379,7 @@ def test_population_agent_generation(garden_city, default_ids):
     pop2 = Population(garden_city)
     b = garden_city.buildings_gdf
     homes = b[b['building_type']=='home']['id'].head(3).tolist()
-    workplaces = b[b['building_type']=='work']['id'].head(3).tolist()
+    workplaces = b[b['building_type']=='workplace']['id'].head(3).tolist()
     
     pop2.generate_agents(N=3, seed=42, name_count=2, agent_homes=homes, agent_workplaces=workplaces)
     

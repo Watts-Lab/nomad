@@ -605,7 +605,7 @@ fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
 colors = {
     'street': 'black',
     'home': 'blue',
-    'work': 'purple',
+    'workplace': 'purple',
     'retail': 'orange',
     'park': 'green',
     'default': 'grey'
@@ -625,7 +625,7 @@ ax2.set_axis_off()
 clipped_parks.plot(ax=ax2, color=colors['park'])
 clipped_homes.plot(ax=ax2, color=colors['home'])
 clipped_retail.plot(ax=ax2, color=colors['retail'])
-clipped_workplaces.plot(ax=ax2, color=colors['work'])
+clipped_workplaces.plot(ax=ax2, color=colors['workplace'])
 clipped_others.plot(ax=ax2, color=colors['default'])
 segments.plot(ax=ax2, edgecolor=colors['street'])
 

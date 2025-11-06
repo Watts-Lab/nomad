@@ -12,11 +12,12 @@ import funkybob
 import s3fs
 import pyarrow as pa
 import pyarrow.dataset as ds
-import uuid
+import pdb
 
 from nomad.io.base import from_df, to_file
 
 from nomad.city_gen import *
+from nomad.filters import to_timestamp
 from nomad.constants import DEFAULT_SPEEDS, FAST_SPEEDS, SLOW_SPEEDS, DEFAULT_STILL_PROBS
 from nomad.constants import FAST_STILL_PROBS, SLOW_STILL_PROBS, ALLOWED_BUILDINGS, DEFAULT_STAY_PROBS
 
@@ -192,7 +193,12 @@ class Agent:
                  destination_diary=None,
                  trajectory=None,
                  diary=None,
-                 seed=0):
+                 seed=0,
+                 x=None,
+                 y=None,
+                 location=None,
+                 datetime=None,
+                 timestamp=None):
         """
         Initialize an agent in the city simulation, with optional existing data.
 
@@ -228,7 +234,7 @@ class Agent:
         if home is None:
             home = city.buildings_gdf[city.buildings_gdf['building_type'] == 'home'].sample(n=1, random_state=rng)['id'].iloc[0]
         if workplace is None:
-            workplace = city.buildings_gdf[city.buildings_gdf['building_type'] == 'work'].sample(n=1, random_state=rng)['id'].iloc[0]
+            workplace = city.buildings_gdf[city.buildings_gdf['building_type'] == 'workplace'].sample(n=1, random_state=rng)['id'].iloc[0]
 
         home_building = city.get_building(identifier=home)
         workplace_building = city.get_building(identifier=workplace)
@@ -243,13 +249,46 @@ class Agent:
         self.speeds = speeds
         self.visit_freqs = None
 
+        # Initialize last_ping
+        if trajectory is not None:
+            if x is not None or y is not None or location is not None or datetime is not None or timestamp is not None:
+                warnings.warn("Both trajectory and position kwargs provided. Trajectory takes precedence.")
+            self.last_ping = trajectory.iloc[-1]
+        else:
+            # Determine initial position
+            if x is not None and y is not None:
+                x_coord, y_coord = x, y
+            elif location is not None:
+                loc_centroid = self.city.buildings_gdf[self.city.buildings_gdf['id'] == location].iloc[0]['geometry'].centroid
+                x_coord, y_coord = loc_centroid.x, loc_centroid.y
+            else:
+                x_coord, y_coord = self.home_centroid.x, self.home_centroid.y
+            
+            # Determine initial time
+            if datetime is not None:
+                init_time = datetime
+            else:
+                init_time = pd.Timestamp.now(tz='America/New_York')
+            
+            if timestamp is not None:
+                init_timestamp = timestamp
+            else:
+                init_timestamp = to_timestamp(init_time)
+            
+            self.last_ping = pd.Series({
+                'x': x_coord,
+                'y': y_coord,
+                'datetime': init_time,
+                'timestamp': init_timestamp,
+                'user_id': identifier
+            })
+
         self.destination_diary = destination_diary if destination_diary is not None else pd.DataFrame(
             columns=['datetime', 'timestamp', 'duration', 'location'])
         self.trajectory = trajectory
         self.dt = None
         self.diary = diary if diary is not None else pd.DataFrame(
             columns=['datetime', 'timestamp', 'duration', 'location', 'identifier'])
-        self.last_ping = trajectory.iloc[-1] if (trajectory is not None) else None
         self.sparse_traj = None
 
 
@@ -500,7 +539,7 @@ class Agent:
         if rng is None:
             rng = npr.default_rng()
         if initial_k is None:
-            initial_k = {'retail': 4, 'work': 2, 'home': 2, 'park': 2}
+            initial_k = {'retail': 4, 'workplace': 2, 'home': 2, 'park': 2}
 
         # Warn if existing frequencies are already set
         if getattr(self, 'visit_freqs', None) is not None:
@@ -566,7 +605,11 @@ class Agent:
         if (not hasattr(self.city, 'grav')) or (self.city.grav is None):
             raise RuntimeError("city.grav is not available. Call city.compute_gravity() before trajectory generation.")
 
-        # Mapping: building id -> (door_cell_x, door_cell_y)
+        # Validate last_ping exists
+        if self.last_ping is None:
+            raise RuntimeError(
+                "Agent has no last_ping. This should not happen unless reset_trajectory(last_ping=True) was called."
+            )
 
         if end_time.tz is None:
             tz = getattr(self.last_ping['datetime'], 'tz', None)
@@ -574,16 +617,14 @@ class Agent:
                 end_time = end_time.tz_localize(tz)
 
         if isinstance(end_time, pd.Timestamp):
-            end_time = int(end_time.timestamp())  # Convert to unix
+            end_time = to_timestamp(end_time)
 
-        # Create visit frequency table if user does not already have one
         visit_freqs = self.visit_freqs
         if (visit_freqs is None) or (not (visit_freqs['freq'] > 0).any()):
-            # Initialize past counts using uniform seeding over types
             visit_freqs = self._initialize_visits_unif(
                 rng=rng,
                 home_work_freq=20,
-                initial_k={'retail': 4, 'work': 2, 'home': 2, 'park': 2},
+                initial_k={'retail': 4, 'workplace': 2, 'home': 2, 'park': 2},
                 other_locs_freq=2,
             )
 
@@ -599,13 +640,20 @@ class Agent:
             if 'timestamp' in self.destination_diary.columns:
                 start_time = int(last_entry.timestamp + last_entry.duration*60)
             else:
-                start_time = int(last_entry.datetime.timestamp()) + int(last_entry.duration*60)
+                start_time = to_timestamp(last_entry.datetime) + int(last_entry.duration*60)
             curr = last_entry.location
 
+        # Check if start_time is already past end_time
+        if start_time >= end_time:
+            warnings.warn(
+                f"Agent {self.identifier}: last_ping timestamp ({start_time}) is at or beyond end_time ({end_time}). "
+                "No destinations will be generated. Consider providing an earlier last_ping or later end_time."
+            )
+            return
+        
         dest_update = []
         # Informative message
         print(f"Generating destination diary via EPR (rho={rho}, gamma={gamma}, epr_time_res={epr_time_res} min, seed={seed})")
-
         while start_time < end_time:
             curr_type = visit_freqs.loc[curr, 'building_type'] if curr in visit_freqs.index else 'home'
             allowed = allowed_buildings(start_time_local)
@@ -727,7 +775,7 @@ class Agent:
             x_coord, y_coord = loc_centroid.x, loc_centroid.y
             
             datetime = row['datetime']
-            timestamp = int(row.get('timestamp', datetime.timestamp()))
+            timestamp = int(row.get('timestamp', to_timestamp(datetime)))
             
             self.last_ping = pd.Series({
                 'x': x_coord,
@@ -738,31 +786,29 @@ class Agent:
                 })
             self.trajectory = pd.DataFrame([self.last_ping])
 
-        # ensure last ping
+        # Handle trajectory initialization and overrides
         if self.trajectory is None:
-            if 'x' in kwargs and 'y' in kwargs:
-                x_coord, y_coord = kwargs['x'], kwargs['y']
-            else:
-                loc = kwargs.get('location', self.home)
-                loc_centroid = self.city.buildings_gdf[self.city.buildings_gdf['id'] == loc].iloc[0]['geometry'].centroid
-                x_coord, y_coord = loc_centroid.x, loc_centroid.y
+            # Allow overriding last_ping fields with kwargs
+            if 'x' in kwargs or 'y' in kwargs or 'location' in kwargs or 'datetime' in kwargs or 'timestamp' in kwargs:
+                if 'x' in kwargs and 'y' in kwargs:
+                    self.last_ping['x'] = kwargs['x']
+                    self.last_ping['y'] = kwargs['y']
+                elif 'location' in kwargs:
+                    loc_centroid = self.city.buildings_gdf[self.city.buildings_gdf['id'] == kwargs['location']].iloc[0]['geometry'].centroid
+                    self.last_ping['x'] = loc_centroid.x
+                    self.last_ping['y'] = loc_centroid.y
                 
-            datetime = kwargs.get('datetime', pd.Timestamp.now(tz='America/New_York'))
-            timestamp = int(kwargs.get('timestamp', datetime.timestamp()))
-                
-            self.last_ping = pd.Series({
-                'x': x_coord,
-                'y': y_coord,
-                'datetime': datetime,
-                'timestamp': timestamp,
-                'user_id': self.identifier
-                })
+                if 'datetime' in kwargs:
+                    self.last_ping['datetime'] = kwargs['datetime']
+                if 'timestamp' in kwargs:
+                    self.last_ping['timestamp'] = kwargs['timestamp']
+            
             self.trajectory = pd.DataFrame([self.last_ping])
         else:
-            if ('x' in kwargs) or ('y' in kwargs) or ('datetime' in kwargs) or ('timestamp' in kwargs):
+            if 'x' in kwargs or 'y' in kwargs or 'location' in kwargs or 'datetime' in kwargs or 'timestamp' in kwargs:
                 raise ValueError(
-                    "Keywords arguments conflict with existing trajectory or destination diary,\
-                    use Agent.reset_trajectory() or do not provide keyword arguments"
+                    "Keyword arguments conflict with existing trajectory. "
+                    "Use Agent.reset_trajectory() or do not provide keyword arguments."
                 )
             self.last_ping = self.trajectory.iloc[-1]
 
@@ -1165,7 +1211,7 @@ class Population:
             print("Agent identifier already exists in population. Replacing corresponding agent.")
         self.roster[agent.identifier] = agent
 
-    def generate_agents(self, N, seed=0, name_count=2, agent_homes=None, agent_workplaces=None):
+    def generate_agents(self, N, seed=0, name_count=2, agent_homes=None, agent_workplaces=None, datetimes=None):
         """
         Generates N agents, with randomized attributes.
         """
@@ -1177,7 +1223,8 @@ class Population:
         # Create efficient accessors for agent homes and workplaces
         get_home = parse_agent_attr(agent_homes, N, "agent_homes")
         get_workplace = parse_agent_attr(agent_workplaces, N, "agent_workplaces")
-            
+        get_datetime = parse_agent_attr(datetimes, N, "datetimes")
+
         for i in range(N):
             agent_seed = int(master_rng.integers(0, 2**32))
             identifier = generator[i]              
@@ -1185,6 +1232,7 @@ class Population:
                           city=self.city,
                           home=get_home(i),
                           workplace=get_workplace(i),
+                          datetime=get_datetime(i),
                           seed=agent_seed)
             self.add_agent(agent)
 

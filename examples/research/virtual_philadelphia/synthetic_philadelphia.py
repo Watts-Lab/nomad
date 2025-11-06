@@ -8,9 +8,9 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.17.1
 #   kernelspec:
-#     display_name: Python 3 (ipykernel)
+#     display_name: nomad-kernel
 #     language: python
-#     name: python3
+#     name: nomad-kernel
 # ---
 
 # %% [markdown]
@@ -37,9 +37,6 @@ from nomad.traj_gen import Population
 LARGE_BOX = box(-75.1905, 39.9235, -75.1425, 39.9535)
 
 USE_FULL_CITY = False
-BLOCK_SIDE_LENGTH = 10.0
-HUB_SIZE = 100
-
 OUTPUT_DIR = Path("sandbox")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -52,6 +49,24 @@ else:
 
 SANDBOX_GPKG = OUTPUT_DIR / f"sandbox_data_{BOX_NAME}.gpkg"
 REGENERATE_DATA = False
+
+config = {
+    "box_name": BOX_NAME,
+    "block_side_length": 15.0,
+    "hub_size": 100,
+    "N": 10,
+    "name_seed": 42,
+    "name_count": 2,
+    "epr_params": {
+        "datetime": "2024-01-01 00:00-05:00",
+        "end_time": "2024-01-08 00:00-05:00",
+        "epr_time_res": 15,
+        "rho": 0.4,
+        "gamma": 0.3,
+        "seed_base": 100
+    }
+}
+
 
 # %% [markdown]
 # ## Data Generation (OSM Download + Rotation)
@@ -141,7 +156,7 @@ city = RasterCity(
     boundary.geometry.iloc[0],
     streets,
     buildings,
-    block_side_length=BLOCK_SIDE_LENGTH,
+    block_side_length=config["block_side_length"],
     resolve_overlaps=True
 )
 gen_time = time.time() - t0
@@ -153,7 +168,7 @@ graph_time = time.time() - t1
 print(f"Street graph:       {graph_time:>6.2f}s")
 
 t2 = time.time()
-city._build_hub_network(hub_size=HUB_SIZE)
+city._build_hub_network(hub_size=config["hub_size"])
 hub_time = time.time() - t2
 print(f"Hub network:        {hub_time:>6.2f}s")
 
@@ -214,46 +229,36 @@ print("\n" + summary_df.to_string(index=False))
 # ## Generate Population and Destination Diaries
 
 # %%
+# %load_ext autoreload
+# %autoreload 2
+from tqdm import tqdm
+from nomad.traj_gen import Population
+
+# %%
 print("\n" + "="*50)
 print("DESTINATION DIARY GENERATION")
 print("="*50)
-
-config = {
-    "box_name": BOX_NAME,
-    "block_side_length": BLOCK_SIDE_LENGTH,
-    "hub_size": HUB_SIZE,
-    "N": 10,
-    "name_seed": 42,
-    "name_count": 2,
-    "epr_params": {
-        "end_time": "2024-01-08 00:00-05:00",
-        "epr_time_res": 15,
-        "rho": 0.4,
-        "gamma": 0.3,
-        "seed_base": 100
-    }
-}
 
 config_path = OUTPUT_DIR / f"config_{BOX_NAME}.json"
 with open(config_path, 'w') as f:
     json.dump(config, f, indent=2)
 
-t0 = time.time()
+
 population = Population(city)
 population.generate_agents(
     N=config["N"],
     seed=config["name_seed"],
-    name_count=config["name_count"]
+    name_count=config["name_count"],
+    datetimes=config["epr_params"]["datetime"]
 )
-agent_gen_time = time.time() - t0
-print(f"Agent generation:   {agent_gen_time:>6.2f}s ({config['N']} agents)")
 
 end_time = pd.Timestamp(config["epr_params"]["end_time"])
 diary_dir = OUTPUT_DIR / f"diaries_{BOX_NAME}"
 diary_dir.mkdir(parents=True, exist_ok=True)
 
 t1 = time.time()
-for i, agent in enumerate(population.roster.values()):
+for i, agent in tqdm(enumerate(population.roster.values()), total=config["N"]):
+    print(agent.identifier)
     agent.generate_dest_diary(
         end_time=end_time,
         epr_time_res=config["epr_params"]["epr_time_res"],
@@ -269,8 +274,18 @@ print(f"Diary generation:   {diary_gen_time:>6.2f}s")
 total_entries = sum(len(agent.destination_diary) for agent in population.roster.values())
 print(f"Total entries:      {total_entries:,}")
 print("-"*50)
-print(f"Total EPR:          {agent_gen_time + diary_gen_time:>6.2f}s")
+print(f"Total EPR:          {diary_gen_time:>6.2f}s")
 print("="*50)
 
 print(f"\nConfig saved to {config_path}")
 print(f"Diaries saved to {diary_dir}")
+
+# %%
+agent.destination_diary
+
+# %%
+import pandas as pd
+datetime = "2024-01-01 00:00-05:00"
+pd.api.types.is_datetime64_any_dtype(datetime)
+
+# %%

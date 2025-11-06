@@ -350,3 +350,73 @@ def test_resolve_overlaps():
     assert n_default > 0
 
 
+def test_gravity_persistence_with_load(tmp_path):
+    """
+    Test saving and loading gravity infrastructure with load_gravity=True.
+    """
+    rcg = RandomCityGenerator(width=10, height=10, street_spacing=5, seed=42)
+    city = rcg.generate_city()
+    
+    city._build_hub_network(hub_size=50)
+    city.compute_gravity(exponent=2.0, callable_only=True)
+    
+    gpkg_path = tmp_path / "test_city_gravity.gpkg"
+    city.save_geopackage(str(gpkg_path), persist_gravity_data=True)
+    
+    city2 = City.from_geopackage(str(gpkg_path), load_gravity=True)
+    
+    assert hasattr(city2, 'hubs')
+    assert hasattr(city2, 'hub_df')
+    assert hasattr(city2, 'grav_hub_info')
+    assert hasattr(city2, 'mh_dist_nearby_doors')
+    assert hasattr(city2, 'grav')
+    assert callable(city2.grav)
+    
+    assert len(city2.hubs) == len(city.hubs)
+    assert city2.hub_df.shape == city.hub_df.shape
+    assert len(city2.grav_hub_info) == len(city.grav_hub_info)
+    assert len(city2.mh_dist_nearby_doors) == len(city.mh_dist_nearby_doors)
+    
+    building_id = city.buildings_gdf['id'].iloc[0]
+    grav_row_orig = city.grav(building_id)
+    grav_row_loaded = city2.grav(building_id)
+    
+    pd.testing.assert_series_equal(grav_row_orig, grav_row_loaded)
+
+
+def test_gravity_persistence_without_load(tmp_path):
+    """
+    Test saving gravity infrastructure but loading without it (load_gravity=False).
+    """
+    rcg = RandomCityGenerator(width=10, height=10, street_spacing=5, seed=42)
+    city = rcg.generate_city()
+    
+    city._build_hub_network(hub_size=50)
+    city.compute_gravity(exponent=2.0, callable_only=True)
+    
+    gpkg_path = tmp_path / "test_city_no_gravity.gpkg"
+    city.save_geopackage(str(gpkg_path), persist_gravity_data=True)
+    
+    city2 = City.from_geopackage(str(gpkg_path), load_gravity=False)
+    
+    assert not hasattr(city2, 'grav') or city2.grav is None or not callable(city2.grav)
+    assert not hasattr(city2, 'hubs') or city2.hubs is None
+    assert not hasattr(city2, 'hub_df') or city2.hub_df is None
+    assert not hasattr(city2, 'grav_hub_info') or city2.grav_hub_info is None
+
+
+def test_gravity_persistence_no_data(tmp_path):
+    """
+    Test loading a geopackage without gravity data.
+    """
+    rcg = RandomCityGenerator(width=10, height=10, street_spacing=5, seed=42)
+    city = rcg.generate_city()
+    
+    gpkg_path = tmp_path / "test_city_no_grav_data.gpkg"
+    city.save_geopackage(str(gpkg_path), persist_gravity_data=False)
+    
+    city2 = City.from_geopackage(str(gpkg_path), load_gravity=True)
+    
+    assert not hasattr(city2, 'grav') or city2.grav is None or not callable(city2.grav)
+
+
