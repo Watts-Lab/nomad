@@ -511,46 +511,33 @@ class City:
 
         raise TypeError("Unsupported types: geom1 must be block tuple/list or shapely geometry; geom2 must be block tuple or shapely geometry")
 
-    def get_street_graph(self):
-        """Build the street graph needed for routing.
-
-        Constructs a grid-adjacency graph where each street block is a node
-        and edges connect cardinally adjacent blocks.
-        """
-        if hasattr(self, 'street_graph') and self.street_graph is not None:
-            return self.street_graph
-
-        # ---------------------------------------------------------------------
-        # Build street block adjacency graph
-        # ---------------------------------------------------------------------
-        # Nodes
-        nodes_df = self.streets_gdf[['coord_x', 'coord_y']].copy()
-
-        # Build edge list via vectorized neighbor matches
+    def _build_adjacency_graph(self, gdf):
+        """Build grid-adjacency graph from GeoDataFrame with coord_x, coord_y."""
+        nodes_df = gdf[['coord_x', 'coord_y']].copy()
         edge_list = []
-        for dx, dy in [(1, 0), (0, 1)]:  # undirected; only positive directions
+        for dx, dy in [(1, 0), (0, 1)]:
             shifted = nodes_df.copy()
             shifted['nx'] = nodes_df['coord_x'] + dx
             shifted['ny'] = nodes_df['coord_y'] + dy
-            # Merge to find neighbor pairs
             merged = shifted.merge(
                 nodes_df.rename(columns={'coord_x': 'nx', 'coord_y': 'ny'}),
                 on=['nx', 'ny'], how='inner'
             )
-
             edge_list.append(
                 merged[['coord_x', 'coord_y', 'nx', 'ny']].rename(columns={'coord_x': 'x', 'coord_y': 'y'})
             )
-
         edges_df = pd.concat(edge_list, ignore_index=True)
-
-        # Create graph
         G = nx.Graph()
         G.add_nodes_from([(int(x), int(y)) for x, y in nodes_df.values])
         edge_list = [((int(r.x), int(r.y)), (int(r.nx), int(r.ny))) for r in edges_df.itertuples(index=False)]
         G.add_edges_from(edge_list, weight=1)
-        self.street_graph = G
-        
+        return G
+
+    def get_street_graph(self):
+        """Build the street graph needed for routing."""
+        if hasattr(self, 'street_graph') and self.street_graph is not None:
+            return self.street_graph
+        self.street_graph = self._build_adjacency_graph(self.streets_gdf)
         return self.street_graph
 
     def compute_shortest_paths(self, callable_only=False):
@@ -1645,6 +1632,59 @@ class City:
 
         return path
 
+    def _add_to_adjacency_graph(self, G, coord):
+        """Add node and cardinal edges to existing graph."""
+        G.add_node(coord)
+        x, y = coord
+        for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+            neighbor = (x + dx, y + dy)
+            if neighbor in G:
+                G.add_edge(coord, neighbor, weight=1)
+
+    def _connect_building_door_to_streets(self, building_id, max_depth=5):
+        """Connect building door to street network by converting blocks along shortest path."""
+        building_row = self.buildings_gdf.loc[building_id]
+        door_x = int(building_row['door_cell_x'])
+        door_y = int(building_row['door_cell_y'])
+        door_coord = (door_x, door_y)
+        
+        # Get blocks within Manhattan distance
+        candidates = [(x, y) for x in range(door_x - max_depth, door_x + max_depth + 1)
+                      for y in range(door_y - max_depth, door_y + max_depth + 1)
+                      if abs(x - door_x) + abs(y - door_y) <= max_depth]
+        
+        non_building = self.blocks_gdf[self.blocks_gdf['kind'] != 'building']
+        nearby = non_building[non_building.index.isin(candidates)]
+        block_graph = self._build_adjacency_graph(nearby)
+        
+        paths = nx.single_source_shortest_path(block_graph, source=door_coord, cutoff=max_depth)
+        
+        for target, path in paths.items():
+            if target != door_coord and target in self.streets_gdf.index:
+                new_coords = [c for c in path if c not in self.streets_gdf.index]
+                
+                for coord in path:
+                    self.blocks_gdf.loc[coord, 'kind'] = 'street'
+                    self.blocks_gdf.loc[coord, 'building_type'] = 'street'
+                
+                if new_coords:
+                    new_gdf = gpd.GeoDataFrame([
+                        {'coord_x': x, 'coord_y': y, 'geometry': box(x, y, x+1, y+1),
+                         'building_type': 'street', 'building_id': None}
+                        for x, y in new_coords
+                    ], geometry='geometry', crs=self.streets_gdf.crs)
+                    new_gdf.set_index(['coord_x', 'coord_y'], inplace=True, drop=False)
+                    new_gdf.index.names = [None, None]
+                    self.streets_gdf = pd.concat([self.streets_gdf, new_gdf])
+                    
+                    if hasattr(self, 'street_graph') and self.street_graph is not None:
+                        for coord in new_coords:
+                            self._add_to_adjacency_graph(self.street_graph, coord)
+                
+                return True
+        
+        return False
+
 
 # =============================================================================
 # RANDOM CITY CLASS
@@ -2008,6 +2048,20 @@ class RasterCity(City):
         
         self.resolve_overlaps = resolve_overlaps
         self._rasterize(verbose=verbose)
+        
+        # Connect buildings with non-street doors
+        non_street_doors = []
+        for building_id in self.buildings_gdf['id']:
+            building_row = self.buildings_gdf.loc[building_id]
+            door_coord = (int(building_row['door_cell_x']), int(building_row['door_cell_y']))
+            if door_coord not in self.streets_gdf.index:
+                non_street_doors.append(building_id)
+        
+        if non_street_doors:
+            if verbose:
+                print(f"  Connecting {len(non_street_doors)} buildings with non-street doors...")
+            for building_id in non_street_doors:
+                self._connect_building_door_to_streets(building_id, max_depth=5)
 
     def _rasterize(self, verbose=True):
         # Assigning block types could arguably be its own method, but keeping it here for now
