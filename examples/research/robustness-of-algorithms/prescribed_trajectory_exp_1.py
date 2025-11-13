@@ -144,11 +144,10 @@ with open('config_high_ha.json', 'r', encoding='utf-8') as f:
 # Load city and destination diary from config
 city = City.from_geopackage(config["city_file"])
 # Build POI data from buildings_gdf door info
-cent = city.buildings_gdf['door_point'] if 'door_point' in city.buildings_gdf.columns else city.buildings_gdf.geometry.centroid
 poi_data = pd.DataFrame({
     'building_id': city.buildings_gdf['id'].values,
-    'x': (city.buildings_gdf['door_cell_x'].astype(float) + 0.5).values if 'door_cell_x' in city.buildings_gdf.columns else cent.x.values,
-    'y': (city.buildings_gdf['door_cell_y'].astype(float) + 0.5).values if 'door_cell_y' in city.buildings_gdf.columns else cent.y.values
+    'x': city.buildings_gdf['door_point'].apply(lambda p: p[0]).values,
+    'y': city.buildings_gdf['door_point'].apply(lambda p: p[1]).values
 })
 
 destinations = pd.read_csv(config["destination_diary_file"], parse_dates=["datetime"])

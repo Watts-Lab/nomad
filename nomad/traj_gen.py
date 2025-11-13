@@ -288,6 +288,12 @@ class Agent:
         self.diary = diary if diary is not None else pd.DataFrame(
             columns=['datetime', 'timestamp', 'duration', 'location', 'identifier'])
         self.sparse_traj = None
+        
+        # Trajectory simulation parameters (caching for performance)
+        self._cached_bound_poly = None
+        self._cached_path_ml = None
+        self._previous_dest_building_row = None
+        self._current_dest_building_row = None
 
 
     def reset_trajectory(self, trajectory = True, sparse = True, last_ping = True, diary = True):
@@ -340,16 +346,14 @@ class Agent:
             ax.scatter(self.trajectory.x, self.trajectory.y, s=6, color=color, alpha=alpha, zorder=2)
             self.city.plot_city(ax, doors=doors, address=address, zorder=1)
 
-    def _sample_step(self, start_point, dest_building_id, dt, rng):
+    def _sample_step(self, start_point, dt, rng):
         """
-        From a destination diary, generates a single (x, y) ping step towards dest_building_id.
+        From a destination diary, generates a single (x, y) ping step towards the current destination building.
 
         Parameters
         ----------
         start_point : tuple
             The coordinates of the current position as a tuple (x, y).
-        dest_building_id : str
-            The destination building id.
         dt : float
             The time step duration (minutes).
         rng : numpy.random.Generator
@@ -364,17 +368,9 @@ class Agent:
         """
         city = self.city
 
-        # Resolve destination building geometry and attributes (strict schema)
-        brow = city.buildings_gdf[city.buildings_gdf['id'] == dest_building_id]
-        if brow.empty:
-            raise ValueError(f"Destination {dest_building_id} not found in city buildings.")
-        dest_geom = brow.iloc[0]['geometry']
-        dest_type = brow.iloc[0]['building_type']
-        # Door cell and door centroid (no fallbacks)
-        dest_cell = (int(brow.iloc[0]['door_cell_x']), int(brow.iloc[0]['door_cell_y']))
-        door_poly = box(dest_cell[0], dest_cell[1], dest_cell[0]+1, dest_cell[1]+1)
-        door_line = dest_geom.intersection(door_poly)
-        dest_door_centroid = dest_geom.centroid if door_line.is_empty else door_line.centroid
+        # Resolve destination building geometry and attributes from cache
+        brow = self._current_dest_building_row
+        dest_type = brow['building_type']
 
         # Determine start block and geometry
         start_block = tuple(np.floor(start_point).astype(int))
@@ -385,11 +381,15 @@ class Agent:
         )
         start_info = city.get_block(start_block)
         start_point_arr = np.asarray(start_point, dtype=float)
+        
+        # geometry checks (use intersects instead of contains to handle boundary/precision issues)
+        in_current_dest = self._current_dest_building_row['geometry'].intersects(Point(start_point_arr)) if self._current_dest_building_row is not None else False
+        in_previous_dest = self._previous_dest_building_row['geometry'].intersects(Point(start_point_arr)) if self._previous_dest_building_row is not None else False
+        in_cached_bound = self._cached_bound_poly.intersects(Point(start_point_arr)) if self._cached_bound_poly is not None else False
 
-        # If already at destination building area or at door centroid, stay-within-building dynamics
-        if (start_info['building_type'] is not None and start_info['building_type'] != 'street' and start_info['building_id'] == dest_building_id) or \
-           (abs(start_point_arr[0] - dest_door_centroid.x) < 1e-9 and abs(start_point_arr[1] - dest_door_centroid.y) < 1e-9):
-            location = dest_building_id
+        # If already at destination building area, stay-within-building dynamics
+        if in_current_dest:
+            location = brow['id']
             p = self.still_probs.get(dest_type, 0.5)
             sigma = self.speeds.get(dest_type, 0.5)
 
@@ -399,38 +399,39 @@ class Agent:
                 # Draw until coord falls inside building
                 while True:
                     coord = rng.normal(loc=start_point_arr, scale=sigma*np.sqrt(dt), size=2)
-                    if dest_geom.contains(Point(coord)):
+                    if brow['geometry'].contains(Point(coord)):
                         break
             return coord, location
 
         # Otherwise, move along streets toward destination door cell
         location = None
         start_segment = []
-        # If currently inside a building, first move towards its door centroid
-        if start_info['building_type'] is not None and start_info['building_type'] != 'street' and start_info['building_id'] is not None:
-            srow = city.buildings_gdf[city.buildings_gdf['id'] == start_info['building_id']]
-            if srow.empty:
-                raise ValueError(f"Start building {start_info['building_id']} not found in city buildings.")
-            s_cell = (int(srow.iloc[0]['door_cell_x']), int(srow.iloc[0]['door_cell_y']))
-            s_door_poly = box(s_cell[0], s_cell[1], s_cell[0]+1, s_cell[1]+1)
-            s_door_line = srow.iloc[0]['geometry'].intersection(s_door_poly)
-            s_door_centroid = srow.iloc[0]['geometry'].centroid if s_door_line.is_empty else s_door_line.centroid
-            start_segment = [tuple(start_point_arr.tolist()), (s_door_centroid.x, s_door_centroid.y)]
-            start_node = s_cell
+        # If currently inside previous destination building, first move towards its door
+        if in_previous_dest:
+            prev_door_point = self._previous_dest_building_row['door_point']
+            start_segment = [tuple(start_point_arr.tolist()), prev_door_point]
+            start_node = (int(self._previous_dest_building_row['door_cell_x']), int(self._previous_dest_building_row['door_cell_y']))
         else:
             start_node = start_block
 
-        # Shortest path between street blocks (door cells) — must exist
+        # Resolve destination door coordinates for path computation
+        dest_cell = (int(brow['door_cell_x']), int(brow['door_cell_y']))
+        dest_door_centroid = Point(brow['door_point'][0], brow['door_point'][1])
+
+        # Shortest path between street blocks (door cells)
         street_path = city.get_shortest_path(start_node, dest_cell)
-        if not street_path:
-            raise ValueError(f"get_shortest_path returned no path between {start_node} and {dest_cell}.")
+        street_blocks = city.blocks_gdf.loc[street_path] # get geometries
 
         # Build continuous path through block centers, include start/end segments
-        path = [(x + 0.5, y + 0.5) for (x, y) in street_path]
-        path = start_segment + path + [(dest_door_centroid.x, dest_door_centroid.y)]
-        path_ml = MultiLineString([path])
-        street_geom = unary_union([city.get_block(b)['geometry'] for b in street_path])
-        bound_poly = unary_union([start_info['geometry'], street_geom]) if start_info['geometry'] is not None else street_geom
+        centroids = street_blocks['geometry'].centroid
+        path_ml = MultiLineString([start_segment + [(pt.x, pt.y) for pt in centroids] + [(dest_door_centroid.x, dest_door_centroid.y)]])
+        street_geom = unary_union(street_blocks['geometry'])
+        # Use previous destination building geometry if agent is departing from it, otherwise use start block geometry
+        if in_previous_dest and self._previous_dest_building_row is not None:
+            start_geom = self._previous_dest_building_row['geometry']
+        else:
+            start_geom = start_info['geometry']
+        bound_poly = unary_union([start_geom, street_geom])
 
         # Transformed coordinates of current position along the path
         path_coord = _path_coords(path_ml, start_point_arr)
@@ -444,7 +445,7 @@ class Agent:
             path_coord = (path_coord[0] + step[0], 0.7 * path_coord[1] + step[1])
 
             if path_coord[0] > path_ml.length:
-                coord = np.array([dest_geom.centroid.x, dest_geom.centroid.y])
+                coord = np.array([dest_door_centroid.x, dest_door_centroid.y])
                 break
 
             coord = _cartesian_coords(path_ml, *path_coord)
@@ -473,10 +474,39 @@ class Agent:
 
         tick_secs = int(60*dt)
 
+        # Initialize previous destination building to building containing start ping, if any
+        prev_ping = self.last_ping
+        start_point = (prev_ping['x'], prev_ping['y'])
+        start_block = tuple(np.floor(start_point).astype(int))
+        start_block = (
+            max(0, min(start_block[0], city.dimensions[0] - 1)),
+            max(0, min(start_block[1], city.dimensions[1] - 1)),
+        )
+        start_info = city.get_block(start_block)
+        if start_info['building_type'] is not None and start_info['building_type'] != 'street' and start_info['building_id'] is not None:
+            srow = city.buildings_gdf[city.buildings_gdf['id'] == start_info['building_id']]
+            self._previous_dest_building_row = srow.iloc[0]
+        else:
+            self._previous_dest_building_row = None
+
+        # Initialize current destination building to first entry
+        if destination_diary.shape[0] > 0:
+            first_building_id = destination_diary.iloc[0]['location']
+            brow = city.buildings_gdf[city.buildings_gdf['id'] == first_building_id]
+            self._current_dest_building_row = brow.iloc[0] if not brow.empty else None
+        else:
+            self._current_dest_building_row = None
+
         entry_update = []
         for i in range(destination_diary.shape[0]):
             destination_info = destination_diary.iloc[i]
             building_id = destination_info['location']
+            
+            # Shift: previous = current, current = new destination (skip shift on first iteration)
+            if i > 0:
+                self._previous_dest_building_row = self._current_dest_building_row
+            brow = city.buildings_gdf[city.buildings_gdf['id'] == building_id]
+            self._current_dest_building_row = brow.iloc[0] if not brow.empty else None
 
             duration_in_ticks = int(destination_info['duration'] / dt)
             for _ in range(duration_in_ticks):
@@ -484,7 +514,7 @@ class Agent:
                 start_point = (prev_ping['x'], prev_ping['y'])
                 unix_timestamp = prev_ping['timestamp'] + tick_secs
                 datetime = prev_ping['datetime'] + timedelta(seconds=tick_secs)
-                coord, location = self._sample_step(start_point, building_id, dt, rng)
+                coord, location = self._sample_step(start_point, dt, rng)
                 ping = {'x': coord[0], 
                         'y': coord[1],
                         'datetime': datetime,

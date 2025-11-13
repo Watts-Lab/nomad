@@ -121,11 +121,10 @@ def test_complete_workflow(garden_city, simple_dest_diary, temp_output_dir, defa
         assert len(agent.sparse_traj) <= len(agent.trajectory)
     
     # Reproject to Web Mercator
-    cent = garden_city.buildings_gdf['door_point'] if 'door_point' in garden_city.buildings_gdf.columns else garden_city.buildings_gdf.geometry.centroid
     poi_data = pd.DataFrame({
         'building_id': garden_city.buildings_gdf['id'].values,
-        'x': (garden_city.buildings_gdf['door_cell_x'].astype(float) + 0.5).values if 'door_cell_x' in garden_city.buildings_gdf.columns else cent.x.values,
-        'y': (garden_city.buildings_gdf['door_cell_y'].astype(float) + 0.5).values if 'door_cell_y' in garden_city.buildings_gdf.columns else cent.y.values
+        'x': garden_city.buildings_gdf['door_point'].apply(lambda p: p[0]).values,
+        'y': garden_city.buildings_gdf['door_point'].apply(lambda p: p[1]).values
     })
     
     pop.reproject_to_mercator(sparse_traj=True, full_traj=True, diaries=True, poi_data=poi_data)

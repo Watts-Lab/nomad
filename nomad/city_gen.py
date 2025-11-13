@@ -378,7 +378,6 @@ class City:
             building_id = f"{building_type[0]}-x{int(candidate[0])}-y{int(candidate[1])}"
         self.buildings_outline = unary_union([self.buildings_outline, geom])
         # Append to buildings_gdf
-        dpt = Point(door_centroid[0], door_centroid[1])
         size_blocks = len(blocks) if blocks is not None else 0
         new_row = gpd.GeoDataFrame([
             {
@@ -386,7 +385,7 @@ class City:
                 'building_type': building_type,
                 'door_cell_x': door[0],
                 'door_cell_y': door[1],
-                'door_point': dpt,
+                'door_point': door_centroid,
                 'size': size_blocks,
                 'geometry': geom
             }
@@ -1012,8 +1011,14 @@ class City:
                 drop_garden_cols=False
             )
         else:
-            buildings_gdf = self.buildings_gdf
+            buildings_gdf = self.buildings_gdf.copy()
             streets_gdf = self.streets_gdf
+        
+        # Convert door_point tuple to two columns for GeoPackage serialization
+        if 'door_point' in buildings_gdf.columns:
+            buildings_gdf['door_point_x'] = buildings_gdf['door_point'].apply(lambda p: p[0])
+            buildings_gdf['door_point_y'] = buildings_gdf['door_point'].apply(lambda p: p[1])
+            buildings_gdf = buildings_gdf.drop(columns=['door_point'])
         
         buildings_gdf.to_file(gpkg_path, layer='buildings', driver='GPKG')
         streets_gdf.to_file(gpkg_path, layer='streets', driver='GPKG')
@@ -1122,19 +1127,8 @@ class City:
         if 'building_type' not in city.buildings_gdf.columns:
             raise KeyError("buildings_gdf must contain 'building_type'.")
         missing_cols = set(['id','door_cell_x','door_cell_y','door_point','size']) - set(city.buildings_gdf.columns)
-        for col in missing_cols:
-            if col == 'size':
-                city.buildings_gdf[col] = 0
-            elif col == 'door_point':
-                city.buildings_gdf[col] = city.buildings_gdf.geometry.centroid
-            elif col in ['door_cell_x', 'door_cell_y']:
-                pts = city.buildings_gdf.geometry.centroid
-                if col == 'door_cell_x':
-                    city.buildings_gdf['door_cell_x'] = np.floor(pts.x)
-                else:
-                    city.buildings_gdf['door_cell_y'] = np.floor(pts.y)
-            else:
-                city.buildings_gdf[col] = None
+        if missing_cols:
+            raise KeyError(f"buildings_gdf missing required columns: {missing_cols}. All buildings must have door_point computed from door_line intersection.")
         # Ensure consistent index on id
         city.buildings_gdf.set_index('id', inplace=True, drop=False)
         city.buildings_gdf.index.name = None
@@ -1213,6 +1207,25 @@ class City:
         missing = [c for c in required_building_cols if c not in b_gdf.columns]
         if missing:
             raise KeyError(f"'buildings' layer missing required columns {missing}. Provide explicit mappings via column_map kwargs, e.g., building_type='type'.")
+        
+        # Reconstruct door_point tuple
+        if 'door_point_x' in b_gdf.columns and 'door_point_y' in b_gdf.columns:
+            b_gdf['door_point'] = list(zip(b_gdf['door_point_x'], b_gdf['door_point_y']))
+            b_gdf = b_gdf.drop(columns=['door_point_x', 'door_point_y'])
+        elif 'door_point' in b_gdf.columns:
+            # Handle old format: WKT string -> tuple
+            def parse_door_point(val):
+                if isinstance(val, tuple):
+                    return val
+                elif isinstance(val, str):
+                    pt = wkt.loads(val)
+                    return (pt.x, pt.y)
+                else:
+                    raise ValueError(f"door_point must be tuple or WKT string, got {type(val)}")
+            b_gdf['door_point'] = b_gdf['door_point'].apply(parse_door_point)
+        else:
+            raise KeyError("buildings_gdf missing door_point column. It must be present, reconstructible from door_point_x/door_point_y, or parseable from WKT string.")
+        
         s_gdf = gpd.read_file(gpkg_path, layer='streets')
         
         bl_gdf = None
@@ -2099,19 +2112,24 @@ class RasterCity(City):
                     block_polys = [box(x, y, x+1, y+1) for x,y in building_blocks]
                     building_geom = block_polys[0] if len(block_polys) == 1 else unary_union(block_polys)
                     
-                    # Pick building block adjacent to door for unique ID
+                    # Pick building block adjacent to door for unique ID and compute door centroid
                     mask = self.check_adjacent(building_blocks, door)
                     idx = next((i for i, m in enumerate(mask) if m), None)
-                    candidate = building_blocks[idx] if idx is not None else building_blocks[0]
+                    candidate = building_blocks[idx]
                     building_id = f"{building_type[0]}-x{int(candidate[0])}-y{int(candidate[1])}"
                     
-                    dpt = Point(door[0] + 0.5, door[1] + 0.5)
+                    # Compute door centroid via intersection with adjacent building block (same logic as check_adjacent)
+                    door_poly = box(door[0], door[1], door[0]+1, door[1]+1)
+                    adjacent_block_poly = box(candidate[0], candidate[1], candidate[0]+1, candidate[1]+1)
+                    door_line = adjacent_block_poly.intersection(door_poly)
+                    door_centroid = (door_line.centroid.x, door_line.centroid.y)
+                    
                     new_building_rows.append({
                         'id': building_id,
                         'building_type': building_type,
                         'door_cell_x': door[0],
                         'door_cell_y': door[1],
-                        'door_point': dpt,
+                        'door_point': door_centroid,
                         'size': len(building_blocks),
                         'geometry': building_geom,
                     })

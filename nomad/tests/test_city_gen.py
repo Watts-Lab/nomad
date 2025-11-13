@@ -498,9 +498,15 @@ def test_gravity_same_door_buildings():
         # Assign the shared door to both buildings
         bids = adjacent_buildings
         for bid in bids:
+            building_geom = city.buildings_gdf.loc[bid, 'geometry']
+            door_poly = box(shared_door[0], shared_door[1], shared_door[0]+1, shared_door[1]+1)
+            door_line = building_geom.intersection(door_poly)
+            if door_line.is_empty or not isinstance(door_line, LineString):
+                raise ValueError(f"Door {shared_door} must be adjacent to building {bid}.")
+            door_centroid = (door_line.centroid.x, door_line.centroid.y)
             city.buildings_gdf.loc[bid, 'door_cell_x'] = shared_door[0]
             city.buildings_gdf.loc[bid, 'door_cell_y'] = shared_door[1]
-            city.buildings_gdf.loc[bid, 'door_point'] = Point(shared_door[0] + 0.5, shared_door[1] + 0.5)
+            city.buildings_gdf.loc[bid, 'door_point'] = door_centroid
     
     city._build_hub_network(hub_size=16)
     

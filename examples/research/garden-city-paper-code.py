@@ -209,9 +209,8 @@ plt.close(fig)
 print("Blocks for 'r-x12-y3':")
 print(city.blocks_gdf.loc[city.blocks_gdf['building_id']== 'r-x12-y3', ['coord_x','coord_y']].values.tolist())
 building = city.get_building(identifier='r-x12-y3')
-dp = building.iloc[0].get('door_point', None)
-if dp is not None:
-    print("Door centroid for 'r-x12-y3':", (dp.x, dp.y))
+x, y = building.iloc[0].door_point
+print("Door centroid for 'r-x12-y3':", (x, y))
 
 # %% [markdown]
 # Once a `City` object has been defined, a `Population` object can be initialized. The `Population` object will contain the `Agents` of the city and generate their trajectories.
