@@ -26,7 +26,7 @@ import os
 import nomad.io.base as loader
 import nomad.city_gen as cg
 import nomad.traj_gen as tg
-from nomad.traj_gen import Agent, Population, garden_city_to_mercator
+from nomad.traj_gen import Agent, Population
 from nomad.city_gen import City
 
 # %% [markdown]
@@ -34,7 +34,7 @@ from nomad.city_gen import City
 
 # %%
 # Load the city
-city_file = '../../garden-city.gpkg'
+city_file = 'nomad/data/garden-city.gpkg'
 city = cg.City.from_geopackage(city_file)
 start = '2024-06-01 00:00-04:00'
 
@@ -83,7 +83,7 @@ config = dict(
     N = N_reps*sparsity_samples,
     name_count=2,
     name_seed=2025,
-    city_file='../../garden-city.gpkg',
+    city_file='nomad/data/garden-city.gpkg',
     destination_diary_file='exp_1_destinations_balanced.csv',
     output_files = dict(
         sparse_path='./sparse_traj_1',
@@ -112,7 +112,7 @@ config_2 = dict(
     N = N_reps*sparsity_samples,
     name_count=2,
     name_seed=2025,
-    city_file='../../garden-city.gpkg',
+    city_file='nomad/data/garden-city.gpkg',
     destination_diary_file='exp_1_destinations_unbalanced.csv',
     output_files = dict(
         sparse_path='./sparse_traj_2',

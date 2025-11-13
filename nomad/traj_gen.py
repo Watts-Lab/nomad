@@ -374,21 +374,17 @@ class Agent:
 
         # Determine start block and geometry
         start_block = tuple(np.floor(start_point).astype(int))
-        # Clamp to bounds
-        start_block = (
-            max(0, min(start_block[0], city.dimensions[0] - 1)),
-            max(0, min(start_block[1], city.dimensions[1] - 1)),
-        )
-        start_info = city.get_block(start_block)
         start_point_arr = np.asarray(start_point, dtype=float)
         
         # geometry checks (use intersects instead of contains to handle boundary/precision issues)
         in_current_dest = self._current_dest_building_row['geometry'].intersects(Point(start_point_arr)) if self._current_dest_building_row is not None else False
         in_previous_dest = self._previous_dest_building_row['geometry'].intersects(Point(start_point_arr)) if self._previous_dest_building_row is not None else False
-        in_cached_bound = self._cached_bound_poly.intersects(Point(start_point_arr)) if self._cached_bound_poly is not None else False
 
         # If already at destination building area, stay-within-building dynamics
         if in_current_dest:
+            # Clear cache when arriving at destination (bound_poly only for inter-building movement)
+            self._cached_path_ml = None
+            self._cached_bound_poly = None
             location = brow['id']
             p = self.still_probs.get(dest_type, 0.5)
             sigma = self.speeds.get(dest_type, 0.5)
@@ -418,20 +414,37 @@ class Agent:
         dest_cell = (int(brow['door_cell_x']), int(brow['door_cell_y']))
         dest_door_centroid = Point(brow['door_point'][0], brow['door_point'][1])
 
-        # Shortest path between street blocks (door cells)
-        street_path = city.get_shortest_path(start_node, dest_cell)
-        street_blocks = city.blocks_gdf.loc[street_path] # get geometries
+        # Check if cached geometry is valid
+        use_cache = False
+        if self._cached_path_ml is not None and self._cached_bound_poly is not None:
+            cached_end_point = Point(self._cached_path_ml.geoms[-1].coords[-1])
+            use_cache = cached_end_point.intersects(brow['geometry'])
 
-        # Build continuous path through block centers, include start/end segments
-        centroids = street_blocks['geometry'].centroid
-        path_ml = MultiLineString([start_segment + [(pt.x, pt.y) for pt in centroids] + [(dest_door_centroid.x, dest_door_centroid.y)]])
-        street_geom = unary_union(street_blocks['geometry'])
-        # Use previous destination building geometry if agent is departing from it, otherwise use start block geometry
-        if in_previous_dest and self._previous_dest_building_row is not None:
-            start_geom = self._previous_dest_building_row['geometry']
+        if use_cache:
+            path_ml = self._cached_path_ml
+            bound_poly = self._cached_bound_poly
+            # Verify agent is within cached bound_poly (should always be true if cache is valid)
+            if not bound_poly.intersects(Point(start_point_arr)) and not in_current_dest and not in_previous_dest:
+                raise ValueError(f"Agent at {start_point_arr} is outside cached bound_poly for destination {brow['id']}")
         else:
-            start_geom = start_info['geometry']
-        bound_poly = unary_union([start_geom, street_geom])
+            # Shortest path between street blocks (door cells)
+            street_path = city.get_shortest_path(start_node, dest_cell)
+            street_blocks = city.blocks_gdf.loc[street_path] # get geometries
+
+            # Build continuous path through block centers, include start/end segments
+            centroids = street_blocks['geometry'].centroid
+            path_ml = MultiLineString([start_segment + [(pt.x, pt.y) for pt in centroids] + [(dest_door_centroid.x, dest_door_centroid.y)]])
+            street_geom = unary_union(street_blocks['geometry'])
+            # Use previous destination building geometry if agent is departing from it, otherwise use start block geometry
+            if in_previous_dest and self._previous_dest_building_row is not None:
+                start_geom = self._previous_dest_building_row['geometry']
+            else:
+                start_geom = city.blocks_gdf.loc[start_block]['geometry']
+            bound_poly = unary_union([start_geom, street_geom])
+            
+            # Cache the results
+            self._cached_path_ml = path_ml
+            self._cached_bound_poly = bound_poly
 
         # Transformed coordinates of current position along the path
         path_coord = _path_coords(path_ml, start_point_arr)
@@ -454,7 +467,6 @@ class Agent:
                 break
 
         return coord, location
-
 
     def _traj_from_dest_diary(self, dt, seed=0):
         """
