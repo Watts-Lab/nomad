@@ -304,6 +304,11 @@ class Agent:
         """
         self.destination_diary = pd.DataFrame(columns=self.destination_diary.columns)
         self.dt = None
+        # null cache for trajectory generation
+        self._cached_path_ml
+        self._cached_bound_poly
+        self._previous_dest_building_row
+        self._current_dest_building_row
         
         if trajectory:
             self.trajectory = None
@@ -495,6 +500,7 @@ class Agent:
             max(0, min(start_block[1], city.dimensions[1] - 1)),
         )
         start_info = city.get_block(start_block)
+
         if start_info['building_type'] is not None and start_info['building_type'] != 'street' and start_info['building_id'] is not None:
             srow = city.buildings_gdf[city.buildings_gdf['id'] == start_info['building_id']]
             self._previous_dest_building_row = srow.iloc[0]
@@ -502,12 +508,9 @@ class Agent:
             self._previous_dest_building_row = None
 
         # Initialize current destination building to first entry
-        if destination_diary.shape[0] > 0:
-            first_building_id = destination_diary.iloc[0]['location']
-            brow = city.buildings_gdf[city.buildings_gdf['id'] == first_building_id]
-            self._current_dest_building_row = brow.iloc[0] if not brow.empty else None
-        else:
-            self._current_dest_building_row = None
+        first_building_id = destination_diary.iloc[0]['location']
+        brow = city.buildings_gdf[city.buildings_gdf['id'] == first_building_id]
+        self._current_dest_building_row = brow.iloc[0]
 
         entry_update = []
         for i in range(destination_diary.shape[0]):
@@ -1317,6 +1320,9 @@ class Population:
         """
         if full_path:
             full_df = pd.concat([agent.trajectory for agent in self.roster.values()], ignore_index=True)
+            if partition_cols and 'date' in partition_cols and 'date' not in full_df.columns:
+                full_df['date'] = pd.to_datetime(full_df['timestamp']).dt.date.astype(str)
+
             full_df = from_df(full_df, traj_cols=traj_cols, mixed_timezone_behavior=mixed_timezone_behavior)
             to_file(full_df,
                     path=full_path,
@@ -1327,6 +1333,9 @@ class Population:
     
         if sparse_path:
             sparse_df = pd.concat([agent.sparse_traj for agent in self.roster.values()], ignore_index=True)
+            if partition_cols and 'date' in partition_cols and 'date' not in sparse_df.columns:
+                sparse_df['date'] = pd.to_datetime(sparse_df['timestamp']).dt.date.astype(str)
+
             sparse_df = from_df(sparse_df, traj_cols=traj_cols, mixed_timezone_behavior=mixed_timezone_behavior)
             to_file(sparse_df,
                     path=sparse_path,
@@ -1338,6 +1347,9 @@ class Population:
     
         if diaries_path:
             diaries_df = pd.concat([agent.diary for agent in self.roster.values()], ignore_index=True)
+            if partition_cols and 'date' in partition_cols and 'date' not in diaries_df.columns:
+                diaries_df['date'] = pd.to_datetime(diaries_df['timestamp']).dt.date.astype(str)
+
             diaries_df = from_df(diaries_df, traj_cols=traj_cols, mixed_timezone_behavior=mixed_timezone_behavior)
             to_file(diaries_df,
                     path=diaries_path,
