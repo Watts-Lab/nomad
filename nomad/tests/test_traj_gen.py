@@ -31,6 +31,7 @@ def garden_city():
     city_path = data_dir / "garden-city.gpkg"
     # Garden-city fixture (legacy) uses 'type' instead of 'building_type'
     city = cg.City.from_geopackage(city_path, poi_cols={'building_type':'type'})
+    city.compute_shortest_paths(callable_only=False)
     return city
 
 

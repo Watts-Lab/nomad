@@ -81,6 +81,7 @@ def test_from_geodataframes_roundtrip_nonsquare(tmp_path):
 def test_shortest_path():
     rcg = RandomCityGenerator(width=10, height=10, street_spacing=5, seed=1)
     city = rcg.generate_city()
+    city.compute_shortest_paths(callable_only=False)
     
     # Get two street coordinates
     streets_temp = city.streets_gdf.reset_index(drop=True)
@@ -585,5 +586,114 @@ def test_to_file_reverse_affine_transformation(tmp_path):
     
     assert abs(wm_area - expected_area) < 1.0, \
         f"Area scaling incorrect: {wm_area} vs expected {expected_area}"
+
+
+def test_connect_building_door_success():
+    """Test successful connection of building door to streets within max_depth"""
+    city = City(dimensions=(10, 10))
+    
+    # Add buildings to create an isolated area
+    # Building 1: door at (5,5), footprint at (5,6)
+    city.add_building('home', door=(5, 5), blocks=[(5, 6)])
+    building_id = city.buildings_gdf.iloc[0]['id']
+    
+    # Add park buildings to isolate the corridor
+    city.add_building('park', door=(3, 4), blocks=[(4, 4), (4, 5), (4, 6)])
+    city.add_building('park', door=(7, 4), blocks=[(6, 4), (6, 5), (6, 6)])
+    
+    # Manually create corridor by setting blocks to None (non-street, non-building)
+    # Corridor: (5,3), (5,4), (5,5) leading to street at (5,2)
+    corridor_blocks = [(5, 3), (5, 4), (5, 5)]
+    for coord in corridor_blocks:
+        city.blocks_gdf.loc[coord, 'building_type'] = None
+        city.streets_gdf = city.streets_gdf.drop(coord, errors='ignore')
+    
+    # Call connection function
+    result = city._connect_building_door_to_streets(building_id, max_depth=5)
+    
+    # Assert connection successful
+    assert result == True
+    
+    # Assert corridor blocks are now streets
+    assert city.blocks_gdf.loc[(5, 3), 'building_type'] == 'street'
+    assert city.blocks_gdf.loc[(5, 4), 'building_type'] == 'street'
+    assert city.blocks_gdf.loc[(5, 5), 'building_type'] == 'street'
+    
+    # Assert blocks exist in streets_gdf
+    assert (5, 3) in city.streets_gdf.index
+    assert (5, 4) in city.streets_gdf.index
+    assert (5, 5) in city.streets_gdf.index
+
+
+def test_connect_building_door_path_too_long():
+    """Test failure when path exceeds max_depth"""
+    city = City(dimensions=(15, 15))
+    
+    # Add a building with door at (7, 7)
+    city.add_building('home', door=(7, 7), blocks=[(7, 8)])
+    building_id = city.buildings_gdf.iloc[0]['id']
+    
+    # Create a long corridor by adding buildings on both sides
+    # Force a path length of 7: (7,7) -> (7,6) -> (7,5) -> (7,4) -> (7,3) -> (7,2) -> (7,1) -> (7,0) street
+    for x in [6, 8]:
+        for y in range(1, 8):
+            city.add_building('park', door=(x-1 if x==6 else x+1, y), blocks=[(x, y)])
+    
+    # Set corridor blocks to None  
+    for y in range(1, 8):
+        city.blocks_gdf.loc[(7, y), 'building_type'] = None
+        city.streets_gdf = city.streets_gdf.drop((7, y), errors='ignore')
+    
+    # Path length is 7, cutoff is 5 - should fail
+    result = city._connect_building_door_to_streets(building_id, max_depth=5)
+    
+    # Assert connection failed
+    assert result == False
+
+
+def test_connect_building_door_isolated():
+    """Test failure when building door is completely isolated"""
+    city = City(dimensions=(20, 20))
+    city.add_building('home', door=(10, 10), blocks=[(10, 11)])
+    building_id = city.buildings_gdf.iloc[0]['id']
+    
+    for x in range(3, 18):
+        for y in range(3, 18):
+            if not (x == 10 and y == 10):
+                city.blocks_gdf.loc[(x, y), 'building_type'] = 'park'
+    
+    city.streets_gdf = city._derive_streets_from_blocks()
+    
+    result = city._connect_building_door_to_streets(building_id, max_depth=5)
+    assert result == False
+
+
+def test_connect_building_door_already_connected():
+    """Test that function returns True if door is already a street"""
+    city = City(dimensions=(10, 10))
+    
+    # Add a building normally (door should be on street by default)
+    city.add_building('home', door=(5, 5), blocks=[(5, 6)])
+    building_id = city.buildings_gdf.iloc[0]['id']
+    
+    # Call connection function - should succeed immediately
+    result = city._connect_building_door_to_streets(building_id, max_depth=5)
+    
+    # Assert connection successful (door already connected)
+    assert result == True
+
+
+def test_rastercity_connects_isolated_doors():
+    """Test that RasterCity automatically connects buildings with non-street doors"""
+    buildings, streets, boundary = _load_fixture()
+    
+    # Create city with rasterization that will produce some non-street doors
+    city = RasterCity(boundary, streets, buildings, block_side_length=15.0, verbose=False)
+    
+    # All building doors must be streets after initialization
+    for building_id in city.buildings_gdf['id']:
+        building_row = city.buildings_gdf.loc[building_id]
+        door_coord = (int(building_row['door_cell_x']), int(building_row['door_cell_y']))
+        assert door_coord in city.streets_gdf.index, f"Building {building_id} door {door_coord} not in streets"
 
 

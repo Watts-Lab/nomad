@@ -188,6 +188,8 @@ class City:
         # Precomputed building-to-building gravity (optional, built on demand)
         self.grav = None
         self.door_dist = None
+        # Precomputed shortest paths (optional, built on demand via compute_shortest_paths)
+        self.shortest_paths = None
 
     def _derive_streets_from_blocks(self):
         """
@@ -509,23 +511,17 @@ class City:
         raise TypeError("Unsupported types: geom1 must be block tuple/list or shapely geometry; geom2 must be block tuple or shapely geometry")
 
     def get_street_graph(self):
-        """Build the street graph needed for routing.
-
-        Constructs a grid-adjacency graph where each street block is a node
-        and edges connect cardinally adjacent blocks.
-        """
+        """Build the street graph needed for routing."""
         if hasattr(self, 'street_graph') and self.street_graph is not None:
             return self.street_graph
+        self.street_graph = self._build_adjacency_graph(self.streets_gdf)
+        return self.street_graph
 
-        # ---------------------------------------------------------------------
-        # Build street block adjacency graph
-        # ---------------------------------------------------------------------
-        # Nodes
-        nodes_df = self.streets_gdf[['coord_x', 'coord_y']].copy()
-
-        # Build edge list via vectorized neighbor matches
+    def _build_adjacency_graph(self, gdf):
+        """Build grid-adjacency graph from GeoDataFrame with coord_x, coord_y."""
+        nodes_df = gdf[['coord_x', 'coord_y']].copy()
         edge_list = []
-        for dx, dy in [(1, 0), (0, 1)]:  # undirected; only positive directions
+        for dx, dy in [(1, 0), (0, 1)]:
             shifted = nodes_df.copy()
             shifted['nx'] = nodes_df['coord_x'] + dx
             shifted['ny'] = nodes_df['coord_y'] + dy
@@ -546,9 +542,41 @@ class City:
         G.add_nodes_from([(int(x), int(y)) for x, y in nodes_df.values])
         edge_list = [((int(r.x), int(r.y)), (int(r.nx), int(r.ny))) for r in edges_df.itertuples(index=False)]
         G.add_edges_from(edge_list, weight=1)
-        self.street_graph = G
+        return G
+
+    def compute_shortest_paths(self, callable_only=False):
+        """
+        Compute shortest paths between street blocks.
         
-        return self.street_graph
+        Parameters
+        ----------
+        callable_only : bool, default False
+            If False, precompute all-pairs shortest paths (only for small cities)
+            If True, store on-demand callable (placeholder for hub-based routing)
+        
+        Notes
+        -----
+        Callable mode currently uses nx.shortest_path() on demand—this is a 
+        PLACEHOLDER. Production use with _sample_step requires hub-based routing 
+        for scalability (billions of calls). Current implementation too slow for 
+        large-scale trajectory generation.
+        
+        Stores result in self.shortest_paths as dict or callable
+        """
+        G = self.get_street_graph()
+        
+        if callable_only:
+            # TODO: Replace with hub-based routing for production use
+            # Current on-demand nx.shortest_path is too slow for billion+ calls in _sample_step
+            def compute_path(start_coord, end_coord):
+                try:
+                    return nx.shortest_path(G, start_coord, end_coord)
+                except nx.NetworkXNoPath:
+                    return []
+            self.shortest_paths = compute_path
+        else:
+            # Dense storage for small cities only
+            self.shortest_paths = dict(nx.all_pairs_shortest_path(G))
 
     # ---------------------------------------------------------------------
     # Shortcut ("highway") network for fast on-demand routing
@@ -1011,7 +1039,7 @@ class City:
                 drop_garden_cols=False
             )
         else:
-            buildings_gdf = self.buildings_gdf.copy()
+            buildings_gdf = self.buildings_gdf
             streets_gdf = self.streets_gdf
         
         # Convert door_point tuple to two columns for GeoPackage serialization
@@ -1126,7 +1154,7 @@ class City:
         city.buildings_gdf = gpd.GeoDataFrame(buildings_gdf, geometry='geometry', crs=buildings_gdf.crs)
         if 'building_type' not in city.buildings_gdf.columns:
             raise KeyError("buildings_gdf must contain 'building_type'.")
-        missing_cols = set(['id','door_cell_x','door_cell_y','door_point','size']) - set(city.buildings_gdf.columns)
+        missing_cols = set(['id','door_cell_x','door_cell_y','door_point']) - set(city.buildings_gdf.columns)
         if missing_cols:
             raise KeyError(f"buildings_gdf missing required columns: {missing_cols}. All buildings must have door_point computed from door_line intersection.")
         # Ensure consistent index on id
@@ -1515,13 +1543,13 @@ class City:
         Raises
         ------
         ValueError
-            If either coordinate is not a valid street block.
+            If either coordinate is not a valid street block or if shortest_paths
+            has not been computed.
 
         Notes
         -----
-        - Uses the hub-based shortcut index for speed; hub-to-hub segments may
-          be obtained via a local NetworkX shortest path when a direct next-hop
-          entry is unavailable.
+        Requires compute_shortest_paths() to be called first. Uses precomputed
+        paths (dict) or on-demand callable depending on mode.
         """
         if not (isinstance(start_coord, tuple) and isinstance(end_coord, tuple)):
             raise ValueError("Coordinates must be tuples of (x, y).")
@@ -1532,78 +1560,20 @@ class City:
         if not ((self.streets_gdf['coord_x'] == end_coord[0]) & (self.streets_gdf['coord_y'] == end_coord[1])).any():
             raise ValueError(f"End coordinate {end_coord} must be a street block.")
 
-        # Ensure graph and shortcuts are built
-        if not hasattr(self, 'street_graph') or self.street_graph is None:
-            self.get_street_graph(lazy=True)
-        if not hasattr(self, '_shortcut_hubs') or self._shortcut_hubs is None:
-            try:
-                self._build_hub_network()
-            except Exception:
-                pass
-
-        # Prefer shortcut network if available; fall back to NetworkX if not
-        if hasattr(self, '_shortcut_hubs') and self._shortcut_hubs:
-            # Map arbitrary node to its hub via precomputed next_to_hub
-            def path_to_hub(node):
-                route = [node]
-                # Prevent infinite loops; cap at city size
-                for _ in range(max(1, len(self.streets_gdf))):
-                    if node == self._nearest_hub[node]:
-                        break
-                    node = self._next_to_hub[node]
-                    route.append(node)
-                    if node == self._nearest_hub[node]:
-                        break
-                return route
-
-            u = start_coord
-            v = end_coord
-            hu = self._nearest_hub[u]
-            hv = self._nearest_hub[v]
-
-            # u -> hu
-            seg_u_hu = path_to_hub(u)
-            # hubs path hu -> hv using next_hop table
-            seg_hubs = [hu]
-            cur = hu
-            safe_cap = max(2, len(self._shortcut_hubs) * 4)
-            for _ in range(safe_cap):
-                if cur == hv:
-                    break
-                nh = self._hub_next_hop.get(cur, {}).get(hv)
-                if nh is None:
-                    # fallback to direct nx shortest path if hub-hub mapping missing
-                    try:
-                        nx_path = nx.shortest_path(self.get_street_graph(), cur, hv)
-                    except nx.NetworkXNoPath:
-                        return []
-                    seg_hubs = nx_path
-                    cur = hv
-                    break
-                seg_hubs.append(nh)
-                cur = nh
-
-            # hv -> v: walk from v to hv using next_to_hub, then reverse to get hv->v
-            seg_v_to_hv = path_to_hub(v)
-            # ensure last element is hv
-            if seg_v_to_hv[-1] != hv:
-                # fallback to nx shortest if something is off
-                try:
-                    nx_path = nx.shortest_path(self.get_street_graph(), hv, v)
-                except nx.NetworkXNoPath:
-                    return []
-                seg_hv_to_v = nx_path
-            else:
-                seg_hv_to_v = list(reversed(seg_v_to_hv))
-
-            # Concatenate segments, avoiding duplicate junctions
-            path = seg_u_hu[:-1] + seg_hubs + seg_hv_to_v[1:]
+        # Auto-initialize callable if not set (lazy initialization for convenience)
+        if self.shortest_paths is None:
+            self.compute_shortest_paths(callable_only=True)
+        
+        # Get path from either dict or callable
+        if callable(self.shortest_paths):
+            path = self.shortest_paths(start_coord, end_coord)
         else:
-            # Fallback: compute on-demand with NetworkX
-            try:
-                path = nx.shortest_path(self.get_street_graph(), start_coord, end_coord)
-            except nx.NetworkXNoPath:
-                return []
+            # Dict mode: lookup precomputed path
+            if start_coord not in self.shortest_paths:
+                raise ValueError(f"Start coordinate {start_coord} is not in precomputed shortest path graph.")
+            if start_coord not in self.shortest_paths:
+                raise ValueError(f"End coordinate {end_coord} is not among shortest paths from {start_coord}.")
+            path = self.shortest_paths[start_coord][end_coord]
 
         if plot:
             if ax is None:
@@ -1633,49 +1603,108 @@ class City:
         return path
 
     # ---------------------------------------------------------------------
-    # Fast distance with small LRU-style cache (simple and effective)
+    # DEPRECATED: Cached path retrieval (kept for potential future use)
     # ---------------------------------------------------------------------
-    def get_distance_fast(self, start_coord: tuple, end_coord: tuple) -> float:
+    def get_paths_fast(self, start_coord: tuple, end_coord: tuple):
         """
-        Return an approximate shortest-path distance in number of steps between two
-        street blocks using the shortcut network for speed. Results are cached.
+        DEPRECATED: Return shortest path with LRU-style caching.
+        
+        This method wraps get_shortest_path() with a simple cache. May be useful
+        for future optimizations but currently not sufficient for large-scale
+        trajectory generation needs.
 
-        Falls back to on-demand NetworkX shortest_path if shortcuts are unavailable.
-        Returns np.inf if no path exists.
+        Parameters
+        ----------
+        start_coord : tuple[int, int]
+            Starting street block (x, y).
+        end_coord : tuple[int, int]
+            Ending street block (x, y).
+
+        Returns
+        -------
+        list[tuple[int, int]]
+            Sequence of street blocks from start to end, or empty list if no path.
         """
         if not (isinstance(start_coord, tuple) and isinstance(end_coord, tuple)):
             raise ValueError("Coordinates must be tuples of (x, y).")
 
         # Initialize cache
-        if not hasattr(self, '_distance_cache'):
-            self._distance_cache = {}
+        if not hasattr(self, '_paths_cache'):
+            self._paths_cache = {}
         MAX_CACHE = 50000
 
         key = (start_coord, end_coord)
-        if key in self._distance_cache:
-            return self._distance_cache[key]
+        if key in self._paths_cache:
+            return self._paths_cache[key]
 
-        # Compute via path length
+        # Compute path
         try:
             path = self.get_shortest_path(start_coord, end_coord)
-            if not path:
-                d = float('inf')
-            else:
-                d = float(max(0, len(path) - 1))
         except Exception:
-            d = float('inf')
+            path = []
 
         # Cache with simple capacity control (drop half when full)
-        try:
-            self._distance_cache[key] = d
-            if len(self._distance_cache) > MAX_CACHE:
-                # drop roughly half oldest by arbitrary order
-                for k in list(self._distance_cache.keys())[:MAX_CACHE // 2]:
-                    self._distance_cache.pop(k, None)
-        except Exception:
-            pass
+        self._paths_cache[key] = path
+        if len(self._paths_cache) > MAX_CACHE:
+            # drop roughly half oldest by arbitrary order
+            for k in list(self._paths_cache.keys())[:MAX_CACHE // 2]:
+                self._paths_cache.pop(k, None)
 
-        return d
+        return path
+
+    def _add_to_adjacency_graph(self, G, coord):
+        """Add node and cardinal edges to existing graph."""
+        G.add_node(coord)
+        x, y = coord
+        for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+            neighbor = (x + dx, y + dy)
+            if neighbor in G:
+                G.add_edge(coord, neighbor, weight=1)
+
+    def _connect_building_door_to_streets(self, building_id, max_depth=5):
+        """Connect building door to street network by converting blocks along shortest path."""
+        building_row = self.buildings_gdf.loc[building_id]
+        door_x = int(building_row['door_cell_x'])
+        door_y = int(building_row['door_cell_y'])
+        door_coord = (door_x, door_y)
+        
+        # Get blocks within Manhattan distance
+        candidates = [(x, y) for x in range(door_x - max_depth, door_x + max_depth + 1)
+                      for y in range(door_y - max_depth, door_y + max_depth + 1)
+                      if abs(x - door_x) + abs(y - door_y) <= max_depth]
+        
+        # Filter for non-building blocks: streets OR None blocks (void blocks for pathfinding)
+        non_building_mask = (self.blocks_gdf['building_type'] == 'street') | (self.blocks_gdf['building_type'].isna())
+        non_building = self.blocks_gdf[non_building_mask]
+        nearby = non_building[non_building.index.isin(candidates)]
+        block_graph = self._build_adjacency_graph(nearby)
+        
+        paths = nx.single_source_shortest_path(block_graph, source=door_coord, cutoff=max_depth)
+        
+        for target, path in paths.items():
+            if target != door_coord and target in self.streets_gdf.index:
+                new_coords = [c for c in path if c not in self.streets_gdf.index]
+                
+                for coord in path:
+                    self.blocks_gdf.loc[coord, 'building_type'] = 'street'
+                
+                if new_coords:
+                    new_gdf = gpd.GeoDataFrame([
+                        {'coord_x': x, 'coord_y': y, 'geometry': box(x, y, x+1, y+1),
+                         'building_type': 'street', 'building_id': None}
+                        for x, y in new_coords
+                    ], geometry='geometry', crs=self.streets_gdf.crs)
+                    new_gdf.set_index(['coord_x', 'coord_y'], inplace=True, drop=False)
+                    new_gdf.index.names = [None, None]
+                    self.streets_gdf = pd.concat([self.streets_gdf, new_gdf])
+                    
+                    if hasattr(self, 'street_graph') and self.street_graph is not None:
+                        for coord in new_coords:
+                            self._add_to_adjacency_graph(self.street_graph, coord)
+                
+                return True
+        
+        return False
 
 
 # =============================================================================
@@ -2040,6 +2069,20 @@ class RasterCity(City):
         
         self.resolve_overlaps = resolve_overlaps
         self._rasterize(verbose=verbose)
+        
+        # Connect buildings with non-street doors
+        non_street_doors = []
+        for building_id in self.buildings_gdf['id']:
+            building_row = self.buildings_gdf.loc[building_id]
+            door_coord = (int(building_row['door_cell_x']), int(building_row['door_cell_y']))
+            if door_coord not in self.streets_gdf.index:
+                non_street_doors.append(building_id)
+        
+        if non_street_doors:
+            if verbose:
+                print(f"  Connecting {len(non_street_doors)} buildings with non-street doors...")
+            for building_id in non_street_doors:
+                self._connect_building_door_to_streets(building_id, max_depth=5)
 
     def _rasterize(self, verbose=True):
         # Assigning block types could arguably be its own method, but keeping it here for now
@@ -2112,10 +2155,10 @@ class RasterCity(City):
                     block_polys = [box(x, y, x+1, y+1) for x,y in building_blocks]
                     building_geom = block_polys[0] if len(block_polys) == 1 else unary_union(block_polys)
                     
-                    # Pick building block adjacent to door for unique ID and compute door centroid
+                    # Pick building block adjacent to door for unique ID
                     mask = self.check_adjacent(building_blocks, door)
                     idx = next((i for i, m in enumerate(mask) if m), None)
-                    candidate = building_blocks[idx]
+                    candidate = building_blocks[idx] if idx is not None else building_blocks[0]
                     building_id = f"{building_type[0]}-x{int(candidate[0])}-y{int(candidate[1])}"
                     
                     # Compute door centroid via intersection with adjacent building block (same logic as check_adjacent)
