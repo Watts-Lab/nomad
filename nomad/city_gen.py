@@ -12,6 +12,7 @@ from matplotlib.ticker import MaxNLocator
 from matplotlib import cm
 from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
+from matplotlib.patches import Patch
 import networkx as nx
 import geopandas as gpd
 import os
@@ -858,7 +859,7 @@ class City:
         with open(filename, 'wb') as file:
             pickle.dump(self, file)
 
-    def plot_city(self, ax, doors=True, address=True, zorder=1, heatmap_agent=None, colors=None, alpha=1):
+    def plot_city(self, ax, doors=True, address=True, zorder=1, heatmap_agent=None, colors=None, alpha=1, legend=False):
         """
         Plots the city on a given matplotlib axis.
 
@@ -876,6 +877,8 @@ class City:
             The agent for which to plot a heatmap of time spent in each building.
         colors : dict
             A dictionary mapping building types to colors for plotting.
+        legend : bool
+            Whether to display a legend for building types.
         """
 
         # Draw city boundary
@@ -983,6 +986,16 @@ class City:
                     ax.text(door_coord[0] + 0.15, door_coord[1] + 0.15,
                             f"{door_coord[0]}, {door_coord[1]}",
                             ha='left', va='bottom', fontsize=fontsize, color='black')
+        
+        # Add legend if requested
+        if legend and not self.buildings_gdf.empty:
+            building_types = self.buildings_gdf['building_type'].unique()
+            legend_elements = []
+            for btype in building_types:
+                if btype in colors:
+                    legend_elements.append(Patch(facecolor=colors[btype], edgecolor='black', label=btype.capitalize()))
+            if legend_elements:
+                ax.legend(handles=legend_elements, loc='upper right', framealpha=0.9)
 
         ax.set_aspect('equal')
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
@@ -1782,40 +1795,82 @@ class RandomCityGenerator:
                           p=[self.home_ratio, self.work_ratio, self.retail_ratio, self.park_ratio])
     
     def fill_block(self, block_x, block_y, block_type):
-        """Fills a block with a building of the specified type."""
-        location = (block_x, block_y)
-        door = self.get_adjacent_street(location)
-        if door is None:
-            if self.verbose:
-                print(f"No adjacent street found for {location}")
-            return
-        
-        # Define building footprint only on interior cells (preserve street corridors)
-        # Streets are predefined along every `street_spacing` row/col; exclude those cells
+        """Fills a block with multiple buildings of the specified type."""
+        # Define block bounds (interior cells, excluding street corridors)
         bx0 = block_x
         by0 = block_y
         bx1 = min(block_x + self.street_spacing, self.width)
         by1 = min(block_y + self.street_spacing, self.height)
 
-        candidate_blocks = []
+        # Track available cells (not streets, not occupied)
+        available = set()
         for x in range(bx0, bx1):
             for y in range(by0, by1):
-                # keep as building only if not a designated street cell
-                if not self.streets[x, y]:
-                    candidate_blocks.append((x, y))
+                if not self.streets[x, y] and not self.occupied[x, y]:
+                    available.add((x, y))
 
-        if not candidate_blocks:
+        if not available:
             return
-
-        block_polys = [box(x, y, x+1, y+1) for x, y in candidate_blocks]
-        geom = unary_union(block_polys)
-        blocks = candidate_blocks
         
-        try:
-            self.city.add_building(building_type=block_type, door=door, geom=geom, blocks=blocks)
-        except ValueError as e:
-            if self.verbose:
-                print(f"Skipping building placement at {location} due to error: {e}")
+        # Try to place multiple buildings of varying sizes
+        npr.seed(self.seed + block_x * self.width + block_y + 1000)
+        sizes = list(self.building_sizes[block_type])
+        npr.shuffle(sizes)
+        
+        for width, height in sizes:
+            if not available:
+                break
+            
+            # Try to find a position for this building size
+            attempts = 0
+            max_attempts = 20
+            while attempts < max_attempts and available:
+                attempts += 1
+                # Pick random starting position from available cells
+                start_cell = list(available)[npr.randint(0, len(available))]
+                sx, sy = start_cell
+                
+                # Check if building fits
+                building_cells = []
+                fits = True
+                for dx in range(width):
+                    for dy in range(height):
+                        cell = (sx + dx, sy + dy)
+                        if cell not in available:
+                            fits = False
+                            break
+                        building_cells.append(cell)
+                    if not fits:
+                        break
+                
+                if not fits or not building_cells:
+                    continue
+                
+                # Find door adjacent to this building
+                door = None
+                for cell in building_cells:
+                    door = self.get_adjacent_street(cell)
+                    if door is not None:
+                        break
+                
+                if door is None:
+                    continue
+                
+                # Place building
+                block_polys = [box(x, y, x+1, y+1) for x, y in building_cells]
+                geom = unary_union(block_polys) if len(block_polys) > 1 else block_polys[0]
+                
+                try:
+                    self.city.add_building(building_type=block_type, door=door, geom=geom, blocks=building_cells)
+                    # Mark cells as occupied
+                    for cell in building_cells:
+                        self.occupied[cell] = True
+                        available.discard(cell)
+                    break  # Successfully placed, move to next size
+                except ValueError as e:
+                    if self.verbose:
+                        print(f"Failed to place {width}x{height} building at ({sx}, {sy}): {e}")
+                    continue
     
     def get_adjacent_street(self, location):
         """Finds the closest predefined street to assign as the door, ensuring it is within bounds."""
@@ -1828,13 +1883,9 @@ class RandomCityGenerator:
                      (possible_streets[:, 1] >= 0) & (possible_streets[:, 1] < self.height)
         
         valid_streets = possible_streets[valid_mask]
-        # treat mask as street if present in streets_gdf
-        if not self.city.streets_gdf.empty:
-            street_mask = np.array([
-                ((self.city.streets_gdf['coord_x'] == sx) & (self.city.streets_gdf['coord_y'] == sy)).any()
-                for sx, sy in valid_streets
-            ])
-            valid_streets = valid_streets[street_mask]
+        # Filter to only streets according to the predefined mask
+        street_mask = np.array([self.streets[sx, sy] for sx, sy in valid_streets])
+        valid_streets = valid_streets[street_mask]
         return tuple(valid_streets[0].tolist()) if valid_streets.size > 0 else None
 
     def place_buildings_in_blocks(self):

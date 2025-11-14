@@ -19,14 +19,14 @@ from nomad.constants import FAST_STILL_PROBS, SLOW_STILL_PROBS, ALLOWED_BUILDING
 
 def parse_agent_attr(attr, N, name):
     """
-    Parse agent attribute (homes/workplaces) into a callable that returns the i-th value.
+    Parse agent attribute (homes/workplaces/datetimes) into a callable that returns the i-th value.
     
     Parameters
     ----------
-    attr : str, list, or None
+    attr : str, list, pd.Timestamp, or None
         The attribute value. Can be:
         - None: returns None for all indices
-        - str: returns the same string for all indices
+        - str or pd.Timestamp: returns the same value for all indices
         - list: must have length N, returns the i-th element
     N : int
         Expected number of agents
@@ -40,14 +40,14 @@ def parse_agent_attr(attr, N, name):
     """
     if attr is None:
         return lambda i: None
-    elif isinstance(attr, str):
+    elif isinstance(attr, (str, pd.Timestamp)):
         return lambda i: attr
     elif isinstance(attr, list):
         if len(attr) != N:
             raise ValueError(f"{name} must be a list of length {N}, got {len(attr)}")
         return lambda i: attr[i]
     else:
-        raise ValueError(f"{name} must be either a string, a list of length {N}, or None")
+        raise ValueError(f"{name} must be a string, pd.Timestamp, list of length {N}, or None")
 
 def sample_bursts_gaps(traj,
                      beta_start=None,

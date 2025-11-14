@@ -33,6 +33,8 @@ from nomad.stop_detection.viz import plot_pings, plot_time_barcode
 
 # %%
 city = City.from_geopackage('garden-city.gpkg', edges_path='garden-city-edges.parquet')
+city._build_hub_network(hub_size=16)
+city.compute_gravity(exponent=2.0)
 
 print(f"City: {city.name}")
 print(f"Dimensions: {city.dimensions}")
@@ -111,6 +113,8 @@ def generate_agent_trajectory(args):
     identifier, home, work, seed = args
     
     city = City.from_geopackage('garden-city.gpkg', edges_path='garden-city-edges.parquet')
+    city._build_hub_network(hub_size=16)
+    city.compute_gravity(exponent=2.0)
     agent = Agent(identifier=identifier, city=city, home=home, workplace=work)
     
     agent.generate_trajectory(
