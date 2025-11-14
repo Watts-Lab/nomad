@@ -25,10 +25,13 @@ import json
 import geopandas as gpd
 import pandas as pd
 from shapely.geometry import box
+import matplotlib.pyplot as plt
+import contextily as cx
 
 import nomad.map_utils as nm
 from nomad.city_gen import RasterCity
 from nomad.traj_gen import Population
+from nomad.io.base import from_file
 from tqdm import tqdm
 
 # %% [markdown]
@@ -36,6 +39,7 @@ from tqdm import tqdm
 
 # %%
 LARGE_BOX = box(-75.1905, 39.9235, -75.1425, 39.9535)
+MEDIUM_BOX = box(-75.1665, 39.9385, -75.1425, 39.9535)
 
 USE_FULL_CITY = False
 OUTPUT_DIR = Path("sandbox")
@@ -45,26 +49,37 @@ if USE_FULL_CITY:
     BOX_NAME = "full"
     POLY = "Philadelphia, Pennsylvania, USA"
 else:
-    BOX_NAME = "large"
-    POLY = LARGE_BOX
+    BOX_NAME = "medium"
+    POLY = MEDIUM_BOX
 
 SANDBOX_GPKG = OUTPUT_DIR / f"sandbox_data_{BOX_NAME}.gpkg"
 REGENERATE_DATA = False
 
 config = {
     "box_name": BOX_NAME,
-    "block_side_length": 15.0,
-    "hub_size": 600,
-    "N": 100,
+    "block_side_length": 10.0,
+    "hub_size": 100,
+    "N": 10,
     "name_seed": 42,
     "name_count": 2,
     "epr_params": {
         "datetime": "2024-01-01 00:00-05:00",
-        "end_time": "2024-04-01 00:00-05:00",
+        "end_time": "2024-01-08 00:00-05:00",  # 7 days
         "epr_time_res": 15,
         "rho": 0.4,
         "gamma": 0.3,
         "seed_base": 100
+    },
+    "traj_params": {
+        "dt": 0.5,
+        "seed_base": 200
+    },
+    "sampling_params": {
+        "beta_ping": 5,
+        "beta_durations": None,
+        "beta_start": None,
+        "ha": 11.5/15,
+        "seed_base": 300
     }
 }
 
@@ -179,7 +194,12 @@ city.compute_gravity(exponent=2.0, callable_only=True)
 grav_time = time.time() - t3
 print(f"Gravity computation: {grav_time:>6.2f}s")
 
-raster_time = gen_time + graph_time + hub_time + grav_time
+t4 = time.time()
+city.compute_shortest_paths(callable_only=True)
+paths_time = time.time() - t4
+print(f"Shortest paths:     {paths_time:>6.2f}s")
+
+raster_time = gen_time + graph_time + hub_time + grav_time + paths_time
 print("-"*50)
 print(f"Rasterization:      {raster_time:>6.2f}s")
 print("="*50)
@@ -283,15 +303,128 @@ print("="*50)
 print(f"\nConfig saved to {config_path}")
 print(f"Destination diaries saved to {dest_diaries_path}")
 
-# %%
-import geopandas as gpd
-import contextily as cx
-import matplotlib.pyplot as plt
+# %% [markdown]
+# ## Generate Full Trajectories from Destination Diaries
 
-box = gpd.GeoSeries(city.boundary_polygon)
-fig, ax = plt.subplots()
-box.plot(ax=ax, facecolor="None")
-cx.add_basemap(ax, crs=box.crs)
+# %%
+print("\n" + "="*50)
+print("TRAJECTORY GENERATION")
+print("="*50)
+
+t1 = time.time()
+failed_agents = []
+for i, agent in tqdm(enumerate(population.roster.values()), total=config["N"], desc="Generating trajectories"):
+    try:
+        agent.generate_trajectory(
+            dt=config["traj_params"]["dt"],
+            seed=config["traj_params"]["seed_base"] + i
+        )
+    except ValueError as e:
+        failed_agents.append((agent.identifier, str(e)))
+        continue
+
+traj_gen_time = time.time() - t1
+print(f"Trajectory generation: {traj_gen_time:>6.2f}s")
+if failed_agents:
+    print(f"Warning: {len(failed_agents)} agents failed trajectory generation")
+
+total_points = sum(len(agent.trajectory) for agent in population.roster.values() if agent.trajectory is not None)
+print(f"Total trajectory points: {total_points:,}")
+print(f"Points per second: {total_points/traj_gen_time:.1f}")
+print("-"*50)
+print(f"Total trajectory:   {traj_gen_time:>6.2f}s")
+print("="*50)
+
+# %% [markdown]
+# ## Sample Sparse Trajectories
+
+# %%
+print("\n" + "="*50)
+print("SPARSE TRAJECTORY SAMPLING")
+print("="*50)
+
+t1 = time.time()
+for i, agent in tqdm(enumerate(population.roster.values()), total=config["N"], desc="Sampling trajectories"):
+    if agent.trajectory is None:
+        continue
+    agent.sample_trajectory(
+        beta_ping=config["sampling_params"]["beta_ping"],
+        beta_durations=config["sampling_params"]["beta_durations"],
+        beta_start=config["sampling_params"]["beta_start"],
+        ha=config["sampling_params"]["ha"],
+        seed=config["sampling_params"]["seed_base"] + i,
+        replace_sparse_traj=True
+    )
+
+sampling_time = time.time() - t1
+print(f"Sparse sampling:    {sampling_time:>6.2f}s")
+
+total_sparse_points = sum(len(agent.sparse_traj) for agent in population.roster.values() if agent.sparse_traj is not None)
+print(f"Total sparse points: {total_sparse_points:,}")
+print(f"Sparsity ratio: {total_sparse_points/total_points:.2%}")
+print("-"*50)
+print(f"Total sampling:     {sampling_time:>6.2f}s")
+print("="*50)
+
+# %% [markdown]
+# ## Reproject to Mercator and Persist
+
+# %%
+print("\n" + "="*50)
+print("REPROJECTION AND PERSISTENCE")
+print("="*50)
+
+# Build POI data for diary reprojection
+cent = city.buildings_gdf['door_point'] if 'door_point' in city.buildings_gdf.columns else city.buildings_gdf.geometry.centroid
+poi_data = pd.DataFrame({
+    'building_id': city.buildings_gdf['id'].values,
+    'x': (city.buildings_gdf['door_cell_x'].astype(float) + 0.5).values if 'door_cell_x' in city.buildings_gdf.columns else cent.x.values,
+    'y': (city.buildings_gdf['door_cell_y'].astype(float) + 0.5).values if 'door_cell_y' in city.buildings_gdf.columns else cent.y.values
+})
+
+print("Reprojecting sparse trajectories to Web Mercator...")
+population.reproject_to_mercator(sparse_traj=True, full_traj=False, diaries=True, poi_data=poi_data)
+
+print("Saving sparse trajectories and diaries...")
+population.save_pop(
+    sparse_path=OUTPUT_DIR / f"sparse_traj_{BOX_NAME}",
+    diaries_path=OUTPUT_DIR / f"diaries_{BOX_NAME}",
+    partition_cols=["date"],
+    fmt='parquet'
+)
+print("-"*50)
+print("="*50)
+
+# %% [markdown]
+# ## Visualize Sparse Trajectories
+
+# %%
+print("\n" + "="*50)
+print("VISUALIZATION")
+print("="*50)
+
+# Read sparse trajectories
+sparse_traj_df = from_file(OUTPUT_DIR / f"sparse_traj_{BOX_NAME}", format="parquet")
+print(f"Loaded {len(sparse_traj_df):,} sparse trajectory points for {config['N']} agents")
+
+# Plot with contextily basemap
+fig, ax = plt.subplots(figsize=(12, 10))
+
+# Plot each agent with different color
+for agent_id in sparse_traj_df['user_id'].unique():
+    agent_traj = sparse_traj_df[sparse_traj_df['user_id'] == agent_id]
+    ax.scatter(agent_traj['x'], agent_traj['y'], s=1, alpha=0.5, label=agent_id)
+
+# Add basemap
+cx.add_basemap(ax, crs="EPSG:3857", source=cx.providers.CartoDB.Positron)
+
+ax.set_xlabel('X (Web Mercator)')
+ax.set_ylabel('Y (Web Mercator)')
+ax.set_title(f'Sparse Trajectories - {config["N"]} Agents, 7 Days')
+ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', markerscale=10)
+plt.tight_layout()
+plt.savefig(OUTPUT_DIR / f"sparse_trajectories_{BOX_NAME}.png", dpi=150, bbox_inches='tight')
+print(f"Saved plot to {OUTPUT_DIR / f'sparse_trajectories_{BOX_NAME}.png'}")
 plt.show()
 
 # %%
