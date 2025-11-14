@@ -402,6 +402,7 @@ class Agent:
                     coord = rng.normal(loc=start_point_arr, scale=sigma*np.sqrt(dt), size=2)
                     if brow['geometry'].contains(Point(coord)):
                         break
+
             return coord, location
 
         # Otherwise, move along streets toward destination door cell
@@ -511,11 +512,9 @@ class Agent:
         first_building_id = destination_diary.iloc[0]['location']
         brow = city.buildings_gdf[city.buildings_gdf['id'] == first_building_id]
         self._current_dest_building_row = brow.iloc[0]
-
         entry_update = []
         for i in range(destination_diary.shape[0]):
-            destination_info = destination_diary.iloc[i]
-            building_id = destination_info['location']
+            building_id = destination_diary.iloc[i]['location']
             
             # Shift: previous = current, current = new destination (skip shift on first iteration)
             if i > 0:
@@ -523,12 +522,14 @@ class Agent:
             brow = city.buildings_gdf[city.buildings_gdf['id'] == building_id]
             self._current_dest_building_row = brow.iloc[0] if not brow.empty else None
 
-            duration_in_ticks = int(destination_info['duration'] / dt)
+            duration_in_ticks = int(destination_diary.iloc[i]['duration'] / dt)
             for _ in range(duration_in_ticks):
                 prev_ping = self.last_ping
+                # define point                   
                 start_point = (prev_ping['x'], prev_ping['y'])
                 unix_timestamp = prev_ping['timestamp'] + tick_secs
                 datetime = prev_ping['datetime'] + timedelta(seconds=tick_secs)
+
                 coord, location = self._sample_step(start_point, dt, rng)
                 ping = {'x': coord[0], 
                         'y': coord[1],

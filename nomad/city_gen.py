@@ -1427,11 +1427,22 @@ class City:
             DataFrame with 'x', 'y' columns updated to Web Mercator coordinates.
             If 'ha' column exists, it is also scaled.
         """
+        rotation_origin = None
+        # Use stored rotation_origin if available (from metadata file)
+        # Otherwise fall back to boundary centroid
+        if hasattr(self, 'rotation_origin') and self.rotation_origin is not None:
+            rotation_origin = self.rotation_origin
+        elif hasattr(self, 'boundary_polygon') and self.boundary_polygon is not None:
+            centroid = self.boundary_polygon.centroid
+            rotation_origin = (centroid.x, centroid.y)
+        
         return blocks_to_mercator(
             data, 
             block_size=self.block_side_length,
             false_easting=self.web_mercator_origin_x,
-            false_northing=self.web_mercator_origin_y
+            false_northing=self.web_mercator_origin_y,
+            rotation_deg=self.rotation_deg,
+            rotation_origin=rotation_origin
         )
     
     def from_mercator(self, data):
@@ -1960,7 +1971,7 @@ def assign_door_to_building(building_blocks, available_blocks, graph=None):
 
 
 class RasterCity(City):
-    def __init__(self, boundary_polygon, streets_gdf, buildings_gdf, block_side_length=15.0, crs="EPSG:3857", building_type_col='building_type', name="Rasterized City", resolve_overlaps=False, other_building_behavior="keep", rotation_deg=0.0, verbose=True):
+    def __init__(self, boundary_polygon, streets_gdf, buildings_gdf, block_side_length=15.0, crs="EPSG:3857", building_type_col='building_type', name="Rasterized City", resolve_overlaps=False, other_building_behavior="keep", rotation_deg=0.0, rotation_origin=None, verbose=True):
         """
         Create a rasterized city from OSM data.
         
@@ -2028,6 +2039,7 @@ class RasterCity(City):
         
         self.boundary_polygon = boundary_polygon
         self.crs = crs
+        self.rotation_origin = rotation_origin  # Store rotation origin for use in to_mercator
         self.streets_gdf_input = streets_gdf.to_crs(crs)
         
         buildings_gdf = buildings_gdf.to_crs(crs)

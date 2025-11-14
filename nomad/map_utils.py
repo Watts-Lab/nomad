@@ -13,7 +13,7 @@ import warnings
 from osmnx._errors import InsufficientResponseError
 import os
 import pdb
-
+from shapely.affinity import scale, rotate as shapely_rotate
 from nomad.constants import (
     OSM_BUILDING_TO_SUBTYPE, OSM_AMENITY_TO_SUBTYPE, OSM_TOURISM_TO_SUBTYPE,
     PARK_TAGS, DEFAULT_CRS, DEFAULT_CATEGORY_SCHEMA, CATEGORY_SCHEMAS,
@@ -810,7 +810,8 @@ def rotate_streets_to_align(streets_gdf, k=200):
 # GARDEN CITY COORDINATE TRANSFORMATION UTILITIES
 # =============================================================================
 
-def blocks_to_mercator(data, block_size=15.0, false_easting=-4265699.0, false_northing=4392976.0):
+def blocks_to_mercator(data, block_size=15.0, false_easting=-4265699.0, false_northing=4392976.0, 
+                       rotation_deg=0.0, rotation_origin=None):
     """
     Convert city block coordinates to Web Mercator coordinates.
     
@@ -828,6 +829,12 @@ def blocks_to_mercator(data, block_size=15.0, false_easting=-4265699.0, false_no
         False easting offset (x-origin) in Web Mercator meters
     false_northing : float, default 4392976.0
         False northing offset (y-origin) in Web Mercator meters
+    rotation_deg : float, default 0.0
+        Rotation to undo (degrees counterclockwise). If non-zero, rotates by -rotation_deg
+        around rotation_origin after scaling and translation.
+    rotation_origin : tuple of (x, y), optional
+        Rotation origin in Web Mercator coordinates. If None and rotation_deg != 0,
+        uses (false_easting, false_northing) as origin.
     
     Returns
     -------
@@ -853,6 +860,23 @@ def blocks_to_mercator(data, block_size=15.0, false_easting=-4265699.0, false_no
     # Apply affine transformation: mercator = block_size * block + origin
     result['x'] = block_size * result['x'] + false_easting
     result['y'] = block_size * result['y'] + false_northing
+    
+    # Undo rotation if specified
+    if rotation_deg != 0.0:
+        if rotation_origin is None:
+            rotation_origin = (false_easting, false_northing)
+        
+        origin_x, origin_y = rotation_origin
+        rotation_rad = np.radians(-rotation_deg)
+        cos_r = np.cos(rotation_rad)
+        sin_r = np.sin(rotation_rad)
+        
+        # Translate to origin, rotate, translate back
+        x_centered = result['x'] - origin_x
+        y_centered = result['y'] - origin_y
+        
+        result['x'] = x_centered * cos_r - y_centered * sin_r + origin_x
+        result['y'] = x_centered * sin_r + y_centered * cos_r + origin_y
     
     # Scale horizontal accuracy if present
     if 'ha' in result.columns:
@@ -951,7 +975,6 @@ def blocks_to_mercator_gdf(gdf, block_size, false_easting, false_northing,
     4. Set CRS to EPSG:3857
     5. Optionally drop garden city columns
     """
-    from shapely.affinity import scale, rotate as shapely_rotate
     
     result = gdf.copy()
     

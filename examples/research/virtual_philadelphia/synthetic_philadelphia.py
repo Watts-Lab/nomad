@@ -53,7 +53,7 @@ else:
     POLY = MEDIUM_BOX
 
 SANDBOX_GPKG = OUTPUT_DIR / f"sandbox_data_{BOX_NAME}.gpkg"
-REGENERATE_DATA = False
+REGENERATE_DATA = False  # Set to True to regenerate data with rotation metadata
 
 config = {
     "box_name": BOX_NAME,
@@ -134,10 +134,15 @@ if REGENERATE_DATA or not SANDBOX_GPKG.exists():
     rotation_time = time.time() - t2
     print(f"Grid rotation:      {rotation_time:>6.2f}s ({rotation_deg:.2f}°)")
     
-    rotated_buildings = nm.rotate(buildings, rotation_deg=rotation_deg)
+    # Get rotation origin (centroid of original streets before rotation)
+    all_streets = streets.geometry.union_all()
+    rotation_origin = (all_streets.centroid.x, all_streets.centroid.y)
+    
+    rotated_buildings = nm.rotate(buildings, rotation_deg=rotation_deg, origin=rotation_origin)
     rotated_boundary = nm.rotate(
         gpd.GeoDataFrame(geometry=[boundary_polygon], crs="EPSG:3857"),
-        rotation_deg=rotation_deg
+        rotation_deg=rotation_deg,
+        origin=rotation_origin
     )
     
     if SANDBOX_GPKG.exists():
@@ -146,6 +151,14 @@ if REGENERATE_DATA or not SANDBOX_GPKG.exists():
     rotated_buildings.to_file(SANDBOX_GPKG, layer="buildings", driver="GPKG")
     rotated_streets.to_file(SANDBOX_GPKG, layer="streets", driver="GPKG", mode="a")
     rotated_boundary.to_file(SANDBOX_GPKG, layer="boundary", driver="GPKG", mode="a")
+    
+    # Store rotation_deg and rotation_origin in metadata JSON for later retrieval
+    rotation_metadata_path = OUTPUT_DIR / f"rotation_metadata_{BOX_NAME}.json"
+    with open(rotation_metadata_path, 'w') as f:
+        json.dump({
+            'rotation_deg': rotation_deg,
+            'rotation_origin': rotation_origin
+        }, f)
     
     data_gen_time = download_buildings_time + download_streets_time + rotation_time
     print("-"*50)
@@ -158,6 +171,21 @@ else:
 buildings = gpd.read_file(SANDBOX_GPKG, layer="buildings")
 streets = gpd.read_file(SANDBOX_GPKG, layer="streets")
 boundary = gpd.read_file(SANDBOX_GPKG, layer="boundary")
+
+# Load rotation_deg and rotation_origin from metadata if available
+rotation_metadata_path = OUTPUT_DIR / f"rotation_metadata_{BOX_NAME}.json"
+if rotation_metadata_path.exists():
+    with open(rotation_metadata_path, 'r') as f:
+        rotation_metadata = json.load(f)
+        rotation_deg = rotation_metadata.get('rotation_deg', 0.0)
+        rotation_origin = rotation_metadata.get('rotation_origin', None)
+else:
+    # Fallback: try to compute from streets (will be ~0 if already rotated)
+    _, rotation_deg = nm.rotate_streets_to_align(streets, k=200)
+    if abs(rotation_deg) < 0.1:
+        rotation_deg = 0.0
+    # Use boundary centroid as fallback rotation origin
+    rotation_origin = (boundary.geometry.iloc[0].centroid.x, boundary.geometry.iloc[0].centroid.y)
 
 # %% [markdown]
 # ## Rasterization Pipeline
@@ -174,7 +202,9 @@ city = RasterCity(
     buildings,
     block_side_length=config["block_side_length"],
     resolve_overlaps=True,
-    other_building_behavior="filter"
+    other_building_behavior="filter",
+    rotation_deg=rotation_deg,
+    rotation_origin=rotation_origin
 )
 gen_time = time.time() - t0
 print(f"City generation:    {gen_time:>6.2f}s")
