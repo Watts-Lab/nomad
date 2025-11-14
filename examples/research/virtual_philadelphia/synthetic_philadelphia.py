@@ -8,9 +8,9 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.17.1
 #   kernelspec:
-#     display_name: nomad-kernel
+#     display_name: Python 3 (ipykernel)
 #     language: python
-#     name: nomad-kernel
+#     name: python3
 # ---
 
 # %% [markdown]
@@ -42,29 +42,29 @@ LARGE_BOX = box(-75.1905, 39.9235, -75.1425, 39.9535)
 MEDIUM_BOX = box(-75.1665, 39.9385, -75.1425, 39.9535)
 
 USE_FULL_CITY = False
-OUTPUT_DIR = Path("sandbox")
+OUTPUT_DIR = Path("output")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 if USE_FULL_CITY:
     BOX_NAME = "full"
     POLY = "Philadelphia, Pennsylvania, USA"
 else:
-    BOX_NAME = "medium"
-    POLY = MEDIUM_BOX
+    BOX_NAME = "large"
+    POLY = LARGE_BOX
 
-SANDBOX_GPKG = OUTPUT_DIR / f"sandbox_data_{BOX_NAME}.gpkg"
+SANDBOX_GPKG = OUTPUT_DIR / f"spatial_data_{BOX_NAME}.gpkg"
 REGENERATE_DATA = False  # Set to True to regenerate data with rotation metadata
 
 config = {
     "box_name": BOX_NAME,
-    "block_side_length": 10.0,
+    "block_side_length": 15.0,
     "hub_size": 100,
-    "N": 10,
+    "N": 200,
     "name_seed": 42,
     "name_count": 2,
     "epr_params": {
-        "datetime": "2024-01-01 00:00-05:00",
-        "end_time": "2024-01-08 00:00-05:00",  # 7 days
+        "datetime": "2025-05-23 00:00-05:00",
+        "end_time": "2025-07-01 00:00-05:00",
         "epr_time_res": 15,
         "rho": 0.4,
         "gamma": 0.3,
@@ -75,11 +75,11 @@ config = {
         "seed_base": 200
     },
     "sampling_params": {
-        "beta_ping": 5,
-        "beta_durations": None,
-        "beta_start": None,
+        "beta_ping": 7,
+        "beta_start": 300,
+        "beta_durations": 55,
         "ha": 11.5/15,
-        "seed_base": 300
+        "seed_base": 1
     }
 }
 
@@ -429,32 +429,32 @@ print("="*50)
 # ## Visualize Sparse Trajectories
 
 # %%
-print("\n" + "="*50)
-print("VISUALIZATION")
-print("="*50)
+# print("\n" + "="*50)
+# print("VISUALIZATION")
+# print("="*50)
 
-# Read sparse trajectories
-sparse_traj_df = from_file(OUTPUT_DIR / f"sparse_traj_{BOX_NAME}", format="parquet")
-print(f"Loaded {len(sparse_traj_df):,} sparse trajectory points for {config['N']} agents")
+# # Read sparse trajectories
+# sparse_traj_df = from_file(OUTPUT_DIR / f"sparse_traj_{BOX_NAME}", format="parquet")
+# print(f"Loaded {len(sparse_traj_df):,} sparse trajectory points for {config['N']} agents")
 
-# Plot with contextily basemap
-fig, ax = plt.subplots(figsize=(12, 10))
+# # Plot with contextily basemap
+# fig, ax = plt.subplots(figsize=(12, 10))
 
-# Plot each agent with different color
-for agent_id in sparse_traj_df['user_id'].unique():
-    agent_traj = sparse_traj_df[sparse_traj_df['user_id'] == agent_id]
-    ax.scatter(agent_traj['x'], agent_traj['y'], s=1, alpha=0.5, label=agent_id)
+# # Plot each agent with different color
+# for agent_id in sparse_traj_df['user_id'].unique():
+#     agent_traj = sparse_traj_df[sparse_traj_df['user_id'] == agent_id]
+#     ax.scatter(agent_traj['x'], agent_traj['y'], s=1, alpha=0.5, label=agent_id)
 
-# Add basemap
-cx.add_basemap(ax, crs="EPSG:3857", source=cx.providers.CartoDB.Positron)
+# # Add basemap
+# cx.add_basemap(ax, crs="EPSG:3857", source=cx.providers.CartoDB.Positron)
 
-ax.set_xlabel('X (Web Mercator)')
-ax.set_ylabel('Y (Web Mercator)')
-ax.set_title(f'Sparse Trajectories - {config["N"]} Agents, 7 Days')
-ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', markerscale=10)
-plt.tight_layout()
-plt.savefig(OUTPUT_DIR / f"sparse_trajectories_{BOX_NAME}.png", dpi=150, bbox_inches='tight')
-print(f"Saved plot to {OUTPUT_DIR / f'sparse_trajectories_{BOX_NAME}.png'}")
-plt.show()
+# ax.set_xlabel('X (Web Mercator)')
+# ax.set_ylabel('Y (Web Mercator)')
+# ax.set_title(f'Sparse Trajectories - {config["N"]} Agents, 7 Days')
+# ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', markerscale=10)
+# plt.tight_layout()
+# plt.savefig(OUTPUT_DIR / f"sparse_trajectories_{BOX_NAME}.png", dpi=150, bbox_inches='tight')
+# print(f"Saved plot to {OUTPUT_DIR / f'sparse_trajectories_{BOX_NAME}.png'}")
+# plt.show()
 
 # %%

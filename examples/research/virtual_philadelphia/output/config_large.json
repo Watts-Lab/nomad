@@ -1,0 +1,27 @@
+{
+  "box_name": "large",
+  "block_side_length": 15.0,
+  "hub_size": 100,
+  "N": 200,
+  "name_seed": 42,
+  "name_count": 2,
+  "epr_params": {
+    "datetime": "2025-05-23 00:00-05:00",
+    "end_time": "2025-07-01 00:00-05:00",
+    "epr_time_res": 15,
+    "rho": 0.4,
+    "gamma": 0.3,
+    "seed_base": 100
+  },
+  "traj_params": {
+    "dt": 0.5,
+    "seed_base": 200
+  },
+  "sampling_params": {
+    "beta_ping": 7,
+    "beta_start": 300,
+    "beta_durations": 55,
+    "ha": 0.7666666666666667,
+    "seed_base": 1
+  }
+}

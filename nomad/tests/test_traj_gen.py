@@ -190,7 +190,7 @@ def test_invalid_building_ids(garden_city, simple_dest_diary, default_ids):
     bad_diary = simple_dest_diary.copy()
     bad_diary.loc[0, 'location'] = 'nonexistent-building'
     
-    with pytest.raises(IndexError):
+    with pytest.raises(KeyError):
         agent.generate_trajectory(destination_diary=bad_diary, dt=1, seed=42)
 
 

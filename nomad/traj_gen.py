@@ -1,16 +1,14 @@
 import pandas as pd
 import numpy as np
 import numpy.random as npr
-from matplotlib import cm
 from shapely.geometry import box, Point, MultiLineString
-from shapely.ops import unary_union
+from shapely.ops import unary_union, linemerge
 from shapely import distance as shp_distance
 from datetime import timedelta
 import warnings
 import funkybob
 import pyarrow as pa
 import pyarrow.dataset as ds
-import pdb
 
 from nomad.io.base import from_df, to_file
 
@@ -18,28 +16,6 @@ from nomad.city_gen import *
 from nomad.filters import to_timestamp
 from nomad.constants import DEFAULT_SPEEDS, FAST_SPEEDS, SLOW_SPEEDS, DEFAULT_STILL_PROBS
 from nomad.constants import FAST_STILL_PROBS, SLOW_STILL_PROBS, ALLOWED_BUILDINGS, DEFAULT_STAY_PROBS
-
-def _xy_or_loc_col(col_names, verbose=False):
-    if ('x' in col_names and 'y' in col_names):
-        return "xy"
-    elif 'location' in col_names:
-        return "location"
-    else:
-        if verbose:
-            warnings.warn("No trajectory data was found or spatial columns ('x','y', 'location') in keyword arguments.\
-                          Agent's home will be used as trajectory starting point.")
-        return "missing"
-
-def _datetime_or_ts_col(col_names, verbose=False):
-    if 'datetime' in col_names:
-        return "datetime"
-    elif 'timestamp' in col_names:
-        return 'timestamp'
-    else:
-        if verbose:
-            warnings.warn("No trajectory data was found or time columns ('datetime', 'timestamp')\
-                          in keyword arguments. '2025-01-01 00:00Z' will be used for starting trajectory time.")
-        return "missing"
 
 def parse_agent_attr(attr, N, name):
     """
@@ -240,8 +216,8 @@ class Agent:
             raise ValueError(f"Home {home} or workplace {workplace} not found in city buildings.")
         self.home = home
         self.workplace = workplace
-        self.home_centroid = home_building['geometry'].iloc[0].centroid if not home_building.empty and 'geometry' in home_building.columns else None
-        self.workplace_centroid = workplace_building['geometry'].iloc[0].centroid if not workplace_building.empty and 'geometry' in workplace_building.columns else None
+        self.home_centroid = home_building['geometry'].iloc[0].centroid
+        self.workplace_centroid = workplace_building['geometry'].iloc[0].centroid
 
         self.still_probs = still_probs
         self.speeds = speeds
@@ -257,7 +233,7 @@ class Agent:
             if x is not None and y is not None:
                 x_coord, y_coord = x, y
             elif location is not None:
-                loc_centroid = self.city.buildings_gdf[self.city.buildings_gdf['id'] == location].iloc[0]['geometry'].centroid
+                loc_centroid = self.city.buildings_gdf.loc[location, 'geometry'].centroid
                 x_coord, y_coord = loc_centroid.x, loc_centroid.y
             else:
                 x_coord, y_coord = self.home_centroid.x, self.home_centroid.y
@@ -305,10 +281,10 @@ class Agent:
         self.destination_diary = pd.DataFrame(columns=self.destination_diary.columns)
         self.dt = None
         # null cache for trajectory generation
-        self._cached_path_ml
-        self._cached_bound_poly
-        self._previous_dest_building_row
-        self._current_dest_building_row
+        self._cached_path_ml = None
+        self._cached_bound_poly = None
+        self._previous_dest_building_row = None
+        self._current_dest_building_row = None
         
         if trajectory:
             self.trajectory = None
@@ -439,7 +415,8 @@ class Agent:
 
             # Build continuous path through block centers, include start/end segments
             centroids = street_blocks['geometry'].centroid
-            path_ml = MultiLineString([start_segment + [(pt.x, pt.y) for pt in centroids] + [(dest_door_centroid.x, dest_door_centroid.y)]])
+            path_segments = [start_segment + [(pt.x, pt.y) for pt in centroids] + [(dest_door_centroid.x, dest_door_centroid.y)]]
+            path_ml = MultiLineString([linemerge(MultiLineString(path_segments))])
             street_geom = unary_union(street_blocks['geometry'])
             # Use previous destination building geometry if agent is departing from it, otherwise use start block geometry
             if in_previous_dest and self._previous_dest_building_row is not None:
@@ -496,22 +473,16 @@ class Agent:
         prev_ping = self.last_ping
         start_point = (prev_ping['x'], prev_ping['y'])
         start_block = tuple(np.floor(start_point).astype(int))
-        start_block = (
-            max(0, min(start_block[0], city.dimensions[0] - 1)),
-            max(0, min(start_block[1], city.dimensions[1] - 1)),
-        )
         start_info = city.get_block(start_block)
 
         if start_info['building_type'] is not None and start_info['building_type'] != 'street' and start_info['building_id'] is not None:
-            srow = city.buildings_gdf[city.buildings_gdf['id'] == start_info['building_id']]
-            self._previous_dest_building_row = srow.iloc[0]
+            self._previous_dest_building_row = city.buildings_gdf.loc[start_info['building_id']]
         else:
             self._previous_dest_building_row = None
 
         # Initialize current destination building to first entry
         first_building_id = destination_diary.iloc[0]['location']
-        brow = city.buildings_gdf[city.buildings_gdf['id'] == first_building_id]
-        self._current_dest_building_row = brow.iloc[0]
+        self._current_dest_building_row = city.buildings_gdf.loc[first_building_id]
         entry_update = []
         for i in range(destination_diary.shape[0]):
             building_id = destination_diary.iloc[i]['location']
@@ -519,8 +490,7 @@ class Agent:
             # Shift: previous = current, current = new destination (skip shift on first iteration)
             if i > 0:
                 self._previous_dest_building_row = self._current_dest_building_row
-            brow = city.buildings_gdf[city.buildings_gdf['id'] == building_id]
-            self._current_dest_building_row = brow.iloc[0] if not brow.empty else None
+            self._current_dest_building_row = city.buildings_gdf.loc[building_id] if building_id in city.buildings_gdf.index else None
 
             duration_in_ticks = int(destination_diary.iloc[i]['duration'] / dt)
             for _ in range(duration_in_ticks):
@@ -647,7 +617,7 @@ class Agent:
         rng = npr.default_rng(seed)
 
         # Early check: gravity matrix required for EPR generation
-        if (not hasattr(self.city, 'grav')) or (self.city.grav is None):
+        if self.city.grav is None:
             raise RuntimeError("city.grav is not available. Call city.compute_gravity() before trajectory generation.")
 
         # Validate last_ping exists
@@ -729,19 +699,13 @@ class Agent:
                     curr = rng.choice(y.index, p=probs)
                 else:
                     # Preferential return
-                    if not x.empty and x['freq'].sum() > 0:
-                        curr = rng.choice(x.index, p=x['freq']/x['freq'].sum())
-                    else:
-                        curr = rng.choice(visit_freqs.index)
+                    curr = _choose_destination(visit_freqs, x, rng)
 
                 visit_freqs.loc[curr, 'freq'] += 1
 
             # Preferential return
             else:
-                if not x.empty and x['freq'].sum() > 0:
-                    curr = rng.choice(x.index, p=x['freq']/x['freq'].sum())
-                else:
-                    curr = rng.choice(visit_freqs.index)
+                curr = _choose_destination(visit_freqs, x, rng)
                 visit_freqs.loc[curr, 'freq'] += 1
 
             # Update destination diary
@@ -819,7 +783,7 @@ class Agent:
             self.destination_diary = destination_diary
 
             row = destination_diary.iloc[0] #first destination 
-            loc_centroid = self.city.buildings_gdf[self.city.buildings_gdf['id'] == row['location']].iloc[0]['geometry'].centroid
+            loc_centroid = self.city.buildings_gdf.loc[row['location'], 'geometry'].centroid
             x_coord, y_coord = loc_centroid.x, loc_centroid.y
             
             datetime = row['datetime']
@@ -842,7 +806,7 @@ class Agent:
                     self.last_ping['x'] = kwargs['x']
                     self.last_ping['y'] = kwargs['y']
                 elif 'location' in kwargs:
-                    loc_centroid = self.city.buildings_gdf[self.city.buildings_gdf['id'] == kwargs['location']].iloc[0]['geometry'].centroid
+                    loc_centroid = self.city.buildings_gdf.loc[kwargs['location'], 'geometry'].centroid
                     self.last_ping['x'] = loc_centroid.x
                     self.last_ping['y'] = loc_centroid.y
                 
@@ -1010,14 +974,14 @@ def condense_destinations(destination_diary, *, time_cols=None):
     return condensed_df
 
 
-def generate_ping_times(t0: int,
-                        t_end: int,
+def generate_ping_times(t0,
+                        t_end,
                         *,
-                        beta_start: float | None = None,
-                        beta_durations: float | None = None,
-                        beta_ping: float = 5,
-                        seed: int | None = None,
-                        return_bursts: bool = False,
+                        beta_start=None,
+                        beta_durations=None,
+                        beta_ping=5,
+                        seed=None,
+                        return_bursts=False,
                         tz=None):
     """Generate absolute ping timestamps (seconds) within [t0, t_end].
 
@@ -1077,10 +1041,10 @@ def generate_ping_times(t0: int,
     return ping
 
 
-def thin_traj_by_times(traj: pd.DataFrame,
-                       ping_times: np.ndarray,
+def thin_traj_by_times(traj,
+                       ping_times,
                        *,
-                       deduplicate: bool = True) -> pd.DataFrame:
+                       deduplicate=True):
     """Apply ping_times to a dense traj via searchsorted thinning."""
     if ping_times.size == 0:
         return pd.DataFrame(columns=traj.columns)
@@ -1107,9 +1071,9 @@ def thin_traj_by_times(traj: pd.DataFrame,
     return sampled_traj
 
 
-def _sample_horizontal_noise(n: int,
+def _sample_horizontal_noise(n,
                              *,
-                             ha: float = 3/4,
+                             ha=3/4,
                              rng=None):
     """Sample per-ping horizontal accuracy and Gaussian noise (internal)."""
     if rng is None:
@@ -1234,15 +1198,15 @@ class Population:
     """
 
     def __init__(self, 
-                 city: City,
-                 dt: float = 1):
+                 city,
+                 dt=1):
         self.roster = {}
         self.city = city
         self.dt = dt
 
     def add_agent(self,
-                  agent: Agent,
-                  verbose: bool=True):
+                  agent,
+                  verbose=True):
         """
         Adds an agent to the population. 
         If the agent identifier already exists in the population, it will be replaced.
@@ -1264,8 +1228,6 @@ class Population:
         Generates N agents, with randomized attributes.
         """
         master_rng = np.random.default_rng(seed)
-        
-        name_seed = int(master_rng.integers(0, 2**32))
         generator = funkybob.UniqueRandomNameGenerator(members=name_count, seed=seed)
 
         # Create efficient accessors for agent homes and workplaces
@@ -1477,6 +1439,31 @@ class Population:
 # =============================================================================
 # AUXILIARY METHODS
 # =============================================================================
+
+def _choose_destination(visit_freqs, x, rng):
+    """
+    Select destination using preferential return from allowed, visited buildings.
+    Falls back to uniform random selection if no visited buildings are available.
+    
+    Parameters
+    ----------
+    visit_freqs : pandas.DataFrame
+        DataFrame with building IDs as index and 'freq' column
+    x : pandas.DataFrame
+        Subset of visit_freqs with allowed, visited buildings (freq > 0)
+    rng : numpy.random.Generator
+        Random number generator
+        
+    Returns
+    -------
+    str
+        Building ID of selected destination
+    """
+    if not x.empty and x['freq'].sum() > 0:
+        return rng.choice(x.index, p=x['freq']/x['freq'].sum())
+    else:
+        return rng.choice(visit_freqs.index)
+
 
 def allowed_buildings(local_ts):
     """

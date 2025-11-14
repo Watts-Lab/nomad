@@ -1374,9 +1374,9 @@ class City:
             A GeoDataFrame with a single row containing building details if found, None otherwise.
         """
         if identifier is not None:
-            building = self.buildings_gdf[self.buildings_gdf['id'] == identifier]
-            if not building.empty:
-                return building
+            if identifier in self.buildings_gdf.index:
+                return self.buildings_gdf.loc[[identifier]]
+            return None
         elif door_coords is not None:
             # Match by door_cell_x/door_cell_y
             df = self.buildings_gdf
