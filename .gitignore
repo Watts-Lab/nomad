@@ -43,7 +43,6 @@ tutorials/IC2S2-2025/tutorial-sample/*
 pyrightconfig.json
 requirements.txt
 README_POWERSHELL_FIX.md
-CODING_PRINCIPLES.md
 
 # Helper scripts (personal/local only)
 *.bat
