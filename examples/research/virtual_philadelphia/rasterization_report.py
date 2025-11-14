@@ -6,11 +6,11 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.3
+#       jupytext_version: 1.17.1
 #   kernelspec:
-#     display_name: Python (nomad repo venv)
+#     display_name: Python 3 (ipykernel)
 #     language: python
-#     name: nomad-repo-venv
+#     name: python3
 # ---
 
 # %% [markdown]
@@ -66,7 +66,7 @@ LARGE_BOX  = box(-75.1905, 39.9235, -75.1425, 39.9535)
 
 # PHILLY_BOX = SMALL_BOX
 # PHILLY_BOX = MEDIUM_BOX
-PHILLY_BOX = LARGE_BOX
+PHILLY_BOX = SMALL_BOX
 
 BLOCK_SIDE_LENGTH = 10.0  # meters
 
@@ -194,6 +194,55 @@ print("="*50)
 if data_gen_time > 0:
     total_time = data_gen_time + raster_time
     print(f"\nTotal (with data):  {total_time:>6.2f}s")
+
+# %%
+# Verification: Check geometry columns and building_type/building_id consistency
+print("\n" + "="*50)
+print("VERIFICATION CHECKS")
+print("="*50)
+
+# Check that geometry columns are populated
+blocks_null_geom = city.blocks_gdf.geometry.isna().sum()
+streets_null_geom = city.streets_gdf.geometry.isna().sum()
+print(f"Blocks with null geometry: {blocks_null_geom}/{len(city.blocks_gdf)}")
+print(f"Streets with null geometry: {streets_null_geom}/{len(city.streets_gdf)}")
+
+# Check geometry containment within city_boundary
+if blocks_null_geom == 0:
+    blocks_outside = ~city.blocks_gdf.geometry.within(city.city_boundary)
+    blocks_outside_count = blocks_outside.sum()
+    print(f"Blocks outside city_boundary: {blocks_outside_count}/{len(city.blocks_gdf)}")
+    if blocks_outside_count > 0:
+        print(f"  Example coordinates: {city.blocks_gdf[blocks_outside].index.tolist()[:5]}")
+
+if streets_null_geom == 0:
+    streets_outside = ~city.streets_gdf.geometry.within(city.city_boundary)
+    streets_outside_count = streets_outside.sum()
+    print(f"Streets outside city_boundary: {streets_outside_count}/{len(city.streets_gdf)}")
+    if streets_outside_count > 0:
+        print(f"  Example coordinates: {city.streets_gdf[streets_outside].index.tolist()[:5]}")
+
+# Check building_type/building_id consistency
+has_type_no_id = city.blocks_gdf['building_type'].notna() & city.blocks_gdf['building_id'].isna() & ~(city.blocks_gdf['building_type'] == 'street')
+has_id_no_type = city.blocks_gdf['building_id'].notna() & city.blocks_gdf['building_type'].isna()
+street_blocks_with_id = (city.blocks_gdf['building_type'] == 'street') & city.blocks_gdf['building_id'].notna()
+
+print(f"\nBuilding type/ID consistency:")
+print(f"  Blocks with building_type but no building_id: {has_type_no_id.sum()}")
+if has_type_no_id.any():
+    print(f"    Example coordinates: {city.blocks_gdf[has_type_no_id].index.tolist()[:5]}")
+print(f"  Blocks with building_id but no building_type: {has_id_no_type.sum()}")
+if has_id_no_type.any():
+    print(f"    Example coordinates: {city.blocks_gdf[has_id_no_type].index.tolist()[:5]}")
+print(f"  Street blocks with building_id (should be 0): {street_blocks_with_id.sum()}")
+if street_blocks_with_id.any():
+    print(f"    Example coordinates: {city.blocks_gdf[street_blocks_with_id].index.tolist()[:5]}")
+
+print("="*50 + "\n")
+
+# %%
+city.city_boundary.bounds
+
 
 # %% [markdown]
 # ## Summary: City Structure

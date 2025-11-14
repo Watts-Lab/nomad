@@ -17,10 +17,11 @@ import geopandas as gpd
 import os
 import time
 import pdb
+import warnings
 from typing import List, Tuple, Set
 from pyproj import CRS
 
-from nomad.map_utils import blocks_to_mercator, mercator_to_blocks
+from nomad.map_utils import blocks_to_mercator, mercator_to_blocks, blocks_to_mercator_gdf
 from nomad.constants import TYPE_PRIORITY
 
 # =============================================================================
@@ -154,9 +155,6 @@ class City:
 
         self.manual_streets = manual_streets
 
-        if not (isinstance(dimensions, tuple) and len(dimensions) == 2
-                and all(isinstance(d, int) for d in dimensions)):
-            raise ValueError("Dimensions must be a tuple of two integers.")
         self.city_boundary = box(0, 0, dimensions[0], dimensions[1])
 
         self.dimensions = dimensions
@@ -190,12 +188,13 @@ class City:
         self.door_dist = None
         # Precomputed shortest paths (optional, built on demand via compute_shortest_paths)
         self.shortest_paths = None
+        self.street_graph = None
 
     def _derive_streets_from_blocks(self):
         """
         Derives streets GeoDataFrame from blocks_gdf where kind is 'street'.
         """
-        if not hasattr(self, 'blocks_gdf') or self.blocks_gdf.empty:
+        if self.blocks_gdf.empty:
             self.blocks_gdf = self._init_blocks_gdf()
         streets = self.blocks_gdf[self.blocks_gdf['building_type'] == 'street'].copy()
         if not streets.empty:
@@ -512,7 +511,7 @@ class City:
 
     def get_street_graph(self):
         """Build the street graph needed for routing."""
-        if hasattr(self, 'street_graph') and self.street_graph is not None:
+        if self.street_graph is not None:
             return self.street_graph
         self.street_graph = self._build_adjacency_graph(self.streets_gdf)
         return self.street_graph
@@ -627,7 +626,9 @@ class City:
             for y_bucket in range(n_buckets):
                 subset = self.streets_gdf[(x_buckets == x_bucket) & (y_buckets == y_bucket)]
                 if not subset.empty:
-                    hubs.append(subset.index[0])
+                    hub_coord = subset.index[0]
+                    # Convert to Python int tuple to match graph node format
+                    hubs.append((int(hub_coord[0]), int(hub_coord[1])))
         
         return hubs
 
@@ -1480,9 +1481,7 @@ class City:
         Notes
         -----
         For GeoJSON output, to_crs='EPSG:4326' is required if reverse_affine=True.
-        """
-        from nomad.map_utils import blocks_to_mercator_gdf
-        
+        """        
         if street_graphml_path:
             G = self.get_street_graph()
             nx.write_graphml(G, street_graphml_path)
@@ -1551,9 +1550,6 @@ class City:
         Requires compute_shortest_paths() to be called first. Uses precomputed
         paths (dict) or on-demand callable depending on mode.
         """
-        if not (isinstance(start_coord, tuple) and isinstance(end_coord, tuple)):
-            raise ValueError("Coordinates must be tuples of (x, y).")
-        
         # Check if coordinates are street blocks
         if not ((self.streets_gdf['coord_x'] == start_coord[0]) & (self.streets_gdf['coord_y'] == start_coord[1])).any():
             raise ValueError(f"Start coordinate {start_coord} must be a street block.")
@@ -1562,6 +1558,7 @@ class City:
 
         # Auto-initialize callable if not set (lazy initialization for convenience)
         if self.shortest_paths is None:
+            warnings.warn("shortest_paths not initialized. Auto-initializing with callable_only=True. Call compute_shortest_paths() explicitly.", UserWarning)
             self.compute_shortest_paths(callable_only=True)
         
         # Get path from either dict or callable
@@ -1677,7 +1674,12 @@ class City:
         non_building_mask = (self.blocks_gdf['building_type'] == 'street') | (self.blocks_gdf['building_type'].isna())
         non_building = self.blocks_gdf[non_building_mask]
         nearby = non_building[non_building.index.isin(candidates)]
+        
         block_graph = self._build_adjacency_graph(nearby)
+        
+        # If door_coord is not in graph, it's outside Manhattan distance - cannot connect
+        if door_coord not in block_graph:
+            return False
         
         paths = nx.single_source_shortest_path(block_graph, source=door_coord, cutoff=max_depth)
         
@@ -1696,11 +1698,10 @@ class City:
                     ], geometry='geometry', crs=self.streets_gdf.crs)
                     new_gdf.set_index(['coord_x', 'coord_y'], inplace=True, drop=False)
                     new_gdf.index.names = [None, None]
-                    self.streets_gdf = pd.concat([self.streets_gdf, new_gdf])
+                    self.streets_gdf = gpd.GeoDataFrame(pd.concat([self.streets_gdf, new_gdf]), geometry='geometry', crs=self.streets_gdf.crs)
                     
-                    if hasattr(self, 'street_graph') and self.street_graph is not None:
-                        for coord in new_coords:
-                            self._add_to_adjacency_graph(self.street_graph, coord)
+                    # Invalidate cached graph so it rebuilds from updated streets_gdf
+                    self.street_graph = None
                 
                 return True
         
@@ -1784,7 +1785,7 @@ class RandomCityGenerator:
     
     def get_adjacent_street(self, location):
         """Finds the closest predefined street to assign as the door, ensuring it is within bounds."""
-        if not location or not isinstance(location, tuple):
+        if not location:
             return None
         x, y = location
         possible_streets = np.array([(x + dx, y + dy) for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]])
@@ -1794,7 +1795,7 @@ class RandomCityGenerator:
         
         valid_streets = possible_streets[valid_mask]
         # treat mask as street if present in streets_gdf
-        if hasattr(self.city, 'streets_gdf') and not self.city.streets_gdf.empty:
+        if not self.city.streets_gdf.empty:
             street_mask = np.array([
                 ((self.city.streets_gdf['coord_x'] == sx) & (self.city.streets_gdf['coord_y'] == sy)).any()
                 for sx, sy in valid_streets
@@ -1896,15 +1897,10 @@ def find_intersecting_blocks(geometries_gdf: gpd.GeoDataFrame, blocks_gdf: gpd.G
 
 
 def assign_block_types(blocks_gdf, streets_gdf, buildings_gdf_input):
+    # Only assign street types - building types assigned when buildings are successfully created
     street_intersections = find_intersecting_blocks(streets_gdf, blocks_gdf)
     street_coords = set(zip(street_intersections['coord_x'], street_intersections['coord_y']))
     blocks_gdf.loc[blocks_gdf.index.isin(street_coords), 'building_type'] = 'street'
-    for building_type in ['park','workplace','home','retail','other']:
-        subset = buildings_gdf_input[buildings_gdf_input['building_type'] == building_type]
-        unassigned = blocks_gdf[blocks_gdf['building_type'].isna()]
-        building_intersections = find_intersecting_blocks(subset, unassigned)
-        building_coords = set(zip(building_intersections['coord_x'], building_intersections['coord_y']))
-        blocks_gdf.loc[blocks_gdf.index.isin(building_coords), 'building_type'] = building_type
 
 
 def find_connected_components(block_coords: List[Tuple[int,int]], connectivity: str = '4-connected') -> List[Set[Tuple[int,int]]]:
@@ -2060,12 +2056,29 @@ class RasterCity(City):
         self.blocks_gdf['coord_x'] = self.blocks_gdf['coord_x'] - self.offset_x
         self.blocks_gdf['coord_y'] = self.blocks_gdf['coord_y'] - self.offset_y
         self.blocks_gdf['building_id'] = None
+        # Convert geometries from meters to garden city units: translate then scale down
         self.blocks_gdf['geometry'] = self.blocks_gdf['geometry'].translate(xoff=-offset_meters[0], yoff=-offset_meters[1])
+        self.blocks_gdf['geometry'] = self.blocks_gdf['geometry'].scale(
+            xfact=1/self.block_side_length, 
+            yfact=1/self.block_side_length, 
+            origin=(0, 0)
+        )
         self.blocks_gdf.set_index(['coord_x','coord_y'], inplace=True, drop=False)
         self.blocks_gdf.index.names = [None, None]
         
+        # Convert input geometries from meters to garden city units
         self.streets_gdf_input['geometry'] = self.streets_gdf_input['geometry'].translate(xoff=-offset_meters[0], yoff=-offset_meters[1])
+        self.streets_gdf_input['geometry'] = self.streets_gdf_input['geometry'].scale(
+            xfact=1/self.block_side_length, 
+            yfact=1/self.block_side_length, 
+            origin=(0, 0)
+        )
         self.buildings_gdf_input['geometry'] = self.buildings_gdf_input['geometry'].translate(xoff=-offset_meters[0], yoff=-offset_meters[1])
+        self.buildings_gdf_input['geometry'] = self.buildings_gdf_input['geometry'].scale(
+            xfact=1/self.block_side_length, 
+            yfact=1/self.block_side_length, 
+            origin=(0, 0)
+        )
         
         self.resolve_overlaps = resolve_overlaps
         self._rasterize(verbose=verbose)
@@ -2081,8 +2094,19 @@ class RasterCity(City):
         if non_street_doors:
             if verbose:
                 print(f"  Connecting {len(non_street_doors)} buildings with non-street doors...")
+            failed_buildings = []
             for building_id in non_street_doors:
-                self._connect_building_door_to_streets(building_id, max_depth=5)
+                success = self._connect_building_door_to_streets(building_id, max_depth=5)
+                if not success:
+                    failed_buildings.append(building_id)
+            
+            # Remove buildings that couldn't be connected and clear their blocks
+            if failed_buildings:
+                for building_id in failed_buildings:
+                    building_blocks_mask = self.blocks_gdf['building_id'] == building_id
+                    self.blocks_gdf.loc[building_blocks_mask, ['building_id', 'building_type']] = [None, None]
+                    self.buildings_gdf = self.buildings_gdf.drop(building_id)
+            
 
     def _rasterize(self, verbose=True):
         # Assigning block types could arguably be its own method, but keeping it here for now
@@ -2104,12 +2128,8 @@ class RasterCity(City):
             print(f"  Streets: {summary['kept']:,} kept, {summary['discarded']:,} discarded (in {time.time()-_t2:.2f}s)")
         
         # Streets: create geometry from block coordinates (garden city units)
-        self.streets_gdf = gpd.GeoDataFrame(connected_streets[['coord_x','coord_y']].copy(), crs=None)
-        self.streets_gdf['geometry'] = gpd.GeoSeries(
-            [box(x, y, x+1, y+1) for x, y in zip(self.streets_gdf['coord_x'], self.streets_gdf['coord_y'])],
-            crs=None
-        )
-        self.streets_gdf = self.streets_gdf.set_geometry('geometry')
+        geometries = [box(x, y, x+1, y+1) for x, y in zip(connected_streets['coord_x'], connected_streets['coord_y'])]
+        self.streets_gdf = gpd.GeoDataFrame(connected_streets[['coord_x','coord_y']].copy(), geometry=geometries, crs=None)
         self.streets_gdf['id'] = ('s-x' + self.streets_gdf['coord_x'].astype(int).astype(str) + '-y' + self.streets_gdf['coord_y'].astype(int).astype(str))
         self.streets_gdf.set_index(['coord_x','coord_y'], inplace=True, drop=False)
         self.streets_gdf.index.names = [None, None]
@@ -2123,14 +2143,13 @@ class RasterCity(City):
         skipped_overlap = 0
         resolved_overlap = 0
         new_building_rows = []
-        block_updates = []
         
         building_types = [t for t in TYPE_PRIORITY if t in self.buildings_gdf_input['building_type'].values]
         
         for building_type in building_types:
             subset = self.buildings_gdf_input[self.buildings_gdf_input['building_type'] == building_type]
-            tb_type = self.blocks_gdf[self.blocks_gdf['building_type'] == building_type]
-            joins = find_intersecting_blocks(subset, tb_type)
+            unassigned = self.blocks_gdf[self.blocks_gdf['building_type'].isna()]
+            joins = find_intersecting_blocks(subset, unassigned)
             grouped = joins.groupby('geometry_idx')
             for bidx, grp in grouped:
                 block_coords = list(zip(grp['coord_x'], grp['coord_y']))
@@ -2176,8 +2195,9 @@ class RasterCity(City):
                         'size': len(building_blocks),
                         'geometry': building_geom,
                     })
+                    # Set building_id and building_type together when building is successfully created
                     for (cx, cy) in building_blocks:
-                        block_updates.append({'coord_x': cx, 'coord_y': cy, 'building_id': building_id, 'building_type': building_type})
+                        self.blocks_gdf.loc[(cx, cy), ['building_id', 'building_type']] = [building_id, building_type]
                     added_building_blocks.update(building_blocks_set)
 
         if new_building_rows:
@@ -2189,21 +2209,6 @@ class RasterCity(City):
             else:
                 self.buildings_gdf = pd.concat([self.buildings_gdf, nb_gdf], axis=0, ignore_index=False)
 
-        if block_updates:
-            upd_df = pd.DataFrame(block_updates)
-            upd_df.set_index(['coord_x','coord_y'], inplace=True)
-            common_idx = self.blocks_gdf.index.intersection(upd_df.index)
-            if len(common_idx) > 0:
-                cols = ['building_id','building_type']
-                self.blocks_gdf.loc[common_idx, cols] = upd_df.loc[common_idx, cols].values
-            if not self.streets_gdf.empty:
-                drop_idx = self.streets_gdf.index.intersection(upd_df.index)
-                if len(drop_idx) > 0:
-                    self.streets_gdf = self.streets_gdf.drop(index=drop_idx)
-
         if verbose:
             overlap_count = resolved_overlap if self.resolve_overlaps else skipped_overlap
             print(f"  Added {len(new_building_rows)} buildings, skipped {overlap_count} due to overlap (adding took {time.time()-_t3:.2f}s)")
-        
-        if len(new_building_rows) == 0:
-            raise ValueError(f"No buildings were added to city. Input had {len(self.buildings_gdf_input)} buildings.")

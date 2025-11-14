@@ -697,3 +697,103 @@ def test_rastercity_connects_isolated_doors():
         assert door_coord in city.streets_gdf.index, f"Building {building_id} door {door_coord} not in streets"
 
 
+def test_rastercity_geometry_coordinate_conversion():
+    """Test that RasterCity converts geometries from meters to garden city units correctly"""
+    buildings, streets, boundary = _load_fixture()
+    block_side_length = 15.0
+    
+    city = RasterCity(boundary, streets, buildings, block_side_length=block_side_length, verbose=False)
+    
+    # Verify blocks_gdf geometries are in garden city units (1x1 blocks)
+    # This tests that geometries are properly scaled from meters to garden city units
+    sample_block_geom = city.blocks_gdf.geometry.iloc[0]
+    block_width = sample_block_geom.bounds[2] - sample_block_geom.bounds[0]
+    block_height = sample_block_geom.bounds[3] - sample_block_geom.bounds[1]
+    assert abs(block_width - 1.0) < 0.001, f"Block width should be 1.0 in garden city units, got {block_width}"
+    assert abs(block_height - 1.0) < 0.001, f"Block height should be 1.0 in garden city units, got {block_height}"
+    
+    # Verify multiple blocks to ensure consistency
+    for idx in range(min(10, len(city.blocks_gdf))):
+        block_geom = city.blocks_gdf.geometry.iloc[idx]
+        width = block_geom.bounds[2] - block_geom.bounds[0]
+        height = block_geom.bounds[3] - block_geom.bounds[1]
+        assert abs(width - 1.0) < 0.001, f"Block {idx} width should be 1.0, got {width}"
+        assert abs(height - 1.0) < 0.001, f"Block {idx} height should be 1.0, got {height}"
+    
+    # Verify streets_gdf geometries are in garden city units (1x1 blocks)
+    # streets_gdf geometries are created from coordinates, so they should already be correct
+    assert len(city.streets_gdf) > 0, "City should have streets"
+    # Use set_geometry to ensure geometry column is active (addresses FutureWarning)
+    if 'geometry' in city.streets_gdf.columns:
+        city.streets_gdf = city.streets_gdf.set_geometry('geometry')
+        sample_street_geom = city.streets_gdf.geometry.iloc[0]
+        if sample_street_geom is not None:
+            street_width = sample_street_geom.bounds[2] - sample_street_geom.bounds[0]
+            street_height = sample_street_geom.bounds[3] - sample_street_geom.bounds[1]
+            assert abs(street_width - 1.0) < 0.001, f"Street width should be 1.0 in garden city units, got {street_width}"
+            assert abs(street_height - 1.0) < 0.001, f"Street height should be 1.0 in garden city units, got {street_height}"
+            
+            # Verify blocks and streets use the same coordinate system
+            street_coord = city.streets_gdf.index[0]
+            if street_coord in city.blocks_gdf.index:
+                block_geom = city.blocks_gdf.geometry.loc[street_coord]
+                street_geom = city.streets_gdf.geometry.loc[street_coord]
+                # Geometries should be approximately equal (allowing for small floating point differences)
+                assert block_geom.bounds == street_geom.bounds, \
+                    f"Block and street geometries at {street_coord} should match: block={block_geom.bounds}, street={street_geom.bounds}"
+
+
+def test_rastercity_geometry_containment():
+    """Test that all geometries in blocks_gdf and streets_gdf are contained within city_boundary"""
+    buildings, streets, boundary = _load_fixture()
+    block_side_length = 15.0
+    
+    city = RasterCity(boundary, streets, buildings, block_side_length=block_side_length, verbose=False)
+    
+    # Verify all block geometries are contained within city_boundary
+    blocks_outside = ~city.blocks_gdf.geometry.within(city.city_boundary)
+    if blocks_outside.any():
+        outside_count = blocks_outside.sum()
+        outside_coords = city.blocks_gdf[blocks_outside].index.tolist()[:5]
+        assert False, f"{outside_count} blocks have geometries outside city_boundary. Examples: {outside_coords}"
+    
+    # Verify all street geometries are contained within city_boundary
+    streets_outside = ~city.streets_gdf.geometry.within(city.city_boundary)
+    if streets_outside.any():
+        outside_count = streets_outside.sum()
+        outside_coords = city.streets_gdf[streets_outside].index.tolist()[:5]
+        assert False, f"{outside_count} streets have geometries outside city_boundary. Examples: {outside_coords}"
+
+
+def test_rastercity_building_type_id_consistency():
+    """Test that building_type and building_id are consistent (no building_type without building_id or vice versa)"""
+    buildings, streets, boundary = _load_fixture()
+    block_side_length = 15.0
+    
+    city = RasterCity(boundary, streets, buildings, block_side_length=block_side_length, verbose=False)
+    
+    # Exclude street blocks from checks (they should have building_type='street' but building_id=None)
+    non_street_blocks = city.blocks_gdf[city.blocks_gdf['building_type'] != 'street']
+    
+    # Check for non-street blocks with building_type but no building_id
+    has_type_no_id = non_street_blocks['building_type'].notna() & non_street_blocks['building_id'].isna()
+    if has_type_no_id.any():
+        count = has_type_no_id.sum()
+        examples = non_street_blocks[has_type_no_id].index.tolist()[:5]
+        assert False, f"{count} non-street blocks have building_type but no building_id. Examples: {examples}"
+    
+    # Check for blocks with building_id but no building_type
+    has_id_no_type = city.blocks_gdf['building_id'].notna() & city.blocks_gdf['building_type'].isna()
+    if has_id_no_type.any():
+        count = has_id_no_type.sum()
+        examples = city.blocks_gdf[has_id_no_type].index.tolist()[:5]
+        assert False, f"{count} blocks have building_id but no building_type. Examples: {examples}"
+    
+    # Verify that blocks with building_type='street' don't have building_id
+    street_blocks_with_id = (city.blocks_gdf['building_type'] == 'street') & city.blocks_gdf['building_id'].notna()
+    if street_blocks_with_id.any():
+        count = street_blocks_with_id.sum()
+        examples = city.blocks_gdf[street_blocks_with_id].index.tolist()[:5]
+        assert False, f"{count} street blocks have building_id (should be None). Examples: {examples}"
+
+
