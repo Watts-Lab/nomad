@@ -103,7 +103,7 @@ STREET_EXCLUDED_SURFACES = ['paving_stones']
 
 # Default topology/quality thresholds
 INTERSECTION_CONSOLIDATION_TOLERANCE_M = 12.0  # merge clustered nodes into a single intersection
-STREET_MIN_LENGTH_M = 20.0  # drop micro segments like short driveways/service stubs
+STREET_MIN_LENGTH_M = 15.0  # drop micro segments like short driveways/service stubs
 
 # Park/green space tags for downloading
 PARK_TAGS = {

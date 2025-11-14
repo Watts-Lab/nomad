@@ -532,8 +532,8 @@ def download_osm_streets(bbox_or_city,
             west2, south2, east2, north2 = cb[0], cb[1], cb[2], cb[3]
             G = ox.truncate.truncate_graph_bbox(G, north2, south2, east2, west2, truncate_by_edge=True)
 
-        # Project to UTM (why) and consolidate intersections
-        Gp = ox.project_graph(G, to_crs=crs)
+        # Project to UTM for consolidation (requires meter-based CRS)
+        Gp = ox.project_graph(G)
         Gc = ox.simplification.consolidate_intersections(
             Gp,
             tolerance=INTERSECTION_CONSOLIDATION_TOLERANCE_M,
@@ -541,12 +541,14 @@ def download_osm_streets(bbox_or_city,
         )
 
         if graphml_path:
-            # OSMnx API: save_graphml at top-level
             ox.save_graphml(Gc, filepath=str(graphml_path))
 
-        # Extract nodes/edges, prune short edges, then return edges GDF
+        # Extract nodes/edges, prune short edges
         nodes_gdf, streets = ox.graph_to_gdfs(Gc)
         streets = streets[streets['length'] >= STREET_MIN_LENGTH_M]
+        
+        # Convert to target CRS
+        streets = streets.to_crs(crs)
 
     except InsufficientResponseError:
         return gpd.GeoDataFrame(columns=['geometry'], crs=crs)

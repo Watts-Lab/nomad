@@ -1610,6 +1610,29 @@ class City:
 
         return path
 
+    def get_distance_fast(self, start_coord: tuple, end_coord: tuple):
+        """Return shortest path distance (number of edges) between two street cells.
+
+        Parameters
+        ----------
+        start_coord : tuple[int, int]
+            Starting street block (x, y).
+        end_coord : tuple[int, int]
+            Ending street block (x, y).
+
+        Returns
+        -------
+        int
+            Number of edges in the shortest path from start to end.
+
+        Notes
+        -----
+        Uses the same shortest_paths mechanism as get_shortest_path(), but returns
+        only the distance (len(path) - 1) for efficiency.
+        """
+        path = self.get_shortest_path(start_coord, end_coord, plot=False)
+        return len(path) - 1
+
     # ---------------------------------------------------------------------
     # DEPRECATED: Cached path retrieval (kept for potential future use)
     # ---------------------------------------------------------------------
