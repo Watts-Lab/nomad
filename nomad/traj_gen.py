@@ -283,6 +283,7 @@ class Agent:
         # null cache for trajectory generation
         self._cached_path_ml = None
         self._cached_bound_poly = None
+        self._cached_dest_id = None
         self._previous_dest_building_row = None
         self._current_dest_building_row = None
         
@@ -356,16 +357,18 @@ class Agent:
         # Determine start block and geometry
         start_block = tuple(np.floor(start_point).astype(int))
         start_point_arr = np.asarray(start_point, dtype=float)
+        start_pt = Point(start_point_arr)
         
         # geometry checks (use intersects instead of contains to handle boundary/precision issues)
-        in_current_dest = self._current_dest_building_row['geometry'].intersects(Point(start_point_arr)) if self._current_dest_building_row is not None else False
-        in_previous_dest = self._previous_dest_building_row['geometry'].intersects(Point(start_point_arr)) if self._previous_dest_building_row is not None else False
+        in_current_dest = self._current_dest_building_row['geometry'].intersects(start_pt) if self._current_dest_building_row is not None else False
+        in_previous_dest = self._previous_dest_building_row['geometry'].intersects(start_pt) if self._previous_dest_building_row is not None else False
 
         # If already at destination building area, stay-within-building dynamics
         if in_current_dest:
             # Clear cache when arriving at destination (bound_poly only for inter-building movement)
             self._cached_path_ml = None
             self._cached_bound_poly = None
+            self._cached_dest_id = None
             location = brow['id']
             p = self.still_probs.get(dest_type, 0.5)
             sigma = self.speeds.get(dest_type, 0.5)
@@ -387,26 +390,24 @@ class Agent:
         # If currently inside previous destination building, first move towards its door
         if in_previous_dest:
             prev_door_point = self._previous_dest_building_row['door_point']
-            start_segment = [tuple(start_point_arr.tolist()), prev_door_point]
+            start_segment = [tuple(start_point), prev_door_point]
             start_node = (int(self._previous_dest_building_row['door_cell_x']), int(self._previous_dest_building_row['door_cell_y']))
         else:
             start_node = start_block
 
         # Resolve destination door coordinates for path computation
         dest_cell = (int(brow['door_cell_x']), int(brow['door_cell_y']))
-        dest_door_centroid = Point(brow['door_point'][0], brow['door_point'][1])
 
-        # Check if cached geometry is valid
+        # Check if cached geometry is valid for current destination
         use_cache = False
-        if self._cached_path_ml is not None and self._cached_bound_poly is not None:
-            cached_end_point = Point(self._cached_path_ml.geoms[-1].coords[-1])
-            use_cache = cached_end_point.intersects(brow['geometry'])
+        if self._cached_path_ml is not None and self._cached_bound_poly is not None and self._cached_dest_id == brow['id']:
+            use_cache = True
 
         if use_cache:
             path_ml = self._cached_path_ml
             bound_poly = self._cached_bound_poly
             # Verify agent is within cached bound_poly (should always be true if cache is valid)
-            if not bound_poly.intersects(Point(start_point_arr)) and not in_current_dest and not in_previous_dest:
+            if not bound_poly.intersects(start_pt) and not in_current_dest and not in_previous_dest:
                 raise ValueError(f"Agent at {start_point_arr} is outside cached bound_poly for destination {brow['id']}")
         else:
             # Shortest path between street blocks (door cells)
@@ -415,7 +416,7 @@ class Agent:
 
             # Build continuous path through block centers, include start/end segments
             centroids = street_blocks['geometry'].centroid
-            path_segments = [start_segment + [(pt.x, pt.y) for pt in centroids] + [(dest_door_centroid.x, dest_door_centroid.y)]]
+            path_segments = [start_segment + [(pt.x, pt.y) for pt in centroids] + [brow['door_point']]]
             path_ml = MultiLineString([linemerge(MultiLineString(path_segments))])
             street_geom = unary_union(street_blocks['geometry'])
             # Use previous destination building geometry if agent is departing from it, otherwise use start block geometry
@@ -428,6 +429,7 @@ class Agent:
             # Cache the results
             self._cached_path_ml = path_ml
             self._cached_bound_poly = bound_poly
+            self._cached_dest_id = brow['id']
 
         # Transformed coordinates of current position along the path
         path_coord = _path_coords(path_ml, start_point_arr)
@@ -441,7 +443,7 @@ class Agent:
             path_coord = (path_coord[0] + step[0], 0.7 * path_coord[1] + step[1])
 
             if path_coord[0] > path_ml.length:
-                coord = np.array([dest_door_centroid.x, dest_door_centroid.y])
+                coord = np.array(brow['door_point'])
                 break
 
             coord = _cartesian_coords(path_ml, *path_coord)
@@ -476,13 +478,13 @@ class Agent:
         start_info = city.get_block(start_block)
 
         if start_info['building_type'] is not None and start_info['building_type'] != 'street' and start_info['building_id'] is not None:
-            self._previous_dest_building_row = city.buildings_gdf.loc[start_info['building_id']]
+            self._previous_dest_building_row = city.buildings_gdf.loc[start_info['building_id']].to_dict()
         else:
             self._previous_dest_building_row = None
 
         # Initialize current destination building to first entry
         first_building_id = destination_diary.iloc[0]['location']
-        self._current_dest_building_row = city.buildings_gdf.loc[first_building_id]
+        self._current_dest_building_row = city.buildings_gdf.loc[first_building_id].to_dict()
         entry_update = []
         for i in range(destination_diary.shape[0]):
             building_id = destination_diary.iloc[i]['location']
@@ -490,7 +492,10 @@ class Agent:
             # Shift: previous = current, current = new destination (skip shift on first iteration)
             if i > 0:
                 self._previous_dest_building_row = self._current_dest_building_row
-            self._current_dest_building_row = city.buildings_gdf.loc[building_id] if building_id in city.buildings_gdf.index else None
+            if building_id in city.buildings_gdf.index:
+                self._current_dest_building_row = city.buildings_gdf.loc[building_id].to_dict()
+            else:
+                self._current_dest_building_row = None
 
             duration_in_ticks = int(destination_diary.iloc[i]['duration'] / dt)
             for _ in range(duration_in_ticks):
@@ -1284,7 +1289,7 @@ class Population:
         if full_path:
             full_df = pd.concat([agent.trajectory for agent in self.roster.values()], ignore_index=True)
             if partition_cols and 'date' in partition_cols and 'date' not in full_df.columns:
-                full_df['date'] = pd.to_datetime(full_df['timestamp']).dt.date.astype(str)
+                full_df['date'] = pd.to_datetime(full_df['timestamp'], unit='s').dt.date.astype(str)
 
             full_df = from_df(full_df, traj_cols=traj_cols, mixed_timezone_behavior=mixed_timezone_behavior)
             to_file(full_df,
@@ -1297,7 +1302,7 @@ class Population:
         if sparse_path:
             sparse_df = pd.concat([agent.sparse_traj for agent in self.roster.values()], ignore_index=True)
             if partition_cols and 'date' in partition_cols and 'date' not in sparse_df.columns:
-                sparse_df['date'] = pd.to_datetime(sparse_df['timestamp']).dt.date.astype(str)
+                sparse_df['date'] = pd.to_datetime(sparse_df['timestamp'], unit='s').dt.date.astype(str)
 
             sparse_df = from_df(sparse_df, traj_cols=traj_cols, mixed_timezone_behavior=mixed_timezone_behavior)
             to_file(sparse_df,
@@ -1311,7 +1316,7 @@ class Population:
         if diaries_path:
             diaries_df = pd.concat([agent.diary for agent in self.roster.values()], ignore_index=True)
             if partition_cols and 'date' in partition_cols and 'date' not in diaries_df.columns:
-                diaries_df['date'] = pd.to_datetime(diaries_df['timestamp']).dt.date.astype(str)
+                diaries_df['date'] = pd.to_datetime(diaries_df['timestamp'], unit='s').dt.date.astype(str)
 
             diaries_df = from_df(diaries_df, traj_cols=traj_cols, mixed_timezone_behavior=mixed_timezone_behavior)
             to_file(diaries_df,
@@ -1333,7 +1338,7 @@ class Population:
             
             if dest_diaries_list:
                 dest_diaries_df = pd.concat(dest_diaries_list, ignore_index=True)
-                dest_diaries_df['date'] = pd.to_datetime(dest_diaries_df['datetime']).dt.date.astype(str)
+                dest_diaries_df['date'] = pd.to_datetime(dest_diaries_df['datetime'], unit='s').dt.date.astype(str)
                 dest_diaries_df = from_df(dest_diaries_df, traj_cols=traj_cols, mixed_timezone_behavior=mixed_timezone_behavior)
                 to_file(dest_diaries_df,
                         path=dest_diaries_path,

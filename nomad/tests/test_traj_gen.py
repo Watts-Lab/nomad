@@ -356,7 +356,7 @@ def test_parse_agent_attr_validation():
     with pytest.raises(ValueError, match="must be a list of length 5"):
         parse_agent_attr(["a", "b"], 5, "test")
     
-    with pytest.raises(ValueError, match="must be either a string"):
+    with pytest.raises(ValueError, match="must be a string"):
         parse_agent_attr(123, 5, "test")
 
 

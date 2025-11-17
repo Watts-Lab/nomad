@@ -429,6 +429,42 @@ print("="*50)
 # ## Visualize Sparse Trajectories
 
 # %%
+import pyarrow as pa
+import pyarrow.dataset as ds
+
+# %%
+sparse_traj_df = from_file(OUTPUT_DIR / f"sparse_traj_{BOX_NAME}", format="parquet")
+sparse_traj_df["date"] = pd.to_datetime(sparse_traj_df["timestamp"], unit='s').dt.date.astype(str)
+sparse_traj_df
+
+# %%
+table = pa.Table.from_pandas(sparse_traj_df, preserve_index=False)
+ds.write_dataset(
+    table,
+    base_dir="output/device_level",
+    format="parquet",
+    partitioning=["date"],
+    max_rows_per_group=1_000,
+    max_rows_per_file=2_000   # adjust so each date naturally spills to multiple files
+)
+
+# %%
+diaries = from_file(OUTPUT_DIR / f"diaries_{BOX_NAME}", format="parquet")
+diaries["date"] = pd.to_datetime(diaries["timestamp"], unit='s').dt.date.astype(str)
+diaries
+
+# %%
+table = pa.Table.from_pandas(diaries, preserve_index=False)
+ds.write_dataset(
+    table,
+    base_dir="output/travel_diaries/",
+    format="parquet",
+    partitioning=["date"],
+    max_rows_per_group=1_000,
+    max_rows_per_file=2_000   # adjust so each date naturally spills to multiple files
+)
+
+# %%
 # print("\n" + "="*50)
 # print("VISUALIZATION")
 # print("="*50)

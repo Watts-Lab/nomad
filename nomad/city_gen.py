@@ -468,15 +468,12 @@ class City:
         if not (0 <= x < self.dimensions[0] and 0 <= y < self.dimensions[1]):
             raise ValueError(f"Coordinates {coordinates} out of city bounds {self.dimensions}")
         
-        # Direct index access using tuple
-        if (x, y) in self.blocks_gdf.index:
-            row = self.blocks_gdf.loc[(x, y)]
-            return {
-                'building_type': row['building_type'],
-                'building_id': row['building_id'],
-                'geometry': row['geometry']
-            }
-        return {'building_type': None, 'building_id': None, 'geometry': None}
+        row = self.blocks_gdf.loc[(x, y)]
+        return {
+            'building_type': row['building_type'],
+            'building_id': row['building_id'],
+            'geometry': row['geometry']
+        }
 
     def check_adjacent(self, geom1, geom2, graph=None):
         """Adjacency on a grid of 1x1 blocks. Returns list[bool]."""
