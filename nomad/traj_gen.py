@@ -284,6 +284,7 @@ class Agent:
         self._cached_path_ml = None
         self._cached_bound_poly = None
         self._cached_dest_id = None
+        self._cached_bound_poly_blocks_set = None
         self._previous_dest_building_row = None
         self._current_dest_building_row = None
         
@@ -357,11 +358,10 @@ class Agent:
         # Determine start block and geometry
         start_block = tuple(np.floor(start_point).astype(int))
         start_point_arr = np.asarray(start_point, dtype=float)
-        start_pt = Point(start_point_arr)
         
-        # geometry checks (use intersects instead of contains to handle boundary/precision issues)
-        in_current_dest = self._current_dest_building_row['geometry'].intersects(start_pt) if self._current_dest_building_row is not None else False
-        in_previous_dest = self._previous_dest_building_row['geometry'].intersects(start_pt) if self._previous_dest_building_row is not None else False
+        # Check if agent is in building using integer truncation
+        in_current_dest = _point_in_blocks(start_point_arr, self._current_dest_building_row.get('blocks_set')) if self._current_dest_building_row is not None else False
+        in_previous_dest = _point_in_blocks(start_point_arr, self._previous_dest_building_row.get('blocks_set')) if self._previous_dest_building_row is not None else False
 
         # If already at destination building area, stay-within-building dynamics
         if in_current_dest:
@@ -379,7 +379,7 @@ class Agent:
                 # Draw until coord falls inside building
                 while True:
                     coord = rng.normal(loc=start_point_arr, scale=sigma*np.sqrt(dt), size=2)
-                    if brow['geometry'].contains(Point(coord)):
+                    if _point_in_blocks(coord, brow.get('blocks_set')):
                         break
 
             return coord, location
@@ -406,9 +406,7 @@ class Agent:
         if use_cache:
             path_ml = self._cached_path_ml
             bound_poly = self._cached_bound_poly
-            # Verify agent is within cached bound_poly (should always be true if cache is valid)
-            if not bound_poly.intersects(start_pt) and not in_current_dest and not in_previous_dest:
-                raise ValueError(f"Agent at {start_point_arr} is outside cached bound_poly for destination {brow['id']}")
+            bound_poly_blocks_set = self._cached_bound_poly_blocks_set
         else:
             # Shortest path between street blocks (door cells)
             street_path = city.get_shortest_path(start_node, dest_cell)
@@ -426,10 +424,18 @@ class Agent:
                 start_geom = city.blocks_gdf.loc[start_block]['geometry']
             bound_poly = unary_union([start_geom, street_geom])
             
+            # Build bound_poly_blocks_set from components
+            if in_previous_dest and self._previous_dest_building_row is not None:
+                start_blocks = self._previous_dest_building_row.get('blocks_set', set())
+            else:
+                start_blocks = {start_block}
+            bound_poly_blocks_set = start_blocks | set(street_path)
+            
             # Cache the results
             self._cached_path_ml = path_ml
             self._cached_bound_poly = bound_poly
             self._cached_dest_id = brow['id']
+            self._cached_bound_poly_blocks_set = bound_poly_blocks_set
 
         # Transformed coordinates of current position along the path
         path_coord = _path_coords(path_ml, start_point_arr)
@@ -448,7 +454,7 @@ class Agent:
 
             coord = _cartesian_coords(path_ml, *path_coord)
 
-            if bound_poly.contains(Point(coord)):
+            if _point_in_blocks(coord, bound_poly_blocks_set):
                 break
 
         return coord, location
@@ -478,13 +484,17 @@ class Agent:
         start_info = city.get_block(start_block)
 
         if start_info['building_type'] is not None and start_info['building_type'] != 'street' and start_info['building_id'] is not None:
-            self._previous_dest_building_row = city.buildings_gdf.loc[start_info['building_id']].to_dict()
+            building_dict = city.buildings_gdf.loc[start_info['building_id']].to_dict()
+            building_dict['blocks_set'] = set(building_dict.get('blocks', []))
+            self._previous_dest_building_row = building_dict
         else:
             self._previous_dest_building_row = None
 
         # Initialize current destination building to first entry
         first_building_id = destination_diary.iloc[0]['location']
-        self._current_dest_building_row = city.buildings_gdf.loc[first_building_id].to_dict()
+        building_dict = city.buildings_gdf.loc[first_building_id].to_dict()
+        building_dict['blocks_set'] = set(building_dict.get('blocks', []))
+        self._current_dest_building_row = building_dict
         entry_update = []
         for i in range(destination_diary.shape[0]):
             building_id = destination_diary.iloc[i]['location']
@@ -493,7 +503,9 @@ class Agent:
             if i > 0:
                 self._previous_dest_building_row = self._current_dest_building_row
             if building_id in city.buildings_gdf.index:
-                self._current_dest_building_row = city.buildings_gdf.loc[building_id].to_dict()
+                building_dict = city.buildings_gdf.loc[building_id].to_dict()
+                building_dict['blocks_set'] = set(building_dict.get('blocks', []))
+                self._current_dest_building_row = building_dict
             else:
                 self._current_dest_building_row = None
 
@@ -1093,6 +1105,14 @@ def _sample_horizontal_noise(n,
     noise = rng.standard_normal((n, 2)) * sigma[:, None]
     np.clip(noise, -250, 250, out=noise)
     return ha_realized, noise
+
+
+def _point_in_blocks(point_arr, blocks_set):
+    """Check if point is in any block using integer truncation."""
+    if blocks_set is None:
+        return False
+    block_idx = (int(np.floor(point_arr[0])), int(np.floor(point_arr[1])))
+    return block_idx in blocks_set
 
 
 def _cartesian_coords(multilines, distance, offset, eps=0.001):

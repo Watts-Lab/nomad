@@ -1204,6 +1204,14 @@ class City:
                        (city.blocks_gdf['coord_y'] >= int(np.floor(miny))) & (city.blocks_gdf['coord_y'] < int(np.ceil(maxy)))
                 city.blocks_gdf.loc[mask, ['kind', 'building_id', 'building_type']] = ['building', bid, btype]
 
+        # Populate blocks column in buildings_gdf if missing
+        if 'blocks' not in city.buildings_gdf.columns and not city.blocks_gdf.empty:
+            building_blocks_map = {}
+            for building_id in city.blocks_gdf['building_id'].dropna().unique():
+                mask = city.blocks_gdf['building_id'] == building_id
+                building_blocks_map[building_id] = city.blocks_gdf[mask].index.tolist()
+            city.buildings_gdf['blocks'] = city.buildings_gdf['id'].map(building_blocks_map)
+
         # Recompute derived attributes, or preload from edges if provided
         city.buildings_outline = unary_union(city.buildings_gdf.geometry.values) if not city.buildings_gdf.empty else Polygon()
         if edges_df is not None and not edges_df.empty:
@@ -2276,6 +2284,7 @@ class RasterCity(City):
                         'door_cell_y': door[1],
                         'door_point': door_centroid,
                         'size': len(building_blocks),
+                        'blocks': building_blocks,
                         'geometry': building_geom,
                     })
                     # Set building_id and building_type together when building is successfully created
