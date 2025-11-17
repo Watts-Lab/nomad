@@ -75,22 +75,34 @@
 - **Status:** Implemented, tests pass
 - **Actual savings:** 18.5s trajectory generation (67.8s → 49.3s)
 
-## Results After Opt 1 + Opt 3
+### ✅ **Opt 4: Integer truncation for point-in-block checks** (IMPLEMENTED)
+- **Problem:** ~272,000 shapely Point/intersects/contains operations per trajectory (201k building checks + 44k bound_poly checks + 27k stay-within loop)
+- **Solution:** Use integer truncation `floor(x,y) in blocks_set` instead of shapely geometry operations
+- **Changes:** 
+  - Added 'blocks' column to buildings_gdf during rasterization
+  - Populate blocks from blocks_gdf on load via efficient mapping
+  - Helper function `_point_in_blocks()` (5 lines)
+  - Cache bound_poly_blocks_set alongside bound_poly
+  - Replace all Point/intersects/contains with integer checks
+- **Status:** Implemented, tests pass
+- **Actual savings:** 5.0s trajectory + 1.3s diary (49.3s → 44.3s traj, 35.2s → 33.9s diary)
 
-**Baseline (with start_pt caching):**
+## Final Results After All Optimizations (Opts 1 + 3 + 4)
+
+**Original baseline:**
 - Dest Diary: 0.560s per agent per day
 - Trajectory: 0.969s per agent per day
 - Total: 1.529s per agent per day
 
-**After Opt 1 (cache dest ID) + Opt 3 (dict caching):**
-- Dest Diary: 0.502s per agent per day (**10.4% faster**)
-- Trajectory: 0.704s per agent per day (**27.3% faster**)
-- Total: 1.206s per agent per day (**21.1% faster**)
+**After all optimizations:**
+- Dest Diary: 0.484s per agent per day (**13.6% faster**)
+- Trajectory: 0.632s per agent per day (**34.8% faster**)
+- Total: 1.116s per agent per day (**27.0% faster**)
 
 **Absolute improvements:**
-- Dest Diary: 4.0s faster (39.2s → 35.2s)
-- Trajectory: 18.5s faster (67.8s → 49.3s)
-- Total: 22.5s faster (107.0s → 84.5s)
+- Dest Diary: 5.3s faster (39.2s → 33.9s)
+- Trajectory: 23.5s faster (67.8s → 44.3s)
+- Total: 28.8s faster (107.0s → 78.1s)
 
 ## Remaining Bottlenecks (After Opt 1 + Opt 3)
 
