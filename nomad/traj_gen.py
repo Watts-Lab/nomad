@@ -410,7 +410,7 @@ class Agent:
         else:
             # Shortest path between street blocks (door cells)
             street_path = city.get_shortest_path(start_node, dest_cell)
-            street_blocks = city.blocks_gdf.loc[street_path] # get geometries
+            street_blocks = city.blocks_gdf.loc[street_path]
 
             # Build continuous path through block centers, include start/end segments
             centroids = street_blocks['geometry'].centroid
@@ -829,10 +829,13 @@ class Agent:
                 
                 if 'datetime' in kwargs:
                     self.last_ping['datetime'] = kwargs['datetime']
+                    self.last_ping['timestamp'] = to_timestamp(self.last_ping['datetime'])
                 if 'timestamp' in kwargs:
                     self.last_ping['timestamp'] = kwargs['timestamp']
+                    self.last_ping['datetime'] = pd.to_datetime(self.last_ping['timestamp'], unit='s')
             
             self.trajectory = pd.DataFrame([self.last_ping])
+
         else:
             if 'x' in kwargs or 'y' in kwargs or 'location' in kwargs or 'datetime' in kwargs or 'timestamp' in kwargs:
                 raise ValueError(

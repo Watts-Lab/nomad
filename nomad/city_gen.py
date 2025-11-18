@@ -652,13 +652,8 @@ class City:
         dy = np.abs(y1[:, None] - y2[None, :])
         return dx + dy
 
-    def compute_gravity(self, exponent=2.0, callable_only=False, n_chunks=10):
-        """Precompute building-to-building gravity using Manhattan distances and hub shortcuts.
-                
-        Uses only self.streets_gdf and self.hub_df to compute gravity matrix.
-        For each pair of buildings, estimates distance using hub-based shortcuts:
-          dist(i,j) = manhattan(door_i, hub_i) + hub_distance(hub_i, hub_j) + manhattan(door_j, hub_j)
-          grav(i,j) = 1 / dist(i,j)^exponent  (0 on diagonal)
+    def compute_gravity(self, exponent=2.0, callable_only=False, n_chunks=10, use_proxy_hub_distance=True):
+        """Precompute building-to-building gravity from door-to-door distances.
         
         Parameters
         ----------
@@ -666,121 +661,175 @@ class City:
             The gravity decay exponent (default 2.0)
         callable_only : bool
             If True, store callable function instead of dense matrix (default False)
+        n_chunks : int
+            Number of chunks for computing nearby doors in hub mode (default 10)
+        use_proxy_hub_distance : bool
+            If True, use hub-based distance approximation (fast, scales to large cities).
+            If False, compute true graph distances between all door pairs (slow but exact, 
+            suitable for small cities with <200 buildings). Default True.
+        
+        Notes
+        -----
+        Hub mode approximates: dist(i,j) ≈ manhattan(door_i, hub_i) + graph(hub_i, hub_j) + manhattan(hub_j, door_j)
+        True mode computes: dist(i,j) = shortest_path_length(door_i, door_j) on street graph
         
         Stores result in self.grav as DataFrame (callable_only=False) or callable (callable_only=True)
-        """
-        if self.hubs is None:
-            hub_size = int(len(self.buildings_gdf) / 1000) + 5
-            warnings.warn(f"Hub network not available. Initializing with {hub_size} hubs.")
-            self._build_hub_network(hub_size=hub_size)
         
-        # Part 1: Compute lean distance structures
+        Persistence:
+        - Hub mode (use_proxy_hub_distance=True): Gravity infrastructure is saved by 
+          save_geopackage() and restored by from_geopackage(load_gravity=True). The 
+          city.grav callable works immediately after loading.
+        - True distance mode (use_proxy_hub_distance=False): Not persisted. Must call 
+          compute_gravity(..., use_proxy_hub_distance=False) after loading. This is 
+          fast for small cities (<200 buildings) where this mode is intended.
+        """
         building_ids = self.buildings_gdf['id'].to_numpy()
         door_x = self.buildings_gdf['door_cell_x'].astype(int).to_numpy()
         door_y = self.buildings_gdf['door_cell_y'].astype(int).to_numpy()
         
-        hubs = np.array(self.hubs)
-        door_to_hub_dist = self._pairwise_manhattan(door_x, door_y, hubs[:, 0], hubs[:, 1])
-        closest_hub_idx = door_to_hub_dist.argmin(axis=1).astype(np.int32)
-        dist_to_closest_hub = door_to_hub_dist.min(axis=1).astype(np.int32)
-        
-        self.grav_hub_info = pd.DataFrame({
-            'closest_hub_idx': closest_hub_idx,
-            'dist_to_hub': dist_to_closest_hub
-        }, index=building_ids)
-        
-        # Compute close pairs in chunks to avoid memory issues
-        n = len(building_ids)
-        chunk_size = max(1, n // n_chunks)
-        bid_i_list = []
-        bid_j_list = []
-        dist_list = []
-        
-        for i_start in range(0, n, chunk_size):
-            i_end = min(i_start + chunk_size, n)
+        if use_proxy_hub_distance:
+            if self.hubs is None:
+                hub_size = int(len(self.buildings_gdf) / 1000) + 5
+                warnings.warn(f"Hub network not available. Initializing with {hub_size} hubs.")
+                self._build_hub_network(hub_size=hub_size)
             
-            chunk_dist = self._pairwise_manhattan(
-                door_x[i_start:i_end], door_y[i_start:i_end],
-                door_x, door_y
-            ).astype(np.int32)
+            hubs = np.array(self.hubs)
+            door_to_hub_dist = self._pairwise_manhattan(door_x, door_y, hubs[:, 0], hubs[:, 1])
+            closest_hub_idx = door_to_hub_dist.argmin(axis=1).astype(np.int32)
+            dist_to_closest_hub = door_to_hub_dist.min(axis=1).astype(np.int32)
             
-            min_hub_dist = np.minimum(
-                dist_to_closest_hub[i_start:i_end, None],
-                dist_to_closest_hub[None, :]
-            )
-            is_close = chunk_dist <= min_hub_dist
+            self.grav_hub_info = pd.DataFrame({
+                'closest_hub_idx': closest_hub_idx,
+                'dist_to_hub': dist_to_closest_hub
+            }, index=building_ids)
             
-            i_local, j_global = np.where(is_close)
-            i_global = i_local + i_start
-            upper_mask = i_global < j_global
+            # Compute close pairs in chunks to avoid memory issues
+            n = len(building_ids)
+            chunk_size = max(1, n // n_chunks)
+            bid_i_list = []
+            bid_j_list = []
+            dist_list = []
             
-            if upper_mask.any():
-                bid_i_list.append(building_ids[i_global[upper_mask]])
-                bid_j_list.append(building_ids[j_global[upper_mask]])
-                dist_list.append(chunk_dist[i_local[upper_mask], j_global[upper_mask]])
-        
-        if bid_i_list:
-            self.mh_dist_nearby_doors = pd.Series(
-                np.concatenate(dist_list),
-                index=pd.MultiIndex.from_arrays([
-                    np.concatenate(bid_i_list),
-                    np.concatenate(bid_j_list)
-                ])
-            )
-        else:
-            self.mh_dist_nearby_doors = pd.Series([], dtype=np.int32, index=pd.MultiIndex.from_arrays([[], []]))
-        
-        # Fix: Buildings sharing same door have Manhattan distance 0, set to 1 to avoid inf gravity
-        # Note: Future improvement - use Manhattan distance between door centroids for true uniqueness
-        door_groups = self.buildings_gdf.groupby(['door_cell_x', 'door_cell_y'])['id']
-        same_door_mask = door_groups.transform('size') > 1
-        same_door_buildings = set(self.buildings_gdf[same_door_mask]['id'].values)
-        
-        if same_door_buildings and len(self.mh_dist_nearby_doors) > 0:
-            zero_dist_mask = (self.mh_dist_nearby_doors == 0)
-            for (bid_i, bid_j) in self.mh_dist_nearby_doors[zero_dist_mask].index:
-                if bid_i in same_door_buildings and bid_j in same_door_buildings:
-                    self.mh_dist_nearby_doors.loc[(bid_i, bid_j)] = 1
-        
-        # Part 2: Create dense matrix or callable
-        if callable_only:
-            bid_to_idx = {bid: i for i, bid in enumerate(building_ids)}
-            hub_to_hub = self.hub_df.values
-            
-            def compute_gravity_row(building_id):
-                idx = bid_to_idx[building_id]
-                hub_i = closest_hub_idx[idx]
-                dist_to_hub_i = dist_to_closest_hub[idx]
+            for i_start in range(0, n, chunk_size):
+                i_end = min(i_start + chunk_size, n)
                 
-                distances = dist_to_hub_i + hub_to_hub[hub_i, closest_hub_idx] + dist_to_closest_hub
+                chunk_dist = self._pairwise_manhattan(
+                    door_x[i_start:i_end], door_y[i_start:i_end],
+                    door_x, door_y
+                ).astype(np.int32)
                 
+                min_hub_dist = np.minimum(
+                    dist_to_closest_hub[i_start:i_end, None],
+                    dist_to_closest_hub[None, :]
+                )
+                is_close = chunk_dist <= min_hub_dist
+                
+                i_local, j_global = np.where(is_close)
+                i_global = i_local + i_start
+                upper_mask = i_global < j_global
+                
+                if upper_mask.any():
+                    bid_i_list.append(building_ids[i_global[upper_mask]])
+                    bid_j_list.append(building_ids[j_global[upper_mask]])
+                    dist_list.append(chunk_dist[i_local[upper_mask], j_global[upper_mask]])
+            
+            if bid_i_list:
+                self.mh_dist_nearby_doors = pd.Series(
+                    np.concatenate(dist_list),
+                    index=pd.MultiIndex.from_arrays([
+                        np.concatenate(bid_i_list),
+                        np.concatenate(bid_j_list)
+                    ])
+                )
+            else:
+                self.mh_dist_nearby_doors = pd.Series([], dtype=np.int32, index=pd.MultiIndex.from_arrays([[], []]))
+            
+            # Fix: Buildings sharing same door have Manhattan distance 0, set to 1 to avoid inf gravity
+            door_groups = self.buildings_gdf.groupby(['door_cell_x', 'door_cell_y'])['id']
+            same_door_mask = door_groups.transform('size') > 1
+            same_door_buildings = set(self.buildings_gdf[same_door_mask]['id'].values)
+            
+            if same_door_buildings and len(self.mh_dist_nearby_doors) > 0:
+                zero_dist_mask = (self.mh_dist_nearby_doors == 0)
+                for (bid_i, bid_j) in self.mh_dist_nearby_doors[zero_dist_mask].index:
+                    if bid_i in same_door_buildings and bid_j in same_door_buildings:
+                        self.mh_dist_nearby_doors.loc[(bid_i, bid_j)] = 1
+            
+            if callable_only:
+                bid_to_idx = {bid: i for i, bid in enumerate(building_ids)}
+                hub_to_hub = self.hub_df.values
+                
+                def compute_gravity_row(building_id):
+                    idx = bid_to_idx[building_id]
+                    hub_i = closest_hub_idx[idx]
+                    dist_to_hub_i = dist_to_closest_hub[idx]
+                    
+                    distances = dist_to_hub_i + hub_to_hub[hub_i, closest_hub_idx] + dist_to_closest_hub
+                    
+                    for (bid_i, bid_j), d in self.mh_dist_nearby_doors.items():
+                        if bid_i == building_id:
+                            distances[bid_to_idx[bid_j]] = d
+                        elif bid_j == building_id:
+                            distances[bid_to_idx[bid_i]] = d
+                    
+                    distances[idx] = 1
+                    gravity_row = 1.0 / (distances ** exponent)
+                    gravity_row[idx] = 0.0
+                    
+                    return pd.Series(gravity_row, index=building_ids)
+                
+                self.grav = compute_gravity_row
+            else:
+                hub_to_hub = self.hub_df.values
+                dist_matrix = dist_to_closest_hub[:, None] + hub_to_hub[closest_hub_idx[:, None], closest_hub_idx[None, :]] + dist_to_closest_hub[None, :]
+                
+                bid_to_idx = {bid: i for i, bid in enumerate(building_ids)}
                 for (bid_i, bid_j), d in self.mh_dist_nearby_doors.items():
-                    if bid_i == building_id:
-                        distances[bid_to_idx[bid_j]] = d
-                    elif bid_j == building_id:
-                        distances[bid_to_idx[bid_i]] = d
+                    i, j = bid_to_idx[bid_i], bid_to_idx[bid_j]
+                    dist_matrix[i, j] = dist_matrix[j, i] = d
                 
-                distances[idx] = 1  # Temporary non-zero to avoid divide-by-zero warning
-                gravity_row = 1.0 / (distances ** exponent)
-                gravity_row[idx] = 0.0  # Self-gravity is always 0
+                np.fill_diagonal(dist_matrix, 1)
+                gravity = 1.0 / (dist_matrix ** exponent)
+                np.fill_diagonal(gravity, 0.0)
                 
-                return pd.Series(gravity_row, index=building_ids)
-            
-            self.grav = compute_gravity_row
+                self.grav = pd.DataFrame(gravity, index=building_ids, columns=building_ids)
         else:
-            hub_to_hub = self.hub_df.values
-            dist_matrix = dist_to_closest_hub[:, None] + hub_to_hub[closest_hub_idx[:, None], closest_hub_idx[None, :]] + dist_to_closest_hub[None, :]
+            G = self.get_street_graph()
+            door_coords = list(zip(door_x, door_y))
             
-            bid_to_idx = {bid: i for i, bid in enumerate(building_ids)}
-            for (bid_i, bid_j), d in self.mh_dist_nearby_doors.items():
-                i, j = bid_to_idx[bid_i], bid_to_idx[bid_j]
-                dist_matrix[i, j] = dist_matrix[j, i] = d
+            rows = []
+            for i, (bid_i, door_i) in enumerate(zip(building_ids, door_coords)):
+                distances = nx.single_source_shortest_path_length(G, door_i)
+                for j, (bid_j, door_j) in enumerate(zip(building_ids, door_coords)):
+                    if i >= j:
+                        continue
+                    dist = distances.get(door_j, np.inf)
+                    rows.append({'bid_i': bid_i, 'bid_j': bid_j, 'distance': dist})
             
-            np.fill_diagonal(dist_matrix, 1)  # Temporary non-zero to avoid divide-by-zero warning
+            if rows:
+                dist_df = pd.DataFrame(rows)
+                dist_matrix = np.full((len(building_ids), len(building_ids)), np.inf)
+                bid_to_idx = {bid: i for i, bid in enumerate(building_ids)}
+                
+                for row in dist_df.itertuples(index=False):
+                    i, j = bid_to_idx[row.bid_i], bid_to_idx[row.bid_j]
+                    dist_matrix[i, j] = dist_matrix[j, i] = row.distance
+            else:
+                dist_matrix = np.full((len(building_ids), len(building_ids)), np.inf)
+            
+            # Fix: Buildings sharing same door have distance 0, set to 1 to avoid inf gravity
+            dist_matrix[dist_matrix == 0] = 1
+            np.fill_diagonal(dist_matrix, 1)
             gravity = 1.0 / (dist_matrix ** exponent)
-            np.fill_diagonal(gravity, 0.0)  # Self-gravity is always 0
+            np.fill_diagonal(gravity, 0.0)
             
-            self.grav = pd.DataFrame(gravity, index=building_ids, columns=building_ids)
+            if callable_only:
+                grav_df = pd.DataFrame(gravity, index=building_ids, columns=building_ids)
+                def compute_gravity_row(building_id):
+                    return grav_df.loc[building_id]
+                self.grav = compute_gravity_row
+            else:
+                self.grav = pd.DataFrame(gravity, index=building_ids, columns=building_ids)
 
     def save(self, filename):
         """
@@ -937,10 +986,10 @@ class City:
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
 
-    def save_geopackage(self, gpkg_path, persist_blocks: bool = False, 
-                        persist_city_properties: bool = True, persist_gravity_data: bool = True,
-                        reverse_affine: bool = False,
-                        edges_path: str = None, street_graphml_path: str = None):
+    def save_geopackage(self, gpkg_path, persist_blocks=True, 
+                        persist_city_properties=True, persist_gravity_data=True,
+                        reverse_affine=False,
+                        edges_path=None, street_graphml_path=None):
         """Save city to GeoPackage with all spatial objects for simulation continuity.
 
         Parameters
@@ -1087,18 +1136,21 @@ class City:
                 pass
 
     @classmethod
-    def from_geodataframes(cls, buildings_gdf, streets_gdf, blocks_gdf=None, edges_df: pd.DataFrame = None):
+    def from_geodataframes(cls, buildings_gdf, streets_gdf, blocks_gdf=None, edges_df=None, city_boundary=None):
         """Construct a City from buildings and streets GeoDataFrames."""
-        if buildings_gdf.empty:
-            width, height = (0, 0) if (streets_gdf is None or streets_gdf.empty) else (
-                int(streets_gdf['coord_x'].max() + 1), int(streets_gdf['coord_y'].max() + 1)
-            )
-        else:
-            bounds = buildings_gdf.geometry.total_bounds
+        if city_boundary is not None:
+            bounds = city_boundary.bounds
             width, height = int(np.ceil(bounds[2])), int(np.ceil(bounds[3]))
-        if width <= 0 or height <= 0:
-            width, height = (0,0)
+        else:
+            max_street_x = int(streets_gdf['coord_x'].max())
+            max_street_y = int(streets_gdf['coord_y'].max())
+            max_door_x = int(buildings_gdf['door_cell_x'].max())
+            max_door_y = int(buildings_gdf['door_cell_y'].max())
+            width = max(max_street_x, max_door_x) + 1
+            height = max(max_street_y, max_door_y) + 1
         city = cls(dimensions=(width, height), manual_streets=True)
+        if city_boundary is not None:
+            city.city_boundary = city_boundary
 
         # Adopt input GeoDataFrames with required columns
         city.buildings_gdf = gpd.GeoDataFrame(buildings_gdf, geometry='geometry', crs=buildings_gdf.crs)
@@ -1117,21 +1169,19 @@ class City:
             city.blocks_gdf = gpd.GeoDataFrame(blocks_gdf, geometry='geometry', crs=blocks_gdf.crs)
             city.blocks_gdf.set_index(['coord_x', 'coord_y'], inplace=True, drop=False)
             city.blocks_gdf.index.names = [None, None]
-            # Derive streets from blocks
             city.streets_gdf = city._derive_streets_from_blocks()
         else:
-            # streets_gdf may be empty if manual_streets=True
-            city.streets_gdf = gpd.GeoDataFrame(streets_gdf, geometry='geometry', crs=streets_gdf.crs) if (streets_gdf is not None and not streets_gdf.empty) else gpd.GeoDataFrame(columns=['coord_x','coord_y','id','geometry'], geometry='geometry', crs=None)
-            # Initialize blocks grid if missing
-            city.blocks_gdf = city._init_blocks_gdf()
-        missing_cols = set(['coord_x','coord_y','id']) - set(city.streets_gdf.columns)
-        for col in missing_cols:
-            if col == 'id':
-                city.streets_gdf[col] = city.streets_gdf.apply(lambda r: f"s-x{int(r['coord_x'])}-y{int(r['coord_y'])}", axis=1)
-            else:
-                city.streets_gdf[col] = 0
+            city.streets_gdf = gpd.GeoDataFrame(streets_gdf, geometry='geometry', crs=streets_gdf.crs)
+            city.streets_gdf.set_index(['coord_x', 'coord_y'], inplace=True, drop=False)
+            city.streets_gdf.index.names = [None, None]
+            # Regenerate blocks from dimensions (integer grid: 0 to width-1, 0 to height-1)
+            blocks = [{'coord_x': x, 'coord_y': y, 'kind': 'street', 'building_id': None, 
+                       'building_type': None, 'geometry': box(x, y, x+1, y+1)}
+                      for x in range(width) for y in range(height)]
+            city.blocks_gdf = gpd.GeoDataFrame(blocks, geometry='geometry', crs=city.buildings_gdf.crs)
+            city.blocks_gdf.set_index(['coord_x', 'coord_y'], inplace=True, drop=False)
+            city.blocks_gdf.index.names = [None, None]
         
-        city.blocks_gdf = city._init_blocks_gdf()
         # Vectorized update of blocks_gdf for building blocks
         if not city.buildings_gdf.empty:
             building_bounds = city.buildings_gdf.geometry.bounds
@@ -1175,7 +1225,7 @@ class City:
         return city
 
     @classmethod
-    def from_geopackage(cls, gpkg_path, edges_path: str = None, poi_cols: dict | None = None, load_gravity: bool = True):
+    def from_geopackage(cls, gpkg_path, edges_path=None, poi_cols=None, load_gravity=True):
         b_gdf = gpd.read_file(gpkg_path, layer='buildings')
         # Optional explicit renaming via poi_cols (e.g., {'building_type':'type'})
         if poi_cols:
@@ -1227,6 +1277,7 @@ class City:
             pass
         
         city_props = {}
+        city_boundary = None
         if props_gdf is not None and not props_gdf.empty:
             props = props_gdf.iloc[0]
             city_props['name'] = props.get('name', 'Garden City')
@@ -1236,7 +1287,8 @@ class City:
             
             boundary = props.get('city_boundary')
             if boundary is not None:
-                city_props['city_boundary'] = wkt.loads(boundary) if isinstance(boundary, str) else boundary
+                city_boundary = wkt.loads(boundary) if isinstance(boundary, str) else boundary
+                city_props['city_boundary'] = city_boundary
                 
             outline = props.get('buildings_outline')
             if outline is not None:
@@ -1244,10 +1296,11 @@ class City:
         
         edges_df = pd.read_parquet(edges_path) if edges_path and os.path.exists(edges_path) else None
         
-        city = cls.from_geodataframes(b_gdf, s_gdf, bl_gdf, edges_df)
+        city = cls.from_geodataframes(b_gdf, s_gdf, bl_gdf, edges_df, city_boundary=city_boundary)
         
         for key, value in city_props.items():
-            setattr(city, key, value)
+            if key != 'city_boundary':  # Already set in from_geodataframes
+                setattr(city, key, value)
         
         # Load gravity infrastructure if requested
         if load_gravity:
@@ -1857,14 +1910,10 @@ def load(filename):
     with open(filename, 'rb') as file:
         return pickle.load(file)
 
-
 def save(city, filename):
     """Save the city object to a file."""
     with open(filename, 'wb') as file:
         pickle.dump(city, file)
-
-
-
 
 # =============================================================================
 # RASTERIZATION UTILITIES (integrated from rasterization.py)

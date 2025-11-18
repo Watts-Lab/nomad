@@ -8,9 +8,9 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.17.3
 #   kernelspec:
-#     display_name: Python (nomad repo venv)
+#     display_name: Python 3 (ipykernel)
 #     language: python
-#     name: nomad-repo-venv
+#     name: python3
 # ---
 
 # %% [markdown]
@@ -52,8 +52,6 @@ city = City(dimensions=(22, 22))
 city.add_building(building_type='park', door=(13, 11), geom=box(9, 9, 13, 13))
 # add a home
 city.add_building(building_type='home', door=(8, 8), blocks=[(7, 7), (7, 8)])
-
-city.buildings_gdf
 
 # %%
 # add remaining homes
@@ -165,7 +163,7 @@ city.add_building('retail', (3, 7), geom=box(1, 7, 3, 8))
 city.add_building('retail', (0, 5), geom=box(1, 4, 2, 7))
 city.add_building('retail', (3, 6), blocks=[(2, 6)])
 city.add_building('retail', (3, 5), blocks=[(2, 5)])
-city.add_building('retail', (3, 4), blocks=[(2, 4)])
+city.add_building('retail', (3, 4), blocks=[(2, 4)]) 
 
 city.get_street_graph()
 
@@ -177,6 +175,8 @@ city.save_geopackage('../garden-city.gpkg')
 
 # %%
 city = City.from_geopackage('../garden-city.gpkg')
+# Garden City is small (~80 buildings), use exact distances
+city.compute_gravity(exponent=2.0, callable_only=True, use_proxy_hub_distance=False)
 
 # %% [markdown]
 # ### Plotting the city
@@ -207,8 +207,8 @@ plt.close(fig)
 
 # %%
 print("Blocks for 'r-x12-y3':")
-print(city.blocks_gdf.loc[city.blocks_gdf['building_id']== 'r-x12-y3', ['coord_x','coord_y']].values.tolist())
-building = city.get_building(identifier='r-x12-y3')
+print(city.blocks_gdf.loc[city.blocks_gdf['building_id']== 'r-x12-y2', ['coord_x','coord_y']].values.tolist())
+building = city.get_building(identifier='r-x12-y2')
 x, y = building.iloc[0].door_point
 print("Door centroid for 'r-x12-y3':", (x, y))
 
@@ -241,7 +241,7 @@ tz = ZoneInfo("America/New_York")
 start_time = pd.date_range(start='2024-01-01 00:00', periods=22, freq='15min', tz=tz)
 unix_timestamp = [int(t.timestamp()) for t in start_time]
 duration = [15]*22  # in minutes
-location = ['h-x8-y13'] * 2 + ['r-x12-y3'] * 4 + ['w-x15-y15'] * 12 + ['h-x8-y13'] * 4
+location = ['h-x8-y14'] * 2 + ['r-x12-y2'] * 4 + ['w-x15-y16'] * 12 + ['h-x8-y14'] * 4
 
 d_diary = pd.DataFrame({
     "datetime": start_time,
@@ -254,8 +254,8 @@ d_diary = pd.DataFrame({
 d_diary = tg.condense_destinations(d_diary)
 
 Alice = Agent(identifier="Alice",
-              home='h-x8-y13',
-              workplace='w-x15-y15',
+              home='h-x8-y14',
+              workplace='w-x15-y16',
               city=city)
 
 Alice.generate_trajectory(dt=1, destination_diary=d_diary, seed=100)
@@ -278,10 +278,14 @@ Alice.__dict__
 # The following agent, Bob, is given home `h-x8-y8` and workplace `w-x18-y4`. We generate a trajectory for Bob that lasts a week from midnight January 1, 2024 to midnight January 8, 2024.
 
 # %%
+import pandas as pd
+pd.to_datetime(1763439982, unit='s')
+
+# %%
 # Initialization and diary generation
 Bob = Agent(identifier="Bob",
-            home='h-x8-y8',
-            workplace='w-x18-y4',
+            home='h-x7-y8',
+            workplace='w-x17-y4',
             city=city)
 
 Bob.generate_trajectory(
@@ -470,7 +474,7 @@ start_time = pd.date_range(start='2024-06-01 00:00', periods=5, freq='60min', tz
 tz_offset = loader._offset_seconds_from_ts(start_time[0])
 unix_timestamp = [int(t.timestamp()) for t in start_time]
 duration = [60]*5  # in minutes
-location = ['h-x13-y11'] * 1 + ['h-x13-y8'] * 1 + ['r-x18-y10'] * 3
+location = ['h-x14-y11'] * 1 + ['h-x13-y8'] * 1 + ['r-x18-y10'] * 3
 
 destination = pd.DataFrame(
     {"datetime":start_time,
@@ -481,8 +485,8 @@ destination = pd.DataFrame(
 destination = tg.condense_destinations(destination)
 
 Charlie = Agent(identifier="Charlie",
-                home='h-x13-y11',
-                workplace='w-x15-y9',
+                home='h-x14-y11',
+                workplace='w-x16-y9',
                 city=city)
 
 Charlie.generate_trajectory(destination_diary=destination, seed=75)
@@ -711,7 +715,7 @@ d_diary = tg.condense_destinations(d_diary)
 # Daniel is slow
 Daniel = Agent(identifier="Daniel",
             home='p-x13-y11',
-            workplace='w-x15-y9',
+            workplace='w-x16-y9',
             city=city,
             still_probs=SLOW_STILL_PROBS,
             speeds=SLOW_SPEEDS,
@@ -723,7 +727,7 @@ Daniel.generate_trajectory(destination_diary=destination, seed=50)
 # Elaine is fast
 Elaine = Agent(identifier="Elaine",
             home='p-x13-y11',
-            workplace='w-x15-y9',
+            workplace='w-x16-y9',
             city=city,
             still_probs=FAST_STILL_PROBS,
             speeds=FAST_SPEEDS,
@@ -837,8 +841,8 @@ fig, ax = plt.subplots(figsize=(10, 10))
 city.plot_city(ax, doors=True, address=False)
 
 # Example: Plot shortest path between two buildings
-start_building_id = 'r-x12-y3'
-end_building_id = 'r-x15-y5'
+start_building_id = 'r-x12-y2'
+end_building_id = 'r-x15-y2'
 
 # Get building door coordinates using get_building method
 start_building = city.get_building(identifier=start_building_id)

@@ -18,6 +18,118 @@ def _load_fixture():
     boundary = gpd.read_file(gpkg, layer="boundary")
     return buildings, streets, boundary.geometry.iloc[0]
 
+def _create_garden_city():
+    """Create the Garden City from garden-city-paper-code.py for testing"""
+    city = City(dimensions=(22, 22))
+    city.add_building(building_type='park', door=(13, 11), geom=box(9, 9, 13, 13))
+    city.add_building(building_type='home', door=(8, 8), blocks=[(7, 7), (7, 8)])
+    city.add_building('home', (9, 8), [(8, 7), (9, 7)])
+    city.add_building('home', (10, 8), [(10, 7)])
+    city.add_building('home', (11, 8), [(11, 7)])
+    city.add_building('home', (13, 6), [(13, 7)])
+    city.add_building('home', (14, 6), [(14, 7)])
+    city.add_building('home', (13, 8), [(14, 8)])
+    city.add_building('home', (13, 9), [(14, 9)])
+    city.add_building('home', (13, 11), [(14, 11)])
+    city.add_building('home', (13, 12), [(14, 12)])
+    city.add_building('home', (15, 13), [(14, 13)])
+    city.add_building('home', (13, 13), [(13, 14), (14, 14)])
+    city.add_building('home', (12, 13), [(12, 14)])
+    city.add_building('home', (11, 13), [(11, 14)])
+    city.add_building('home', (9, 13), [(9, 14)])
+    city.add_building('home', (8, 13), [(8, 14)])
+    city.add_building('home', (7, 15), [(7, 14)])
+    city.add_building('home', (6, 13), [(7, 13)])
+    city.add_building('home', (8, 12), [(7, 12)])
+    city.add_building('home', (8, 10), [(7, 10), (7, 9)])
+    city.add_building('workplace', (3, 4), blocks=[(4, 4), (4, 5)])
+    city.add_building('workplace', (5, 3), blocks=[(5, 4), (5, 5)])
+    city.add_building('workplace', (6, 6), geom=box(6, 4, 8, 6))
+    city.add_building('workplace', (8, 6), geom=box(8, 4, 10, 6))
+    city.add_building('workplace', (12, 6), geom=box(11, 5, 14, 6))
+    city.add_building('workplace', (12, 3), geom=box(11, 4, 14, 5))
+    city.add_building('workplace', (15, 3), geom=box(14, 4, 17, 6))
+    city.add_building('workplace', (18, 4), geom=box(17, 4, 18, 6))
+    city.add_building('workplace', (18, 6), geom=box(16, 6, 18, 8))
+    city.add_building('workplace', (15, 9), geom=box(16, 8, 17, 10))
+    city.add_building('workplace', (18, 8), geom=box(17, 8, 18, 10))
+    city.add_building('workplace', (18, 10), geom=box(16, 10, 18, 12))
+    city.add_building('workplace', (18, 13), geom=box(16, 13, 18, 15))
+    city.add_building('workplace', (18, 15), geom=box(16, 15, 18, 16))
+    city.add_building('workplace', (15, 15), geom=box(15, 16, 18, 17))
+    city.add_building('workplace', (14, 15), blocks=[(14, 16)])
+    city.add_building('workplace', (16, 18), geom=box(16, 17, 18, 18))
+    city.add_building('workplace', (15, 18), geom=box(14, 17, 16, 18))
+    city.add_building('workplace', (13, 18), geom=box(12, 16, 14, 18))
+    city.add_building('workplace', (11, 18), geom=box(10, 17, 12, 18))
+    city.add_building('workplace', (11, 15), geom=box(10, 16, 12, 17))
+    city.add_building('workplace', (8, 18), geom=box(7, 16, 9, 18))
+    city.add_building('workplace', (6, 18), geom=box(5, 17, 7, 18))
+    city.add_building('workplace', (6, 15), geom=box(5, 16, 7, 17))
+    city.add_building('workplace', (3, 16), blocks=[(4, 16), (4, 17)])
+    city.add_building('workplace', (3, 13), geom=box(4, 13, 6, 16))
+    city.add_building('workplace', (6, 12), geom=box(4, 12, 6, 13))
+    city.add_building('workplace', (3, 10), blocks=[(4, 9), (4, 10)])
+    city.add_building('workplace', (6, 9), blocks=[(5, 9), (5, 10)])
+    city.add_building('workplace', (6, 8), blocks=[(4, 8), (5, 8)])
+    city.add_building('workplace', (3, 6), geom=box(4, 6, 6, 8))
+    city.add_building('retail', (0, 1), geom=box(1, 1, 3, 3))
+    city.add_building('retail', (3, 0), geom=box(3, 1, 5, 3))
+    city.add_building('retail', (5, 0), blocks=[(5, 1)])
+    city.add_building('retail', (5, 3), blocks=[(5, 2)])
+    city.add_building('retail', (6, 0), geom=box(6, 1, 8, 2))
+    city.add_building('retail', (6, 3), geom=box(6, 2, 8, 3))
+    city.add_building('retail', (9, 3), geom=box(9, 1, 10, 3))
+    city.add_building('retail', (12, 3), geom=box(10, 1, 13, 3))
+    city.add_building('retail', (14, 3), geom=box(13, 1, 15, 3))
+    city.add_building('retail', (15, 3), blocks=[(15, 2)])
+    city.add_building('retail', (16, 3), blocks=[(16, 2)])
+    city.add_building('retail', (15, 0), blocks=[(15, 1)])
+    city.add_building('retail', (16, 0), blocks=[(16, 1)])
+    city.add_building('retail', (17, 3), geom=box(17, 2, 19, 3))
+    city.add_building('retail', (18, 0), geom=box(17, 1, 19, 2))
+    city.add_building('retail', (19, 0), geom=box(19, 1, 21, 2))
+    city.add_building('retail', (18, 3), geom=box(19, 2, 21, 4))
+    city.add_building('retail', (18, 5), geom=box(19, 4, 21, 6))
+    city.add_building('retail', (18, 7), geom=box(19, 6, 20, 8))
+    city.add_building('retail', (21, 7), geom=box(20, 6, 21, 8))
+    city.add_building('retail', (18, 10), geom=box(19, 9, 21, 11))
+    city.add_building('retail', (18, 11), geom=box(19, 11, 21, 13))
+    city.add_building('retail', (18, 13), geom=box(19, 13, 20, 15))
+    city.add_building('retail', (21, 13), geom=box(20, 13, 21, 15))
+    city.add_building('retail', (21, 16), geom=box(19, 15, 21, 17))
+    city.add_building('retail', (21, 18), geom=box(19, 17, 21, 19))
+    city.add_building('retail', (21, 19), geom=box(19, 19, 21, 20))
+    city.add_building('retail', (20, 21), geom=box(19, 20, 21, 21))
+    city.add_building('retail', (17, 18), geom=box(17, 19, 18, 21))
+    city.add_building('retail', (16, 18), geom=box(16, 19, 17, 21))
+    city.add_building('retail', (14, 18), geom=box(13, 19, 16, 20))
+    city.add_building('retail', (15, 21), geom=box(14, 20, 16, 21))
+    city.add_building('retail', (13, 21), geom=box(12, 20, 14, 21))
+    city.add_building('retail', (12, 18), geom=box(12, 19, 13, 20))
+    city.add_building('retail', (11, 18), geom=box(10, 19, 12, 21))
+    city.add_building('retail', (9, 18), geom=box(8, 19, 10, 20))
+    city.add_building('retail', (9, 21), geom=box(8, 20, 10, 21))
+    city.add_building('retail', (6, 21), geom=box(5, 19, 7, 21))
+    city.add_building('retail', (4, 21), geom=box(3, 20, 5, 21))
+    city.add_building('retail', (4, 18), geom=box(3, 19, 5, 20))
+    city.add_building('retail', (2, 18), geom=box(2, 19, 3, 21))
+    city.add_building('retail', (1, 18), geom=box(1, 19, 2, 21))
+    city.add_building('retail', (3, 17), geom=box(1, 16, 3, 18))
+    city.add_building('retail', (3, 15), geom=box(1, 15, 3, 16))
+    city.add_building('retail', (3, 14), geom=box(1, 14, 3, 15))
+    city.add_building('retail', (3, 12), geom=box(1, 12, 3, 14))
+    city.add_building('retail', (3, 11), geom=box(1, 11, 3, 12))
+    city.add_building('retail', (3, 10), geom=box(1, 10, 3, 11))
+    city.add_building('retail', (3, 8), geom=box(1, 8, 3, 10))
+    city.add_building('retail', (3, 7), geom=box(1, 7, 3, 8))
+    city.add_building('retail', (0, 5), geom=box(1, 4, 2, 7))
+    city.add_building('retail', (3, 6), blocks=[(2, 6)])
+    city.add_building('retail', (3, 5), blocks=[(2, 5)])
+    city.add_building('retail', (3, 4), blocks=[(2, 4)])
+    city.get_street_graph()
+    return city
+
 def test_city_to_geodataframes_and_persist(tmp_path):
     # Small deterministic city
     rcg = RandomCityGenerator(width=10, height=10, street_spacing=5, seed=1)
@@ -333,6 +445,34 @@ def test_compute_gravity_callable():
         assert np.allclose(dense_row, callable_row, atol=1e-5)
 
 
+def test_compute_gravity_true_distance():
+    buildings, streets, boundary = _load_fixture()
+    buildings = buildings.head(50)
+    
+    city = RasterCity(boundary, streets, buildings, block_side_length=15.0)
+    city.compute_gravity(exponent=2.0, callable_only=False, use_proxy_hub_distance=False)
+    
+    n_buildings = len(city.buildings_gdf)
+    assert city.grav.shape == (n_buildings, n_buildings)
+    
+    mask = ~np.eye(n_buildings, dtype=bool)
+    finite_mask = np.isfinite(city.grav.values)
+    assert (city.grav.values[mask & finite_mask] > 0).all()
+    
+    city_callable = RasterCity(boundary, streets, buildings, block_side_length=15.0)
+    city_callable.compute_gravity(exponent=2.0, callable_only=True, use_proxy_hub_distance=False)
+    
+    assert callable(city_callable.grav)
+    
+    rng = np.random.default_rng(42)
+    test_buildings = rng.choice(city.buildings_gdf['id'].values, size=3, replace=False)
+    
+    for bid in test_buildings:
+        dense_row = city.grav.loc[bid].values
+        callable_row = city_callable.grav(bid).values
+        assert np.allclose(dense_row, callable_row, atol=1e-5)
+
+
 def test_resolve_overlaps():
     buildings, streets, boundary = _load_fixture()
     buildings = buildings.head(100)
@@ -416,6 +556,70 @@ def test_gravity_persistence_no_data(tmp_path):
     city2 = City.from_geopackage(str(gpkg_path), load_gravity=True)
     
     assert not hasattr(city2, 'grav') or city2.grav is None or not callable(city2.grav)
+
+
+def test_blocks_persistence_without_save(tmp_path):
+    """
+    Test that blocks_gdf is correctly regenerated after loading when not persisted.
+    Regression test for bug where dimension calculation used geometry bounds instead
+    of grid coordinates, losing the final row/column on reload.
+    
+    Uses Garden City from garden-city-paper-code.py as the test fixture.
+    """
+    city = _create_garden_city()
+    
+    # Record original state
+    blocks_before = len(city.blocks_gdf)
+    max_x_before = city.blocks_gdf['coord_x'].max()
+    max_y_before = city.blocks_gdf['coord_y'].max()
+    blocks_index_before = set(city.blocks_gdf.index)
+    
+    # Save without blocks (they'll be regenerated)
+    gpkg_path = tmp_path / "garden_city_no_blocks.gpkg"
+    city.save_geopackage(str(gpkg_path), persist_blocks=False)
+    
+    # Load back
+    city2 = City.from_geopackage(str(gpkg_path))
+    
+    # Verify blocks_gdf was correctly regenerated
+    assert len(city2.blocks_gdf) == blocks_before, \
+        f"Expected {blocks_before} blocks, got {len(city2.blocks_gdf)}"
+    assert city2.blocks_gdf['coord_x'].max() == max_x_before, \
+        f"Max coord_x changed from {max_x_before} to {city2.blocks_gdf['coord_x'].max()}"
+    assert city2.blocks_gdf['coord_y'].max() == max_y_before, \
+        f"Max coord_y changed from {max_y_before} to {city2.blocks_gdf['coord_y'].max()}"
+    
+    # Verify critical blocks exist (regression test for missing row/column 21)
+    assert (21, 0) in city2.blocks_gdf.index, "Block (21, 0) missing after load"
+    assert (21, 21) in city2.blocks_gdf.index, "Block (21, 21) missing after load"
+    assert (0, 21) in city2.blocks_gdf.index, "Block (0, 21) missing after load"
+
+
+def test_blocks_persistence_with_save(tmp_path):
+    """
+    Test that blocks_gdf is correctly persisted and restored when persist_blocks=True.
+    Verify blocks are identical whether persisted or regenerated.
+    """
+    city = _create_garden_city()
+    
+    # Record original state
+    blocks_before = len(city.blocks_gdf)
+    blocks_index_before = set(city.blocks_gdf.index)
+    
+    # Save WITH blocks persisted
+    gpkg_path = tmp_path / "garden_city_with_blocks.gpkg"
+    city.save_geopackage(str(gpkg_path), persist_blocks=True)
+    
+    # Load back
+    city2 = City.from_geopackage(str(gpkg_path))
+    
+    # Verify blocks_gdf was correctly restored
+    assert len(city2.blocks_gdf) == blocks_before
+    assert set(city2.blocks_gdf.index) == blocks_index_before
+    
+    # Verify all original blocks still exist
+    for coord in blocks_index_before:
+        assert coord in city2.blocks_gdf.index, f"Block {coord} missing after load"
 
 
 def test_unique_building_ids():
