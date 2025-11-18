@@ -352,7 +352,7 @@ def test_gravity_persistence_with_load(tmp_path):
     """
     Test saving and loading gravity infrastructure with load_gravity=True.
     """
-    rcg = RandomCityGenerator(width=10, height=10, street_spacing=5, seed=42)
+    rcg = RandomCityGenerator(width=10, height=10, street_spacing=5, seed=123)
     city = rcg.generate_city()
     
     city._build_hub_network(hub_size=50)
@@ -386,7 +386,7 @@ def test_gravity_persistence_without_load(tmp_path):
     """
     Test saving gravity infrastructure but loading without it (load_gravity=False).
     """
-    rcg = RandomCityGenerator(width=10, height=10, street_spacing=5, seed=42)
+    rcg = RandomCityGenerator(width=10, height=10, street_spacing=5, seed=123)
     city = rcg.generate_city()
     
     city._build_hub_network(hub_size=50)

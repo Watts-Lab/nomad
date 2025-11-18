@@ -190,6 +190,9 @@ class City:
         # Precomputed shortest paths (optional, built on demand via compute_shortest_paths)
         self.shortest_paths = None
         self.street_graph = None
+        # Hub network for efficient gravity computation (optional, built on demand)
+        self.hubs = None
+        self.hub_df = None
 
     def _derive_streets_from_blocks(self):
         """
@@ -610,102 +613,33 @@ class City:
     def _select_hubs(self, hub_size = 100):
         """
         Compute evenly spaced street blocks as hubs by partitioning coordinates into quantile buckets
-        and selecting one hub from each bucket pair.
+        and selecting one hub from each bucket pair. Only selects from largest connected component
+        to ensure all hubs are mutually reachable.
         """
+        G = self.get_street_graph()
+        if not nx.is_connected(G):
+            largest_component = max(nx.connected_components(G), key=len)
+            streets_subset = self.streets_gdf.loc[self.streets_gdf.index.intersection(largest_component)]
+        else:
+            streets_subset = self.streets_gdf
+        
         n_buckets = int(np.sqrt(hub_size))
         
         # Create quantile buckets (not added to the dataframe)
-        x_buckets = pd.qcut(self.streets_gdf['coord_x'], n_buckets, labels=False, duplicates='drop')
-        y_buckets = pd.qcut(self.streets_gdf['coord_y'], n_buckets, labels=False, duplicates='drop')
+        x_buckets = pd.qcut(streets_subset['coord_x'], n_buckets, labels=False, duplicates='drop')
+        y_buckets = pd.qcut(streets_subset['coord_y'], n_buckets, labels=False, duplicates='drop')
         
         # Select one hub from each (x_bucket, y_bucket) pair
         hubs = []
         for x_bucket in range(n_buckets):
             for y_bucket in range(n_buckets):
-                subset = self.streets_gdf[(x_buckets == x_bucket) & (y_buckets == y_bucket)]
+                subset = streets_subset[(x_buckets == x_bucket) & (y_buckets == y_bucket)]
                 if not subset.empty:
                     hub_coord = subset.index[0]
                     # Convert to Python int tuple to match graph node format
                     hubs.append((int(hub_coord[0]), int(hub_coord[1])))
         
         return hubs
-
-    def _compute_nearest_hub_and_next_step(self, hubs: set):
-        """
-        Multi-source BFS from all hubs.
-        For each node v, compute:
-          - nearest_hub[v]: the hub assigned to v
-          - next_to_hub[v]: the next node to step to in order to reach nearest_hub[v]
-        """
-        from collections import deque
-
-        G = self.street_graph
-        nearest_hub = {}
-        next_to_hub = {}
-        visited = set()
-
-        dq = deque()
-        for h in hubs:
-            dq.append(h)
-            nearest_hub[h] = h
-            next_to_hub[h] = h  # self pointer for hubs
-            visited.add(h)
-
-        while dq:
-            u = dq.popleft()
-            for w in G.neighbors(u):
-                if w in visited:
-                    continue
-                visited.add(w)
-                nearest_hub[w] = nearest_hub[u]
-                # The next step to hub for w is u (the node we came from)
-                next_to_hub[w] = u
-                dq.append(w)
-
-        return nearest_hub, next_to_hub
-
-    def _compute_hub_next_hop(self, hubs: set):
-        """
-        For each hub s, run a BFS and assign for every other hub t the first step to take
-        from s along the shortest path to t. Stops early when all hubs are discovered.
-        Returns: dict-of-dicts next_hop[s][t] -> neighbor node (first step from s).
-        """
-        from collections import deque
-
-        G = self.street_graph
-        hubs_list = list(hubs)
-        hub_set = set(hubs_list)
-        next_hop = {h: {} for h in hubs_list}
-
-        for s in hubs_list:
-            seen = set([s])
-            first_step = {s: s}
-            dq = deque()
-            # Initialize with immediate neighbors of s; their first_step is themselves
-            for n in G.neighbors(s):
-                if n not in seen:
-                    seen.add(n)
-                    first_step[n] = n
-                    dq.append(n)
-
-            remaining = hub_set - {s}
-            while dq and remaining:
-                u = dq.popleft()
-                if u in hub_set and u in remaining:
-                    next_hop[s][u] = first_step[u]
-                    remaining.remove(u)
-                    # Note: continue exploring to potentially find other hubs
-                for w in G.neighbors(u):
-                    if w in seen:
-                        continue
-                    seen.add(w)
-                    first_step[w] = first_step[u]
-                    dq.append(w)
-
-            # ensure self-case exists
-            next_hop[s][s] = s
-
-        return next_hop
 
     # ---------------------------------------------------------------------
     # Building-to-building gravity
@@ -735,6 +669,11 @@ class City:
         
         Stores result in self.grav as DataFrame (callable_only=False) or callable (callable_only=True)
         """
+        if self.hubs is None:
+            hub_size = int(len(self.buildings_gdf) / 1000) + 5
+            warnings.warn(f"Hub network not available. Initializing with {hub_size} hubs.")
+            self._build_hub_network(hub_size=hub_size)
+        
         # Part 1: Compute lean distance structures
         building_ids = self.buildings_gdf['id'].to_numpy()
         door_x = self.buildings_gdf['door_cell_x'].astype(int).to_numpy()
