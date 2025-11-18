@@ -64,6 +64,13 @@ Installation
    source/poi_synthetic
    source/poi_osm
 
+.. toctree::
+   :maxdepth: 2
+   :caption: API Reference
+   :hidden:
+
+   api_reference
+
 Modules Overview
 ----------------
 
