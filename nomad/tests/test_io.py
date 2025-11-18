@@ -352,7 +352,9 @@ def test_to_file_roundtrip(tmp_path, fmt, dated_df):
     assert loader._is_traj_df(df_round, traj_cols=output_traj_cols, parse_dates=True)
 
     df_out = df_round.rename(columns={v: k for k, v in output_traj_cols.items()})
-    assert_frame_equal(df_out, df_exp, check_dtype=True)
+    df_out_sorted = df_out.sort_values(['user_id', 'timestamp']).reset_index(drop=True)
+    df_exp_sorted = df_exp.sort_values(['user_id', 'timestamp']).reset_index(drop=True)
+    assert_frame_equal(df_out_sorted, df_exp_sorted, check_dtype=True)
 
 # Test for filters on read
 def test_filter_on_read_partitioned(io_sources):

@@ -42,8 +42,23 @@ def _fallback_spatial_cols(col_names, traj_cols, kwargs):
     '''
     traj_cols = _parse_traj_cols(col_names, traj_cols, kwargs, defaults={}, warn=False)
     
-    # check for sufficient spatial coords
-    _has_spatial_cols(col_names, traj_cols, exclusive=True)
+    user_specified_spatial = any(k in traj_cols for k in ['latitude', 'longitude', 'x', 'y'])
+    
+    if user_specified_spatial:
+        _has_spatial_cols(col_names, traj_cols, exclusive=True)
+    else:
+        # Auto-detect from DataFrame, prefer x/y
+        has_x_y = 'x' in col_names and 'y' in col_names
+        has_lon_lat = 'latitude' in col_names and 'longitude' in col_names
+        
+        if has_x_y:
+            traj_cols['x'] = 'x'
+            traj_cols['y'] = 'y'
+        elif has_lon_lat:
+            traj_cols['latitude'] = 'latitude'
+            traj_cols['longitude'] = 'longitude'
+        else:
+            raise ValueError("No spatial columns found in DataFrame")
 
     use_lon_lat = ('latitude' in traj_cols and 'longitude' in traj_cols)
     if use_lon_lat:
@@ -205,11 +220,10 @@ def _extract_naive_and_offset(dt_str):
     sign = np.where(offset_part.str[0] == '-', -1, 1)
     hours = offset_part.str[1:3].astype(int)
     minutes = offset_part.str[4:6].astype(int)
-    offset_seconds = np.where(
-        has_offset,
-        sign * (hours * 3600 + minutes * 60),
-        np.nan
-    ).astype(int)
+    offset_seconds = pd.array(
+        np.where(has_offset, sign * (hours * 3600 + minutes * 60), np.nan),
+        dtype="Int64"
+    )
     return naive_str, offset_seconds
 
 def _custom_parse_date(series, parse_dates, mixed_timezone_behavior, fixed_format, check_valid_datetime_str=True):
@@ -589,7 +603,7 @@ def _process_datetime_column(df, col, parse_dates, mixed_timezone_behavior, fixe
         has_tz = ('tz_offset' in traj_cols) and (traj_cols['tz_offset'] in df.columns)
         if parse_dates and mixed_timezone_behavior == 'naive' and not has_tz:
             if offset is not None and not offset.isna().all():
-                df[traj_cols['tz_offset']] = offset.astype("Int64") #overwrite offset?
+                df[traj_cols['tz_offset']] = offset
 
         if parse_dates and is_object_dtype(df[col].dtype) and _has_mixed_timezones(df[col]):
              warnings.warn(f"The '{col}' column has mixed timezones after processing.")
@@ -917,11 +931,6 @@ def from_file(filepath,
     assert format in ["csv", "parquet"]
 
     column_names = table_columns(filepath, format=format, sep=sep)
-    col_schema = None
-    if filters is not None:
-        col_schema = table_columns(filepath, format=format,
-                                   include_schema=True, sep=sep)
-        
     traj_cols = _parse_traj_cols(column_names, traj_cols, kwargs)
 
     _has_spatial_cols(column_names, traj_cols)
@@ -953,7 +962,7 @@ def from_file(filepath,
         arrow_flt = _process_filters(filters,
                              col_names=column_names,
                              traj_cols=traj_cols,
-                             schema=col_schema,
+                             schema=dataset_obj.schema,
                              use_pyarrow_dataset=use_pyarrow_dataset)
         df = (
             dataset_obj
@@ -969,13 +978,12 @@ def from_file(filepath,
         }
         read_csv_kwargs['parse_dates'] = False
         df = pd.read_csv(filepath, sep=sep, **read_csv_kwargs)
-                # build a boolean mask from tuple filters
         if filters is not None:
             mask_func = _process_filters(
                 filters,
                 col_names=df.columns,
                 traj_cols=traj_cols,
-                schema=schema,
+                schema=df.dtypes,
                 use_pyarrow_dataset=False
             )
             df = df[mask_func(df)]
@@ -1055,10 +1063,6 @@ def sample_users(
     assert format in {"csv", "parquet"}
 
     column_names = table_columns(filepath, format=format, sep=sep)
-    schema = None
-    if filters is not None:
-        schema = table_columns(filepath, format=format,
-                               include_schema=True, sep=sep)
 
     if within is not None:
         coord_key1, coord_key2, use_lat_lon = _fallback_spatial_cols(column_names, traj_cols, kwargs)
@@ -1145,8 +1149,8 @@ def sample_users(
         arrow_flt = _process_filters(filters,
                                      col_names=column_names,
                                      traj_cols=traj_cols,
-                                     schema=schema,
-                                     use_pyarrow_dataset=use_pyarrow_dataset) # What happens with timezones??
+                                     schema=dataset_obj.schema,
+                                     use_pyarrow_dataset=use_pyarrow_dataset)
         if within is not None:
             table = dataset_obj.to_table(columns=[uid_col, traj_cols[coord_key1], traj_cols[coord_key2]], filter=arrow_flt)
             df = table.to_pandas()
@@ -1164,15 +1168,13 @@ def sample_users(
         }
         if filters is None:
             df = pd.read_csv(filepath, usecols=[uid_col], sep=sep, **read_csv_kwargs)
-        else:                                    # need all columns for filtering
+        else:
             df = pd.read_csv(filepath, sep=sep, **read_csv_kwargs)
-    
-            # build a boolean mask from tuple filters
             mask_func = _process_filters(
                 filters,
                 col_names=df.columns,
                 traj_cols=traj_cols,
-                schema=schema,
+                schema=df.dtypes,
                 use_pyarrow_dataset=False
             )
             df = df[mask_func(df)]
@@ -1249,9 +1251,6 @@ def sample_from_file(
     assert format in {"csv", "parquet"}
 
     column_names = table_columns(filepath, format=format, sep=sep)
-    schema = None
-    if filters is not None:
-        schema = table_columns(filepath, format=format, include_schema=True, sep=sep)
 
     poly = None
     coord_key1 = coord_key2 = None
@@ -1339,7 +1338,7 @@ def sample_from_file(
             filters,
             col_names=column_names,
             traj_cols=traj_cols,
-            schema=schema,
+            schema=dataset_obj.schema,
             use_pyarrow_dataset=True
         )
 
@@ -1358,7 +1357,7 @@ def sample_from_file(
                 filters,
                 col_names=df.columns,
                 traj_cols=traj_cols,
-                schema=schema,
+                schema=df.dtypes,
                 use_pyarrow_dataset=False
             )(df)
             df = df[mask]
