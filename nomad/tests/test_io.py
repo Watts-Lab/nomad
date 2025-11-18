@@ -311,7 +311,6 @@ def test_from_file_alias_equivalence_csv(io_sources):
         parse_dates=True,
     )
     df_via_file = loader.from_file(path, format=fmt, **alias_kwargs)
-
     raw = pd.read_csv(path)                   # plain pandas load
     df_via_df   = loader.from_df(raw, **alias_kwargs)
 
@@ -331,7 +330,7 @@ def test_to_file_roundtrip(tmp_path, fmt, dated_df):
     """
     Tests to_file and from_file using standard columns and output_traj_cols remapping.
     """
-    dated_df = loader.from_df(dated_df)
+    df_exp = loader.from_df(dated_df, parse_dates=True)
     output_traj_cols = {
         "user_id": "u",
         "timestamp": "ts",
@@ -343,19 +342,19 @@ def test_to_file_roundtrip(tmp_path, fmt, dated_df):
 
     if fmt == "csv":
         out_path = tmp_path / "trip.csv"
-        loader.to_file(dated_df, out_path, format="csv", output_traj_cols=output_traj_cols)
+        loader.to_file(df_exp, out_path, format="csv", output_traj_cols=output_traj_cols)
+
     else:
         out_path = tmp_path / "trip_parquet"
-        loader.to_file(dated_df, out_path, format="parquet", output_traj_cols=output_traj_cols, partition_by=["date"])
+        loader.to_file(df_exp, out_path, format="parquet", output_traj_cols=output_traj_cols, partition_by=["date"])
 
     df_round = loader.from_file(out_path, format=fmt, traj_cols=output_traj_cols, parse_dates=True)
     assert loader._is_traj_df(df_round, traj_cols=output_traj_cols, parse_dates=True)
 
     df_out = df_round.rename(columns={v: k for k, v in output_traj_cols.items()})
-    df_out = df_out.sort_values(["user_id", "timestamp"]).reset_index(drop=True)
-    df_exp = dated_df.sort_values(["user_id", "timestamp"]).reset_index(drop=True)
-
-    assert_frame_equal(df_out, df_exp, check_dtype=True)
+    df_out_sorted = df_out.sort_values(['user_id', 'timestamp']).reset_index(drop=True)
+    df_exp_sorted = df_exp.sort_values(['user_id', 'timestamp']).reset_index(drop=True)
+    assert_frame_equal(df_out_sorted, df_exp_sorted, check_dtype=True)
 
 # Test for filters on read
 def test_filter_on_read_partitioned(io_sources):

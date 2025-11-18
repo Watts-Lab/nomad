@@ -259,35 +259,29 @@ def _fallback_time_cols(col_names, traj_cols, kwargs):
             
     return t_key, use_datetime
 
-# should this be moved to io.utils?
 def _fallback_st_cols(col_names, traj_cols, kwargs):
     '''
     Helper function to decide whether to use latitude and longitude or x,y,
     as well as datetime vs timestamp in cases of ambiguity
     '''
-    traj_cols = loader._parse_traj_cols(col_names, traj_cols, kwargs, defaults={}, warn=False)
+    # Use spatial fallback from io.base
+    coord_key1, coord_key2, use_lon_lat = loader._fallback_spatial_cols(col_names, traj_cols, kwargs)
+
+    # Parse with empty defaults for temporal detection
+    traj_cols_parsed = loader._parse_traj_cols(col_names, traj_cols, kwargs, defaults={}, warn=False)
     
-    # check for sufficient spatial coords
-    loader._has_spatial_cols(col_names, traj_cols, exclusive=True) 
-
-    use_lon_lat = ('latitude' in traj_cols and 'longitude' in traj_cols)
-    if use_lon_lat:
-        coord_key1, coord_key2 = 'longitude', 'latitude'
-    else:
-        coord_key1, coord_key2 = 'x', 'y'
-
     # check for explicit datetime usage
     t_keys = ['timestamp', 'start_timestamp', 'datetime', 'start_datetime']
     if 'datetime' in kwargs or 'start_datetime' in kwargs: # prioritize datetime 
         t_keys = t_keys[-2:] + t_keys[:2]
 
     # load defaults and check for time columns
-    traj_cols = loader._update_schema(constants.DEFAULT_SCHEMA, traj_cols)
-    loader._has_time_cols(col_names, traj_cols)
+    traj_cols_parsed = loader._update_schema(constants.DEFAULT_SCHEMA, traj_cols_parsed)
+    loader._has_time_cols(col_names, traj_cols_parsed)
 
     for t_key in t_keys:
-        if traj_cols[t_key] in col_names:
-            use_datetime = (t_key in ['datetime', 'start_datetime']) ## necessary?
+        if traj_cols_parsed[t_key] in col_names:
+            use_datetime = (t_key in ['datetime', 'start_datetime'])
             break
             
     return t_key, coord_key1, coord_key2, use_datetime, use_lon_lat
@@ -405,6 +399,13 @@ def summarize_stop_grid(
     out = {
         cols[start_key]: start_ts,
     }
+    
+    # Always include duration (consistent with other algorithms)
+    out['duration'] = (
+        (end_ts - start_ts).total_seconds()//60
+        if use_datetime else
+        (end_ts - start_ts)//60
+    )
 
     if complete_output:
         out[cols[end_key]] = end_ts
@@ -416,11 +417,6 @@ def summarize_stop_grid(
             int(diffs.max()//60) if len(diffs) else 0
         )
         out['max_gap']    = max_gap
-        out['duration'] = (
-            (end_ts - start_ts).total_seconds()//60
-            if use_datetime else
-            (end_ts - start_ts)//60
-        )
 
 
     # 5) always pass through location_id & geometry & any others
@@ -484,10 +480,10 @@ def _get_empty_stop_columns(input_columns, complete_output, passthrough_cols, tr
             cols[end_key] = end_key
         
         # Build column list
-        column_list = [cols[start_key]]
+        column_list = [cols[start_key], 'duration']
         
         if complete_output:
-            column_list.extend([cols[end_key], 'n_pings', 'max_gap', 'duration'])
+            column_list.extend([cols[end_key], 'n_pings', 'max_gap'])
         
         # Add location_id and geometry
         column_list.append(cols['location_id'])

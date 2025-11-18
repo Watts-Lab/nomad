@@ -75,6 +75,14 @@ def remove_overlaps(data, time_thresh=None, min_pts=None, dist_thresh=None, dur_
             summarize_stops = False
         pred = data.copy()
     
+    # Handle empty data - return appropriate type based on summarize_stops
+    if data.empty:
+        if summarize_stops:
+            return data  # Return empty DataFrame
+        else:
+            # Return empty Series with cluster column name
+            return pd.Series([], name='cluster', dtype=data.get('cluster', pd.Series(dtype=int)).dtype)
+    
     # load kwarg and traj_col args onto lean defaults
     traj_cols = loader._parse_traj_cols(
         pred.columns,

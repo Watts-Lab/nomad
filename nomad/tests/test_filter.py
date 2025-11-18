@@ -276,6 +276,7 @@ def test_projection_and_within(simple_df_one_user):
     assert mask.sum() > 0
 
 def test_projection_and_within_wrong_cols(simple_df_one_user):
+    """Test that when both lat/lon and x/y are present, auto-detection prefers x/y."""
     projected_x, projected_y = to_projection(data=simple_df_one_user,
                                              data_crs="EPSG:4326",
                                              crs_to="EPSG:3857",
@@ -286,9 +287,11 @@ def test_projection_and_within_wrong_cols(simple_df_one_user):
     
     simple_df_one_user['x'] = projected_x
     simple_df_one_user['y'] = projected_y
-    # Without specifying x/y names, spatial ops should fail due to missing coord mapping
-    with pytest.raises(ValueError):
-        is_within(simple_df_one_user, polygon, data_crs='EPSG:3857')
+    # Without specifying column names, auto-detection should prefer x/y over lat/lon
+    mask = is_within(simple_df_one_user, polygon, data_crs='EPSG:3857')
+    # Should successfully use x/y coordinates and find points within polygon
+    assert isinstance(mask, pd.Series)
+    assert mask.sum() > 0
 
 def test_completeness_time_window(simple_df_one_user):
     comp = completeness(simple_df_one_user, periods=1, freq='min', traj_cols=None, user_id='user_id', timestamp='timestamp')
