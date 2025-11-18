@@ -7,6 +7,7 @@
 5. **All imports go at the beginning of the file, never inside functions.**
 6. **Double for loops are to be avoided at all costs.** As well as dictionaries when a pandas series or dataframe can do the job. We need to rely on the highly optimized and vectorized functions provided by numpy, pandas, and geopandas.
 7. **Do not edit the code before sharing a plan with the user and explaining WHY it adheres to the coding principles.**
+8. **Never dismiss test failures or errors as "unrelated to our changes."** 99% of the time they ARE related. Investigate thoroughly with DEBUG statements and proper debugging before making any claims about causality.
 
 ## Testing and Development Environment
 
