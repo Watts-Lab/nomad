@@ -15,16 +15,6 @@ import sys
 sys.path.insert(0, os.path.abspath('..'))
 sys.path.insert(0, os.path.abspath('../src'))
 
-# Custom function to get clean module names for autosummary
-def autosummary_import(module_name):
-    """Import module and return it, used by autosummary."""
-    return __import__(module_name, fromlist=[''])
-
-# Custom function to format module names in autosummary table
-def get_module_short_name(fullname):
-    """Return the last component of a module name."""
-    return fullname.split('.')[-1]
-
 
 # -- Project information -----------------------------------------------------
 
@@ -48,8 +38,6 @@ extensions = [
     "sphinx.ext.todo",
     "sphinx.ext.viewcode",
     "sphinx.ext.autodoc",
-    "sphinx.ext.autosummary",
-    "sphinx.ext.napoleon",  # Support for Google/NumPy style docstrings
     'sphinx_rtd_theme',
     'sphinx_design'
 ]
@@ -65,48 +53,6 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 # Don't execute notebooks during build (use pre-executed outputs)
 nbsphinx_execute = 'never'
 
-# -- Options for autodoc ------------------------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/extensions/autodoc.html#configuration
-
-# Automatically generate summaries for autosummary
-autosummary_generate = True
-
-# Order members by source order, not alphabetically
-autodoc_member_order = 'bysource'
-
-# Include both class and __init__ docstrings
-autoclass_content = 'both'
-
-# Don't prepend module names to object names (cleaner display)
-add_module_names = False
-
-# Default options for autodoc directives
-autodoc_default_options = {
-    'members': True,
-    'member-order': 'bysource',
-    'special-members': '__init__',
-    'undoc-members': False,
-    'exclude-members': '__weakref__'
-}
-
-# -- Options for Napoleon (Google/NumPy style docstrings) ---------------------
-# https://www.sphinx-doc.org/en/master/usage/extensions/napoleon.html
-
-napoleon_google_docstring = True
-napoleon_numpy_docstring = True
-napoleon_include_init_with_doc = False
-napoleon_include_private_with_doc = False
-napoleon_include_special_with_doc = True
-napoleon_use_admonition_for_examples = False
-napoleon_use_admonition_for_notes = False
-napoleon_use_admonition_for_references = False
-napoleon_use_ivar = False
-napoleon_use_param = True
-napoleon_use_rtype = True
-napoleon_preprocess_types = False
-napoleon_type_aliases = None
-napoleon_attr_annotations = True
-
 
 # -- Options for HTML output -------------------------------------------------
 
@@ -115,7 +61,15 @@ napoleon_attr_annotations = True
 #
 html_theme = 'sphinx_rtd_theme'
 
+# Theme options to customize the appearance
+html_theme_options = {
+    'logo_only': True,  # Only show the logo, not the project name
+    'display_version': False,  # Don't display version info
+}
+
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
+
+html_logo = "_static/nomad-logo-black.png"
