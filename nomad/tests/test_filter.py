@@ -111,6 +111,11 @@ def test_to_timestamp(base_df):
     timestamp_col = to_timestamp(base_df.local_datetime, base_df.tz_offset)
     assert np.array_equal(timestamp_col.values, base_df.timestamp.values)
 
+def test_to_timestamp_scalar():
+    result = to_timestamp("2024-01-01 00:00-05:00")
+    assert isinstance(result, (int, np.integer))
+    assert result == 1704085200
+
 def test_to_yyyymmdd_roundtrip_simple():
     s = pd.to_datetime(pd.Series([
         '2024-01-02T23:59:59Z',

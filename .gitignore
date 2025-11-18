@@ -23,6 +23,7 @@ examples/research/**/*.png
 # OSM cache and large outputs
 cache/
 examples/output/
+examples/research/virtual_philadelphia/*.gpkg
 
 # macOS system file
 .DS_Store
@@ -62,3 +63,4 @@ virtual-environments/
 .DS_Store
 Thumbs.db
 *.tmp
+sandbox/sandbox_data.gpkg

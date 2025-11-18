@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.1
+#       jupytext_version: 1.17.3
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -22,19 +22,23 @@ import json
 from tqdm import tqdm
 import os
 
-# %%
 import nomad.io.base as loader
 import nomad.city_gen as cg
 import nomad.traj_gen as tg
-from nomad.traj_gen import Agent, Population, garden_city_to_mercator
+from nomad.traj_gen import Agent, Population
 from nomad.city_gen import City
+
+import nomad.data as data_folder
+from pathlib import Path
+data_dir = Path(data_folder.__file__).parent
+path = data_dir / "garden_city.gpkg"
 
 # %% [markdown]
 # ## Load city and configure destination diaries
 
 # %%
 # Load the city
-city_file = '../../garden-city.gpkg'
+city_file = data_dir / "garden-city.gpkg"
 city = cg.City.from_geopackage(city_file)
 start = '2024-06-01 00:00-04:00'
 
@@ -42,7 +46,7 @@ start = '2024-06-01 00:00-04:00'
 start_time = pd.date_range(start=start, periods=4, freq='60min')
 unix_timestamp = [int(t.timestamp()) for t in start_time]
 duration = [60]*4  # in minutes
-location = ['h-x13-y11'] * 1 + ['h-x13-y9'] * 1 + ['w-x18-y10'] * 1 + ['w-x18-y8'] * 1
+location = ['h-x14-y11'] * 1 + ['h-x14-y9'] * 1 + ['w-x17-y10'] * 1 + ['w-x17-y8'] * 1
 
 destinations = pd.DataFrame(
     {
@@ -58,7 +62,7 @@ destinations.to_csv("exp_1_destinations_balanced.csv", index=False)
 start_time = pd.date_range(start=start, periods=8, freq='30min')
 unix_timestamp = [int(t.timestamp()) for t in start_time]
 duration = [30]*8 
-location = ['h-x13-y11'] * 2 + ['h-x13-y9'] * 1 + ['w-x18-y10'] * 2 + ['w-x18-y8'] * 3
+location = ['h-x14-y11'] * 2 + ['h-x14-y9'] * 1 + ['w-x17-y10'] * 2 + ['w-x17-y8'] * 3
 
 destinations = pd.DataFrame(
     {
@@ -83,7 +87,7 @@ config = dict(
     N = N_reps*sparsity_samples,
     name_count=2,
     name_seed=2025,
-    city_file='../../garden-city.gpkg',
+    city_file=str(data_dir / "garden-city.gpkg"),
     destination_diary_file='exp_1_destinations_balanced.csv',
     output_files = dict(
         sparse_path='./sparse_traj_1',
@@ -91,8 +95,8 @@ config = dict(
         homes_path='./homes_1'
     ),
     agent_params = dict(
-        agent_homes='h-x13-y11',
-        agent_workplaces='w-x18-y8',
+        agent_homes='h-x14-y11',
+        agent_workplaces='w-x17-y8',
         seed_trajectory=list(range(N_reps*sparsity_samples)),
         seed_sparsity= list(range(N_reps*sparsity_samples)),
         beta_ping= np.repeat(np.linspace(1, 20, sparsity_samples), N_reps).tolist(),
@@ -112,7 +116,7 @@ config_2 = dict(
     N = N_reps*sparsity_samples,
     name_count=2,
     name_seed=2025,
-    city_file='../../garden-city.gpkg',
+    city_file=str(data_dir / "garden-city.gpkg"),
     destination_diary_file='exp_1_destinations_unbalanced.csv',
     output_files = dict(
         sparse_path='./sparse_traj_2',
@@ -120,8 +124,8 @@ config_2 = dict(
         homes_path='./homes_2'
     ),
     agent_params = dict(
-        agent_homes='h-x13-y11',
-        agent_workplaces='w-x18-y8',
+        agent_homes='h-x14-y11',
+        agent_workplaces='w-x17-y8',
         seed_trajectory=list(range(N_reps*sparsity_samples)),
         seed_sparsity= list(range(N_reps*sparsity_samples)),
         beta_ping= np.repeat(np.linspace(1, 20, sparsity_samples), N_reps).tolist(),
@@ -144,18 +148,17 @@ with open('config_high_ha.json', 'r', encoding='utf-8') as f:
 # Load city and destination diary from config
 city = City.from_geopackage(config["city_file"])
 # Build POI data from buildings_gdf door info
-cent = city.buildings_gdf['door_point'] if 'door_point' in city.buildings_gdf.columns else city.buildings_gdf.geometry.centroid
 poi_data = pd.DataFrame({
     'building_id': city.buildings_gdf['id'].values,
-    'x': (city.buildings_gdf['door_cell_x'].astype(float) + 0.5).values if 'door_cell_x' in city.buildings_gdf.columns else cent.x.values,
-    'y': (city.buildings_gdf['door_cell_y'].astype(float) + 0.5).values if 'door_cell_y' in city.buildings_gdf.columns else cent.y.values
+    'x': city.buildings_gdf['door_point'].apply(lambda p: p[0]).values,
+    'y': city.buildings_gdf['door_point'].apply(lambda p: p[1]).values
 })
 
 destinations = pd.read_csv(config["destination_diary_file"], parse_dates=["datetime"])
 
 population = Population(city)
 population.generate_agents(
-    N=config["N"], 
+    N=config["N"],
     seed=config["name_seed"], 
     name_count=config["name_count"],
     agent_homes=config["agent_params"]["agent_homes"],

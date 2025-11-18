@@ -8,9 +8,9 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.17.3
 #   kernelspec:
-#     display_name: Python (nomad repo venv)
+#     display_name: Python 3 (ipykernel)
 #     language: python
-#     name: nomad-repo-venv
+#     name: python3
 # ---
 
 # %% [markdown]
@@ -53,8 +53,6 @@ city.add_building(building_type='park', door=(13, 11), geom=box(9, 9, 13, 13))
 # add a home
 city.add_building(building_type='home', door=(8, 8), blocks=[(7, 7), (7, 8)])
 
-city.buildings_gdf
-
 # %%
 # add remaining homes
 city.add_building('home', (9, 8), [(8, 7), (9, 7)])
@@ -78,37 +76,37 @@ city.add_building('home', (8, 12), [(7, 12)])
 city.add_building('home', (8, 10), [(7, 10), (7, 9)])
 
 # add workplaces
-city.add_building('work', (3, 4), blocks=[(4, 4), (4, 5)])
-city.add_building('work', (5, 3), blocks=[(5, 4), (5, 5)])
-city.add_building('work', (6, 6), geom=box(6, 4, 8, 6))
-city.add_building('work', (8, 6), geom=box(8, 4, 10, 6))
-city.add_building('work', (12, 6), geom=box(11, 5, 14, 6))
-city.add_building('work', (12, 3), geom=box(11, 4, 14, 5))
-city.add_building('work', (15, 3), geom=box(14, 4, 17, 6))
-city.add_building('work', (18, 4), geom=box(17, 4, 18, 6))
-city.add_building('work', (18, 6), geom=box(16, 6, 18, 8))
-city.add_building('work', (15, 9), geom=box(16, 8, 17, 10))
-city.add_building('work', (18, 8), geom=box(17, 8, 18, 10))
-city.add_building('work', (18, 10), geom=box(16, 10, 18, 12))
-city.add_building('work', (18, 13), geom=box(16, 13, 18, 15))
-city.add_building('work', (18, 15), geom=box(16, 15, 18, 16))
-city.add_building('work', (15, 15), geom=box(15, 16, 18, 17))
-city.add_building('work', (14, 15), blocks=[(14, 16)])
-city.add_building('work', (16, 18), geom=box(16, 17, 18, 18))
-city.add_building('work', (15, 18), geom=box(14, 17, 16, 18))
-city.add_building('work', (13, 18), geom=box(12, 16, 14, 18))
-city.add_building('work', (11, 18), geom=box(10, 17, 12, 18))
-city.add_building('work', (11, 15), geom=box(10, 16, 12, 17))
-city.add_building('work', (8, 18), geom=box(7, 16, 9, 18))
-city.add_building('work', (6, 18), geom=box(5, 17, 7, 18))
-city.add_building('work', (6, 15), geom=box(5, 16, 7, 17))
-city.add_building('work', (3, 16), blocks=[(4, 16), (4, 17)])
-city.add_building('work', (3, 13), geom=box(4, 13, 6, 16))
-city.add_building('work', (6, 12), geom=box(4, 12, 6, 13))
-city.add_building('work', (3, 10), blocks=[(4, 9), (4, 10)])
-city.add_building('work', (6, 9), blocks=[(5, 9), (5, 10)])
-city.add_building('work', (6, 8), blocks=[(4, 8), (5, 8)])
-city.add_building('work', (3, 6), geom=box(4, 6, 6, 8))
+city.add_building('workplace', (3, 4), blocks=[(4, 4), (4, 5)])
+city.add_building('workplace', (5, 3), blocks=[(5, 4), (5, 5)])
+city.add_building('workplace', (6, 6), geom=box(6, 4, 8, 6))
+city.add_building('workplace', (8, 6), geom=box(8, 4, 10, 6))
+city.add_building('workplace', (12, 6), geom=box(11, 5, 14, 6))
+city.add_building('workplace', (12, 3), geom=box(11, 4, 14, 5))
+city.add_building('workplace', (15, 3), geom=box(14, 4, 17, 6))
+city.add_building('workplace', (18, 4), geom=box(17, 4, 18, 6))
+city.add_building('workplace', (18, 6), geom=box(16, 6, 18, 8))
+city.add_building('workplace', (15, 9), geom=box(16, 8, 17, 10))
+city.add_building('workplace', (18, 8), geom=box(17, 8, 18, 10))
+city.add_building('workplace', (18, 10), geom=box(16, 10, 18, 12))
+city.add_building('workplace', (18, 13), geom=box(16, 13, 18, 15))
+city.add_building('workplace', (18, 15), geom=box(16, 15, 18, 16))
+city.add_building('workplace', (15, 15), geom=box(15, 16, 18, 17))
+city.add_building('workplace', (14, 15), blocks=[(14, 16)])
+city.add_building('workplace', (16, 18), geom=box(16, 17, 18, 18))
+city.add_building('workplace', (15, 18), geom=box(14, 17, 16, 18))
+city.add_building('workplace', (13, 18), geom=box(12, 16, 14, 18))
+city.add_building('workplace', (11, 18), geom=box(10, 17, 12, 18))
+city.add_building('workplace', (11, 15), geom=box(10, 16, 12, 17))
+city.add_building('workplace', (8, 18), geom=box(7, 16, 9, 18))
+city.add_building('workplace', (6, 18), geom=box(5, 17, 7, 18))
+city.add_building('workplace', (6, 15), geom=box(5, 16, 7, 17))
+city.add_building('workplace', (3, 16), blocks=[(4, 16), (4, 17)])
+city.add_building('workplace', (3, 13), geom=box(4, 13, 6, 16))
+city.add_building('workplace', (6, 12), geom=box(4, 12, 6, 13))
+city.add_building('workplace', (3, 10), blocks=[(4, 9), (4, 10)])
+city.add_building('workplace', (6, 9), blocks=[(5, 9), (5, 10)])
+city.add_building('workplace', (6, 8), blocks=[(4, 8), (5, 8)])
+city.add_building('workplace', (3, 6), geom=box(4, 6, 6, 8))
 
 # add retail places
 city.add_building('retail', (0, 1), geom=box(1, 1, 3, 3))
@@ -165,7 +163,7 @@ city.add_building('retail', (3, 7), geom=box(1, 7, 3, 8))
 city.add_building('retail', (0, 5), geom=box(1, 4, 2, 7))
 city.add_building('retail', (3, 6), blocks=[(2, 6)])
 city.add_building('retail', (3, 5), blocks=[(2, 5)])
-city.add_building('retail', (3, 4), blocks=[(2, 4)])
+city.add_building('retail', (3, 4), blocks=[(2, 4)]) 
 
 city.get_street_graph()
 
@@ -177,6 +175,8 @@ city.save_geopackage('../garden-city.gpkg')
 
 # %%
 city = City.from_geopackage('../garden-city.gpkg')
+# Garden City is small (~80 buildings), use exact distances
+city.compute_gravity(exponent=2.0, callable_only=True, use_proxy_hub_distance=False)
 
 # %% [markdown]
 # ### Plotting the city
@@ -207,11 +207,10 @@ plt.close(fig)
 
 # %%
 print("Blocks for 'r-x12-y3':")
-print(city.blocks_gdf.loc[city.blocks_gdf['building_id']== 'r-x12-y3', ['coord_x','coord_y']].values.tolist())
-building = city.get_building(identifier='r-x12-y3')
-dp = building.iloc[0].get('door_point', None)
-if dp is not None:
-    print("Door centroid for 'r-x12-y3':", (dp.x, dp.y))
+print(city.blocks_gdf.loc[city.blocks_gdf['building_id']== 'r-x12-y2', ['coord_x','coord_y']].values.tolist())
+building = city.get_building(identifier='r-x12-y2')
+x, y = building.iloc[0].door_point
+print("Door centroid for 'r-x12-y3':", (x, y))
 
 # %% [markdown]
 # Once a `City` object has been defined, a `Population` object can be initialized. The `Population` object will contain the `Agents` of the city and generate their trajectories.
@@ -242,7 +241,7 @@ tz = ZoneInfo("America/New_York")
 start_time = pd.date_range(start='2024-01-01 00:00', periods=22, freq='15min', tz=tz)
 unix_timestamp = [int(t.timestamp()) for t in start_time]
 duration = [15]*22  # in minutes
-location = ['h-x8-y13'] * 2 + ['r-x12-y3'] * 4 + ['w-x15-y15'] * 12 + ['h-x8-y13'] * 4
+location = ['h-x8-y14'] * 2 + ['r-x12-y2'] * 4 + ['w-x15-y16'] * 12 + ['h-x8-y14'] * 4
 
 d_diary = pd.DataFrame({
     "datetime": start_time,
@@ -255,8 +254,8 @@ d_diary = pd.DataFrame({
 d_diary = tg.condense_destinations(d_diary)
 
 Alice = Agent(identifier="Alice",
-              home='h-x8-y13',
-              workplace='w-x15-y15',
+              home='h-x8-y14',
+              workplace='w-x15-y16',
               city=city)
 
 Alice.generate_trajectory(dt=1, destination_diary=d_diary, seed=100)
@@ -279,10 +278,14 @@ Alice.__dict__
 # The following agent, Bob, is given home `h-x8-y8` and workplace `w-x18-y4`. We generate a trajectory for Bob that lasts a week from midnight January 1, 2024 to midnight January 8, 2024.
 
 # %%
+import pandas as pd
+pd.to_datetime(1763439982, unit='s')
+
+# %%
 # Initialization and diary generation
 Bob = Agent(identifier="Bob",
-            home='h-x8-y8',
-            workplace='w-x18-y4',
+            home='h-x7-y8',
+            workplace='w-x17-y4',
             city=city)
 
 Bob.generate_trajectory(
@@ -471,7 +474,7 @@ start_time = pd.date_range(start='2024-06-01 00:00', periods=5, freq='60min', tz
 tz_offset = loader._offset_seconds_from_ts(start_time[0])
 unix_timestamp = [int(t.timestamp()) for t in start_time]
 duration = [60]*5  # in minutes
-location = ['h-x13-y11'] * 1 + ['h-x13-y8'] * 1 + ['r-x18-y10'] * 3
+location = ['h-x14-y11'] * 1 + ['h-x13-y8'] * 1 + ['r-x18-y10'] * 3
 
 destination = pd.DataFrame(
     {"datetime":start_time,
@@ -482,8 +485,8 @@ destination = pd.DataFrame(
 destination = tg.condense_destinations(destination)
 
 Charlie = Agent(identifier="Charlie",
-                home='h-x13-y11',
-                workplace='w-x15-y9',
+                home='h-x14-y11',
+                workplace='w-x16-y9',
                 city=city)
 
 Charlie.generate_trajectory(destination_diary=destination, seed=75)
@@ -712,7 +715,7 @@ d_diary = tg.condense_destinations(d_diary)
 # Daniel is slow
 Daniel = Agent(identifier="Daniel",
             home='p-x13-y11',
-            workplace='w-x15-y9',
+            workplace='w-x16-y9',
             city=city,
             still_probs=SLOW_STILL_PROBS,
             speeds=SLOW_SPEEDS,
@@ -724,7 +727,7 @@ Daniel.generate_trajectory(destination_diary=destination, seed=50)
 # Elaine is fast
 Elaine = Agent(identifier="Elaine",
             home='p-x13-y11',
-            workplace='w-x15-y9',
+            workplace='w-x16-y9',
             city=city,
             still_probs=FAST_STILL_PROBS,
             speeds=FAST_SPEEDS,
@@ -838,8 +841,8 @@ fig, ax = plt.subplots(figsize=(10, 10))
 city.plot_city(ax, doors=True, address=False)
 
 # Example: Plot shortest path between two buildings
-start_building_id = 'r-x12-y3'
-end_building_id = 'r-x15-y5'
+start_building_id = 'r-x12-y2'
+end_building_id = 'r-x15-y2'
 
 # Get building door coordinates using get_building method
 start_building = city.get_building(identifier=start_building_id)

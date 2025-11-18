@@ -37,7 +37,7 @@ buildings.to_file("philadelphia_buildings.geojson", driver="GeoJSON")
 streets.to_file("philadelphia_streets.geojson", driver="GeoJSON")
 
 print(f"Downloaded {len(buildings)} buildings, {len(streets)} streets")
-print(f"Building categories: {buildings['garden_city_category'].value_counts().to_dict()}")
+print(f"Building categories: {buildings['building_type'].value_counts().to_dict()}")
 
 # Show sample of downloaded data
 print("\nSample buildings data:")
@@ -48,7 +48,7 @@ fig, axes = plt.subplots(1, 3, figsize=(18, 6))
 
 colors = {
     'park': 'green',
-    'residential': 'blue', 
+    'home': 'blue', 
     'retail': 'orange',
     'workplace': 'purple',
     'other': 'grey'
@@ -56,7 +56,7 @@ colors = {
 
 # Buildings by category with proper colors
 for category, color in colors.items():
-    subset = buildings[buildings['garden_city_category'] == category]
+    subset = buildings[buildings['building_type'] == category]
     if len(subset) > 0:
         subset.plot(ax=axes[0], color=color, edgecolor='black', linewidth=0.1, alpha=0.7)
 axes[0].set_title('Buildings by Category')
@@ -64,7 +64,7 @@ axes[0].set_aspect('equal')
 
 # Buildings + Streets
 for category, color in colors.items():
-    subset = buildings[buildings['garden_city_category'] == category]
+    subset = buildings[buildings['building_type'] == category]
     if len(subset) > 0:
         subset.plot(ax=axes[1], color=color, edgecolor='black', linewidth=0.08, alpha=0.7)
 streets.plot(ax=axes[1], color='black', linewidth=0.4)
@@ -94,7 +94,7 @@ salem_buildings.to_file("salem_buildings.geojson", driver="GeoJSON")
 salem_streets.to_file("salem_streets.geojson", driver="GeoJSON")
 
 print(f"Downloaded {len(salem_buildings)} buildings, {len(salem_streets)} streets")
-print(f"Building categories: {salem_buildings['garden_city_category'].value_counts().to_dict()}")
+print(f"Building categories: {salem_buildings['building_type'].value_counts().to_dict()}")
 # Show sample of downloaded data
 print("\nSample Salem buildings data:")
 print(salem_buildings.head())
@@ -107,7 +107,7 @@ fig, axes = plt.subplots(1, 3, figsize=(18, 6))
 
 colors = {
     'park': 'green',
-    'residential': 'blue', 
+    'home': 'blue', 
     'retail': 'orange',
     'workplace': 'purple',
     'other': 'grey'
@@ -115,7 +115,7 @@ colors = {
 
 # Buildings by category
 for category, color in colors.items():
-    subset = salem_buildings[salem_buildings['garden_city_category'] == category]
+    subset = salem_buildings[salem_buildings['building_type'] == category]
     if len(subset) > 0:
         subset.plot(ax=axes[0], color=color, edgecolor='black', linewidth=0.1)
 axes[0].set_title('Salem Buildings by Category')
@@ -123,7 +123,7 @@ axes[0].set_aspect('equal')
 
 # Buildings + Streets
 for category, color in colors.items():
-    subset = salem_buildings[salem_buildings['garden_city_category'] == category]
+    subset = salem_buildings[salem_buildings['building_type'] == category]
     if len(subset) > 0:
         subset.plot(ax=axes[1], color=color, edgecolor='black', linewidth=0.08, alpha=0.7)
 salem_streets.plot(ax=axes[1], color='black', linewidth=0.5)

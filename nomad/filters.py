@@ -64,18 +64,24 @@ def _timestamp_handling(
 
 def to_timestamp(datetime, tz_offset=None):
     """
-    Convert a datetime Series into UNIX timestamps (seconds).
+    Convert a datetime Series or scalar into UNIX timestamps (seconds).
   
     Parameters
     ----------
-    datetime : pd.Series
+    datetime : pd.Series, str, pd.Timestamp, or scalar
     tz_offset : pd.Series, optional
 
     Returns
     -------
-    pd.Series
+    pd.Series or int
         UNIX timestamps as int64 values (seconds since epoch).
+        Returns scalar int if input was scalar.
     """
+    # Handle scalar inputs for NumPy 2.0 compatibility
+    is_scalar = not isinstance(datetime, (pd.Series, pd.Index))
+    if is_scalar:
+        datetime = pd.Series([datetime])
+    
     # Validate input type
     if not (
         pd.api.types.is_datetime64_any_dtype(datetime) or
@@ -94,7 +100,8 @@ def to_timestamp(datetime, tz_offset=None):
         # convert to UTC, drop tz, downcast to seconds, then int
         dt_utc = datetime.dt.tz_convert('UTC').dt.tz_localize(None)
         unix_s = dt_utc.astype('datetime64[s]').astype('int64')
-        return unix_s if tz_offset is None else unix_s - tz_offset
+        result = unix_s if tz_offset is None else unix_s - tz_offset
+        return result.iloc[0] if is_scalar else result
 
     # 2) tz-naive datetime64 (any unit)
     if pd.api.types.is_datetime64_dtype(datetime):
@@ -105,8 +112,10 @@ def to_timestamp(datetime, tz_offset=None):
                 "Input is timezone-naive; assuming UTC. "
                 "Pass tz_offset or localize if needed."
             )
-            return unix_s
-        return unix_s - tz_offset
+            result = unix_s
+        else:
+            result = unix_s - tz_offset
+        return result.iloc[0] if is_scalar else result
 
     # 3) strings
     if pd.api.types.is_string_dtype(datetime):
@@ -120,16 +129,17 @@ def to_timestamp(datetime, tz_offset=None):
                 "String datetimes appear timezone-naive; assuming UTC."
             )
         if tz_offset is None:
-            return unix_s
-        # If original strings were timezone-annotated, do not apply tz_offset again
-        return unix_s if has_tz else (unix_s - tz_offset)
+            result = unix_s
+        else:
+            # If original strings were timezone-annotated, do not apply tz_offset again
+            result = unix_s if has_tz else (unix_s - tz_offset)
+        return result.iloc[0] if is_scalar else result
 
     # 4) object dtype of pandas.Timestamp
     f = np.frompyfunc(lambda x: int(x.timestamp()), 1, 1)
     unix_s = pd.Series(f(datetime).astype('int64'), index=datetime.index)
-    if tz_offset is None:
-        return unix_s
-    return unix_s - tz_offset
+    result = unix_s if tz_offset is None else unix_s - tz_offset
+    return result.iloc[0] if is_scalar else result
 
 def to_yyyymmdd(time_values, tz_offset=None):
     """

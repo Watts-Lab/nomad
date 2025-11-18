@@ -26,9 +26,9 @@ SEC_PER_UNIT = {'s': 1, 'min': 60, 'h': 3_600, 'd': 86_400, 'w': 604_800}
 ALLOWED_BUILDINGS = {
     0: ['home'], 1: ['home'], 2: ['home'], 3: ['home'], 4: ['home'],
     5: ['home'], 6: ['home'], 7: ['home', 'park'],
-    8: ['retail', 'work', 'park'], 9: ['work'], 10: ['work'], 11: ['work'],
-    12: ['retail', 'park'], 13: ['retail', 'park'], 14: ['work'], 15: ['work'],
-    16: ['work'], 17: ['work'], 18: ['retail', 'park', 'home'],
+    8: ['retail', 'workplace', 'park'], 9: ['workplace'], 10: ['workplace'], 11: ['workplace'],
+    12: ['retail', 'park'], 13: ['retail', 'park'], 14: ['workplace'], 15: ['workplace'],
+    16: ['workplace'], 17: ['workplace'], 18: ['retail', 'park', 'home'],
     19: ['retail', 'park', 'home'], 20: ['home'], 21: ['home'],
     22: ['home'], 23: ['home']
 }
@@ -45,38 +45,38 @@ FILTER_OPERATORS = {
 # For trajectory generation
 DEFAULT_SPEEDS = {'park': 2/1.96,
                   'home': 0.75/1.96,
-                  'work': 0.75/1.96,
+                  'workplace': 0.75/1.96,
                   'retail': 1.75/1.96}
 
 FAST_SPEEDS = {'park': 2.5/1.96,
                'home': 1/1.96,
-               'work': 1/1.96,
+               'workplace': 1/1.96,
                'retail': 2/1.96}
 
 SLOW_SPEEDS = {'park': 1.5/1.96,
                'home': 0.5/1.96,
-               'work': 0.5/1.96,
+               'workplace': 0.5/1.96,
                'retail': 1.5/1.96}
 
 DEFAULT_STILL_PROBS = {'park': 0.5,
                        'home': 0.9,
-                       'work': 0.9,
+                       'workplace': 0.9,
                        'retail': 0.5}
 
 
 FAST_STILL_PROBS = {'park': 0.1,
                     'home': 0.75,
-                    'work': 0.75,
+                    'workplace': 0.75,
                     'retail': 0.2}
 
 SLOW_STILL_PROBS = {'park': 0.75,
                     'home': 0.95,
-                    'work': 0.95,
+                    'workplace': 0.95,
                     'retail': 0.75}
 
 DEFAULT_STAY_PROBS = {'park': 1-((1/1)/4),
                       'retail': 1-((1/0.5)/4),
-                      'work': 1-((1/7)/4),
+                      'workplace': 1-((1/7)/4),
                       'home': 1-((1/14)/4)}
 
 # =============================================================================
@@ -100,6 +100,10 @@ STREET_EXCLUDED_SERVICE_TYPES = ['parking_aisle', 'driveway']
 STREET_EXCLUDE_COVERED = True
 STREET_EXCLUDE_TUNNELS = True
 STREET_EXCLUDED_SURFACES = ['paving_stones']
+
+# Default topology/quality thresholds
+INTERSECTION_CONSOLIDATION_TOLERANCE_M = 12.0  # merge clustered nodes into a single intersection
+STREET_MIN_LENGTH_M = 15.0  # drop micro segments like short driveways/service stubs
 
 # Park/green space tags for downloading
 PARK_TAGS = {
@@ -272,7 +276,7 @@ SUBTYPE_TO_GARDEN_CITY = {
     'education': 'workplace',
     'entertainment': 'retail',
     'garage': 'other',
-    'hotel': 'residential',
+    'hotel': 'home',
     'industrial': 'workplace',
     'medical': 'workplace',
     'military': 'workplace',
@@ -280,7 +284,7 @@ SUBTYPE_TO_GARDEN_CITY = {
     'outbuilding': 'other',
     'parking': 'other',
     'religious': 'retail',
-    'residential': 'residential',
+    'residential': 'home',
     'service': 'other',
     'transportation': 'workplace',
     'warehouse': 'workplace',
@@ -317,5 +321,8 @@ CATEGORY_SCHEMAS = {
 DEFAULT_CATEGORY_SCHEMA = 'garden_city'
 DEFAULT_CRS = "EPSG:4326"
 
-GARDEN_CITY_CATEGORIES = ['residential', 'retail', 'workplace', 'park', 'other']
+GARDEN_CITY_CATEGORIES = ['home', 'retail', 'workplace', 'park', 'other']
 GEOLIFE_PLUS_CATEGORIES = ['unknown', 'residential', 'commercial', 'school']
+
+# Building type priority for rasterization (first = highest priority)
+TYPE_PRIORITY = ['street', 'park', 'workplace', 'retail','home', 'other']

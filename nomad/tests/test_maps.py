@@ -48,6 +48,8 @@ from nomad.map_utils import (
     remove_overlaps,
     _classify_building,
     get_city_boundary_osm,
+    save_geodata,
+    load_geodata,
 )
 
 
@@ -79,7 +81,7 @@ def test_download_osm_buildings_garden_city(philly_bbox):
     # Should have all three classification columns
     assert 'osm_type' in buildings.columns
     assert 'subtype' in buildings.columns
-    assert 'garden_city_category' in buildings.columns
+    assert 'building_type' in buildings.columns
     
     # Should have found some buildings in this area
     assert len(buildings) > 0, "No buildings found in the test area"
@@ -92,8 +94,8 @@ def test_download_osm_buildings_garden_city(philly_bbox):
     ), f"Found non-polygon geometries: {geometry_types}"
     
     # All categories should be valid garden city types
-    valid_categories = {'residential', 'retail', 'workplace', 'park', 'other'}
-    actual_categories = set(buildings['garden_city_category'].unique())
+    valid_categories = {'home', 'retail', 'workplace', 'park', 'other'}
+    actual_categories = set(buildings['building_type'].unique())
     assert actual_categories.issubset(valid_categories), (
         f"Found invalid categories: {actual_categories - valid_categories}"
     )
@@ -102,9 +104,9 @@ def test_download_osm_buildings_garden_city(philly_bbox):
     assert buildings['osm_type'].notna().all(), "Found null osm_types"
     assert buildings['subtype'].notna().all(), "Found null subtypes"
     
-    # Should have at least residential in Philadelphia
-    assert 'residential' in actual_categories, (
-        "Expected to find residential buildings in Philadelphia"
+    # Should have at least home buildings in Philadelphia
+    assert 'home' in actual_categories, (
+        "Expected to find home buildings in Philadelphia"
     )
 
 
@@ -144,14 +146,14 @@ def test_download_osm_buildings_includes_parks(philly_bbox):
     # Should have all three columns
     assert 'osm_type' in all_features.columns
     assert 'subtype' in all_features.columns
-    assert 'category' in all_features.columns
+    assert 'building_type' in all_features.columns
     
     # Should have found features
     assert len(all_features) > 0
 
     # All categories should be valid
-    valid_categories = {'residential', 'retail', 'workplace', 'park', 'other'}
-    actual_categories = set(all_features['garden_city_category'].unique())
+    valid_categories = {'home', 'retail', 'workplace', 'park', 'other'}
+    actual_categories = set(all_features['building_type'].unique())
     assert actual_categories.issubset(valid_categories)
 
 
@@ -160,7 +162,7 @@ def test_categorization_logic_garden_city():
     """Test that categorization returns all three levels with garden_city schema."""
     
     # Test building tag priority - should return (osm_type, subtype, category)
-    assert _classify_building(pd.Series({'building': 'house'}), 'garden_city') == ('house', 'residential', 'residential')
+    assert _classify_building(pd.Series({'building': 'house'}), 'garden_city') == ('house', 'residential', 'home')
     assert _classify_building(pd.Series({'building': 'hospital'}), 'garden_city') == ('hospital', 'medical', 'workplace')
     assert _classify_building(pd.Series({'building': 'supermarket'}), 'garden_city') == ('supermarket', 'commercial', 'retail')
     
@@ -209,7 +211,29 @@ def test_priority_order():
         'building': 'residential',
         'amenity': 'school'
     }), 'garden_city')
-    assert result == ('residential', 'residential', 'residential')  # building tag wins
+    assert result == ('residential', 'residential', 'home')  # building tag wins, maps to 'home'
+
+
+def test_save_load_geodata(tmp_path):
+    import geopandas as gpd
+    from shapely.geometry import Point, LineString
+    gdf = gpd.GeoDataFrame({'id':[1,2],'name':['a','b']}, geometry=[Point(0,0), Point(1,1)], crs='EPSG:4326')
+    # GeoJSON
+    geojson_path = tmp_path / 'points.geojson'
+    save_geodata(gdf, str(geojson_path))
+    gdf2 = load_geodata(str(geojson_path))
+    assert len(gdf2) == 2 and set(gdf2.geometry.geom_type.unique()) == {'Point'}
+    # GeoParquet
+    parquet_path = tmp_path / 'points.parquet'
+    save_geodata(gdf, str(parquet_path))
+    gdf3 = load_geodata(str(parquet_path))
+    assert len(gdf3) == 2 and set(gdf3.geometry.geom_type.unique()) == {'Point'}
+    # Shapefile
+    shp_path = tmp_path / 'lines.shp'
+    lines = gpd.GeoDataFrame({'id':[1]}, geometry=[LineString([(0,0),(1,0)])], crs='EPSG:4326')
+    save_geodata(lines, str(shp_path))
+    lines2 = load_geodata(str(shp_path))
+    assert len(lines2) == 1 and set(lines2.geometry.geom_type.unique()) == {'LineString'}
 
 
 @pytest.mark.skip(reason="Trimmed suite: CRS covered elsewhere")
@@ -453,7 +477,7 @@ def test_empty_bounding_box():
     assert len(streets) == 0, "Should return empty GeoDataFrame for empty area"
     
     # Should have correct columns even when empty
-    expected_cols = ['osm_type', 'subtype', 'category', 'geometry']
+    expected_cols = ['osm_type', 'subtype', 'building_type', 'geometry']
     assert list(buildings.columns) == expected_cols, f"Expected columns {expected_cols}, got {list(buildings.columns)}"
 
 
@@ -469,7 +493,7 @@ def test_empty_polygon():
 
     assert len(buildings) == 0
     assert len(streets) == 0
-    expected_cols = ['osm_type', 'subtype', 'category', 'geometry']
+    expected_cols = ['osm_type', 'subtype', 'building_type', 'geometry']
     assert list(buildings.columns) == expected_cols
 
 
@@ -537,13 +561,13 @@ def test_park_categorization():
     buildings = download_osm_buildings(park_bbox, clip=True)
     
     # If there are parks, they should be categorized as 'park'
-    park_features = buildings[buildings['category'] == 'park']
+    park_features = buildings[buildings['building_type'] == 'park']
     if len(park_features) > 0:
         # Parks should have leisure=park or similar tags
         assert len(park_features) > 0, "Should find park features"
         
         # Check that parks are not misclassified as 'other'
-        other_features = buildings[buildings['category'] == 'other']
+        other_features = buildings[buildings['building_type'] == 'other']
         park_osm_types = set(park_features['osm_type'].tolist())
         other_osm_types = set(other_features['osm_type'].tolist())
         
@@ -562,7 +586,7 @@ def test_parking_lot_classification():
     # Parking lots should be classified as 'other' buildings
     parking_features = buildings[buildings['osm_type'] == 'parking']
     if len(parking_features) > 0:
-        assert all(parking_features['category'] == 'other'), "Parking lots should be 'other' buildings"
+        assert all(parking_features['building_type'] == 'other'), "Parking lots should be 'other' buildings"
         assert all(parking_features['subtype'] == 'parking'), "Parking lots should have 'parking' subtype"
 
 
@@ -584,8 +608,8 @@ def test_speculative_classification():
     
     # With inference, we might get more 'residential' and 'retail' classifications
     if len(buildings_inferred) > 0:
-        inferred_categories = set(buildings_inferred['category'].tolist())
-        basic_categories = set(buildings_basic['category'].tolist())
+        inferred_categories = set(buildings_inferred['building_type'].tolist())
+        basic_categories = set(buildings_basic['building_type'].tolist())
         
         # Should have same or more categories with inference
         assert inferred_categories.issuperset(basic_categories), "Inference should not remove categories"
@@ -671,8 +695,8 @@ def test_schema_switching():
     
     # Should have different category sets
     if len(buildings_gc) > 0 and len(buildings_gl) > 0:
-        gc_categories = set(buildings_gc['category'].tolist())
-        gl_categories = set(buildings_gl['category'].tolist())
+        gc_categories = set(buildings_gc['building_type'].tolist())
+        gl_categories = set(buildings_gl['building_type'].tolist())
         
         # Different schemas should have different category sets
         assert gc_categories != gl_categories, "Different schemas should have different categories"
