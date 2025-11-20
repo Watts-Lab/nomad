@@ -326,7 +326,7 @@ def invalid_stops(stop_data, traj_cols=None, print_stops=False, **kwargs):
         first offending pair.
     """
     # determine start-time key and whether it's datetime
-    t_key, use_datetime = utils._fallback_time_cols(stop_data.columns, traj_cols, kwargs)
+    t_key, use_datetime = loader._fallback_time_cols_dt(stop_data.columns, traj_cols, kwargs)
     end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
 
     # canonical column mapping
