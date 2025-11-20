@@ -3,7 +3,6 @@ import numpy as np
 import nomad.io.base as loader
 from nomad.filters import to_timestamp
 from nomad.stop_detection import utils
-from nomad.stop_detection.utils import _fallback_time_cols
 import geopandas as gpd
 
 def grid_based_labels(data, time_thresh=np.inf, min_cluster_size=1, dur_min=0, traj_cols=None, **kwargs):
@@ -34,7 +33,7 @@ def grid_based_labels(data, time_thresh=np.inf, min_cluster_size=1, dur_min=0, t
     if data.empty:
         return pd.Series([], dtype=int, name='cluster')
     # Decide on temporal column to use
-    t_key, use_datetime = _fallback_time_cols(data.columns, traj_cols, kwargs)
+    t_key, use_datetime = loader._fallback_time_cols_dt(data.columns, traj_cols, kwargs)
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs) # load defaults
 
     if traj_cols['location_id'] not in data.columns:
@@ -130,10 +129,9 @@ def grid_based(
 
     if merged.empty:
         # Get column names by calling summarize function on dummy data
-        traj_cols_parsed = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
         has_geometry = 'geometry' in data.columns
         cols = utils._get_empty_stop_columns(
-            data.columns, complete_output, passthrough_cols, traj_cols_parsed, 
+            data.columns, complete_output, passthrough_cols, traj_cols, 
             keep_col_names=True, is_grid_based=True, **kwargs
         )
         return pd.DataFrame(columns=cols, dtype=object)

@@ -311,7 +311,6 @@ def test_from_file_alias_equivalence_csv(io_sources):
         parse_dates=True,
     )
     df_via_file = loader.from_file(path, format=fmt, **alias_kwargs)
-
     raw = pd.read_csv(path)                   # plain pandas load
     df_via_df   = loader.from_df(raw, **alias_kwargs)
 
@@ -331,7 +330,7 @@ def test_to_file_roundtrip(tmp_path, fmt, dated_df):
     """
     Tests to_file and from_file using standard columns and output_traj_cols remapping.
     """
-    dated_df = loader.from_df(dated_df)
+    df_exp = loader.from_df(dated_df, parse_dates=True)
     output_traj_cols = {
         "user_id": "u",
         "timestamp": "ts",
@@ -343,19 +342,19 @@ def test_to_file_roundtrip(tmp_path, fmt, dated_df):
 
     if fmt == "csv":
         out_path = tmp_path / "trip.csv"
-        loader.to_file(dated_df, out_path, format="csv", output_traj_cols=output_traj_cols)
+        loader.to_file(df_exp, out_path, format="csv", output_traj_cols=output_traj_cols)
+
     else:
         out_path = tmp_path / "trip_parquet"
-        loader.to_file(dated_df, out_path, format="parquet", output_traj_cols=output_traj_cols, partition_by=["date"])
+        loader.to_file(df_exp, out_path, format="parquet", output_traj_cols=output_traj_cols, partition_by=["date"])
 
     df_round = loader.from_file(out_path, format=fmt, traj_cols=output_traj_cols, parse_dates=True)
     assert loader._is_traj_df(df_round, traj_cols=output_traj_cols, parse_dates=True)
 
     df_out = df_round.rename(columns={v: k for k, v in output_traj_cols.items()})
-    df_out = df_out.sort_values(["user_id", "timestamp"]).reset_index(drop=True)
-    df_exp = dated_df.sort_values(["user_id", "timestamp"]).reset_index(drop=True)
-
-    assert_frame_equal(df_out, df_exp, check_dtype=True)
+    df_out_sorted = df_out.sort_values(['user_id', 'timestamp']).reset_index(drop=True)
+    df_exp_sorted = df_exp.sort_values(['user_id', 'timestamp']).reset_index(drop=True)
+    assert_frame_equal(df_out_sorted, df_exp_sorted, check_dtype=True)
 
 # Test for filters on read
 def test_filter_on_read_partitioned(io_sources):
@@ -432,3 +431,44 @@ def test_sample_users_within(io_sources, park_polygons, idx, poly_variant):
     truth_ids = df_full.loc[pts.within(poly_shape), "uid"].drop_duplicates()
 
     assert set(ids_reader) == set(truth_ids)
+
+# Fallback function tests
+def test_fallback_spatial_with_preparsed_traj_cols():
+    """Bug: pre-parsed traj_cols incorrectly detects lon/lat when only x/y present."""
+    df_cols = pd.Index(['x', 'y', 'timestamp', 'cluster'])
+    traj_cols_parsed = loader._parse_traj_cols(df_cols, None, {}, warn=False)
+    coord1, coord2, use_ll = loader._fallback_spatial_cols(df_cols, traj_cols_parsed, {})
+    assert coord1 == 'x' and coord2 == 'y' and use_ll == False
+
+def test_fallback_spatial_prefers_xy():
+    """When both coordinate systems present and no user spec, prefer x/y."""
+    df_cols = pd.Index(['x', 'y', 'latitude', 'longitude'])
+    coord1, coord2, use_ll = loader._fallback_spatial_cols(df_cols, None, {})
+    assert coord1 == 'x' and coord2 == 'y' and use_ll == False
+
+def test_fallback_spatial_explicit_lonlat():
+    """When user explicitly specifies lon/lat, use it even if x/y present."""
+    df_cols = pd.Index(['x', 'y', 'latitude', 'longitude'])
+    traj_cols = {'longitude': 'longitude', 'latitude': 'latitude'}
+    coord1, coord2, use_ll = loader._fallback_spatial_cols(df_cols, traj_cols, {})
+    assert coord1 == 'longitude' and coord2 == 'latitude' and use_ll == True
+
+def test_fallback_time_datetime_priority():
+    """When datetime in kwargs, prioritize it over timestamp."""
+    df_cols = pd.Index(['datetime', 'timestamp'])
+    t_key, use_dt = loader._fallback_time_cols_dt(df_cols, None, {'datetime': 'datetime'})
+    assert t_key == 'datetime' and use_dt == True
+
+def test_fallback_st_cols_combines():
+    """_fallback_st_cols should call both spatial and temporal fallbacks."""
+    from nomad.stop_detection import utils
+    df_cols = pd.Index(['x', 'y', 'timestamp'])
+    t_key, coord1, coord2, use_dt, use_ll = utils._fallback_st_cols(df_cols, None, {})
+    assert coord1 == 'x' and use_ll == False
+    assert t_key == 'timestamp' and use_dt == False
+
+def test_fallback_spatial_only_lonlat():
+    """When only lon/lat present, detect correctly."""
+    df_cols = pd.Index(['latitude', 'longitude'])
+    coord1, coord2, use_ll = loader._fallback_spatial_cols(df_cols, None, {})
+    assert coord1 == 'longitude' and coord2 == 'latitude' and use_ll == True
