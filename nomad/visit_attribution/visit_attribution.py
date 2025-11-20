@@ -4,7 +4,6 @@ import nomad.constants as constants
 import warnings
 import pandas as pd
 import nomad.io.base as loader
-import nomad.io.base as loader
 import pyproj
 import pdb
 
@@ -439,3 +438,4 @@ def night_stops(stop_table, user='user', dawn_hour = 6, dusk_hour = 19, min_dwel
     df_clipped = df_clipped[(df_clipped['duration'] > 0) & (df_clipped['duration_night'] >= 15)]
     
     return df_clipped.groupby(['id', 'location'], group_keys=False).apply(count_nights(dawn_hour, dusk_hour, min_dwell)).reset_index(drop=True)
+
