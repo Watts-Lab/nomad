@@ -1,6 +1,5 @@
 import pandas as pd
 import nomad.io.base as loader
-import nomad.io.base as loader
 from datetime import datetime, time, timedelta
 
 
@@ -154,3 +153,4 @@ def select_home(
     )
 
     return best[[traj_cols["user_id"], traj_cols["location_id"], "home_date"]]
+
