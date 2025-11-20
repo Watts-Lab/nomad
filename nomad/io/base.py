@@ -841,7 +841,7 @@ def from_df(df,
             mixed_timezone_behavior="naive",
             fixed_format=None,
             filters=None,
-            sort_times=False,
+            sort_times=True,
             traj_cols=None,
             **kwargs):
     """
@@ -899,7 +899,7 @@ def from_file(filepath,
               fixed_format=None,
               sep=",",
               filters=None,
-              sort_times=False,
+              sort_times=True,
               traj_cols=None,
               **kwargs):
     """
