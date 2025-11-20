@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.1
+#       jupytext_version: 1.17.3
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -15,13 +15,19 @@
 
 # %% [markdown]
 # # Philadelphia Synthetic Trajectory Data - Analysis
-# 
-# This notebook analyzes synthetic trajectory data for 200 users in Philadelphia.
-# 
+#
+# This notebook analyzes synthetic data for 200 users in Philadelphia generated with the traj_gen.py module of the nomad library. For reference, we also examine the ground-truth travel diaries of individuals indicating the dwells and POIs of each segment of their trajectories. We also report on the completeness of the generated data, which varies due to induced sparsity and irregularity in the sampling of ping times.  
+#
 # ## Data Sources
 # - **Device-level trajectories**: Individual location pings (x, y coordinates)
 # - **Stop tables**: Ground truth stops derived from the trajectories
 # - **POI data**: OpenStreetMap points of interest used for simulation
+
+# %%
+# !pip install git+https://github.com/Watts-Lab/nomad.git
+
+# %%
+# !pip install contextily geopandas
 
 # %%
 import nomad.io.base as loader
@@ -35,7 +41,7 @@ import nomad.stop_detection.viz as viz
 
 # %% [markdown]
 # ## 1. Data Loading
-# 
+#
 # We use `nomad.io.base.from_file()` to load trajectory and stop data from S3. 
 # This function handles Parquet datasets and automatically sorts by user_id and timestamp.
 
@@ -54,7 +60,7 @@ print(f"Date range: {device_df['event_start_date'].min()} to {device_df['event_s
 
 # %% [markdown]
 # ## 2. POI Visualization
-# 
+#
 # OpenStreetMap POIs used to generate the synthetic trajectories.
 
 # %%
@@ -81,28 +87,28 @@ plt.show()
 
 # %% [markdown]
 # ## 3. Trajectory Visualization
-# 
+#
 # We visualize trajectories for 3 sample users on a single day. 
 # - **Black dots**: Individual location pings
-# - **Red circles**: Ground truth stops (overlaid on top of pings)
-# 
-# The stops are placed on top (higher z-order) to show where users spent significant time.
+# - **Red circles**: Ground truth stops 
+
+# %%
+stop_df_day
 
 # %%
 sample_date = device_df['event_start_date'].value_counts().index[0]
 device_df_day = device_df[device_df['event_start_date'] == sample_date]
 stop_df_day = stop_df[stop_df['event_start_date'] == sample_date]
 
-common_users = list(set(device_df_day['user_id']) & set(stop_df_day['user_id']))
-selected_users = common_users[:3]
+selected_users = device_df_day.user_id.unique()[:3]
 
-fig, axes = plt.subplots(1, 3, figsize=(30, 10))
+fig, axes = plt.subplots(1, 3, figsize=(18, 7))
 
 for i, user_id in enumerate(selected_users):
     ax = axes[i]
     
-    user_pings = device_df_day[device_df_day['user_id'] == user_id].copy()
-    user_stops = stop_df_day[stop_df_day['user_id'] == user_id].copy()
+    user_pings = device_df_day.query("user_id == @user_id")
+    user_stops = stop_df_day.query("(user_id == @user_id) and (location != None)").copy()
     user_stops['cluster'] = range(1, len(user_stops) + 1)
     
     viz.plot_pings(user_pings, ax, color='black', s=1, alpha=0.6)
@@ -112,12 +118,12 @@ for i, user_id in enumerate(selected_users):
     ax.set_title(f"User: {user_id} ({sample_date})")
     ax.set_axis_off()
 
-plt.tight_layout()
+#plt.tight_layout()
 plt.show()
 
 # %% [markdown]
 # ## 4. Data Completeness Analysis
-# 
+#
 # We assess data completeness at two temporal resolutions:
 # - **Hourly**: Proportion of hours in which each user has at least one ping
 # - **Daily**: Proportion of days in which each user has at least one ping
@@ -136,7 +142,7 @@ axes[0].set_title('Hourly Completeness')
 axes[0].grid(axis='y', alpha=0.3)
 
 # Daily: 10 bins for clearer visualization
-axes[1].hist(comp_daily, bins=10, edgecolor='black', alpha=0.7, color='coral')
+axes[1].hist(comp_daily, bins=5, edgecolor='black', alpha=0.7, color='coral')
 axes[1].set_xlabel('Completeness (proportion of days with data)')
 axes[1].set_ylabel('Number of Users')
 axes[1].set_title('Daily Completeness')
@@ -184,5 +190,3 @@ ax.set_title('Growth of Unique Locations Over Time')
 ax.grid(alpha=0.3)
 plt.tight_layout()
 plt.show()
-
-# %%
