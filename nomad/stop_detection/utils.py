@@ -37,7 +37,7 @@ def clip_stops_datetime(stops, start_datetime, end_datetime, traj_cols=None, **k
     """
     stops = stops.copy()
     stops.drop(columns=["n_pings", "diameter", "max_gap", "identifier"], errors="ignore", inplace=True)
-    t_key, use_datetime = _fallback_time_cols(stops.columns, traj_cols, kwargs)
+    t_key, use_datetime = loader._fallback_time_cols_dt(stops.columns, traj_cols, kwargs)
     end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
     
     # Load default col names
@@ -238,52 +238,13 @@ def _update_diameter(c_j, coords_prev, D_prev, metric='euclidean'):
 
     return D_i_jp1
 
-def _fallback_time_cols(col_names, traj_cols, kwargs):
-    '''
-    Helper to decide whether to use datetime vs timestamp in cases of ambiguity
-    '''
-    traj_cols = loader._parse_traj_cols(col_names, traj_cols, kwargs, defaults={}, warn=False)
-    # check for explicit datetime usage
-    t_keys = ['timestamp', 'start_timestamp', 'datetime', 'start_datetime']
-    if 'datetime' in kwargs or 'start_datetime' in kwargs: # prioritize datetime 
-        t_keys = t_keys[-2:] + t_keys[:2]
-
-    # load defaults and check for time columns
-    traj_cols = loader._update_schema(constants.DEFAULT_SCHEMA, traj_cols)
-    loader._has_time_cols(col_names, traj_cols) # error if no columns
-    
-    for t_key in t_keys:
-        if traj_cols[t_key] in col_names:
-            use_datetime = (t_key in ['datetime', 'start_datetime']) ## necessary?
-            break
-            
-    return t_key, use_datetime
-
 def _fallback_st_cols(col_names, traj_cols, kwargs):
     '''
     Helper function to decide whether to use latitude and longitude or x,y,
     as well as datetime vs timestamp in cases of ambiguity
     '''
-    # Use spatial fallback from io.base
     coord_key1, coord_key2, use_lon_lat = loader._fallback_spatial_cols(col_names, traj_cols, kwargs)
-
-    # Parse with empty defaults for temporal detection
-    traj_cols_parsed = loader._parse_traj_cols(col_names, traj_cols, kwargs, defaults={}, warn=False)
-    
-    # check for explicit datetime usage
-    t_keys = ['timestamp', 'start_timestamp', 'datetime', 'start_datetime']
-    if 'datetime' in kwargs or 'start_datetime' in kwargs: # prioritize datetime 
-        t_keys = t_keys[-2:] + t_keys[:2]
-
-    # load defaults and check for time columns
-    traj_cols_parsed = loader._update_schema(constants.DEFAULT_SCHEMA, traj_cols_parsed)
-    loader._has_time_cols(col_names, traj_cols_parsed)
-
-    for t_key in t_keys:
-        if traj_cols_parsed[t_key] in col_names:
-            use_datetime = (t_key in ['datetime', 'start_datetime'])
-            break
-            
+    t_key, use_datetime = loader._fallback_time_cols_dt(col_names, traj_cols, kwargs)
     return t_key, coord_key1, coord_key2, use_datetime, use_lon_lat
 
 def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_col_names = True, passthrough_cols= [], traj_cols=None, **kwargs):
@@ -376,7 +337,7 @@ def summarize_stop_grid(
         passthrough_cols = []
 
     # 1) pick time key
-    t_key, use_datetime = _fallback_time_cols(grouped_data.columns, traj_cols, kwargs)
+    t_key, use_datetime = loader._fallback_time_cols_dt(grouped_data.columns, traj_cols, kwargs)
 
     # 2) parse full mapping
     cols = loader._parse_traj_cols(grouped_data.columns, traj_cols, kwargs, warn=False)
@@ -464,7 +425,7 @@ def _get_empty_stop_columns(input_columns, complete_output, passthrough_cols, tr
     
     if is_grid_based:
         # Call the actual helper functions with the input columns
-        t_key, use_datetime = _fallback_time_cols(input_columns, traj_cols, kwargs)
+        t_key, use_datetime = loader._fallback_time_cols_dt(input_columns, traj_cols, kwargs)
         # Parse traj_cols to get the column mappings
         cols = loader._parse_traj_cols(input_columns, traj_cols, kwargs, warn=False)
         
@@ -528,7 +489,7 @@ def pad_short_stops(stop_data, pad=5, dur_min=None, traj_cols = None, **kwargs):
         dur_min = pad
     pad = max(pad, dur_min, 1) # we never shorten a stop
     
-    t_key, use_datetime = _fallback_time_cols(stop_data.columns, traj_cols, kwargs)
+    t_key, use_datetime = loader._fallback_time_cols_dt(stop_data.columns, traj_cols, kwargs)
     end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
 
     # Load default col names
