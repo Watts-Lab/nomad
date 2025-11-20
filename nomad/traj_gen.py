@@ -1096,6 +1096,9 @@ def _sample_horizontal_noise(n,
                              ha=3/4,
                              rng=None):
     """Sample per-ping horizontal accuracy and Gaussian noise (internal)."""
+    if ha is None or ha==0:
+        return np.zeros(n), np.zeros((n, 2))
+
     if rng is None:
         rng = npr.default_rng()
     x_m = 8/15
