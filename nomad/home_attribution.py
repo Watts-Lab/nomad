@@ -1,6 +1,5 @@
 import pandas as pd
 import nomad.io.base as loader
-from nomad.stop_detection.utils import _fallback_time_cols
 from datetime import datetime, time, timedelta
 
 
@@ -67,7 +66,7 @@ def compute_candidate_homes(
     traj_cols = loader._parse_traj_cols(stops.columns, traj_cols, kwargs)
     loader._has_time_cols(stops.columns, traj_cols)
 
-    t_key, use_datetime = _fallback_time_cols(stops.columns, traj_cols, kwargs)
+    t_key, use_datetime = loader._fallback_time_cols_dt(stops.columns, traj_cols, kwargs)
     end_t_key = "end_datetime" if use_datetime else "end_timestamp"
 
     # Ensure we can compute an end time
@@ -127,7 +126,7 @@ def select_home(
     traj_cols = loader._parse_traj_cols(candidate_homes.columns, traj_cols, kwargs)
 
     # Last observation date
-    t_key, use_datetime = _fallback_time_cols(stops_table.columns, traj_cols, kwargs)
+    t_key, use_datetime = loader._fallback_time_cols_dt(stops_table.columns, traj_cols, kwargs)
     dt_series = (
         stops_table[traj_cols[t_key]]
         if use_datetime
@@ -154,3 +153,4 @@ def select_home(
     )
 
     return best[[traj_cols["user_id"], traj_cols["location_id"], "home_date"]]
+

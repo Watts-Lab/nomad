@@ -105,7 +105,7 @@ def compute_visitation_errors(overlaps, true_visits, traj_cols=None, **kwargs):
     true_visits = true_visits.dropna()
         
     # 1 – decide the canonical start-time column once
-    t_key, _ = utils._fallback_time_cols(true_visits.columns, traj_cols, kwargs)
+    t_key, _ = loader._fallback_time_cols_dt(true_visits.columns, traj_cols, kwargs)
 
     # 2 – check uniqueness of that column in truth
     if true_visits[t_key].duplicated().any():
