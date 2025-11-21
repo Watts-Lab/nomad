@@ -41,7 +41,9 @@ import time
 from tqdm import tqdm
 
 # Load data
-city = gpd.read_file("garden_city.geojson").to_crs('EPSG:3857')
+from nomad.city_gen import City
+city_obj = City.from_geopackage("garden-city.gpkg")
+city = gpd.GeoDataFrame(geometry=[city_obj.buildings_gdf.unary_union], crs='EPSG:3857')
 outer_box = box(*city.total_bounds).buffer(15, join_style='mitre')
 
 filepath_root = 'gc_data_long/'
