@@ -230,7 +230,7 @@ def test_date_parsing_from_df(base_df):
     expected_tz_offset = base_df.tz_offset
     expected_ts = base_df.timestamp
 
-    result = loader.from_df(df_subset, parse_dates=True, mixed_timezone_behavior="naive")
+    result = loader.from_df(df_subset, parse_dates=True, mixed_timezone_behavior="naive", sort_times=False)
     result['timestamp'] = to_timestamp(result.datetime, result.tz_offset)
 
     assert (result.timestamp.values == expected_ts.values).all() and (result.tz_offset.values == expected_tz_offset.values).all()
@@ -244,7 +244,7 @@ def test_from_df_values_types_na(value_na_input_df, expected_value_na_output_df)
     mixed_tz = 'naive'
 
     result = loader.from_df(value_na_input_df.copy(), traj_cols=traj_cols,
-                            parse_dates=True, mixed_timezone_behavior=mixed_tz)
+                            parse_dates=True, mixed_timezone_behavior=mixed_tz, sort_times=False)
 
     pd.testing.assert_frame_equal(result, expected_value_na_output_df, check_dtype=True)
 
