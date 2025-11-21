@@ -14,77 +14,67 @@
 # ---
 
 # %% [markdown] id="460ff464-7812-41fb-bc5b-bc4f24e16499"
-# # **Loading and Sampling Trajectory Data**
+# # Loading Trajectory Data
 #
-# ## Getting started
+# Mobility data comes in many formats: timestamps as unix integers or ISO strings (with timezones), 
+# coordinates in lat/lon or projected, files as single CSVs or partitioned directories.
 #
-# Real-world mobility files vary widely in structure and formatting:
-# - e.g. **Timestamps** may be **UNIX** integers or **ISO-formatted strings**
-# - May have **timezones**, e.g. -05:00, Z, (GMT+01), -3600
-# - Coordinates might be **projected** or **geographical**
-# - Files may be a flat **CSV**, or **partitioned Parquets**, local or **in S3**.
-#
-# `nomad.io` is here to help.
+# `nomad.io.from_file` handles these cases with a single function call.
 
-# %% executionInfo={"elapsed": 3404, "status": "ok", "timestamp": 1753083319439, "user": {"displayName": "Thomas Li", "userId": "03526318197962168317"}, "user_tz": -120} id="ca448248-3077-4e67-ad81-6d1ba1b170db"
-from nomad.io import base as loader
+# %%
+import glob
 import pandas as pd
-import geopandas as gpd
+import nomad.io.base as loader
+import nomad.data as data_folder
+from pathlib import Path
 
-# %% [markdown] id="c78e81f2-bcf3-4cc5-8c26-b6111484df73"
-# ## Typical data ingestion ( `pandas`, `geopandas`) vs `nomad` `io` utilities
-
-# %% colab={"base_uri": "https://localhost:8080/", "height": 206} executionInfo={"elapsed": 849, "status": "ok", "timestamp": 1753083322765, "user": {"displayName": "Thomas Li", "userId": "03526318197962168317"}, "user_tz": -120} id="904bf840-4253-41e3-a1d3-d54874072613" outputId="9dd16f0f-7e96-4aaa-ade3-c431698bafbc"
-df = pd.read_csv("../../tutorials/IC2S2-2025/IC2S2-2025/gc_data.csv")
-city = gpd.read_file("../../tutorials/IC2S2-2025/IC2S2-2025/garden_city.geojson")
-
-df.head()
+data_dir = Path(data_folder.__file__).parent
 
 # %% [markdown]
-# ## `nomad.io` — facilitates type casting and default names
+# ## Pandas vs nomad.io for partitioned data
 #
-# `nomad.io.base.from_file` is basically a `pandas` / `pyarrow` wrapper, trying to simplify the formatting of canonical variables
-#
-# - dates and datetimes in **ISO format** are cast to `pandas.datetime64`
-# - **unix timestamps** are cast to integers and **reformatted to seconds**.
-# - **user identifiers** are cast to strings
-# - **partition folders** can be read as columns (Hive)
-# - **timezone handling** parses ISO datetime strings (with or without timezones)
+# Partitioned directories (e.g., `date=2024-01-01/`, `date=2024-01-02/`, ...) require a loop with pandas:
 
-# %% [markdown] id="03b7bf33-48a1-4d75-bd95-ae05fb7f9357"
-# Don't read partitioned data with a for loop! `nomad`'s `from_file` wraps `PyArrow`'s file readers maintaning the same signature.
+# %%
+csv_files = glob.glob(str(data_dir / "partitioned_csv" / "*" / "*.csv"))
+df_list = []
+for f in csv_files:
+    df_list.append(pd.read_csv(f))
+df_pandas = pd.concat(df_list, ignore_index=True)
 
-# %% id="b33de9d2-ee49-46ac-96a1-56784674d40c"
-# For the partitioned dataset
+print(f"Pandas: {len(df_pandas)} rows")
+print(df_pandas.dtypes)
+print("\nFirst few rows:")
+print(df_pandas.head(3))
+
+# %% [markdown]
+# `nomad.io.from_file` handles partitioned directories in one line, plus automatic type casting and column mapping:
+
+# %%
 traj_cols = {"user_id": "user_id",
-             "timestamp": "timestamp",
-             "latitude": "latitude",
-             "longitude": "longitude",
-             "datetime": "datetime",
-             "date": "date"}
+             "latitude": "dev_lat",
+             "longitude": "dev_lon",
+             "datetime": "local_datetime"}
 
-file_path = "../../tutorials/IC2S2-2025/IC2S2-2025/gc_data/" # partitioned
-
-
-df = loader.from_file(file_path, format="csv", traj_cols=traj_cols, parse_dates=True)
+df = loader.from_file(data_dir / "partitioned_csv", format="csv", traj_cols=traj_cols, parse_dates=True)
+print(f"nomad.io: {len(df)} rows")
 print(df.dtypes)
-
-# %%
-from nomad.constants import DEFAULT_SCHEMA
-print("Canonical column names in nomad")
-DEFAULT_SCHEMA
+print("\nFirst few rows:")
+print(df.head(3))
+print("\nNote: 'local_datetime' is now datetime64[ns], not object!")
 
 # %% [markdown]
-# ```from_file``` automatically detects and reads Parquet files (single or partitioned directories) using ```PyArrow```'s dataset API, applying the same validation, type casting, and timezone handling as for CSV inputs.
+# The same pattern works for Parquet files, with the type casting and processing relying on passing to the functions which columns correspond to the default "typical" spatio-temporal column names
 
 # %%
-traj_cols = {"user_id": "uid",
-             "timestamp": "timestamp",
-             "latitude": "latitude",
-             "longitude": "longitude",
-             "date": "date"}
+traj_cols = {"user_id": "uid", "timestamp": "timestamp", 
+             "latitude": "latitude", "longitude": "longitude", "date": "date"}
 
-file_path = "../../nomad/data/partitioned_parquet/" # partitioned
-
-df = loader.from_file(file_path, format="parquet", traj_cols=traj_cols, parse_dates=True)
+df = loader.from_file(data_dir / "partitioned_parquet", format="parquet", traj_cols=traj_cols, parse_dates=True)
+print(f"Loaded {len(df)} rows")
 print(df.dtypes)
+
+# %%
+# These are the default canonical columnn names
+from nomad.constants import DEFAULT_SCHEMA
+print(DEFAULT_SCHEMA.keys())
