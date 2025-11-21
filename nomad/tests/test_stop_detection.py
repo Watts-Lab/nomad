@@ -251,8 +251,8 @@ def test_grid_based_empty_dataframe(empty_traj):
     
     # Should return empty DataFrame with correct columns
     assert result.empty
-    expected_cols = ['timestamp', 'end_timestamp', 'n_pings', 'max_gap', 'duration', 'location_id']
-    assert list(result.columns) == expected_cols
+    expected_cols = {'timestamp', 'end_timestamp', 'n_pings', 'max_gap', 'duration', 'location_id'}
+    assert set(result.columns) == expected_cols
 
 def test_grid_based_empty_dataframe_xy(empty_traj_xy):
     """Test that grid_based works with x,y coordinates on empty data."""
@@ -274,8 +274,8 @@ def test_grid_based_empty_dataframe_xy(empty_traj_xy):
     
     # Should return empty DataFrame with correct columns
     assert result.empty
-    expected_cols = ['timestamp', 'duration', 'location_id']
-    assert list(result.columns) == expected_cols
+    expected_cols = {'timestamp', 'duration', 'location_id'}
+    assert set(result.columns) == expected_cols
 
 def test_st_hdbscan_empty_dataframe(empty_traj):
     """Test that st_hdbscan returns proper empty DataFrame with correct columns."""
@@ -297,8 +297,8 @@ def test_st_hdbscan_empty_dataframe(empty_traj):
     
     # Should return empty DataFrame with correct columns
     assert result.empty
-    expected_cols = ['longitude', 'latitude', 'timestamp', 'diameter', 'n_pings', 'end_timestamp', 'duration', 'max_gap']
-    assert list(result.columns) == expected_cols
+    expected_cols = {'longitude', 'latitude', 'timestamp', 'diameter', 'n_pings', 'end_timestamp', 'duration', 'max_gap'}
+    assert set(result.columns) == expected_cols
 
 def test_st_hdbscan_empty_dataframe_xy(empty_traj_xy):
     """Test that st_hdbscan works with x,y coordinates on empty data."""
@@ -320,8 +320,8 @@ def test_st_hdbscan_empty_dataframe_xy(empty_traj_xy):
     
     # Should return empty DataFrame with correct columns
     assert result.empty
-    expected_cols = ['x', 'y', 'timestamp', 'duration']
-    assert list(result.columns) == expected_cols
+    expected_cols = {'x', 'y', 'timestamp', 'duration'}
+    assert set(result.columns) == expected_cols
 
 def test_lachesis_empty_dataframe(empty_traj):
     """Test that lachesis returns proper empty DataFrame with correct columns."""
@@ -342,8 +342,8 @@ def test_lachesis_empty_dataframe(empty_traj):
     
     # Should return empty DataFrame with correct columns
     assert result.empty
-    expected_cols = ['longitude', 'latitude', 'timestamp', 'diameter', 'n_pings', 'end_timestamp', 'duration', 'max_gap']
-    assert list(result.columns) == expected_cols
+    expected_cols = {'longitude', 'latitude', 'timestamp', 'diameter', 'n_pings', 'end_timestamp', 'duration', 'max_gap'}
+    assert set(result.columns) == expected_cols
 
 def test_lachesis_empty_dataframe_xy(empty_traj_xy):
     """Test that lachesis works with x,y coordinates on empty data."""

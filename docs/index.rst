@@ -56,8 +56,21 @@ Installation
    :caption: Examples
    :hidden:
 
-   source/benchmarking_of_stop_detection_algorithms
    source/ingesting-data
+   source/benchmarking_of_stop_detection_algorithms
+   source/lachesis_demo
+   source/tadbscan_demo
+   source/hdbscan_demo
+   source/grid_based_demo
+   source/poi_synthetic
+   source/poi_osm
+
+.. toctree::
+   :maxdepth: 2
+   :caption: API Reference
+   :hidden:
+
+   api_reference
 
 Modules Overview
 ----------------

@@ -15,7 +15,7 @@
 __pycache__/
 
 # Exclude Sphinx build artifacts
-docs/_build/
+docs/_build/*
 
 # Exclude images from research folder only
 examples/research/**/*.png
@@ -23,6 +23,7 @@ examples/research/**/*.png
 # OSM cache and large outputs
 cache/
 examples/output/
+examples/research/virtual_philadelphia/*.gpkg
 
 # macOS system file
 .DS_Store
@@ -42,6 +43,7 @@ tutorials/IC2S2-2025/tutorial-sample/*
 pyrightconfig.json
 requirements.txt
 README_POWERSHELL_FIX.md
+CODING_PRINCIPLES.md
 
 # Helper scripts (personal/local only)
 *.bat
@@ -62,3 +64,4 @@ virtual-environments/
 .DS_Store
 Thumbs.db
 *.tmp
+sandbox/sandbox_data.gpkg

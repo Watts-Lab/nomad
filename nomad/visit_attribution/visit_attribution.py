@@ -4,7 +4,6 @@ import nomad.constants as constants
 import warnings
 import pandas as pd
 import nomad.io.base as loader
-from nomad.stop_detection.utils import _fallback_time_cols
 import pyproj
 import pdb
 
@@ -279,8 +278,8 @@ def oracle_map(data, true_visits, traj_cols=None, **kwargs):
     data = data.copy()
        
     # determine temporal columns to use
-    t_key_l, use_datetime_l = _fallback_time_cols(data.columns, traj_cols, kwargs)
-    t_key_r, use_datetime_r = _fallback_time_cols(true_visits.columns, traj_cols, kwargs)
+    t_key_l, use_datetime_l = loader._fallback_time_cols_dt(data.columns, traj_cols, kwargs)
+    t_key_r, use_datetime_r = loader._fallback_time_cols_dt(true_visits.columns, traj_cols, kwargs)
 
     
     traj_cols = loader._parse_traj_cols(true_visits.columns, traj_cols, kwargs) #load defaults
@@ -439,3 +438,4 @@ def night_stops(stop_table, user='user', dawn_hour = 6, dusk_hour = 19, min_dwel
     df_clipped = df_clipped[(df_clipped['duration'] > 0) & (df_clipped['duration_night'] >= 15)]
     
     return df_clipped.groupby(['id', 'location'], group_keys=False).apply(count_nights(dawn_hour, dusk_hour, min_dwell)).reset_index(drop=True)
+

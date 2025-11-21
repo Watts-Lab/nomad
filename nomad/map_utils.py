@@ -1,16 +1,6 @@
 """
-OpenStreetMap data utilities for the NOMAD library.
-
-This module provides clean, professional functions to download and process
-geospatial data from OpenStreetMap, with flexible categorization schemas.
-
-Key Features:
-- Download buildings, parks, and streets from OSM
-- Flexible two-step categorization (OSM tags → subtypes → schemas)
-- Efficient overlap removal and geometry processing
-- Professional error handling and validation
-
-Author: NOMAD Development Team
+OpenStreetMap data utilities used to download, process, rotate, and persist
+geospatial layers for the NOMAD library.
 """
 
 import geopandas as gpd
@@ -21,105 +11,18 @@ from shapely.geometry import box
 from shapely.affinity import rotate as shapely_rotate
 import warnings
 from osmnx._errors import InsufficientResponseError
-import tempfile
 import os
-
+import pdb
+from shapely.affinity import scale, rotate as shapely_rotate
 from nomad.constants import (
     OSM_BUILDING_TO_SUBTYPE, OSM_AMENITY_TO_SUBTYPE, OSM_TOURISM_TO_SUBTYPE,
     PARK_TAGS, DEFAULT_CRS, DEFAULT_CATEGORY_SCHEMA, CATEGORY_SCHEMAS,
     STREET_HIGHWAY_TYPES, STREET_EXCLUDED_SERVICE_TYPES,
-    STREET_EXCLUDE_COVERED, STREET_EXCLUDE_TUNNELS, STREET_EXCLUDED_SURFACES
+    STREET_EXCLUDE_COVERED, STREET_EXCLUDE_TUNNELS, STREET_EXCLUDED_SURFACES,
+    INTERSECTION_CONSOLIDATION_TOLERANCE_M, STREET_MIN_LENGTH_M
 )
 
 from contextlib import contextmanager
-
-@contextmanager
-def _osmnx_temp_cache_dir():
-    """Use a temporary OSMnx cache folder for the duration of the call, then delete it.
-
-    This provides the performance/robustness of caching within a single call
-    but leaves no persistent files on disk afterward.
-    """
-    prev_use_cache = getattr(ox.settings, 'use_cache', None)
-    prev_cache_folder = getattr(ox.settings, 'cache_folder', None)
-    with tempfile.TemporaryDirectory(prefix="osmnx-cache-") as tmpdir:
-        try:
-            ox.settings.use_cache = True
-            ox.settings.cache_folder = tmpdir
-        except Exception:
-            pass
-        try:
-            yield
-        finally:
-            try:
-                if prev_use_cache is not None:
-                    ox.settings.use_cache = prev_use_cache
-                if prev_cache_folder is not None:
-                    ox.settings.cache_folder = prev_cache_folder
-            except Exception:
-                pass
-
-
-# Cache mode control
-DEFAULT_OSMNX_CACHE_MODE = os.environ.get('NOMAD_OSMNX_CACHE_MODE', 'persistent')  # 'temp' | 'persistent' | 'off'
-
-@contextmanager
-def _osmnx_persistent_cache():
-    prev_use_cache = getattr(ox.settings, 'use_cache', None)
-    prev_cache_folder = getattr(ox.settings, 'cache_folder', None)
-    try:
-        ox.settings.use_cache = True
-        # Default to ./cache under current working directory
-        cache_dir = os.environ.get('NOMAD_OSMNX_CACHE_DIR', os.path.abspath('cache'))
-        os.makedirs(cache_dir, exist_ok=True)
-        ox.settings.cache_folder = cache_dir
-        yield
-    finally:
-        try:
-            if prev_use_cache is not None:
-                ox.settings.use_cache = prev_use_cache
-            if prev_cache_folder is not None:
-                ox.settings.cache_folder = prev_cache_folder
-        except Exception:
-            pass
-
-
-@contextmanager
-def _osmnx_cache_off():
-    prev_use_cache = getattr(ox.settings, 'use_cache', None)
-    try:
-        ox.settings.use_cache = False
-        yield
-    finally:
-        try:
-            if prev_use_cache is not None:
-                ox.settings.use_cache = prev_use_cache
-        except Exception:
-            pass
-
-
-def set_osmnx_cache_mode(mode):
-    """Globally set default OSMnx cache mode: 'temp', 'persistent', or 'off'."""
-    global DEFAULT_OSMNX_CACHE_MODE
-    if mode not in ('temp', 'persistent', 'off'):
-        raise ValueError("cache mode must be one of: 'temp', 'persistent', 'off'")
-    DEFAULT_OSMNX_CACHE_MODE = mode
-
-
-@contextmanager
-def _osmnx_cache_context(mode=None):
-    mode = (mode or DEFAULT_OSMNX_CACHE_MODE)
-    if mode == 'temp':
-        with _osmnx_temp_cache_dir():
-            yield
-    elif mode == 'persistent':
-        with _osmnx_persistent_cache():
-            yield
-    elif mode == 'off':
-        with _osmnx_cache_off():
-            yield
-    else:
-        raise ValueError("Unknown cache mode")
 def _clip_to_bbox(gdf, bbox, crs=DEFAULT_CRS):
     """Clip geometries to bounding box."""
     if len(gdf) == 0:
@@ -145,7 +48,6 @@ def _clip_to_bbox(gdf, bbox, crs=DEFAULT_CRS):
     result.geometry = clipped[valid_mask]
     
     return result
-
 
 # =============================================================================
 # CATEGORIZATION FUNCTIONS
@@ -299,28 +201,36 @@ def _classify_feature(row, schema, infer_building_types=False):
     # Default case: unknown building
     default_category = 'unknown' if schema == 'geolife_plus' else 'other'
     
-    # Optional speculative classification for building=yes cases
+    # Optional inference for building=yes: after all other tags,
+    # if no amenity and height < 20, label as residential
     if infer_building_types and "building" in row and pd.notna(row["building"]):
         building_value = str(row["building"]).lower().strip()
         if building_value == 'yes':
-            # Check if it has amenity tag
-            has_amenity = "amenity" in row and pd.notna(row["amenity"])
-            
-            # Check height (if available)
+            has_amenity = ("amenity" in row and pd.notna(row["amenity"]))
             height = None
             if "height" in row and pd.notna(row["height"]):
                 try:
                     height = float(str(row["height"]))
                 except (ValueError, TypeError):
                     height = None
-            
-            # Speculative classification logic
-            if has_amenity:
-                # Building with amenity -> retail
-                return ('yes', 'commercial', 'retail')
-            elif height is None or height < 20:
-                # Low/no height building without amenity -> residential
-                return ('yes', 'residential', 'residential')
+            # Require an additional residential signal to avoid mass overclassification
+            landuse_val = str(row.get('landuse', '')).lower().strip() if 'landuse' in row and pd.notna(row['landuse']) else ''
+            addr_fields = ['addr:housenumber', 'addr:housename', 'addr:unit']
+            has_addr = any((c in row and pd.notna(row[c])) for c in addr_fields)
+            building_use = str(row.get('building:use', '')).lower().strip() if 'building:use' in row and pd.notna(row['building:use']) else ''
+
+            is_residential_signal = (
+                landuse_val == 'residential' or
+                ('residential' in building_use if building_use else False) or
+                has_addr
+            )
+
+            if (not has_amenity) and (height is not None and height < 20) and is_residential_signal:
+                subtype = 'residential'
+                category = get_category_for_subtype(subtype, schema)
+                return ('yes', subtype, category)
+            # Otherwise, keep unknown/other
+            return ('yes', 'unknown', default_category)
     
     return ('unknown', 'unknown', default_category)
 
@@ -364,32 +274,17 @@ def _add_secondary_subtypes_columns(gdf, schema):
 # =============================================================================
 # DOWNLOAD FUNCTIONS
 # =============================================================================
-def _download_osm_features(bbox, tags, crs=DEFAULT_CRS, clip=False, cache_mode=None):
-    
+def _download_osm_features(bbox, tags, crs=DEFAULT_CRS):
+    """Fetch OSM features for bbox/tags and return polygons in target CRS."""
     try:
-        with _osmnx_cache_context(cache_mode):
-            features = ox.features_from_bbox(bbox=bbox, tags=tags)
+        features = ox.features_from_bbox(bbox=bbox, tags=tags)
     except InsufficientResponseError:
         return gpd.GeoDataFrame(columns=['geometry'], crs=crs)
-    except Exception as e:
-        raise RuntimeError(f"Failed to download OSM features: {e}")
-    
     if len(features) == 0:
         return gpd.GeoDataFrame(columns=['geometry'], crs=crs)
-    
-    # Filter to area geometries only
-    features = features[
-        features.geometry.apply(lambda geom: geom.geom_type in ['Polygon', 'MultiPolygon'])
-    ]
-    
-    # Convert to target CRS
-    features = features.to_crs(crs)
-    
-    # Clip if requested
-    if clip:
-        features = _clip_to_bbox(features, bbox, crs)
-    
-    return features
+    # Keep only area geometries
+    features = features[features.geometry.apply(lambda g: g.geom_type in ['Polygon', 'MultiPolygon'])]
+    return features.to_crs(crs)
 
 
 def get_city_boundary_osm(name, simplify=True, crs="EPSG:4326"):
@@ -400,7 +295,8 @@ def get_city_boundary_osm(name, simplify=True, crs="EPSG:4326"):
     """
     try:
         city_gdf = ox.geocode_to_gdf(name)
-        city_gdf = city_gdf.to_crs(crs)
+        if crs is not None:
+            city_gdf = city_gdf.to_crs(crs)
         
         if len(city_gdf) == 0:
             return None, None, None
@@ -427,28 +323,21 @@ def get_city_boundary_osm(name, simplify=True, crs="EPSG:4326"):
         return None, None, None
 
 
-def download_osm_buildings(bbox_or_city, 
-                          crs=DEFAULT_CRS, 
-                          schema=DEFAULT_CATEGORY_SCHEMA, 
+def download_osm_buildings(bbox_or_city,
+                          crs=DEFAULT_CRS,
+                          schema=DEFAULT_CATEGORY_SCHEMA,
                           clip=False,
                           infer_building_types=False,
-                          explode=False,
-                          by_chunks=False,
-                          chunk_miles=1.0,
-                          cache_mode=None):
-    """Download buildings and parks from OSM and categorize them.
+                          explode=False):
+    """Download buildings + parks from OSM and categorize them.
 
     Parameters
-    - bbox_or_city: a bounding box tuple, a city name, or a shapely polygon
+    - bbox_or_city: bbox tuple, city name, or shapely polygon
     - crs: output CRS
     - schema: category schema name
-    - clip: clip features to the bbox/polygon
+    - clip: retained for API parity (bbox path uses Overpass bbox)
     - infer_building_types: heuristics for building="yes"
     - explode: explode MultiPolygons into Polygons
-    - by_chunks, chunk_miles: optional tiling to reduce query size
-    - cache_mode: 'persistent', 'temp', or 'off'
-
-    Returns a GeoDataFrame with columns including: osm_type, subtype, category.
     """
     
     # Determine if input is bbox, city name, or shapely polygon
@@ -465,38 +354,29 @@ def download_osm_buildings(bbox_or_city,
         bbox = bbox_or_city
         city_polygon = None
 
-    # Chunked path
-    if by_chunks:
-        return _download_buildings_by_chunks(bbox if city_polygon is None else city_polygon,
-                                            crs=crs,
-                                            schema=schema,
-                                            clip=True,
-                                            infer_building_types=infer_building_types,
-                                            explode=explode,
-                                            chunk_miles=chunk_miles,
-                                            cache_mode=cache_mode)
+    # by_chunks parameter is deprecated and ignored for simplicity and performance
     
     # Download buildings (including parking lots with building tags)
     building_tags = {"building": True}
     if city_polygon is not None:
-        with _osmnx_cache_context(cache_mode):
-            try:
-                buildings = ox.features_from_polygon(city_polygon, building_tags)
-            except InsufficientResponseError:
-                buildings = gpd.GeoDataFrame(columns=['geometry'], crs=crs)
+        try:
+            buildings = ox.features_from_polygon(city_polygon, building_tags)
+            buildings = buildings.to_crs(crs)
+        except InsufficientResponseError:
+            buildings = gpd.GeoDataFrame(columns=['geometry'], crs=crs)
     else:
-        buildings = _download_osm_features(bbox, building_tags, crs, clip, cache_mode)
+        buildings = _download_osm_features(bbox, building_tags, crs)
     
     # Download parking lots (even without building tags) - they should be buildings, not parks
     parking_tags = {"amenity": ["parking"]}
     if city_polygon is not None:
-        with _osmnx_cache_context(cache_mode):
-            try:
-                parking_lots = ox.features_from_polygon(city_polygon, parking_tags)
-            except InsufficientResponseError:
-                parking_lots = gpd.GeoDataFrame(columns=['geometry'], crs=crs)
+        try:
+            parking_lots = ox.features_from_polygon(city_polygon, parking_tags)
+            parking_lots = parking_lots.to_crs(crs)
+        except InsufficientResponseError:
+            parking_lots = gpd.GeoDataFrame(columns=['geometry'], crs=crs)
     else:
-        parking_lots = _download_osm_features(bbox, parking_tags, crs, clip, cache_mode)
+        parking_lots = _download_osm_features(bbox, parking_tags, crs)
     
     # Filter out underground parking from parking lots
     if 'parking' in parking_lots.columns:
@@ -527,13 +407,13 @@ def download_osm_buildings(bbox_or_city,
             park_tags[tag_key] = tag_values
     
     if city_polygon is not None:
-        with _osmnx_cache_context(cache_mode):
-            try:
-                parks = ox.features_from_polygon(city_polygon, park_tags)
-            except InsufficientResponseError:
-                parks = gpd.GeoDataFrame(columns=['geometry'], crs=crs)
+        try:
+            parks = ox.features_from_polygon(city_polygon, park_tags)
+            parks = parks.to_crs(crs)
+        except InsufficientResponseError:
+            parks = gpd.GeoDataFrame(columns=['geometry'], crs=crs)
     else:
-        parks = _download_osm_features(bbox, park_tags, crs, clip, cache_mode)
+        parks = _download_osm_features(bbox, park_tags, crs)
     
     # EXCLUDE WATER FEATURES FROM PARKS - they should not be parks either
     if 'natural' in parks.columns:
@@ -543,7 +423,7 @@ def download_osm_buildings(bbox_or_city,
     
     # Essential columns to keep
     essential_cols = ['geometry', 'osm_type', 'subtype', 'subtype_2', 'subtype_3',
-                     f'{schema}_category', 'category',
+                     'building_type', 'osm_category',
                      'addr:street', 'addr:city', 'addr:state', 'addr:housenumber', 'addr:postcode']
     
     # Categorize buildings
@@ -551,9 +431,9 @@ def download_osm_buildings(bbox_or_city,
         classifications = buildings.apply(lambda row: _classify_feature(row, schema, infer_building_types), axis=1)
         buildings['osm_type'] = classifications.apply(lambda x: x[0])
         buildings['subtype'] = classifications.apply(lambda x: x[1])
-        buildings[f'{schema}_category'] = classifications.apply(lambda x: x[2])
-        # Backward-compatibility: also provide generic 'category' column
-        buildings['category'] = buildings[f'{schema}_category']
+        buildings['building_type'] = classifications.apply(lambda x: x[2])
+        # Keep schema-specific category name for reference (osm_category)
+        buildings['osm_category'] = buildings['building_type']
         buildings = _add_secondary_subtypes_columns(buildings, schema)
         buildings = buildings[[col for col in essential_cols if col in buildings.columns]]
     
@@ -562,47 +442,48 @@ def download_osm_buildings(bbox_or_city,
         classifications = parks.apply(lambda row: _classify_feature(row, schema, infer_building_types), axis=1)
         parks['osm_type'] = classifications.apply(lambda x: x[0])
         parks['subtype'] = classifications.apply(lambda x: x[1])
-        parks[f'{schema}_category'] = classifications.apply(lambda x: x[2])
-        # Backward-compatibility: also provide generic 'category' column
-        parks['category'] = parks[f'{schema}_category']
+        parks['building_type'] = classifications.apply(lambda x: x[2])
+        # Keep schema-specific category name for reference (osm_category)
+        parks['osm_category'] = parks['building_type']
         parks = _add_secondary_subtypes_columns(parks, schema)
         parks = parks[[col for col in essential_cols if col in parks.columns]]
     
     # Combine only AFTER categorization to prevent parks from being misclassified as buildings
     if len(buildings) == 0 and len(parks) == 0:
-        # For empty areas, return the generic columns expected by tests
-        result = gpd.GeoDataFrame(columns=['osm_type', 'subtype', 'category', 'geometry'], crs=crs)
+        result = gpd.GeoDataFrame(columns=['osm_type', 'subtype', 'building_type', 'geometry'], crs=crs)
     elif len(buildings) == 0:
         result = parks
     elif len(parks) == 0:
         result = buildings
     else:
-        result = gpd.GeoDataFrame(
-            pd.concat([buildings, parks], ignore_index=True),
-            crs=crs
-        )
-    
-    # Explode if requested
-    if explode and len(result) > 0:
+        result = gpd.GeoDataFrame(pd.concat([buildings, parks], ignore_index=True), crs=crs)
+
+    # If requested, ensure all geometries are strictly inside the boundary by exploding then clipping
+    if clip and len(result) > 0:
+        # Build mask polygon (target CRS)
+        if city_polygon is not None:
+            mask = gpd.GeoDataFrame(geometry=[city_polygon], crs="EPSG:4326").to_crs(crs)
+        else:
+            mask = gpd.GeoDataFrame(geometry=[box(*bbox)], crs="EPSG:4326").to_crs(crs)
+        # explode first, then clip
         result = result.explode(ignore_index=True)
-    
+        result = gpd.clip(result, mask)
+        result = result[result.geometry.notna() & ~result.geometry.is_empty].reset_index(drop=True)
+
+    # Optional explode for callers who want exploded geometries without clipping
+    if (not clip) and explode and len(result) > 0:
+        result = result.explode(ignore_index=True)
+
     return result
 
 
-def download_osm_streets(bbox_or_city, 
-                        crs=DEFAULT_CRS, 
+def download_osm_streets(bbox_or_city,
+                        crs=DEFAULT_CRS,
                         clip=True,
                         clip_to_gdf=None,
                         explode=False,
-                        by_chunks=False,
-                        chunk_miles=1.0,
-                        cache_mode=None):
-    """Download a filtered street network from OSM.
-
-    Applies highway/service/tunnel/covered/surface filters at query time.
-    Optionally truncates by a bbox or another GeoDataFrame and explodes
-    MultiLineStrings when requested.
-    """
+                        graphml_path=None):
+    """Download filtered street network from OSM and return edges as GeoDataFrame."""
 
     # Determine if input is bbox, city name, or shapely polygon
     if isinstance(bbox_or_city, str):
@@ -633,24 +514,17 @@ def download_osm_streets(bbox_or_city,
         parts.append(f'["surface"!~"{excluded_surfaces}"]')
     custom_filter = "".join(parts)
 
-    # Chunked path
-    if by_chunks:
-        target = bbox if city_polygon is None else city_polygon
-        return _download_streets_by_chunks(target,
-                                           crs=crs,
-                                           clip=True,
-                                           clip_to_gdf=clip_to_gdf,
-                                           explode=explode,
-                                           chunk_miles=chunk_miles,
-                                           cache_mode=cache_mode)
+    # by_chunks parameter is deprecated and ignored for simplicity and performance
 
     try:
-        with _osmnx_cache_context(cache_mode):
-            # Construct graph with query-time filtering and graph-level truncation
-            if city_polygon is not None:
-                G = ox.graph_from_polygon(city_polygon, custom_filter=custom_filter, simplify=True)
-            else:
-                G = ox.graph_from_bbox(bbox=bbox, custom_filter=custom_filter, truncate_by_edge=bool(clip), simplify=True)
+        # Construct graph with query-time filtering and graph-level truncation
+        if city_polygon is not None:
+            G = ox.graph_from_polygon(city_polygon, custom_filter=custom_filter, simplify=True)
+        else:
+            G = ox.graph_from_bbox(bbox=bbox,
+                                   custom_filter=custom_filter,
+                                   truncate_by_edge=clip,
+                                   simplify=True)
 
         # Optional additional truncation by another GDF's bounds
         if clip_to_gdf is not None and len(clip_to_gdf) > 0:
@@ -658,8 +532,23 @@ def download_osm_streets(bbox_or_city,
             west2, south2, east2, north2 = cb[0], cb[1], cb[2], cb[3]
             G = ox.truncate.truncate_graph_bbox(G, north2, south2, east2, west2, truncate_by_edge=True)
 
-        # Convert to GeoDataFrame
-        streets = ox.graph_to_gdfs(G, edges=True, nodes=False)
+        # Project to UTM for consolidation (requires meter-based CRS)
+        Gp = ox.project_graph(G)
+        Gc = ox.simplification.consolidate_intersections(
+            Gp,
+            tolerance=INTERSECTION_CONSOLIDATION_TOLERANCE_M,
+            rebuild_graph=True
+        )
+
+        if graphml_path:
+            ox.save_graphml(Gc, filepath=str(graphml_path))
+
+        # Extract nodes/edges, prune short edges
+        nodes_gdf, streets = ox.graph_to_gdfs(Gc)
+        streets = streets[streets['length'] >= STREET_MIN_LENGTH_M]
+        
+        # Convert to target CRS
+        streets = streets.to_crs(crs)
 
     except InsufficientResponseError:
         return gpd.GeoDataFrame(columns=['geometry'], crs=crs)
@@ -669,13 +558,6 @@ def download_osm_streets(bbox_or_city,
     if len(streets) == 0:
         return gpd.GeoDataFrame(columns=['geometry'], crs=crs)
 
-    # Convert to target CRS
-    streets = streets.to_crs(crs)
-
-    # Normalize highway values that may be lists into simple strings for downstream tests
-    if 'highway' in streets.columns:
-        streets['highway'] = streets['highway'].apply(lambda v: v[0] if isinstance(v, list) and len(v) > 0 else v)
-
     # Explode if requested
     if explode and len(streets) > 0:
         streets = streets.explode(ignore_index=True)
@@ -684,99 +566,49 @@ def download_osm_streets(bbox_or_city,
 
 
 # =============================================================================
-# CHUNKED DOWNLOAD HELPERS
+# SIMPLE I/O HELPERS (GeoJSON, GeoParquet, Shapefile, GeoPackage)
 # =============================================================================
 
-def _degrees_for_miles_at_lat(miles, lat_deg):
-    # Approximate conversion: 1 deg lat ~ 69 miles; 1 deg lon ~ 69*cos(lat) miles
-    if miles <= 0:
-        return 0.0, 0.0
-    deg_lat = miles / 69.0
-    # Avoid division by zero at poles
-    lat_rad = np.radians(max(min(lat_deg, 89.9), -89.9))
-    miles_per_deg_lon = 69.0 * np.cos(lat_rad)
-    if miles_per_deg_lon <= 0:
-        deg_lon = deg_lat  # fallback
+def save_geodata(gdf: gpd.GeoDataFrame, path: str, layer: str = None):
+    """Persist a GeoDataFrame to disk based on file extension.
+
+    Supported formats:
+    - .geojson/.json -> GeoJSON
+    - .parquet/.geoparquet -> GeoParquet
+    - .shp -> ESRI Shapefile (multiple files created alongside)
+    - .gpkg -> GeoPackage (layer optional, defaults to 'data')
+    """
+    if gdf is None:
+        raise ValueError("gdf cannot be None")
+    ext = os.path.splitext(path)[1].lower()
+    os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+    if ext in ('.geojson', '.json'):
+        gdf.to_file(path, driver='GeoJSON')
+    elif ext in ('.parquet', '.geoparquet'):
+        gdf.to_parquet(path)
+    elif ext == '.shp':
+        gdf.to_file(path, driver='ESRI Shapefile')
+    elif ext == '.gpkg':
+        gdf.to_file(path, layer=(layer or 'data'), driver='GPKG')
     else:
-        deg_lon = miles / miles_per_deg_lon
-    return deg_lon, deg_lat
+        raise ValueError(f"Unsupported geodata format: {ext}")
 
 
-def _chunk_target_to_bboxes(target, chunk_miles):
-    # target can be bbox tuple (west, south, east, north) or a shapely polygon
-    if isinstance(target, tuple) and len(target) == 4:
-        west, south, east, north = target
-        polygon = box(west, south, east, north)
+def load_geodata(path: str, layer: str = None) -> gpd.GeoDataFrame:
+    """Load a GeoDataFrame from disk based on file extension.
+
+    Supports .geojson/.json, .parquet/.geoparquet, .shp, .gpkg
+    """
+    ext = os.path.splitext(path)[1].lower()
+    if ext in ('.geojson', '.json', '.shp', '.gpkg'):
+        kwargs = {}
+        if ext == '.gpkg' and layer is not None:
+            kwargs['layer'] = layer
+        return gpd.read_file(path, **kwargs)
+    elif ext in ('.parquet', '.geoparquet'):
+        return gpd.read_parquet(path)
     else:
-        polygon = target
-        west, south, east, north = polygon.bounds
-
-    mean_lat = (south + north) / 2.0
-    step_lon, step_lat = _degrees_for_miles_at_lat(chunk_miles, mean_lat)
-    if step_lon <= 0 or step_lat <= 0:
-        return [(west, south, east, north)]
-
-    bboxes = []
-    y = south
-    while y < north:
-        y2 = min(y + step_lat, north)
-        x = west
-        while x < east:
-            x2 = min(x + step_lon, east)
-            tile = box(x, y, x2, y2)
-            if tile.intersects(polygon):
-                bboxes.append((x, y, x2, y2))
-            x = x2
-        y = y2
-    return bboxes
-
-
-def _dedupe_geometries(gdf):
-    if len(gdf) == 0:
-        return gdf
-    return gdf.drop_duplicates(subset=['geometry'])
-
-
-def _download_buildings_by_chunks(target, crs, schema, clip, infer_building_types, explode, chunk_miles, cache_mode=None):
-    tiles = _chunk_target_to_bboxes(target, chunk_miles)
-    parts = []
-    for tile in tiles:
-        part = download_osm_buildings(tile if isinstance(target, tuple) else tile,
-                                      crs=crs, schema=schema, clip=True,
-                                      infer_building_types=infer_building_types,
-                                      explode=explode, by_chunks=False,
-                                      cache_mode=cache_mode)
-        if len(part) > 0:
-            parts.append(part)
-    if not parts:
-        return gpd.GeoDataFrame(columns=['osm_type', 'subtype', f'{schema}_category', 'category', 'geometry'], crs=crs)
-    combined = gpd.GeoDataFrame(pd.concat(parts, ignore_index=True), crs=crs)
-    combined = _dedupe_geometries(combined)
-    # Final clip to target polygon if provided
-    if not isinstance(target, tuple):
-        combined = gpd.clip(combined, gpd.GeoDataFrame(geometry=[target], crs=crs))
-    return combined
-
-
-def _download_streets_by_chunks(target, crs, clip, clip_to_gdf, explode, chunk_miles, cache_mode=None):
-    tiles = _chunk_target_to_bboxes(target, chunk_miles)
-    parts = []
-    for tile in tiles:
-        part = download_osm_streets(tile if isinstance(target, tuple) else tile,
-                                    crs=crs, clip=True,
-                                    clip_to_gdf=clip_to_gdf,
-                                    explode=explode, by_chunks=False,
-                                    cache_mode=cache_mode)
-        if len(part) > 0:
-            parts.append(part)
-    if not parts:
-        return gpd.GeoDataFrame(columns=['geometry'], crs=crs)
-    combined = gpd.GeoDataFrame(pd.concat(parts, ignore_index=True), crs=crs)
-    combined = _dedupe_geometries(combined)
-    # Final clip to target polygon if provided
-    if not isinstance(target, tuple):
-        combined = gpd.clip(combined, gpd.GeoDataFrame(geometry=[target], crs=crs))
-    return combined
+        raise ValueError(f"Unsupported geodata format: {ext}")
 
 
 # =============================================================================
@@ -909,10 +741,8 @@ def rotate(gdf, rotation_deg=0.0, origin='centroid'):
 # =============================================================================
 
 def get_category_summary(gdf):
-    """Return a dict of category counts."""
-    if 'category' not in gdf.columns or len(gdf) == 0:
-        raise ValueError("Features must be categorized")
-    return gdf['category'].value_counts().to_dict()
+    """Return a dict of building_type counts."""
+    return gdf['building_type'].value_counts().to_dict()
 
 
 def get_subtype_summary(gdf):
@@ -922,38 +752,7 @@ def get_subtype_summary(gdf):
     return gdf['subtype'].value_counts().to_dict()
 
 
-def get_prominent_streets(streets_gdf, k= 10):
-    """Return the k most prominent streets by length and highway priority."""
-    if len(streets_gdf) == 0:
-        return streets_gdf.copy()
-    
-    result = streets_gdf.copy()
-    
-    # Calculate street lengths
-    result['length'] = result.geometry.length
-    
-    # Highway type priority (higher = more prominent)
-    highway_priority = {
-        'motorway': 10, 'trunk': 9, 'primary': 8, 'secondary': 7,
-        'tertiary': 6, 'unclassified': 5, 'residential': 4, 'service': 3
-    }
-    
-    if 'highway' in result.columns:
-        result['priority'] = result['highway'].map(highway_priority).fillna(1)
-    else:
-        result['priority'] = 1
-    
-    # Calculate prominence score (length * priority)
-    result['prominence_score'] = result['length'] * result['priority']
-    
-    # Get top k streets
-    top_streets = result.nlargest(k, 'prominence_score')
-    
-    # Drop temporary columns
-    columns_to_drop = ['priority', 'prominence_score']
-    top_streets = top_streets.drop(columns=[col for col in columns_to_drop if col in top_streets.columns])
-    
-    return top_streets
+# Removed unused prominence helper to keep module focused on core use cases
 
 
 def rotate_streets_to_align(streets_gdf, k=200):
@@ -1013,7 +812,8 @@ def rotate_streets_to_align(streets_gdf, k=200):
 # GARDEN CITY COORDINATE TRANSFORMATION UTILITIES
 # =============================================================================
 
-def blocks_to_mercator(data, block_size=15.0, false_easting=-4265699.0, false_northing=4392976.0):
+def blocks_to_mercator(data, block_size=15.0, false_easting=-4265699.0, false_northing=4392976.0, 
+                       rotation_deg=0.0, rotation_origin=None):
     """
     Convert city block coordinates to Web Mercator coordinates.
     
@@ -1031,6 +831,12 @@ def blocks_to_mercator(data, block_size=15.0, false_easting=-4265699.0, false_no
         False easting offset (x-origin) in Web Mercator meters
     false_northing : float, default 4392976.0
         False northing offset (y-origin) in Web Mercator meters
+    rotation_deg : float, default 0.0
+        Rotation to undo (degrees counterclockwise). If non-zero, rotates by -rotation_deg
+        around rotation_origin after scaling and translation.
+    rotation_origin : tuple of (x, y), optional
+        Rotation origin in Web Mercator coordinates. If None and rotation_deg != 0,
+        uses (false_easting, false_northing) as origin.
     
     Returns
     -------
@@ -1056,6 +862,23 @@ def blocks_to_mercator(data, block_size=15.0, false_easting=-4265699.0, false_no
     # Apply affine transformation: mercator = block_size * block + origin
     result['x'] = block_size * result['x'] + false_easting
     result['y'] = block_size * result['y'] + false_northing
+    
+    # Undo rotation if specified
+    if rotation_deg != 0.0:
+        if rotation_origin is None:
+            rotation_origin = (false_easting, false_northing)
+        
+        origin_x, origin_y = rotation_origin
+        rotation_rad = np.radians(-rotation_deg)
+        cos_r = np.cos(rotation_rad)
+        sin_r = np.sin(rotation_rad)
+        
+        # Translate to origin, rotate, translate back
+        x_centered = result['x'] - origin_x
+        y_centered = result['y'] - origin_y
+        
+        result['x'] = x_centered * cos_r - y_centered * sin_r + origin_x
+        result['y'] = x_centered * sin_r + y_centered * cos_r + origin_y
     
     # Scale horizontal accuracy if present
     if 'ha' in result.columns:
@@ -1112,4 +935,136 @@ def mercator_to_blocks(data, block_size=15.0, false_easting=-4265699.0, false_no
     if 'ha' in result.columns:
         result['ha'] = result['ha'] / block_size
     
+    return result
+
+
+def blocks_to_mercator_gdf(gdf, block_size, false_easting, false_northing, 
+                           offset_x=0, offset_y=0, rotation_deg=0.0, 
+                           drop_garden_cols=True):
+    """
+    Transform GeoDataFrame from garden city block units to Web Mercator meters.
+    
+    Parameters
+    ----------
+    gdf : gpd.GeoDataFrame
+        Input with geometries in garden city block units
+    block_size : float
+        Block side length in meters
+    false_easting : float
+        Web Mercator origin x
+    false_northing : float
+        Web Mercator origin y
+    offset_x : int, default 0
+        Grid offset in block units along x-axis
+    offset_y : int, default 0
+        Grid offset in block units along y-axis
+    rotation_deg : float, default 0.0
+        Rotation applied to input (will be undone by rotating -rotation_deg)
+    drop_garden_cols : bool, default True
+        If True, drop coord_x, coord_y, door_cell_x, door_cell_y columns
+    
+    Returns
+    -------
+    gpd.GeoDataFrame
+        Transformed GeoDataFrame with CRS='EPSG:3857'
+    
+    Notes
+    -----
+    Transformation sequence:
+    1. Scale geometries by block_size
+    2. Translate by offset * block_size
+    3. Rotate by -rotation_deg (undo rotation around centroid)
+    4. Set CRS to EPSG:3857
+    5. Optionally drop garden city columns
+    """
+    
+    result = gdf.copy()
+    
+    if drop_garden_cols:
+        drop_cols = [c for c in ['coord_x', 'coord_y', 'door_cell_x', 'door_cell_y'] 
+                    if c in result.columns]
+        result = result.drop(columns=drop_cols)
+    
+    # Scale from garden city units to meters
+    result['geometry'] = result['geometry'].apply(
+        lambda g: scale(g, xfact=block_size, yfact=block_size, origin=(0, 0))
+    )
+    
+    # Translate by offset
+    result['geometry'] = result['geometry'].translate(
+        xoff=offset_x * block_size,
+        yoff=offset_y * block_size
+    )
+    
+    # Undo rotation (rotate by negative angle around centroid)
+    if rotation_deg != 0.0:
+        all_geoms = result.geometry.union_all()
+        origin_point = all_geoms.centroid
+        result['geometry'] = result['geometry'].apply(
+            lambda g: shapely_rotate(g, -rotation_deg, origin=(origin_point.x, origin_point.y))
+        )
+    
+    result = result.set_crs('EPSG:3857', allow_override=True)
+    return result
+
+
+def mercator_to_blocks_gdf(gdf, block_size, false_easting, false_northing,
+                           offset_x=0, offset_y=0, rotation_deg=0.0):
+    """
+    Transform GeoDataFrame from Web Mercator meters to garden city block units.
+    
+    Parameters
+    ----------
+    gdf : gpd.GeoDataFrame
+        Input with geometries in Web Mercator (EPSG:3857)
+    block_size : float
+        Block side length in meters
+    false_easting : float
+        Web Mercator origin x
+    false_northing : float
+        Web Mercator origin y
+    offset_x : int, default 0
+        Grid offset in block units along x-axis
+    offset_y : int, default 0
+        Grid offset in block units along y-axis
+    rotation_deg : float, default 0.0
+        Rotation to apply (degrees counterclockwise)
+    
+    Returns
+    -------
+    gpd.GeoDataFrame
+        Transformed GeoDataFrame with CRS=None (garden city units)
+    
+    Notes
+    -----
+    Transformation sequence (inverse of blocks_to_mercator_gdf):
+    1. Rotate by rotation_deg around centroid
+    2. Translate by -offset * block_size
+    3. Scale geometries by 1/block_size
+    4. Set CRS to None (abstract units)
+    """
+    from shapely.affinity import scale, rotate as shapely_rotate
+    
+    result = gdf.copy()
+    
+    # Apply rotation around centroid
+    if rotation_deg != 0.0:
+        all_geoms = result.geometry.union_all()
+        origin_point = all_geoms.centroid
+        result['geometry'] = result['geometry'].apply(
+            lambda g: shapely_rotate(g, rotation_deg, origin=(origin_point.x, origin_point.y))
+        )
+    
+    # Translate by negative offset
+    result['geometry'] = result['geometry'].translate(
+        xoff=-offset_x * block_size,
+        yoff=-offset_y * block_size
+    )
+    
+    # Scale from meters to garden city units
+    result['geometry'] = result['geometry'].apply(
+        lambda g: scale(g, xfact=1.0/block_size, yfact=1.0/block_size, origin=(0, 0))
+    )
+    
+    result = result.set_crs(None, allow_override=True)
     return result

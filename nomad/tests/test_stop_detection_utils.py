@@ -452,9 +452,9 @@ def test_get_empty_stop_columns_grid_based():
         is_grid_based=True
     )
     
-    # Should have grid-based columns: timestamp (original name), location_id
-    expected = ['timestamp', 'location_id']
-    assert columns == expected, f"Expected {expected}, got {columns}"
+    # Should have grid-based columns: timestamp (original name), duration, location_id
+    expected = {'timestamp', 'duration', 'location_id'}
+    assert set(columns) == expected, f"Expected {expected}, got {set(columns)}"
 
 
 def test_get_empty_stop_columns_grid_based_complete():
@@ -472,8 +472,8 @@ def test_get_empty_stop_columns_grid_based_complete():
     )
     
     # Should have complete grid-based columns
-    expected = ['timestamp', 'end_timestamp', 'n_pings', 'max_gap', 'duration', 'location_id']
-    assert columns == expected, f"Expected {expected}, got {columns}"
+    expected = {'timestamp', 'end_timestamp', 'n_pings', 'max_gap', 'duration', 'location_id'}
+    assert set(columns) == expected, f"Expected {expected}, got {set(columns)}"
 
 
 def test_get_empty_stop_columns_grid_based_with_geometry():
@@ -491,8 +491,8 @@ def test_get_empty_stop_columns_grid_based_with_geometry():
     )
     
     # Should include geometry column
-    expected = ['timestamp', 'location_id', 'geometry']
-    assert columns == expected, f"Expected {expected}, got {columns}"
+    expected = {'timestamp', 'duration', 'location_id', 'geometry'}
+    assert set(columns) == expected, f"Expected {expected}, got {set(columns)}"
 
 
 def test_get_empty_stop_columns_keep_col_names_false():

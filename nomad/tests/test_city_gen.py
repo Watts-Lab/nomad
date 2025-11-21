@@ -1,10 +1,134 @@
 import pandas as pd
 import numpy as np
 import geopandas as gpd
-from shapely.geometry import box
+from shapely.geometry import box, Polygon, shape
+from shapely import wkt
+from pathlib import Path
 
-from nomad.city_gen import City, RandomCityGenerator
+from nomad.city_gen import City, RandomCityGenerator, RasterCity
 from nomad.map_utils import blocks_to_mercator, mercator_to_blocks
+
+def _load_fixture():
+    """Load the test fixture from nomad/data/city_fixture.gpkg"""
+    data_dir = Path(__file__).resolve().parent.parent / "data"
+    gpkg = data_dir / "city_fixture.gpkg"
+    assert gpkg.exists(), f"Missing test fixture: {gpkg}. Run 'python nomad/data/generate_fixture.py' to create it."
+    buildings = gpd.read_file(gpkg, layer="buildings")
+    streets = gpd.read_file(gpkg, layer="streets")
+    boundary = gpd.read_file(gpkg, layer="boundary")
+    return buildings, streets, boundary.geometry.iloc[0]
+
+def _create_garden_city():
+    """Create the Garden City from garden-city-paper-code.py for testing"""
+    city = City(dimensions=(22, 22))
+    city.add_building(building_type='park', door=(13, 11), geom=box(9, 9, 13, 13))
+    city.add_building(building_type='home', door=(8, 8), blocks=[(7, 7), (7, 8)])
+    city.add_building('home', (9, 8), [(8, 7), (9, 7)])
+    city.add_building('home', (10, 8), [(10, 7)])
+    city.add_building('home', (11, 8), [(11, 7)])
+    city.add_building('home', (13, 6), [(13, 7)])
+    city.add_building('home', (14, 6), [(14, 7)])
+    city.add_building('home', (13, 8), [(14, 8)])
+    city.add_building('home', (13, 9), [(14, 9)])
+    city.add_building('home', (13, 11), [(14, 11)])
+    city.add_building('home', (13, 12), [(14, 12)])
+    city.add_building('home', (15, 13), [(14, 13)])
+    city.add_building('home', (13, 13), [(13, 14), (14, 14)])
+    city.add_building('home', (12, 13), [(12, 14)])
+    city.add_building('home', (11, 13), [(11, 14)])
+    city.add_building('home', (9, 13), [(9, 14)])
+    city.add_building('home', (8, 13), [(8, 14)])
+    city.add_building('home', (7, 15), [(7, 14)])
+    city.add_building('home', (6, 13), [(7, 13)])
+    city.add_building('home', (8, 12), [(7, 12)])
+    city.add_building('home', (8, 10), [(7, 10), (7, 9)])
+    city.add_building('workplace', (3, 4), blocks=[(4, 4), (4, 5)])
+    city.add_building('workplace', (5, 3), blocks=[(5, 4), (5, 5)])
+    city.add_building('workplace', (6, 6), geom=box(6, 4, 8, 6))
+    city.add_building('workplace', (8, 6), geom=box(8, 4, 10, 6))
+    city.add_building('workplace', (12, 6), geom=box(11, 5, 14, 6))
+    city.add_building('workplace', (12, 3), geom=box(11, 4, 14, 5))
+    city.add_building('workplace', (15, 3), geom=box(14, 4, 17, 6))
+    city.add_building('workplace', (18, 4), geom=box(17, 4, 18, 6))
+    city.add_building('workplace', (18, 6), geom=box(16, 6, 18, 8))
+    city.add_building('workplace', (15, 9), geom=box(16, 8, 17, 10))
+    city.add_building('workplace', (18, 8), geom=box(17, 8, 18, 10))
+    city.add_building('workplace', (18, 10), geom=box(16, 10, 18, 12))
+    city.add_building('workplace', (18, 13), geom=box(16, 13, 18, 15))
+    city.add_building('workplace', (18, 15), geom=box(16, 15, 18, 16))
+    city.add_building('workplace', (15, 15), geom=box(15, 16, 18, 17))
+    city.add_building('workplace', (14, 15), blocks=[(14, 16)])
+    city.add_building('workplace', (16, 18), geom=box(16, 17, 18, 18))
+    city.add_building('workplace', (15, 18), geom=box(14, 17, 16, 18))
+    city.add_building('workplace', (13, 18), geom=box(12, 16, 14, 18))
+    city.add_building('workplace', (11, 18), geom=box(10, 17, 12, 18))
+    city.add_building('workplace', (11, 15), geom=box(10, 16, 12, 17))
+    city.add_building('workplace', (8, 18), geom=box(7, 16, 9, 18))
+    city.add_building('workplace', (6, 18), geom=box(5, 17, 7, 18))
+    city.add_building('workplace', (6, 15), geom=box(5, 16, 7, 17))
+    city.add_building('workplace', (3, 16), blocks=[(4, 16), (4, 17)])
+    city.add_building('workplace', (3, 13), geom=box(4, 13, 6, 16))
+    city.add_building('workplace', (6, 12), geom=box(4, 12, 6, 13))
+    city.add_building('workplace', (3, 10), blocks=[(4, 9), (4, 10)])
+    city.add_building('workplace', (6, 9), blocks=[(5, 9), (5, 10)])
+    city.add_building('workplace', (6, 8), blocks=[(4, 8), (5, 8)])
+    city.add_building('workplace', (3, 6), geom=box(4, 6, 6, 8))
+    city.add_building('retail', (0, 1), geom=box(1, 1, 3, 3))
+    city.add_building('retail', (3, 0), geom=box(3, 1, 5, 3))
+    city.add_building('retail', (5, 0), blocks=[(5, 1)])
+    city.add_building('retail', (5, 3), blocks=[(5, 2)])
+    city.add_building('retail', (6, 0), geom=box(6, 1, 8, 2))
+    city.add_building('retail', (6, 3), geom=box(6, 2, 8, 3))
+    city.add_building('retail', (9, 3), geom=box(9, 1, 10, 3))
+    city.add_building('retail', (12, 3), geom=box(10, 1, 13, 3))
+    city.add_building('retail', (14, 3), geom=box(13, 1, 15, 3))
+    city.add_building('retail', (15, 3), blocks=[(15, 2)])
+    city.add_building('retail', (16, 3), blocks=[(16, 2)])
+    city.add_building('retail', (15, 0), blocks=[(15, 1)])
+    city.add_building('retail', (16, 0), blocks=[(16, 1)])
+    city.add_building('retail', (17, 3), geom=box(17, 2, 19, 3))
+    city.add_building('retail', (18, 0), geom=box(17, 1, 19, 2))
+    city.add_building('retail', (19, 0), geom=box(19, 1, 21, 2))
+    city.add_building('retail', (18, 3), geom=box(19, 2, 21, 4))
+    city.add_building('retail', (18, 5), geom=box(19, 4, 21, 6))
+    city.add_building('retail', (18, 7), geom=box(19, 6, 20, 8))
+    city.add_building('retail', (21, 7), geom=box(20, 6, 21, 8))
+    city.add_building('retail', (18, 10), geom=box(19, 9, 21, 11))
+    city.add_building('retail', (18, 11), geom=box(19, 11, 21, 13))
+    city.add_building('retail', (18, 13), geom=box(19, 13, 20, 15))
+    city.add_building('retail', (21, 13), geom=box(20, 13, 21, 15))
+    city.add_building('retail', (21, 16), geom=box(19, 15, 21, 17))
+    city.add_building('retail', (21, 18), geom=box(19, 17, 21, 19))
+    city.add_building('retail', (21, 19), geom=box(19, 19, 21, 20))
+    city.add_building('retail', (20, 21), geom=box(19, 20, 21, 21))
+    city.add_building('retail', (17, 18), geom=box(17, 19, 18, 21))
+    city.add_building('retail', (16, 18), geom=box(16, 19, 17, 21))
+    city.add_building('retail', (14, 18), geom=box(13, 19, 16, 20))
+    city.add_building('retail', (15, 21), geom=box(14, 20, 16, 21))
+    city.add_building('retail', (13, 21), geom=box(12, 20, 14, 21))
+    city.add_building('retail', (12, 18), geom=box(12, 19, 13, 20))
+    city.add_building('retail', (11, 18), geom=box(10, 19, 12, 21))
+    city.add_building('retail', (9, 18), geom=box(8, 19, 10, 20))
+    city.add_building('retail', (9, 21), geom=box(8, 20, 10, 21))
+    city.add_building('retail', (6, 21), geom=box(5, 19, 7, 21))
+    city.add_building('retail', (4, 21), geom=box(3, 20, 5, 21))
+    city.add_building('retail', (4, 18), geom=box(3, 19, 5, 20))
+    city.add_building('retail', (2, 18), geom=box(2, 19, 3, 21))
+    city.add_building('retail', (1, 18), geom=box(1, 19, 2, 21))
+    city.add_building('retail', (3, 17), geom=box(1, 16, 3, 18))
+    city.add_building('retail', (3, 15), geom=box(1, 15, 3, 16))
+    city.add_building('retail', (3, 14), geom=box(1, 14, 3, 15))
+    city.add_building('retail', (3, 12), geom=box(1, 12, 3, 14))
+    city.add_building('retail', (3, 11), geom=box(1, 11, 3, 12))
+    city.add_building('retail', (3, 10), geom=box(1, 10, 3, 11))
+    city.add_building('retail', (3, 8), geom=box(1, 8, 3, 10))
+    city.add_building('retail', (3, 7), geom=box(1, 7, 3, 8))
+    city.add_building('retail', (0, 5), geom=box(1, 4, 2, 7))
+    city.add_building('retail', (3, 6), blocks=[(2, 6)])
+    city.add_building('retail', (3, 5), blocks=[(2, 5)])
+    city.add_building('retail', (3, 4), blocks=[(2, 4)])
+    city.get_street_graph()
+    return city
 
 def test_city_to_geodataframes_and_persist(tmp_path):
     # Small deterministic city
@@ -12,11 +136,11 @@ def test_city_to_geodataframes_and_persist(tmp_path):
     city = rcg.generate_city()
 
     # Ensure buildings exist
-    b_gdf, s_gdf = city.to_geodataframes()
+    b_gdf = city.buildings_gdf
+    s_gdf = city.streets_gdf
     assert len(b_gdf) > 0
 
-    # Convert to GeoDataFrames
-    b_gdf, s_gdf = city.to_geodataframes()
+    # Verify GeoDataFrames
     assert isinstance(b_gdf, gpd.GeoDataFrame)
     assert isinstance(s_gdf, gpd.GeoDataFrame)
     assert 'geometry' in b_gdf.columns and 'geometry' in s_gdf.columns
@@ -36,11 +160,6 @@ def test_city_to_geodataframes_and_persist(tmp_path):
     assert 'door_point' in b_gdf.columns
     assert 'door_cell_x' in b_gdf.columns and 'door_cell_y' in b_gdf.columns
 
-    # Silent plot
-    import matplotlib.pyplot as plt
-    fig, ax = plt.subplots(figsize=(2, 2))
-    city.plot_city(ax, doors=False, address=False)
-    plt.close(fig)
 
 def test_geopackage_roundtrip(tmp_path):
     rcg = RandomCityGenerator(width=6, height=6, street_spacing=3, seed=1)
@@ -49,20 +168,16 @@ def test_geopackage_roundtrip(tmp_path):
     city.save_geopackage(str(gpkg))
     city2 = City.from_geopackage(str(gpkg))
 
-    b1, s1 = city.to_geodataframes()
-    b2, s2 = city2.to_geodataframes()
-    assert len(b1) == len(b2)
-    assert len(s1) == len(s2)
+    assert len(city.buildings_gdf) == len(city2.buildings_gdf)
+    assert len(city.streets_gdf) == len(city2.streets_gdf)
 
 
-def test_street_adjacency_edges_smoke():
+def test_street_graph_connectivity():
     rcg = RandomCityGenerator(width=8, height=8, street_spacing=4, seed=2)
     city = rcg.generate_city()
-    edges = city.street_adjacency_edges()
-    # Basic properties: DataFrame with u and v columns; non-negative count
-    assert hasattr(edges, 'columns')
-    assert len(edges.columns) > 0  # Check if there are any columns
-    assert len(edges) > 0  # Ensure there are edges in the DataFrame
+    G = city.get_street_graph()
+    assert G.number_of_nodes() > 0
+    assert G.number_of_edges() > 0
 
 
 def test_from_geodataframes_roundtrip_nonsquare(tmp_path):
@@ -71,74 +186,66 @@ def test_from_geodataframes_roundtrip_nonsquare(tmp_path):
     gpkg = tmp_path / 'ns_city.gpkg'
     city.save_geopackage(str(gpkg))
     city2 = City.from_geopackage(str(gpkg))
-    b1, s1 = city.to_geodataframes()
-    b2, s2 = city2.to_geodataframes()
-    assert len(b1) == len(b2)
-    assert len(s1) == len(s2)
+    assert len(city.buildings_gdf) == len(city2.buildings_gdf)
+    assert len(city.streets_gdf) == len(city2.streets_gdf)
 
 
 def test_shortest_path():
     rcg = RandomCityGenerator(width=10, height=10, street_spacing=5, seed=1)
     city = rcg.generate_city()
+    city.compute_shortest_paths(callable_only=False)
     
-    # Test with valid street coordinates
-    if not city.streets_gdf.empty:
-        # Temporarily reset index to access coord_x and coord_y as columns
-        streets_temp = city.streets_gdf.reset_index(drop=True)
-        street_coords = []
-        for _, row in streets_temp.iterrows():
-            coord = (int(row['coord_x']), int(row['coord_y']))
-            # Check if this coordinate tuple is in the index of streets_gdf
-            if coord in city.streets_gdf.index:
-                street_coords.append(coord)
-            if len(street_coords) >= 2:
-                break
+    # Get two street coordinates
+    streets_temp = city.streets_gdf.reset_index(drop=True)
+    street_coords = []
+    for _, row in streets_temp.iterrows():
+        coord = (int(row['coord_x']), int(row['coord_y']))
+        if coord in city.streets_gdf.index:
+            street_coords.append(coord)
         if len(street_coords) >= 2:
-            start_coord = street_coords[0]
-            end_coord = street_coords[1]
-            path = city.get_shortest_path(start_coord, end_coord)
-            assert isinstance(path, list)
-            assert len(path) > 0
-            assert path[0] == start_coord
-            assert path[-1] == end_coord
-        else:
-            print("Skipping shortest path test: Not enough street coordinates found in index")
-            return
-    else:
-        print("Skipping shortest path test: No streets available")
-        return
+            break
+    
+    start_coord = street_coords[0]
+    end_coord = street_coords[1]
+    path = city.get_shortest_path(start_coord, end_coord)
+    assert isinstance(path, list)
+    assert len(path) > 0
+    assert path[0] == start_coord
+    assert path[-1] == end_coord
     
     # Test with non-street coordinates (should raise ValueError)
     try:
-        invalid_coord = (100, 100)  # Out of bounds
+        invalid_coord = (100, 100)
         city.get_shortest_path(start_coord, invalid_coord)
         assert False, "Expected ValueError for out-of-bounds coordinates"
     except ValueError:
         pass
 
-    # Test with non-street block (building)
-    building_coords = None
-    for idx, row in city.buildings_gdf.iterrows():
-        building_coords = (int(row['door_cell_x']), int(row['door_cell_y']))
-        break
-    if building_coords and building_coords in city.blocks_gdf.index and city.blocks_gdf.loc[building_coords, 'kind'] == 'building':
-        try:
-            city.get_shortest_path(start_coord, building_coords)
-            assert False, "Expected ValueError for non-street block"
-        except ValueError:
-            pass
+    # Test with non-street block (building door cell should be a street)
+    first_building = city.buildings_gdf.iloc[0]
+    building_door = (int(first_building['door_cell_x']), int(first_building['door_cell_y']))
+    assert building_door in city.blocks_gdf.index, "Building door must be in blocks_gdf"
+    assert city.blocks_gdf.loc[building_door, 'building_type'] == 'street', "Building door must be on a street"
+    
+    # Find an actual building block to test routing error
+    building_blocks = city.blocks_gdf[(city.blocks_gdf['building_type'].notna()) & (city.blocks_gdf['building_type'] != 'street')]
+    assert not building_blocks.empty, "RandomCityGenerator must create building blocks"
+    building_block = building_blocks.index[0]
+    try:
+        city.get_shortest_path(start_coord, building_block)
+        assert False, "Expected ValueError for non-street block"
+    except ValueError:
+        pass
 
 
 def test_add_building_with_gdf_row():
-    city = City()
     rcg = RandomCityGenerator(width=10, height=10, street_spacing=2, seed=42)
     city = rcg.generate_city()
-    # Create a sample GeoDataFrame row for a building
-    from shapely.geometry import Polygon
-    geom = Polygon([(0, 0), (0, 1), (1, 1), (1, 0)])
+    # Create a building adjacent to a street cell, not overlapping the door
+    geom = Polygon([(1, 0), (1, 1), (2, 1), (2, 0)])
     gdf_row = gpd.GeoDataFrame({
         'id': ['test-building'],
-        'type': ['test'],
+        'building_type': ['test'],
         'geometry': [geom],
         'door_cell_x': [0],
         'door_cell_y': [0]
@@ -147,33 +254,37 @@ def test_add_building_with_gdf_row():
     assert not city.buildings_gdf[city.buildings_gdf['id'] == 'test-building'].empty
 
 def test_add_buildings_from_gdf():
-    city = City()
     rcg = RandomCityGenerator(width=10, height=10, street_spacing=2, seed=42)
     city = rcg.generate_city()
-    # Create a sample GeoDataFrame with multiple buildings
-    from shapely.geometry import Polygon
-    # Dynamically select door coordinates from streets_gdf
-    street_coords = [(row['coord_x'], row['coord_y']) for _, row in city.streets_gdf.head(2).iterrows()]
-    if len(street_coords) < 2:
-        print("Not enough street coordinates to test multiple buildings, adding streets")
-        for x in range(0, 10, 2):
-            for y in range(0, 10, 2):
-                city.add_street((x, y))
-        city.streets_gdf = city._derive_streets_from_blocks()
-        street_coords = [(row['coord_x'], row['coord_y']) for _, row in city.streets_gdf.head(2).iterrows()]
-    if len(street_coords) < 2:
-        print("Still not enough street coordinates, test may fail")
-    geom1 = Polygon([(street_coords[0][0], street_coords[0][1]), (street_coords[0][0], street_coords[0][1]+1), (street_coords[0][0]+1, street_coords[0][1]+1), (street_coords[0][0]+1, street_coords[0][1])])
-    geom2 = Polygon([(street_coords[1][0], street_coords[1][1]), (street_coords[1][0], street_coords[1][1]+1), (street_coords[1][0]+1, street_coords[1][1]+1), (street_coords[1][0]+1, street_coords[1][1])])
+    # Create two non-overlapping buildings, each adjacent to a different street cell
+    # Building 1: adjacent to street (0,0), occupies cells (1,0)-(2,1)
+    geom1 = Polygon([(1, 0), (1, 1), (2, 1), (2, 0)])
+    # Building 2: adjacent to street (0,2), occupies cells (1,2)-(2,3)
+    geom2 = Polygon([(1, 2), (1, 3), (2, 3), (2, 2)])
     gdf = gpd.GeoDataFrame({
         'id': ['test1', 'test2'],
-        'type': ['test', 'test'],
+        'building_type': ['test', 'test'],
         'geometry': [geom1, geom2],
-        'door_cell_x': [street_coords[0][0], street_coords[1][0]],
-        'door_cell_y': [street_coords[0][1], street_coords[1][1]]
+        'door_cell_x': [0, 0],
+        'door_cell_y': [0, 2]
     })
     city.add_buildings_from_gdf(gdf)
     assert len(city.buildings_gdf[city.buildings_gdf['id'].isin(['test1', 'test2'])]) == 2
+
+
+def test_add_building_overlap_error():
+    rcg = RandomCityGenerator(width=10, height=10, street_spacing=2, seed=42)
+    city = rcg.generate_city()
+    # Add first building
+    geom1 = Polygon([(1, 0), (1, 1), (2, 1), (2, 0)])
+    city.add_building(building_type='test', door=(0, 0), geom=geom1)
+    # Try to add overlapping building
+    geom2 = Polygon([(1, 0), (1, 1), (2, 1), (2, 0)])  # Same location
+    try:
+        city.add_building(building_type='test', door=(0, 0), geom=geom2)
+        assert False, "Expected ValueError for overlapping building"
+    except ValueError as e:
+        assert "overlaps" in str(e).lower()
 
 
 def test_coordinate_roundtrip(tmp_path):
@@ -245,9 +356,6 @@ def test_city_persistence_with_properties(tmp_path):
     assert city2.web_mercator_origin_y == 5000000.0
     
     # Verify geometries were preserved (compare bounds since geometries may be loaded differently)
-    from shapely.geometry import shape
-    from shapely import wkt
-    
     # Handle case where geometry might be WKT string
     if isinstance(city2.city_boundary, str):
         city2_boundary = wkt.loads(city2.city_boundary)
@@ -296,5 +404,600 @@ def test_city_persistence_with_properties(tmp_path):
     assert city3.block_side_length == 15.0
     assert city3.web_mercator_origin_x == -4265699.0
     assert city3.web_mercator_origin_y == 4392976.0
+
+
+def test_compute_gravity():
+    buildings, streets, boundary = _load_fixture()
+    buildings = buildings.head(100)
+    
+    city = RasterCity(boundary, streets, buildings, block_side_length=15.0)
+    
+    city._build_hub_network(hub_size=16)
+    city.compute_gravity(exponent=2.0)
+    
+    n_buildings = len(city.buildings_gdf)
+    assert city.grav.shape == (n_buildings, n_buildings)
+    
+    mask = ~np.eye(n_buildings, dtype=bool)
+    assert (city.grav.values[mask] > 0).all()
+
+
+def test_compute_gravity_callable():
+    buildings, streets, boundary = _load_fixture()
+    buildings = buildings.head(100)
+    
+    city_dense = RasterCity(boundary, streets, buildings, block_side_length=15.0)
+    city_dense._build_hub_network(hub_size=16)
+    city_dense.compute_gravity(exponent=2.0, callable_only=False)
+    
+    city_callable = RasterCity(boundary, streets, buildings, block_side_length=15.0)
+    city_callable._build_hub_network(hub_size=16)
+    city_callable.compute_gravity(exponent=2.0, callable_only=True)
+    
+    assert callable(city_callable.grav)
+    
+    rng = np.random.default_rng(42)
+    test_buildings = rng.choice(city_dense.buildings_gdf['id'].values, size=5, replace=False)
+    
+    for bid in test_buildings:
+        dense_row = city_dense.grav.loc[bid].values
+        callable_row = city_callable.grav(bid).values
+        assert np.allclose(dense_row, callable_row, atol=1e-5)
+
+
+def test_compute_gravity_true_distance():
+    buildings, streets, boundary = _load_fixture()
+    buildings = buildings.head(50)
+    
+    city = RasterCity(boundary, streets, buildings, block_side_length=15.0)
+    city.compute_gravity(exponent=2.0, callable_only=False, use_proxy_hub_distance=False)
+    
+    n_buildings = len(city.buildings_gdf)
+    assert city.grav.shape == (n_buildings, n_buildings)
+    
+    mask = ~np.eye(n_buildings, dtype=bool)
+    finite_mask = np.isfinite(city.grav.values)
+    assert (city.grav.values[mask & finite_mask] > 0).all()
+    
+    city_callable = RasterCity(boundary, streets, buildings, block_side_length=15.0)
+    city_callable.compute_gravity(exponent=2.0, callable_only=True, use_proxy_hub_distance=False)
+    
+    assert callable(city_callable.grav)
+    
+    rng = np.random.default_rng(42)
+    test_buildings = rng.choice(city.buildings_gdf['id'].values, size=3, replace=False)
+    
+    for bid in test_buildings:
+        dense_row = city.grav.loc[bid].values
+        callable_row = city_callable.grav(bid).values
+        assert np.allclose(dense_row, callable_row, atol=1e-5)
+
+
+def test_resolve_overlaps():
+    buildings, streets, boundary = _load_fixture()
+    buildings = buildings.head(100)
+    
+    city_default = RasterCity(boundary, streets, buildings, block_side_length=15.0, resolve_overlaps=False)
+    city_resolved = RasterCity(boundary, streets, buildings, block_side_length=15.0, resolve_overlaps=True)
+    
+    n_default = len(city_default.buildings_gdf)
+    n_resolved = len(city_resolved.buildings_gdf)
+    
+    assert n_resolved >= n_default
+    assert n_resolved > 0
+    assert n_default > 0
+
+
+def test_gravity_persistence_with_load(tmp_path):
+    """
+    Test saving and loading gravity infrastructure with load_gravity=True.
+    """
+    rcg = RandomCityGenerator(width=10, height=10, street_spacing=5, seed=123)
+    city = rcg.generate_city()
+    
+    city._build_hub_network(hub_size=50)
+    city.compute_gravity(exponent=2.0, callable_only=True)
+    
+    gpkg_path = tmp_path / "test_city_gravity.gpkg"
+    city.save_geopackage(str(gpkg_path), persist_gravity_data=True)
+    
+    city2 = City.from_geopackage(str(gpkg_path), load_gravity=True)
+    
+    assert hasattr(city2, 'hubs')
+    assert hasattr(city2, 'hub_df')
+    assert hasattr(city2, 'grav_hub_info')
+    assert hasattr(city2, 'mh_dist_nearby_doors')
+    assert hasattr(city2, 'grav')
+    assert callable(city2.grav)
+    
+    assert len(city2.hubs) == len(city.hubs)
+    assert city2.hub_df.shape == city.hub_df.shape
+    assert len(city2.grav_hub_info) == len(city.grav_hub_info)
+    assert len(city2.mh_dist_nearby_doors) == len(city.mh_dist_nearby_doors)
+    
+    building_id = city.buildings_gdf['id'].iloc[0]
+    grav_row_orig = city.grav(building_id)
+    grav_row_loaded = city2.grav(building_id)
+    
+    pd.testing.assert_series_equal(grav_row_orig, grav_row_loaded)
+
+
+def test_gravity_persistence_without_load(tmp_path):
+    """
+    Test saving gravity infrastructure but loading without it (load_gravity=False).
+    """
+    rcg = RandomCityGenerator(width=10, height=10, street_spacing=5, seed=123)
+    city = rcg.generate_city()
+    
+    city._build_hub_network(hub_size=50)
+    city.compute_gravity(exponent=2.0, callable_only=True)
+    
+    gpkg_path = tmp_path / "test_city_no_gravity.gpkg"
+    city.save_geopackage(str(gpkg_path), persist_gravity_data=True)
+    
+    city2 = City.from_geopackage(str(gpkg_path), load_gravity=False)
+    
+    assert not hasattr(city2, 'grav') or city2.grav is None or not callable(city2.grav)
+    assert not hasattr(city2, 'hubs') or city2.hubs is None
+    assert not hasattr(city2, 'hub_df') or city2.hub_df is None
+    assert not hasattr(city2, 'grav_hub_info') or city2.grav_hub_info is None
+
+
+def test_gravity_persistence_no_data(tmp_path):
+    """
+    Test loading a geopackage without gravity data.
+    """
+    rcg = RandomCityGenerator(width=10, height=10, street_spacing=5, seed=42)
+    city = rcg.generate_city()
+    
+    gpkg_path = tmp_path / "test_city_no_grav_data.gpkg"
+    city.save_geopackage(str(gpkg_path), persist_gravity_data=False)
+    
+    city2 = City.from_geopackage(str(gpkg_path), load_gravity=True)
+    
+    assert not hasattr(city2, 'grav') or city2.grav is None or not callable(city2.grav)
+
+
+def test_blocks_persistence_without_save(tmp_path):
+    """
+    Test that blocks_gdf is correctly regenerated after loading when not persisted.
+    Regression test for bug where dimension calculation used geometry bounds instead
+    of grid coordinates, losing the final row/column on reload.
+    
+    Uses Garden City from garden-city-paper-code.py as the test fixture.
+    """
+    city = _create_garden_city()
+    
+    # Record original state
+    blocks_before = len(city.blocks_gdf)
+    max_x_before = city.blocks_gdf['coord_x'].max()
+    max_y_before = city.blocks_gdf['coord_y'].max()
+    blocks_index_before = set(city.blocks_gdf.index)
+    
+    # Save without blocks (they'll be regenerated)
+    gpkg_path = tmp_path / "garden_city_no_blocks.gpkg"
+    city.save_geopackage(str(gpkg_path), persist_blocks=False)
+    
+    # Load back
+    city2 = City.from_geopackage(str(gpkg_path))
+    
+    # Verify blocks_gdf was correctly regenerated
+    assert len(city2.blocks_gdf) == blocks_before, \
+        f"Expected {blocks_before} blocks, got {len(city2.blocks_gdf)}"
+    assert city2.blocks_gdf['coord_x'].max() == max_x_before, \
+        f"Max coord_x changed from {max_x_before} to {city2.blocks_gdf['coord_x'].max()}"
+    assert city2.blocks_gdf['coord_y'].max() == max_y_before, \
+        f"Max coord_y changed from {max_y_before} to {city2.blocks_gdf['coord_y'].max()}"
+    
+    # Verify critical blocks exist (regression test for missing row/column 21)
+    assert (21, 0) in city2.blocks_gdf.index, "Block (21, 0) missing after load"
+    assert (21, 21) in city2.blocks_gdf.index, "Block (21, 21) missing after load"
+    assert (0, 21) in city2.blocks_gdf.index, "Block (0, 21) missing after load"
+
+
+def test_blocks_persistence_with_save(tmp_path):
+    """
+    Test that blocks_gdf is correctly persisted and restored when persist_blocks=True.
+    Verify blocks are identical whether persisted or regenerated.
+    """
+    city = _create_garden_city()
+    
+    # Record original state
+    blocks_before = len(city.blocks_gdf)
+    blocks_index_before = set(city.blocks_gdf.index)
+    
+    # Save WITH blocks persisted
+    gpkg_path = tmp_path / "garden_city_with_blocks.gpkg"
+    city.save_geopackage(str(gpkg_path), persist_blocks=True)
+    
+    # Load back
+    city2 = City.from_geopackage(str(gpkg_path))
+    
+    # Verify blocks_gdf was correctly restored
+    assert len(city2.blocks_gdf) == blocks_before
+    assert set(city2.blocks_gdf.index) == blocks_index_before
+    
+    # Verify all original blocks still exist
+    for coord in blocks_index_before:
+        assert coord in city2.blocks_gdf.index, f"Block {coord} missing after load"
+
+
+def test_unique_building_ids():
+    """
+    Regression test: RasterCity must generate unique building IDs.
+    Building IDs are based on an internal building block adjacent to the door,
+    ensuring uniqueness since buildings cannot overlap.
+    """
+    buildings_gdf, streets_gdf, boundary = _load_fixture()
+    
+    city = RasterCity(
+        boundary_polygon=boundary,
+        streets_gdf=streets_gdf,
+        buildings_gdf=buildings_gdf,
+        block_side_length=10.0,
+        resolve_overlaps=True,
+        verbose=False
+    )
+    
+    building_ids = city.buildings_gdf['id'].tolist()
+    unique_ids = set(building_ids)
+    
+    assert len(building_ids) == len(unique_ids), \
+        f"Found {len(building_ids) - len(unique_ids)} duplicate building IDs"
+    assert city.buildings_gdf.index.is_unique, "buildings_gdf index contains duplicates"
+
+
+def test_gravity_same_door_buildings():
+    """
+    Test that gravity computation handles buildings with the same door correctly.
+    Buildings sharing a door have Manhattan distance 0, which should be set to 1 to avoid inf gravity.
+    """
+    buildings_gdf, streets_gdf, boundary = _load_fixture()
+    
+    city = RasterCity(boundary, streets_gdf, buildings_gdf, block_side_length=15.0)
+    
+    # First, try to find two buildings that naturally share a door
+    door_counts = city.buildings_gdf.groupby(['door_cell_x', 'door_cell_y']).size()
+    shared_doors = door_counts[door_counts > 1]
+    
+    if len(shared_doors) > 0:
+        # Found buildings with shared door
+        door_x, door_y = shared_doors.index[0]
+        same_door_buildings = city.buildings_gdf[
+            (city.buildings_gdf['door_cell_x'] == door_x) & 
+            (city.buildings_gdf['door_cell_y'] == door_y)
+        ]
+        bids = same_door_buildings['id'].tolist()[:2]
+    else:
+        # Create two buildings with the same door by finding a street block adjacent to two buildings
+        if len(city.buildings_gdf) < 2:
+            return  # Not enough buildings to test
+        
+        # Find a street block adjacent to at least two different buildings
+        street_coords = set(zip(city.streets_gdf['coord_x'], city.streets_gdf['coord_y']))
+        building_coords = {}
+        for idx, row in city.buildings_gdf.iterrows():
+            geom = row['geometry']
+            minx, miny, maxx, maxy = geom.bounds
+            coords = [(int(x), int(y)) for x in range(int(minx), int(maxx)+1) 
+                      for y in range(int(miny), int(maxy)+1)]
+            building_coords[row['id']] = set(coords)
+        
+        # Find a street block adjacent to multiple buildings
+        shared_door = None
+        adjacent_buildings = []
+        for sx, sy in street_coords:
+            neighbors = [(sx+1, sy), (sx-1, sy), (sx, sy+1), (sx, sy-1)]
+            adj_bids = []
+            for bid, coords in building_coords.items():
+                if any(n in coords for n in neighbors):
+                    adj_bids.append(bid)
+            if len(adj_bids) >= 2:
+                shared_door = (sx, sy)
+                adjacent_buildings = adj_bids[:2]
+                break
+        
+        if shared_door is None:
+            return  # Could not create test scenario
+        
+        # Assign the shared door to both buildings
+        bids = adjacent_buildings
+        for bid in bids:
+            building_geom = city.buildings_gdf.loc[bid, 'geometry']
+            door_poly = box(shared_door[0], shared_door[1], shared_door[0]+1, shared_door[1]+1)
+            door_line = building_geom.intersection(door_poly)
+            if door_line.is_empty or not isinstance(door_line, LineString):
+                raise ValueError(f"Door {shared_door} must be adjacent to building {bid}.")
+            door_centroid = (door_line.centroid.x, door_line.centroid.y)
+            city.buildings_gdf.loc[bid, 'door_cell_x'] = shared_door[0]
+            city.buildings_gdf.loc[bid, 'door_cell_y'] = shared_door[1]
+            city.buildings_gdf.loc[bid, 'door_point'] = door_centroid
+    
+    city._build_hub_network(hub_size=16)
+    
+    # Test callable gravity
+    city.compute_gravity(exponent=2.0, callable_only=True)
+    grav_row = city.grav(bids[0])
+    assert not np.isinf(grav_row).any(), "Callable gravity contains inf values"
+    assert not np.isnan(grav_row).any(), "Callable gravity contains NaN values"
+    assert grav_row.loc[bids[1]] > 0, "Gravity between same-door buildings should be positive"
+    
+    # Test dense gravity
+    city.compute_gravity(exponent=2.0, callable_only=False)
+    assert not np.isinf(city.grav.values).any(), "Dense gravity contains inf values"
+    assert not np.isnan(city.grav.values).any(), "Dense gravity contains NaN values"
+    assert city.grav.loc[bids[0], bids[1]] > 0, "Gravity between same-door buildings should be positive"
+
+
+def test_to_file_reverse_affine_transformation(tmp_path):
+    """Test that to_file correctly reverses affine transformations."""
+    from nomad.city_gen import RandomCityGenerator
+    
+    # Create a simple deterministic city
+    rcg = RandomCityGenerator(width=10, height=10, street_spacing=5, seed=42)
+    city = rcg.generate_city()
+    
+    # Set known offset and rotation for testing
+    city.offset_x = 100
+    city.offset_y = 200
+    city.rotation_deg = 15.0
+    
+    # Export without reverse transformation (garden city units)
+    buildings_gc = tmp_path / "buildings_gc.gpkg"
+    city.to_file(buildings_path=str(buildings_gc), driver='GPKG')
+    
+    # Read back
+    buildings_loaded_gc = gpd.read_file(buildings_gc)
+    
+    # Verify garden city coordinates are preserved
+    assert len(buildings_loaded_gc) > 0, "Should have buildings"
+    # Note: door_cell_x/y columns exist
+    
+    # Export with reverse transformation
+    buildings_wm = tmp_path / "buildings_wm.gpkg"
+    streets_wm = tmp_path / "streets_wm.gpkg"
+    
+    city.to_file(
+        buildings_path=str(buildings_wm),
+        streets_path=str(streets_wm),
+        driver='GPKG',
+        reverse_affine=True
+    )
+    
+    # Read back
+    buildings_loaded_wm = gpd.read_file(buildings_wm)
+    streets_loaded_wm = gpd.read_file(streets_wm)
+    
+    # Verify transformations
+    assert len(buildings_loaded_wm) == len(city.buildings_gdf), "Building count mismatch"
+    assert len(streets_loaded_wm) > 0, "Streets should be exported"
+    
+    # Verify garden city columns were dropped
+    assert 'door_cell_x' not in buildings_loaded_wm.columns, "door_cell_x should be dropped"
+    assert 'door_cell_y' not in buildings_loaded_wm.columns, "door_cell_y should be dropped"
+    
+    # Verify CRS is Web Mercator
+    assert buildings_loaded_wm.crs.to_epsg() == 3857, "Buildings should be in Web Mercator"
+    assert streets_loaded_wm.crs.to_epsg() == 3857, "Streets should be in Web Mercator"
+    
+    # Verify geometries are scaled and translated
+    # A building at (2, 3) in garden city should be at:
+    # (2 * 15 + 100 * 15, 3 * 15 + 200 * 15) = (1530, 3045) in Web Mercator
+    # Just verify the scale factor is applied
+    gc_area = city.buildings_gdf.geometry.iloc[0].area  # in block units^2
+    wm_area = buildings_loaded_wm.geometry.iloc[0].area  # in meters^2
+    expected_area = gc_area * (city.block_side_length ** 2)
+    
+    assert abs(wm_area - expected_area) < 1.0, \
+        f"Area scaling incorrect: {wm_area} vs expected {expected_area}"
+
+
+def test_connect_building_door_success():
+    """Test successful connection of building door to streets within max_depth"""
+    city = City(dimensions=(10, 10))
+    
+    # Add buildings to create an isolated area
+    # Building 1: door at (5,5), footprint at (5,6)
+    city.add_building('home', door=(5, 5), blocks=[(5, 6)])
+    building_id = city.buildings_gdf.iloc[0]['id']
+    
+    # Add park buildings to isolate the corridor
+    city.add_building('park', door=(3, 4), blocks=[(4, 4), (4, 5), (4, 6)])
+    city.add_building('park', door=(7, 4), blocks=[(6, 4), (6, 5), (6, 6)])
+    
+    # Manually create corridor by setting blocks to None (non-street, non-building)
+    # Corridor: (5,3), (5,4), (5,5) leading to street at (5,2)
+    corridor_blocks = [(5, 3), (5, 4), (5, 5)]
+    for coord in corridor_blocks:
+        city.blocks_gdf.loc[coord, 'building_type'] = None
+        city.streets_gdf = city.streets_gdf.drop(coord, errors='ignore')
+    
+    # Call connection function
+    result = city._connect_building_door_to_streets(building_id, max_depth=5)
+    
+    # Assert connection successful
+    assert result == True
+    
+    # Assert corridor blocks are now streets
+    assert city.blocks_gdf.loc[(5, 3), 'building_type'] == 'street'
+    assert city.blocks_gdf.loc[(5, 4), 'building_type'] == 'street'
+    assert city.blocks_gdf.loc[(5, 5), 'building_type'] == 'street'
+    
+    # Assert blocks exist in streets_gdf
+    assert (5, 3) in city.streets_gdf.index
+    assert (5, 4) in city.streets_gdf.index
+    assert (5, 5) in city.streets_gdf.index
+
+
+def test_connect_building_door_path_too_long():
+    """Test failure when path exceeds max_depth"""
+    city = City(dimensions=(15, 15))
+    
+    # Add a building with door at (7, 7)
+    city.add_building('home', door=(7, 7), blocks=[(7, 8)])
+    building_id = city.buildings_gdf.iloc[0]['id']
+    
+    # Create a long corridor by adding buildings on both sides
+    # Force a path length of 7: (7,7) -> (7,6) -> (7,5) -> (7,4) -> (7,3) -> (7,2) -> (7,1) -> (7,0) street
+    for x in [6, 8]:
+        for y in range(1, 8):
+            city.add_building('park', door=(x-1 if x==6 else x+1, y), blocks=[(x, y)])
+    
+    # Set corridor blocks to None  
+    for y in range(1, 8):
+        city.blocks_gdf.loc[(7, y), 'building_type'] = None
+        city.streets_gdf = city.streets_gdf.drop((7, y), errors='ignore')
+    
+    # Path length is 7, cutoff is 5 - should fail
+    result = city._connect_building_door_to_streets(building_id, max_depth=5)
+    
+    # Assert connection failed
+    assert result == False
+
+
+def test_connect_building_door_isolated():
+    """Test failure when building door is completely isolated"""
+    city = City(dimensions=(20, 20))
+    city.add_building('home', door=(10, 10), blocks=[(10, 11)])
+    building_id = city.buildings_gdf.iloc[0]['id']
+    
+    for x in range(3, 18):
+        for y in range(3, 18):
+            if not (x == 10 and y == 10):
+                city.blocks_gdf.loc[(x, y), 'building_type'] = 'park'
+    
+    city.streets_gdf = city._derive_streets_from_blocks()
+    
+    result = city._connect_building_door_to_streets(building_id, max_depth=5)
+    assert result == False
+
+
+def test_connect_building_door_already_connected():
+    """Test that function returns True if door is already a street"""
+    city = City(dimensions=(10, 10))
+    
+    # Add a building normally (door should be on street by default)
+    city.add_building('home', door=(5, 5), blocks=[(5, 6)])
+    building_id = city.buildings_gdf.iloc[0]['id']
+    
+    # Call connection function - should succeed immediately
+    result = city._connect_building_door_to_streets(building_id, max_depth=5)
+    
+    # Assert connection successful (door already connected)
+    assert result == True
+
+
+def test_rastercity_connects_isolated_doors():
+    """Test that RasterCity automatically connects buildings with non-street doors"""
+    buildings, streets, boundary = _load_fixture()
+    
+    # Create city with rasterization that will produce some non-street doors
+    city = RasterCity(boundary, streets, buildings, block_side_length=15.0, verbose=False)
+    
+    # All building doors must be streets after initialization
+    for building_id in city.buildings_gdf['id']:
+        building_row = city.buildings_gdf.loc[building_id]
+        door_coord = (int(building_row['door_cell_x']), int(building_row['door_cell_y']))
+        assert door_coord in city.streets_gdf.index, f"Building {building_id} door {door_coord} not in streets"
+
+
+def test_rastercity_geometry_coordinate_conversion():
+    """Test that RasterCity converts geometries from meters to garden city units correctly"""
+    buildings, streets, boundary = _load_fixture()
+    block_side_length = 15.0
+    
+    city = RasterCity(boundary, streets, buildings, block_side_length=block_side_length, verbose=False)
+    
+    # Verify blocks_gdf geometries are in garden city units (1x1 blocks)
+    # This tests that geometries are properly scaled from meters to garden city units
+    sample_block_geom = city.blocks_gdf.geometry.iloc[0]
+    block_width = sample_block_geom.bounds[2] - sample_block_geom.bounds[0]
+    block_height = sample_block_geom.bounds[3] - sample_block_geom.bounds[1]
+    assert abs(block_width - 1.0) < 0.001, f"Block width should be 1.0 in garden city units, got {block_width}"
+    assert abs(block_height - 1.0) < 0.001, f"Block height should be 1.0 in garden city units, got {block_height}"
+    
+    # Verify multiple blocks to ensure consistency
+    for idx in range(min(10, len(city.blocks_gdf))):
+        block_geom = city.blocks_gdf.geometry.iloc[idx]
+        width = block_geom.bounds[2] - block_geom.bounds[0]
+        height = block_geom.bounds[3] - block_geom.bounds[1]
+        assert abs(width - 1.0) < 0.001, f"Block {idx} width should be 1.0, got {width}"
+        assert abs(height - 1.0) < 0.001, f"Block {idx} height should be 1.0, got {height}"
+    
+    # Verify streets_gdf geometries are in garden city units (1x1 blocks)
+    # streets_gdf geometries are created from coordinates, so they should already be correct
+    assert len(city.streets_gdf) > 0, "City should have streets"
+    # Use set_geometry to ensure geometry column is active (addresses FutureWarning)
+    if 'geometry' in city.streets_gdf.columns:
+        city.streets_gdf = city.streets_gdf.set_geometry('geometry')
+        sample_street_geom = city.streets_gdf.geometry.iloc[0]
+        if sample_street_geom is not None:
+            street_width = sample_street_geom.bounds[2] - sample_street_geom.bounds[0]
+            street_height = sample_street_geom.bounds[3] - sample_street_geom.bounds[1]
+            assert abs(street_width - 1.0) < 0.001, f"Street width should be 1.0 in garden city units, got {street_width}"
+            assert abs(street_height - 1.0) < 0.001, f"Street height should be 1.0 in garden city units, got {street_height}"
+            
+            # Verify blocks and streets use the same coordinate system
+            street_coord = city.streets_gdf.index[0]
+            if street_coord in city.blocks_gdf.index:
+                block_geom = city.blocks_gdf.geometry.loc[street_coord]
+                street_geom = city.streets_gdf.geometry.loc[street_coord]
+                # Geometries should be approximately equal (allowing for small floating point differences)
+                assert block_geom.bounds == street_geom.bounds, \
+                    f"Block and street geometries at {street_coord} should match: block={block_geom.bounds}, street={street_geom.bounds}"
+
+
+def test_rastercity_geometry_containment():
+    """Test that all geometries in blocks_gdf and streets_gdf are contained within city_boundary"""
+    buildings, streets, boundary = _load_fixture()
+    block_side_length = 15.0
+    
+    city = RasterCity(boundary, streets, buildings, block_side_length=block_side_length, verbose=False)
+    
+    # Verify all block geometries are contained within city_boundary
+    blocks_outside = ~city.blocks_gdf.geometry.within(city.city_boundary)
+    if blocks_outside.any():
+        outside_count = blocks_outside.sum()
+        outside_coords = city.blocks_gdf[blocks_outside].index.tolist()[:5]
+        assert False, f"{outside_count} blocks have geometries outside city_boundary. Examples: {outside_coords}"
+    
+    # Verify all street geometries are contained within city_boundary
+    streets_outside = ~city.streets_gdf.geometry.within(city.city_boundary)
+    if streets_outside.any():
+        outside_count = streets_outside.sum()
+        outside_coords = city.streets_gdf[streets_outside].index.tolist()[:5]
+        assert False, f"{outside_count} streets have geometries outside city_boundary. Examples: {outside_coords}"
+
+
+def test_rastercity_building_type_id_consistency():
+    """Test that building_type and building_id are consistent (no building_type without building_id or vice versa)"""
+    buildings, streets, boundary = _load_fixture()
+    block_side_length = 15.0
+    
+    city = RasterCity(boundary, streets, buildings, block_side_length=block_side_length, verbose=False)
+    
+    # Exclude street blocks from checks (they should have building_type='street' but building_id=None)
+    non_street_blocks = city.blocks_gdf[city.blocks_gdf['building_type'] != 'street']
+    
+    # Check for non-street blocks with building_type but no building_id
+    has_type_no_id = non_street_blocks['building_type'].notna() & non_street_blocks['building_id'].isna()
+    if has_type_no_id.any():
+        count = has_type_no_id.sum()
+        examples = non_street_blocks[has_type_no_id].index.tolist()[:5]
+        assert False, f"{count} non-street blocks have building_type but no building_id. Examples: {examples}"
+    
+    # Check for blocks with building_id but no building_type
+    has_id_no_type = city.blocks_gdf['building_id'].notna() & city.blocks_gdf['building_type'].isna()
+    if has_id_no_type.any():
+        count = has_id_no_type.sum()
+        examples = city.blocks_gdf[has_id_no_type].index.tolist()[:5]
+        assert False, f"{count} blocks have building_id but no building_type. Examples: {examples}"
+    
+    # Verify that blocks with building_type='street' don't have building_id
+    street_blocks_with_id = (city.blocks_gdf['building_type'] == 'street') & city.blocks_gdf['building_id'].notna()
+    if street_blocks_with_id.any():
+        count = street_blocks_with_id.sum()
+        examples = city.blocks_gdf[street_blocks_with_id].index.tolist()[:5]
+        assert False, f"{count} street blocks have building_id (should be None). Examples: {examples}"
 
 

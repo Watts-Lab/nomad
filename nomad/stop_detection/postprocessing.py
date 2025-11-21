@@ -75,6 +75,14 @@ def remove_overlaps(data, time_thresh=None, min_pts=None, dist_thresh=None, dur_
             summarize_stops = False
         pred = data.copy()
     
+    # Handle empty data - return appropriate type based on summarize_stops
+    if data.empty:
+        if summarize_stops:
+            return data  # Return empty DataFrame
+        else:
+            # Return empty Series with cluster column name
+            return pd.Series([], name='cluster', dtype=data.get('cluster', pd.Series(dtype=int)).dtype)
+    
     # load kwarg and traj_col args onto lean defaults
     traj_cols = loader._parse_traj_cols(
         pred.columns,
@@ -318,7 +326,7 @@ def invalid_stops(stop_data, traj_cols=None, print_stops=False, **kwargs):
         first offending pair.
     """
     # determine start-time key and whether it's datetime
-    t_key, use_datetime = utils._fallback_time_cols(stop_data.columns, traj_cols, kwargs)
+    t_key, use_datetime = loader._fallback_time_cols_dt(stop_data.columns, traj_cols, kwargs)
     end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
 
     # canonical column mapping
