@@ -56,6 +56,7 @@ Installation
    :caption: Examples
    :hidden:
 
+   source/ingesting-data
    source/benchmarking_of_stop_detection_algorithms
    source/lachesis_demo
    source/tadbscan_demo
