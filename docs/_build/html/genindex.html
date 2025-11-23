@@ -6,7 +6,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Index &mdash; NOMAD 0.0.1 documentation</title>
-      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
       <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
 
@@ -31,8 +31,9 @@
 
           
           
-          <a href="index.html" class="icon icon-home">
-            NOMAD
+          <a href="index.html">
+            
+              <img src="_static/nomad-logo-black.png" class="logo" alt="Logo"/>
           </a>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
@@ -64,10 +65,6 @@
 <li class="toctree-l1"><a class="reference internal" href="source/poi_synthetic.html">Generating synthetic places of interest (POI) Data</a></li>
 <li class="toctree-l1"><a class="reference internal" href="source/poi_osm.html">Downloading places of interest (POI) Data from OSM</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="api_reference.html">API Reference</a></li>
-</ul>
 
         </div>
       </div>
@@ -96,8 +93,7 @@
 <h1 id="index">Index</h1>
 
 <div class="genindex-jumpbox">
- <a href="#_"><strong>_</strong></a>
- | <a href="#A"><strong>A</strong></a>
+ <a href="#A"><strong>A</strong></a>
  | <a href="#B"><strong>B</strong></a>
  | <a href="#C"><strong>C</strong></a>
  | <a href="#D"><strong>D</strong></a>
@@ -113,43 +109,30 @@
  | <a href="#R"><strong>R</strong></a>
  | <a href="#S"><strong>S</strong></a>
  | <a href="#T"><strong>T</strong></a>
+ | <a href="#V"><strong>V</strong></a>
  | <a href="#W"><strong>W</strong></a>
  
 </div>
-<h2 id="_">_</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.Agent.__init__">__init__() (Agent method)</a>
-
-      <ul>
-        <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.__init__">(City method)</a>
-</li>
-        <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.Population.__init__">(Population method)</a>
-</li>
-        <li><a href="api/nomad.city_gen.html#nomad.city_gen.RandomCityGenerator.__init__">(RandomCityGenerator method)</a>
-</li>
-        <li><a href="api/nomad.city_gen.html#nomad.city_gen.Street.__init__">(Street method)</a>
-</li>
-      </ul></li>
-  </ul></td>
-</tr></table>
-
 <h2 id="A">A</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.Population.add_agent">add_agent() (Population method)</a>
+      <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.Population.add_agent">add_agent() (nomad.traj_gen.Population method)</a>
 </li>
-      <li><a href="api/nomad.city_gen.html#id0">add_building() (City method)</a>, <a href="api/nomad.city_gen.html#nomad.city_gen.City.add_building">[1]</a>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.add_building">add_building() (nomad.city_gen.City method)</a>
 </li>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.add_buildings_from_gdf">add_buildings_from_gdf() (City method)</a>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.add_buildings_from_gdf">add_buildings_from_gdf() (nomad.city_gen.City method)</a>
+</li>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.add_street">add_street() (nomad.city_gen.City method)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.add_street">add_street() (City method)</a>
-</li>
       <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.Agent">Agent (class in nomad.traj_gen)</a>
 </li>
       <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.allowed_buildings">allowed_buildings() (in module nomad.traj_gen)</a>
+</li>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.assign_block_types">assign_block_types() (in module nomad.city_gen)</a>
+</li>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.assign_door_to_building">assign_door_to_building() (in module nomad.city_gen)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -159,13 +142,11 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/nomad.map_utils.html#nomad.map_utils.blocks_to_mercator">blocks_to_mercator() (in module nomad.map_utils)</a>
 </li>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.buildings">buildings (City attribute)</a>
-</li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.buildings_df">buildings_df (City property)</a>
+      <li><a href="api/nomad.map_utils.html#nomad.map_utils.blocks_to_mercator_gdf">blocks_to_mercator_gdf() (in module nomad.map_utils)</a>
 </li>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.buildings_outline">buildings_outline (City attribute)</a>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.buildings_df">buildings_df (nomad.city_gen.City property)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -173,27 +154,25 @@
 <h2 id="C">C</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.check_adjacent">check_adjacent() (in module nomad.city_gen)</a>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.check_adjacent">check_adjacent() (nomad.city_gen.City method)</a>
 </li>
       <li><a href="api/nomad.city_gen.html#nomad.city_gen.City">City (class in nomad.city_gen)</a>
 </li>
-      <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.Population.city">city (Population attribute)</a>
-</li>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.city_boundary">city_boundary (City attribute)</a>
-</li>
       <li><a href="api/nomad.filters.html#nomad.filters.completeness">completeness() (in module nomad.filters)</a>
+</li>
+      <li><a href="api/nomad.home_attribution.html#nomad.home_attribution.compute_candidate_homes">compute_candidate_homes() (in module nomad.home_attribution)</a>
+</li>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.compute_gravity">compute_gravity() (nomad.city_gen.City method)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/nomad.home_attribution.html#nomad.home_attribution.compute_candidate_homes">compute_candidate_homes() (in module nomad.home_attribution)</a>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.compute_shortest_paths">compute_shortest_paths() (nomad.city_gen.City method)</a>
 </li>
       <li><a href="api/nomad.contact_estimation.html#nomad.contact_estimation.compute_stop_detection_metrics">compute_stop_detection_metrics() (in module nomad.contact_estimation)</a>
 </li>
       <li><a href="api/nomad.contact_estimation.html#nomad.contact_estimation.compute_visitation_errors">compute_visitation_errors() (in module nomad.contact_estimation)</a>
 </li>
       <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.condense_destinations">condense_destinations() (in module nomad.traj_gen)</a>
-</li>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.Street.coordinates">coordinates (Street attribute)</a>
 </li>
       <li><a href="api/nomad.filters.html#nomad.filters.coverage_matrix">coverage_matrix() (in module nomad.filters)</a>
 </li>
@@ -203,39 +182,33 @@
 <h2 id="D">D</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.dimensions">dimensions (City attribute)</a>
-</li>
       <li><a href="api/nomad.map_utils.html#nomad.map_utils.download_osm_buildings">download_osm_buildings() (in module nomad.map_utils)</a>
-</li>
-      <li><a href="api/nomad.map_utils.html#nomad.map_utils.download_osm_streets">download_osm_streets() (in module nomad.map_utils)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/nomad.map_utils.html#nomad.map_utils.download_osm_streets">download_osm_streets() (in module nomad.map_utils)</a>
+</li>
       <li><a href="api/nomad.filters.html#nomad.filters.downsample">downsample() (in module nomad.filters)</a>
 </li>
-      <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.Agent.dt">dt (Agent attribute)</a>
-
-      <ul>
-        <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.Population.dt">(Population attribute)</a>
-</li>
-      </ul></li>
   </ul></td>
 </tr></table>
 
 <h2 id="F">F</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.RandomCityGenerator.fill_block">fill_block() (RandomCityGenerator method)</a>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.RandomCityGenerator.fill_block">fill_block() (nomad.city_gen.RandomCityGenerator method)</a>
 </li>
-      <li><a href="api/nomad.filters_spark.html#nomad.filters_spark.filter_users">filter_users() (in module nomad.filters_spark)</a>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.find_connected_components">find_connected_components() (in module nomad.city_gen)</a>
+</li>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.find_intersecting_blocks">find_intersecting_blocks() (in module nomad.city_gen)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.from_geodataframes">from_geodataframes() (City class method)</a>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.from_geodataframes">from_geodataframes() (nomad.city_gen.City class method)</a>
 </li>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.from_geopackage">from_geopackage() (City class method)</a>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.from_geopackage">from_geopackage() (nomad.city_gen.City class method)</a>
 </li>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.from_mercator">from_mercator() (City method)</a>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.from_mercator">from_mercator() (nomad.city_gen.City method)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -243,27 +216,31 @@
 <h2 id="G">G</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.Population.generate_agents">generate_agents() (Population method)</a>
+      <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.Population.generate_agents">generate_agents() (nomad.traj_gen.Population method)</a>
 </li>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.RandomCityGenerator.generate_city">generate_city() (RandomCityGenerator method)</a>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.generate_canvas_blocks">generate_canvas_blocks() (in module nomad.city_gen)</a>
 </li>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.RandomCityGenerator.generate_streets">generate_streets() (RandomCityGenerator method)</a>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.RandomCityGenerator.generate_city">generate_city() (nomad.city_gen.RandomCityGenerator method)</a>
 </li>
-      <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.Agent.generate_trajectory">generate_trajectory() (Agent method)</a>
+      <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.Agent.generate_dest_diary">generate_dest_diary() (nomad.traj_gen.Agent method)</a>
 </li>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.Street.geometry">geometry (Street attribute)</a>
+      <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.generate_ping_times">generate_ping_times() (in module nomad.traj_gen)</a>
 </li>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.RandomCityGenerator.get_adjacent_street">get_adjacent_street() (RandomCityGenerator method)</a>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.RandomCityGenerator.generate_streets">generate_streets() (nomad.city_gen.RandomCityGenerator method)</a>
 </li>
-      <li><a href="api/nomad.city_gen.html#id1">get_block() (City method)</a>, <a href="api/nomad.city_gen.html#nomad.city_gen.City.get_block">[1]</a>
+      <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.Agent.generate_trajectory">generate_trajectory() (nomad.traj_gen.Agent method)</a>
 </li>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.RandomCityGenerator.get_block_type">get_block_type() (RandomCityGenerator method)</a>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.RandomCityGenerator.get_adjacent_street">get_adjacent_street() (nomad.city_gen.RandomCityGenerator method)</a>
 </li>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.get_building">get_building() (City method)</a>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.get_block">get_block() (nomad.city_gen.City method)</a>
+</li>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.RandomCityGenerator.get_block_type">get_block_type() (nomad.city_gen.RandomCityGenerator method)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.get_building_coordinates">get_building_coordinates() (City method)</a>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.get_building">get_building() (nomad.city_gen.City method)</a>
+</li>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.get_building_coordinates">get_building_coordinates() (nomad.city_gen.City method)</a>
 </li>
       <li><a href="api/nomad.map_utils.html#nomad.map_utils.get_category_for_subtype">get_category_for_subtype() (in module nomad.map_utils)</a>
 </li>
@@ -271,15 +248,15 @@
 </li>
       <li><a href="api/nomad.map_utils.html#nomad.map_utils.get_city_boundary_osm">get_city_boundary_osm() (in module nomad.map_utils)</a>
 </li>
-      <li><a href="api/nomad.map_utils.html#nomad.map_utils.get_prominent_streets">get_prominent_streets() (in module nomad.map_utils)</a>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.get_distance_fast">get_distance_fast() (nomad.city_gen.City method)</a>
 </li>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.get_shortest_path">get_shortest_path() (City method)</a>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.get_paths_fast">get_paths_fast() (nomad.city_gen.City method)</a>
 </li>
-      <li><a href="api/nomad.city_gen.html#id2">get_street_graph() (City method)</a>, <a href="api/nomad.city_gen.html#nomad.city_gen.City.get_street_graph">[1]</a>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.get_shortest_path">get_shortest_path() (nomad.city_gen.City method)</a>
+</li>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.get_street_graph">get_street_graph() (nomad.city_gen.City method)</a>
 </li>
       <li><a href="api/nomad.map_utils.html#nomad.map_utils.get_subtype_summary">get_subtype_summary() (in module nomad.map_utils)</a>
-</li>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.gravity">gravity (City attribute)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -287,12 +264,6 @@
 <h2 id="I">I</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.Street.id">id (Street attribute)</a>
-</li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.id_to_door_cell">id_to_door_cell() (City method)</a>
-</li>
       <li><a href="api/nomad.filters.html#nomad.filters.is_within">is_within() (in module nomad.filters)</a>
 </li>
   </ul></td>
@@ -304,12 +275,18 @@
       <li><a href="api/nomad.city_gen.html#nomad.city_gen.load">load() (in module nomad.city_gen)</a>
 </li>
   </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/nomad.map_utils.html#nomad.map_utils.load_geodata">load_geodata() (in module nomad.map_utils)</a>
+</li>
+  </ul></td>
 </tr></table>
 
 <h2 id="M">M</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/nomad.map_utils.html#nomad.map_utils.mercator_to_blocks">mercator_to_blocks() (in module nomad.map_utils)</a>
+</li>
+      <li><a href="api/nomad.map_utils.html#nomad.map_utils.mercator_to_blocks_gdf">mercator_to_blocks_gdf() (in module nomad.map_utils)</a>
 </li>
       <li>
     module
@@ -328,8 +305,6 @@
         <li><a href="api/nomad.displacement.html#module-nomad.displacement">nomad.displacement</a>
 </li>
         <li><a href="api/nomad.filters.html#module-nomad.filters">nomad.filters</a>
-</li>
-        <li><a href="api/nomad.filters_spark.html#module-nomad.filters_spark">nomad.filters_spark</a>
 </li>
         <li><a href="api/nomad.generation.html#module-nomad.generation">nomad.generation</a>
 </li>
@@ -403,13 +378,6 @@
 
       <ul>
         <li><a href="api/nomad.filters.html#module-nomad.filters">module</a>
-</li>
-      </ul></li>
-      <li>
-    nomad.filters_spark
-
-      <ul>
-        <li><a href="api/nomad.filters_spark.html#module-nomad.filters_spark">module</a>
 </li>
       </ul></li>
       <li>
@@ -492,13 +460,13 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.parse_agent_attr">parse_agent_attr() (in module nomad.traj_gen)</a>
 </li>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.RandomCityGenerator.place_buildings_in_blocks">place_buildings_in_blocks() (RandomCityGenerator method)</a>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.RandomCityGenerator.place_buildings_in_blocks">place_buildings_in_blocks() (nomad.city_gen.RandomCityGenerator method)</a>
 </li>
-      <li><a href="api/nomad.city_gen.html#id4">plot_city() (City method)</a>, <a href="api/nomad.city_gen.html#nomad.city_gen.City.plot_city">[1]</a>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.plot_city">plot_city() (nomad.city_gen.City method)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/nomad.traj_gen.html#id0">plot_traj() (Agent method)</a>, <a href="api/nomad.traj_gen.html#nomad.traj_gen.Agent.plot_traj">[1]</a>
+      <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.Agent.plot_traj">plot_traj() (nomad.traj_gen.Agent method)</a>
 </li>
       <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.Population">Population (class in nomad.traj_gen)</a>
 </li>
@@ -520,15 +488,15 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/nomad.city_gen.html#nomad.city_gen.RandomCityGenerator">RandomCityGenerator (class in nomad.city_gen)</a>
 </li>
-      <li><a href="api/nomad.map_utils.html#nomad.map_utils.remove_overlaps">remove_overlaps() (in module nomad.map_utils)</a>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.RasterCity">RasterCity (class in nomad.city_gen)</a>
 </li>
-      <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.Population.reproject_to_mercator">reproject_to_mercator() (Population method)</a>
+      <li><a href="api/nomad.map_utils.html#nomad.map_utils.remove_overlaps">remove_overlaps() (in module nomad.map_utils)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.Agent.reset_trajectory">reset_trajectory() (Agent method)</a>
+      <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.Population.reproject_to_mercator">reproject_to_mercator() (nomad.traj_gen.Population method)</a>
 </li>
-      <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.Population.roster">roster (Population attribute)</a>
+      <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.Agent.reset_trajectory">reset_trajectory() (nomad.traj_gen.Agent method)</a>
 </li>
       <li><a href="api/nomad.map_utils.html#nomad.map_utils.rotate">rotate() (in module nomad.map_utils)</a>
 </li>
@@ -540,43 +508,29 @@
 <h2 id="S">S</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.sample_hier_nhpp">sample_hier_nhpp() (in module nomad.traj_gen)</a>
+      <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.sample_bursts_gaps">sample_bursts_gaps() (in module nomad.traj_gen)</a>
 </li>
-      <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.Agent.sample_traj_hier_nhpp">sample_traj_hier_nhpp() (Agent method)</a>
+      <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.Agent.sample_trajectory">sample_trajectory() (nomad.traj_gen.Agent method)</a>
 </li>
-      <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.Agent.sample_trajectory">sample_trajectory() (Agent method)</a>
-</li>
-      <li><a href="api/nomad.city_gen.html#id3">save() (City method)</a>, <a href="api/nomad.city_gen.html#nomad.city_gen.City.save">[1]</a>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.save">save() (in module nomad.city_gen)</a>
 
       <ul>
-        <li><a href="api/nomad.city_gen.html#nomad.city_gen.save">(in module nomad.city_gen)</a>
+        <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.save">(nomad.city_gen.City method)</a>
 </li>
       </ul></li>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.save_geopackage">save_geopackage() (City method)</a>
-</li>
-      <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.Population.save_pop">save_pop() (Population method)</a>
-</li>
-      <li><a href="api/nomad.home_attribution.html#nomad.home_attribution.select_home">select_home() (in module nomad.home_attribution)</a>
+      <li><a href="api/nomad.map_utils.html#nomad.map_utils.save_geodata">save_geodata() (in module nomad.map_utils)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/nomad.map_utils.html#nomad.map_utils.set_osmnx_cache_mode">set_osmnx_cache_mode() (in module nomad.map_utils)</a>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.save_geopackage">save_geopackage() (nomad.city_gen.City method)</a>
 </li>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.shortest_paths">shortest_paths (City attribute)</a>
+      <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.Population.save_pop">save_pop() (nomad.traj_gen.Population method)</a>
 </li>
-      <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.Agent.speeds">speeds (Agent attribute)</a>
-</li>
-      <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.Agent.still_probs">still_probs (Agent attribute)</a>
+      <li><a href="api/nomad.home_attribution.html#nomad.home_attribution.select_home">select_home() (in module nomad.home_attribution)</a>
 </li>
       <li><a href="api/nomad.city_gen.html#nomad.city_gen.Street">Street (class in nomad.city_gen)</a>
 </li>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.street_adjacency_edges">street_adjacency_edges() (City method)</a>
-</li>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.street_graph">street_graph (City attribute)</a>
-</li>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.streets">streets (City attribute)</a>
-</li>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.streets_df">streets_df (City property)</a>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.streets_df">streets_df (nomad.city_gen.City property)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -584,18 +538,14 @@
 <h2 id="T">T</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.to_file">to_file() (City method)</a>
+      <li><a href="api/nomad.traj_gen.html#nomad.traj_gen.thin_traj_by_times">thin_traj_by_times() (in module nomad.traj_gen)</a>
 </li>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.to_geodataframes">to_geodataframes() (City method)</a>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.to_file">to_file() (nomad.city_gen.City method)</a>
 </li>
-      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.to_mercator">to_mercator() (City method)</a>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.City.to_mercator">to_mercator() (nomad.city_gen.City method)</a>
 </li>
       <li><a href="api/nomad.filters.html#nomad.filters.to_projection">to_projection() (in module nomad.filters)</a>
-
-      <ul>
-        <li><a href="api/nomad.filters_spark.html#nomad.filters_spark.to_projection">(in module nomad.filters_spark)</a>
 </li>
-      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/nomad.filters.html#nomad.filters.to_tessellation">to_tessellation() (in module nomad.filters)</a>
@@ -605,6 +555,14 @@
       <li><a href="api/nomad.filters.html#nomad.filters.to_yyyymmdd">to_yyyymmdd() (in module nomad.filters)</a>
 </li>
       <li><a href="api/nomad.filters.html#nomad.filters.to_zoned_datetime">to_zoned_datetime() (in module nomad.filters)</a>
+</li>
+  </ul></td>
+</tr></table>
+
+<h2 id="V">V</h2>
+<table style="width: 100%" class="indextable genindextable"><tr>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/nomad.city_gen.html#nomad.city_gen.verify_street_connectivity">verify_street_connectivity() (in module nomad.city_gen)</a>
 </li>
   </ul></td>
 </tr></table>
