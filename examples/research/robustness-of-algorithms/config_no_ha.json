@@ -3,7 +3,7 @@
     "N": 3000,
     "name_count": 2,
     "name_seed": 2025,
-    "city_file": "/Users/andresmondragon/nomad/nomad/data/garden-city.gpkg",
+    "city_file": "C:\\Users\\pacob\\Desktop\\Brain\\Code Development\\nomad\\nomad\\data\\garden-city.gpkg",
     "destination_diary_file": "exp_2_destinations_balanced.csv",
     "output_files": {
         "sparse_path": "./sparse_traj_2",
