@@ -8,135 +8,188 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.17.3
 #   kernelspec:
-#     display_name: Python 313 (nomad-venv)
+#     display_name: Python 3 (ipykernel)
 #     language: python
-#     name: nomad-venv
+#     name: python3
 # ---
 
 # %% [markdown]
-# # Benchmarking Stop Detection Algorithms
-#
-# This notebook compares the performance of four stop detection algorithms: **Lachesis**, **TA-DBSCAN**, **Grid-Based**, and **HDBSCAN**. We evaluate both overall runtime on a full trajectory dataset and how runtime scales with increasing data size.
+# # Comparing runtimes of different stop detection algorithms on toy datasets
 
 # %% [markdown]
-# ## Setup
+# Here we compare the runtimes of four different stop detection algorithms: Lachesis, grid-based, temporal DBSCAN, and HDBSCAN.
 
 # %%
-import time
-import warnings
-import pandas as pd
-import geopandas as gpd
-import matplotlib.pyplot as plt
+# %matplotlib inline
+
+# Imports
 import nomad.io.base as loader
-import nomad.filters as filters
-from nomad.stop_detection.viz import plot_pings, plot_stops, plot_time_barcode, plot_stops_barcode, clip_spatial_outliers
-import nomad.stop_detection.lachesis as LACHESIS
+import geopandas as gpd
+from shapely.geometry import box
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from nomad.stop_detection.viz import plot_stops_barcode, plot_pings, plot_stops, plot_time_barcode
 import nomad.stop_detection.dbscan as DBSCAN
+import nomad.stop_detection.lachesis as LACHESIS
 import nomad.stop_detection.grid_based as GRID_BASED
 import nomad.stop_detection.hdbscan as HDBSCAN
+import nomad.filters as filters 
+import nomad.stop_detection.postprocessing as post
+import time
+from tqdm import tqdm
 
-city = gpd.read_file("../../examples/garden_city.geojson")
-traj = loader.sample_from_file('../../examples/gc_data/', users=['youthful_mayer'], format='csv')
+# Load data
+import nomad.data as data_folder
+from pathlib import Path
+data_dir = Path(data_folder.__file__).parent
+city = gpd.read_file(data_dir / 'garden-city-buildings.geojson')
+outer_box = box(*city.total_bounds).buffer(15, join_style='mitre')
+
+filepath_root = 'gc_data_long/'
+tc = {
+    "user_id": "gc_identifier",
+    "timestamp": "unix_ts",
+    "x": "dev_x",
+    "y": "dev_y",
+    "ha":"ha",
+    "date":"date"}
+
+users = ['admiring_brattain']
+traj = loader.sample_from_file(filepath_root, format='parquet', users=users, filters = ('date','==', '2024-01-01'), traj_cols=tc)
+
+# Lachesis (sequential stop detection)
+start_time = time.time()
+stops = LACHESIS.lachesis(traj, delta_roam=20, dt_max = 60, dur_min=5, complete_output=True, keep_col_names=True, traj_cols=tc)
+execution_time_lachesis = time.time() - start_time
+print(f"Lachesis execution time: {execution_time_lachesis} seconds")
+
+# Density based stop detection (Temporal DBSCAN)
+start_time = time.time()
+user_data_tadb = traj.assign(cluster=DBSCAN.ta_dbscan_labels(traj, time_thresh=240, dist_thresh=15, min_pts=3, traj_cols=tc))
+clustering_time_tadbscan = time.time() - start_time
+start_time_post = time.time()
+cluster_labels_tadb = post.remove_overlaps(user_data_tadb, time_thresh=240, method='cluster', traj_cols=tc, min_pts=3, dur_min=5, min_cluster_size=3)
+execution_time_tadbscan = time.time() - start_time
+post_time_tadbscan = time.time() - start_time_post
+print(f"TA-DBSCAN execution time: {execution_time_tadbscan} seconds")
+print(f"TA-DBSCAN clustering time: {clustering_time_tadbscan} seconds")
+print(f"TA-DBSCAN post-processing time: {post_time_tadbscan} seconds")
+
+# Grid-based
+start_time = time.time()
+traj['h3_cell'] = filters.to_tessellation(traj, index="h3", res=10, x='dev_x', y='dev_y', data_crs='EPSG:3857')
+stops_gb = GRID_BASED.grid_based(traj, time_thresh=240, complete_output=True, timestamp='unix_ts', location_id='h3_cell')
+execution_time_grid = time.time() - start_time
+print(f"Grid-Based execution time: {execution_time_grid} seconds")
+
+# HDBSCAN
+start_time = time.time()
+user_data_hdb = traj.assign(cluster=HDBSCAN.hdbscan_labels(traj, time_thresh=240, min_pts=3, min_cluster_size=2, traj_cols=tc))
+clustering_time_hdbscan = time.time() - start_time
+start_time_post = time.time()
+cluster_labels_hdb = post.remove_overlaps(user_data_hdb, time_thresh=240, method='cluster', traj_cols=tc, min_pts=3, dur_min=5, min_cluster_size=3)    
+execution_time_hdbscan = time.time() - start_time
+post_time_hdbscan = time.time() - start_time_post
+print(f"HDBSCAN execution time: {execution_time_hdbscan} seconds")
+print(f"HDBSCAN clustering time: {clustering_time_hdbscan} seconds")
+print(f"HDBSCAN post-processing time: {post_time_hdbscan} seconds")
 
 # %% [markdown]
-# ## Overall Runtime Comparison
-#
-# We first measure the total execution time for each algorithm on the complete dataset.
-
-# %%
-algorithms = [
-    ('Lachesis', lambda t: LACHESIS.lachesis(t, delta_roam=20, dt_max=60, dur_min=5, 
-                                              complete_output=True, keep_col_names=True,
-                                              latitude="latitude", longitude="longitude")),
-    ('TA-DBSCAN', lambda t: DBSCAN.ta_dbscan(t, time_thresh=240, dist_thresh=15, min_pts=3, 
-                                              dur_min=5, complete_output=True,
-                                              latitude="latitude", longitude="longitude")),
-    ('Grid-Based', lambda t: GRID_BASED.grid_based(
-        t.assign(h3_cell=filters.to_tessellation(t, index="h3", res=10, 
-                                                  latitude='latitude', longitude='longitude', 
-                                                  data_crs='EPSG:4326')),
-        time_thresh=240, complete_output=True, timestamp='timestamp', location_id='h3_cell')),
-    ('HDBSCAN', lambda t: HDBSCAN.st_hdbscan(t, time_thresh=240, min_pts=3, min_cluster_size=2, 
-                                              dur_min=5, complete_output=True,
-                                              latitude="latitude", longitude="longitude"))
-]
-
-results = []
-for name, func in algorithms:
-    t0 = time.time()
-    stops_output = func(traj)
-    results.append({'Algorithm': name, 'Runtime (s)': time.time() - t0})
-    if name == 'Lachesis':
-        stops = stops_output
-
-results_df = pd.DataFrame(results)
-print(results_df.to_string(index=False))
+# ## Summary of Single-User Performance
 
 # %% [markdown]
-# ## Visualization
-#
-# Spatial and temporal visualization of detected stops using the Lachesis algorithm.
+# ### Lachesis
 
 # %%
-fig, (ax_map, ax_barcode) = plt.subplots(2, 1, figsize=(6, 6.5),
-                                         gridspec_kw={'height_ratios': [10, 1]})
+fig, (ax_map, ax_barcode) = plt.subplots(2, 1, figsize=(6,6.5),
+                                         gridspec_kw={'height_ratios':[10,1]})
 
-two_days = 1704162819 + 3600*48
-traj_subset = traj[traj['timestamp'] <= two_days]
-stops_subset = stops[stops['end_timestamp'] <= two_days]
-traj_clean = clip_spatial_outliers(traj_subset, latitude='latitude', longitude='longitude')
+gpd.GeoDataFrame(geometry=[outer_box], crs='EPSG:3857').plot(ax=ax_map, color='#d3d3d3')
+city.plot(ax=ax_map, edgecolor='white', linewidth=1, color='#8c8c8c')
 
-plot_pings(traj_clean, ax=ax_map, color='black', s=1.5, alpha=0.3, 
-           base_geometry=city, latitude='latitude', longitude='longitude')
-plot_stops(stops_subset, ax=ax_map, cmap='Reds', base_geometry=city,
-           latitude='latitude', longitude='longitude', radius=stops_subset["diameter"]/2)
-plot_time_barcode(traj_subset['timestamp'], ax=ax_barcode, set_xlim=True)
-plot_stops_barcode(stops_subset, ax=ax_barcode, cmap='Reds', set_xlim=False, timestamp='timestamp')
-plt.tight_layout()
+plot_stops(stops, ax=ax_map, cmap='Reds', x='x', y='y')
+plot_pings(traj, ax=ax_map, s=6, point_color='black', cmap='twilight', traj_cols=tc)
+ax_map.set_axis_off()
+
+plot_time_barcode(traj[tc['timestamp']], ax=ax_barcode, set_xlim=True)
+plot_stops_barcode(stops, ax=ax_barcode, cmap='Reds', set_xlim=False, timestamp='unix_ts')
+
+plt.tight_layout(pad=0.1)
 plt.show()
 
-# %% [markdown]
-# ## Runtime Scalability
-#
-# We measure how runtime scales with dataset size by running each algorithm on progressively larger time windows (6-hour increments).
+# %%
+print("Summary of Single-User Performance")
+print(f"Lachesis execution time: {execution_time_lachesis} seconds")
+print(f"TA-DBSCAN execution time: {execution_time_tadbscan} seconds")
+print(f"Grid-Based execution time: {execution_time_grid} seconds")
+print(f"HDBSCAN execution time: {execution_time_hdbscan} seconds")
 
 # %%
-runtime_data = []
-for current_end in pd.date_range(start=traj['datetime'].min() + pd.Timedelta(hours=6),
-                                 end=traj['datetime'].max(),
-                                 freq='6h'):
-    window = traj[traj['datetime'] <= current_end]
-    n_pings = len(window)
+print("Runtime Disaggregation")
+print(f"Lachesis clustering time: {execution_time_lachesis} seconds")
+print("--------------------------------")
+print(f"TA-DBSCAN clustering time: {clustering_time_tadbscan} seconds")
+print(f"TA-DBSCAN post-processing time: {post_time_tadbscan} seconds")
+print("--------------------------------")
+print(f"Grid-Based clustering time: {execution_time_grid} seconds")
+print("--------------------------------")
+print(f"HDBSCAN clustering time: {clustering_time_hdbscan} seconds")
+print(f"HDBSCAN post-processing time: {post_time_hdbscan} seconds")
+
+# %% [markdown]
+# ## Pings vs Runtime
+
+# %%
+traj = loader.sample_from_file(filepath_root, frac_users=0.1, format='parquet', traj_cols=tc, seed=10) # try frac_users = 0.1
+
+# H3 cells for grid_based stop detection method
+traj['h3_cell'] = filters.to_tessellation(traj, index="h3", res=10, x='dev_x', y='dev_y', data_crs='EPSG:3857')
+pings_per_user = traj['gc_identifier'].value_counts()
+
+# %%
+# Approximately 5 minutes for 40 users
+results = []
+for user, n_pings in tqdm(pings_per_user.items(), total=len(pings_per_user)):
+    user_data = traj.query("gc_identifier == @user")
+
+    # For location based
+    start_time = time.time()
+    stops_gb = GRID_BASED.grid_based(user_data, time_thresh=240, complete_output=True, timestamp='unix_ts', location_id='h3_cell')
+    execution_time = time.time() - start_time
+    results += [pd.Series({'user':user, 'algo':'grid_based', 'execution_time':execution_time, 'n_pings':n_pings})]
     
-    for name, func in algorithms:
-        t0 = time.time()
-        func(window)
-        runtime_data.append({'Algorithm': name, 'n_pings': n_pings, 'runtime': time.time() - t0})
+    # For Lachesis
+    start_time = time.time()
+    stops_lac = LACHESIS.lachesis(user_data, delta_roam=30, dt_max=240, complete_output=True, traj_cols=tc)
+    execution_time = time.time() - start_time
+    results += [pd.Series({'user':user, 'algo':'lachesis', 'execution_time':execution_time, 'n_pings':n_pings})]
 
-runtime_df = pd.DataFrame(runtime_data)
+    # For TADbscan
+    start_time = time.time()
+    user_data_tadb = user_data.assign(cluster=DBSCAN.ta_dbscan_labels(user_data, time_thresh=240, dist_thresh=15, min_pts=3, traj_cols=tc))
+    # - post-processing
+    stops_tadb = post.remove_overlaps(user_data_tadb, time_thresh=240, method='cluster', traj_cols=tc, min_pts=3, dur_min=5, min_cluster_size=3)
+    execution_time = time.time() - start_time
+    results += [pd.Series({'user':user, 'algo':'tadbscan', 'execution_time':execution_time, 'n_pings':n_pings})]
 
-# %% [markdown]
-# ## Performance Comparison
+    # For HDBSCAN
+    start_time = time.time()
+    user_data_hdb = user_data.assign(cluster=HDBSCAN.hdbscan_labels(user_data, time_thresh=240, min_pts=3, min_cluster_size=2, traj_cols=tc))
+    # - post-processing
+    stops_hdb = post.remove_overlaps(user_data_hdb, time_thresh=240, method='cluster', traj_cols=tc, min_pts=3, dur_min=5, min_cluster_size=3)    
+    execution_time = time.time() - start_time
+    results += [pd.Series({'user':user, 'algo':'hdbscan', 'execution_time':execution_time, 'n_pings':n_pings})]
+
+results = pd.DataFrame(results)
 
 # %%
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+import seaborn as sns
 
-bars = ax1.barh(results_df['Algorithm'], results_df['Runtime (s)'])
-ax1.set_xlabel('Execution Time (seconds)')
-ax1.set_title('Overall Runtime (Full Dataset)')
-ax1.grid(axis='x', alpha=0.3)
-for bar, val in zip(bars, results_df['Runtime (s)']):
-    ax1.text(val + 0.01, bar.get_y() + bar.get_height()/2, f'{val:.3f}s', va='center')
+algos = ['grid_based', 'lachesis', 'tadbscan', 'hdbscan']
+palette = dict(zip(algos, sns.color_palette(n_colors=len(algos))))
 
-for algo in runtime_df['Algorithm'].unique():
-    subset = runtime_df[runtime_df['Algorithm'] == algo]
-    ax2.plot(subset['n_pings'], subset['runtime'], marker='o', label=algo, linewidth=2)
-
-ax2.set_xlabel('Number of Pings')
-ax2.set_ylabel('Runtime (seconds)')
-ax2.set_title('Runtime vs Data Size')
-ax2.legend()
-ax2.grid(alpha=0.3)
-
-plt.tight_layout()
+fig, ax = plt.subplots(figsize=(5, 5))
+sns.scatterplot(data=results, x='n_pings', y='execution_time', hue='algo', ax=ax)
+ax.set_title('n_pings vs execution_time')
 plt.show()
