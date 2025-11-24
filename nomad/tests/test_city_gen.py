@@ -6,7 +6,7 @@ from shapely import wkt
 from pathlib import Path
 
 from nomad.city_gen import City, RandomCityGenerator, RasterCity
-from nomad.map_utils import blocks_to_mercator, mercator_to_blocks
+from nomad.map_utils import blocks_to_mercator, mercator_to_blocks, blocks_to_mercator_gdf, mercator_to_blocks_gdf
 
 def _load_fixture():
     """Load the test fixture from nomad/data/city_fixture.gpkg"""
@@ -325,6 +325,93 @@ def test_coordinate_roundtrip(tmp_path):
     
     np.testing.assert_allclose(blocks_df2['x'].values, df['x'].values, rtol=1e-10)
     np.testing.assert_allclose(blocks_df2['y'].values, df['y'].values, rtol=1e-10)
+
+
+def test_coordinate_roundtrip_gdf():
+    """
+    Test GeoDataFrame coordinate transformation roundtrip: blocks -> mercator -> blocks.
+    Ensures that GDF transformations are exact inverses and consistent with DataFrame versions.
+    """
+    from shapely.geometry import Point, Polygon, box
+    
+    # Create test GeoDataFrame in block coordinates
+    gdf = gpd.GeoDataFrame({
+        'id': [1, 2, 3],
+        'type': ['A', 'B', 'C']
+    }, geometry=[
+        Point(0.0, 0.0),
+        Point(5.5, 10.2),
+        box(1.0, 1.0, 3.0, 3.0)
+    ], crs=None)
+    
+    # Test with default Garden City parameters
+    mercator_gdf = blocks_to_mercator_gdf(
+        gdf, 
+        block_size=15.0,
+        false_easting=-4265699.0,
+        false_northing=4392976.0
+    )
+    
+    # Check CRS was set
+    assert mercator_gdf.crs == 'EPSG:3857'
+    
+    # Check first point transformation
+    first_point = mercator_gdf.geometry.iloc[0]
+    assert abs(first_point.x - (-4265699.0)) < 1e-6
+    assert abs(first_point.y - 4392976.0) < 1e-6
+    
+    # Check attributes preserved
+    assert mercator_gdf['id'].tolist() == [1, 2, 3]
+    assert mercator_gdf['type'].tolist() == ['A', 'B', 'C']
+    
+    # Transform back
+    blocks_gdf = mercator_to_blocks_gdf(
+        mercator_gdf,
+        block_size=15.0,
+        false_easting=-4265699.0,
+        false_northing=4392976.0
+    )
+    
+    # Check CRS was removed (abstract units)
+    assert blocks_gdf.crs is None
+    
+    # Check roundtrip accuracy for all geometries
+    for i in range(len(gdf)):
+        orig_geom = gdf.geometry.iloc[i]
+        roundtrip_geom = blocks_gdf.geometry.iloc[i]
+        
+        # For points, check coordinates directly
+        if orig_geom.geom_type == 'Point':
+            assert abs(orig_geom.x - roundtrip_geom.x) < 1e-10
+            assert abs(orig_geom.y - roundtrip_geom.y) < 1e-10
+        else:
+            # For polygons, check bounds
+            orig_bounds = orig_geom.bounds
+            roundtrip_bounds = roundtrip_geom.bounds
+            np.testing.assert_allclose(orig_bounds, roundtrip_bounds, rtol=1e-10)
+    
+    # Test with custom parameters
+    mercator_gdf2 = blocks_to_mercator_gdf(
+        gdf,
+        block_size=10.0,
+        false_easting=-8000000.0,
+        false_northing=4800000.0
+    )
+    blocks_gdf2 = mercator_to_blocks_gdf(
+        mercator_gdf2,
+        block_size=10.0,
+        false_easting=-8000000.0,
+        false_northing=4800000.0
+    )
+    
+    # Verify roundtrip with custom parameters
+    for i in range(len(gdf)):
+        orig_geom = gdf.geometry.iloc[i]
+        roundtrip_geom = blocks_gdf2.geometry.iloc[i]
+        
+        if orig_geom.geom_type == 'Point':
+            assert abs(orig_geom.x - roundtrip_geom.x) < 1e-10
+            assert abs(orig_geom.y - roundtrip_geom.y) < 1e-10
 
 
 def test_city_persistence_with_properties(tmp_path):

@@ -1022,8 +1022,6 @@ class City:
                 block_size=self.block_side_length,
                 false_easting=self.web_mercator_origin_x,
                 false_northing=self.web_mercator_origin_y,
-                offset_x=self.offset_x,
-                offset_y=self.offset_y,
                 rotation_deg=self.rotation_deg,
                 drop_garden_cols=False
             )
@@ -1032,8 +1030,6 @@ class City:
                 block_size=self.block_side_length,
                 false_easting=self.web_mercator_origin_x,
                 false_northing=self.web_mercator_origin_y,
-                offset_x=self.offset_x,
-                offset_y=self.offset_y,
                 rotation_deg=self.rotation_deg,
                 drop_garden_cols=False
             )
@@ -1514,8 +1510,6 @@ class City:
                     block_size=self.block_side_length,
                     false_easting=self.web_mercator_origin_x,
                     false_northing=self.web_mercator_origin_y,
-                    offset_x=self.offset_x,
-                    offset_y=self.offset_y,
                     rotation_deg=self.rotation_deg,
                     drop_garden_cols=True
                 )
