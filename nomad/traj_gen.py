@@ -440,7 +440,7 @@ class Agent:
         # Transformed coordinates of current position along the path
         path_coord = _path_coords(path_ml, start_point_arr)
 
-        heading_drift = 3.33 * dt
+        heading_drift = 3 * dt
         sigma = 0.5 * dt / 1.96
 
         while True:
