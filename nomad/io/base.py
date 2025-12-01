@@ -42,10 +42,19 @@ def _fallback_spatial_cols(col_names, traj_cols, kwargs):
     '''
     traj_cols = _parse_traj_cols(col_names, traj_cols, kwargs, defaults={}, warn=False)
     
-    user_specified_spatial = any(k in traj_cols for k in ['latitude', 'longitude', 'x', 'y'])
+    user_specified_spatial = any(
+        k in traj_cols and traj_cols[k] in col_names 
+        for k in ['latitude', 'longitude', 'x', 'y']
+    )
     
     if user_specified_spatial:
-        _has_spatial_cols(col_names, traj_cols, exclusive=True)
+        # Filter to only spatial keys that point to real columns
+        traj_cols_filtered = {
+            k: v for k, v in traj_cols.items() 
+            if k not in ['latitude', 'longitude', 'x', 'y'] or v in col_names
+        }
+        _has_spatial_cols(col_names, traj_cols_filtered, exclusive=True)
+        traj_cols = traj_cols_filtered
     else:
         # Auto-detect from DataFrame, prefer x/y
         has_x_y = 'x' in col_names and 'y' in col_names
@@ -76,11 +85,11 @@ def _fallback_time_cols_dt(col_names, traj_cols, kwargs):
     # check for explicit datetime usage
     t_keys = ['datetime', 'start_datetime', 'timestamp', 'start_timestamp']
     
-    if 'timestamp' in kwargs or 'start_timestamp' in kwargs: # prioritize timestamp 
-        t_keys = t_keys[-2:] + t_keys[:2]
+    if 'timestamp' in kwargs or 'start_timestamp' in kwargs:
+        t_keys = ['timestamp', 'start_timestamp', 'datetime', 'start_datetime']
     
-    if 'datetime' in kwargs or 'start_datetime' in kwargs: # prioritize datetime 
-        t_keys = t_keys[-2:] + t_keys[:2]
+    if 'datetime' in kwargs or 'start_datetime' in kwargs: # datetime wins
+        t_keys = ['datetime', 'start_datetime', 'timestamp', 'start_timestamp']
 
     # load defaults and check for time columns
     traj_cols = _update_schema(DEFAULT_SCHEMA, traj_cols)
@@ -832,7 +841,7 @@ def from_df(df,
             mixed_timezone_behavior="naive",
             fixed_format=None,
             filters=None,
-            sort_times=False,
+            sort_times=True,
             traj_cols=None,
             **kwargs):
     """
@@ -890,7 +899,7 @@ def from_file(filepath,
               fixed_format=None,
               sep=",",
               filters=None,
-              sort_times=False,
+              sort_times=True,
               traj_cols=None,
               **kwargs):
     """

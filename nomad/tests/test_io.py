@@ -230,7 +230,7 @@ def test_date_parsing_from_df(base_df):
     expected_tz_offset = base_df.tz_offset
     expected_ts = base_df.timestamp
 
-    result = loader.from_df(df_subset, parse_dates=True, mixed_timezone_behavior="naive")
+    result = loader.from_df(df_subset, parse_dates=True, mixed_timezone_behavior="naive", sort_times=False)
     result['timestamp'] = to_timestamp(result.datetime, result.tz_offset)
 
     assert (result.timestamp.values == expected_ts.values).all() and (result.tz_offset.values == expected_tz_offset.values).all()
@@ -244,7 +244,7 @@ def test_from_df_values_types_na(value_na_input_df, expected_value_na_output_df)
     mixed_tz = 'naive'
 
     result = loader.from_df(value_na_input_df.copy(), traj_cols=traj_cols,
-                            parse_dates=True, mixed_timezone_behavior=mixed_tz)
+                            parse_dates=True, mixed_timezone_behavior=mixed_tz, sort_times=False)
 
     pd.testing.assert_frame_equal(result, expected_value_na_output_df, check_dtype=True)
 
@@ -431,3 +431,44 @@ def test_sample_users_within(io_sources, park_polygons, idx, poly_variant):
     truth_ids = df_full.loc[pts.within(poly_shape), "uid"].drop_duplicates()
 
     assert set(ids_reader) == set(truth_ids)
+
+# Fallback function tests
+def test_fallback_spatial_with_preparsed_traj_cols():
+    """Bug: pre-parsed traj_cols incorrectly detects lon/lat when only x/y present."""
+    df_cols = pd.Index(['x', 'y', 'timestamp', 'cluster'])
+    traj_cols_parsed = loader._parse_traj_cols(df_cols, None, {}, warn=False)
+    coord1, coord2, use_ll = loader._fallback_spatial_cols(df_cols, traj_cols_parsed, {})
+    assert coord1 == 'x' and coord2 == 'y' and use_ll == False
+
+def test_fallback_spatial_prefers_xy():
+    """When both coordinate systems present and no user spec, prefer x/y."""
+    df_cols = pd.Index(['x', 'y', 'latitude', 'longitude'])
+    coord1, coord2, use_ll = loader._fallback_spatial_cols(df_cols, None, {})
+    assert coord1 == 'x' and coord2 == 'y' and use_ll == False
+
+def test_fallback_spatial_explicit_lonlat():
+    """When user explicitly specifies lon/lat, use it even if x/y present."""
+    df_cols = pd.Index(['x', 'y', 'latitude', 'longitude'])
+    traj_cols = {'longitude': 'longitude', 'latitude': 'latitude'}
+    coord1, coord2, use_ll = loader._fallback_spatial_cols(df_cols, traj_cols, {})
+    assert coord1 == 'longitude' and coord2 == 'latitude' and use_ll == True
+
+def test_fallback_time_datetime_priority():
+    """When datetime in kwargs, prioritize it over timestamp."""
+    df_cols = pd.Index(['datetime', 'timestamp'])
+    t_key, use_dt = loader._fallback_time_cols_dt(df_cols, None, {'datetime': 'datetime'})
+    assert t_key == 'datetime' and use_dt == True
+
+def test_fallback_st_cols_combines():
+    """_fallback_st_cols should call both spatial and temporal fallbacks."""
+    from nomad.stop_detection import utils
+    df_cols = pd.Index(['x', 'y', 'timestamp'])
+    t_key, coord1, coord2, use_dt, use_ll = utils._fallback_st_cols(df_cols, None, {})
+    assert coord1 == 'x' and use_ll == False
+    assert t_key == 'timestamp' and use_dt == False
+
+def test_fallback_spatial_only_lonlat():
+    """When only lon/lat present, detect correctly."""
+    df_cols = pd.Index(['latitude', 'longitude'])
+    coord1, coord2, use_ll = loader._fallback_spatial_cols(df_cols, None, {})
+    assert coord1 == 'longitude' and coord2 == 'latitude' and use_ll == True
