@@ -30,19 +30,19 @@ A comparison of the stop-detection algorithms in NOMAD is shown below.
      - Parameters
      - Description
 
-   * - `ta_dbscan <api/nomad.stop_detection.html#nomad.stop_detection.dbscan.ta_dbscan>`_
+   * - :ref:`ta_dbscan <dbscan_stop>`
      - dist_thresh, min_pts, time_thresh
      - Density-based clustering that finds stops as spatial clusters where points are within distance and time thresholds
 
-   * - `st_hdbscan <api/nomad.stop_detection.html#nomad.stop_detection.hdbscan.st_hdbscan>`_
+   * - :ref:`st_hdbscan <hdbscan_stop>`
      - time_thresh, min_pts, min_cluster_size
      - Hierarchical density-based clustering that adapts to varying density levels and automatically selects clusters
 
-   * - `grid_based <api/nomad.stop_detection.html#nomad.stop_detection.grid_based.grid_based>`_
+   * - :ref:`grid_based <grid_based_stop>`
      - time_thresh, min_cluster_size, dur_min
      - Tessellation-based approach that groups consecutive pings in the same spatial cell for privacy-aware stop detection
 
-   * - `lachesis <api/nomad.stop_detection.html#nomad.stop_detection.lachesis.lachesis>`_
+   * - :ref:`lachesis <lachesis_stop>`
      - dt_max, delta_roam, dur_min
      - Sequential algorithm that scans trajectories chronologically, identifying stops based on spatial diameter and temporal gaps
 
@@ -62,7 +62,7 @@ Notice that this method also works with **geographic coordinates** (lon, lat), u
 
 **Source:** Ester, M., Kriegel, H. P., Sander, J., & Xu, X. (1996). A density-based algorithm for discovering clusters in large spatial databases with noise. *Proceedings of the Second International Conference on Knowledge Discovery and Data Mining (KDD-96)*, 226-231.
 
-.. figure:: _images/source_tadbscan_demo_4_1.png
+.. figure:: _images/source_tadbscan_demo_3_0.png
    :target: source/tadbscan_demo.html
    :align: center
    :width: 80%
@@ -79,7 +79,7 @@ The HDBSCAN algorithm constructs a hierarchy of non-overlapping clusters from di
 
 **Source:** Campello, R. J., Moulavi, D., & Sander, J. (2013). Density-based clustering based on hierarchical density estimates. *Pacific-Asia Conference on Knowledge Discovery and Data Mining (PAKDD)*, 160-172.
 
-.. figure:: _images/source_hdbscan_demo_4_1.png
+.. figure:: _images/source_hdbscan_demo_3_0.png
    :target: source/hdbscan_demo.html
    :align: center
    :width: 80%
@@ -102,7 +102,7 @@ The algorithms work with the same call, provided there is at least a pair of coo
 
 **Source:** NOMAD implementation using spatial tessellation (H3, S2) for trajectory segmentation.
 
-.. figure:: _images/source_grid_based_demo_4_0.png
+.. figure:: _images/source_grid_based_demo_3_0.png
    :target: source/grid_based_demo.html
    :align: center
    :width: 80%
