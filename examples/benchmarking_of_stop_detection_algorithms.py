@@ -22,10 +22,8 @@
 # %%
 # %matplotlib inline
 import matplotlib
-matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
-plt.ion()
-
+import seaborn as sns
 # Imports
 import nomad.io.base as loader
 import geopandas as gpd
@@ -187,8 +185,6 @@ for user, n_pings in tqdm(pings_per_user.items(), total=len(pings_per_user)):
 results = pd.DataFrame(results)
 
 # %%
-import seaborn as sns
-
 algos = ['grid_based', 'lachesis', 'tadbscan', 'hdbscan']
 palette = dict(zip(algos, sns.color_palette(n_colors=len(algos))))
 

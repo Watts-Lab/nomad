@@ -31,9 +31,7 @@
 # %%
 # %matplotlib inline
 import matplotlib
-matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
-plt.ion()
 
 # Imports
 import nomad.io.base as loader
