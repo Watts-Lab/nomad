@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.3
+#       jupytext_version: 1.17.1
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -142,7 +142,7 @@ print(f"HDBSCAN post-processing time: {post_time_hdbscan} seconds")
 # ## Pings vs Runtime
 
 # %%
-traj = loader.sample_from_file(filepath_root, frac_users=0.1, format='parquet', traj_cols=tc, seed=10)
+traj = loader.sample_from_file(filepath_root, format='parquet', traj_cols=tc, seed=10)
 
 # H3 cells for grid_based stop detection method
 traj['h3_cell'] = filters.to_tessellation(traj, index="h3", res=10, traj_cols=tc, data_crs='EPSG:3857')
@@ -189,6 +189,6 @@ algos = ['grid_based', 'lachesis', 'tadbscan', 'hdbscan']
 palette = dict(zip(algos, sns.color_palette(n_colors=len(algos))))
 
 fig, ax = plt.subplots(figsize=(5, 5))
-sns.scatterplot(data=results, x='n_pings', y='execution_time', hue='algo', ax=ax)
+sns.lineplot(data=results, marker='o', x='n_pings', y='execution_time', hue='algo', ax=ax)
 ax.set_title('n_pings vs execution_time')
 plt.show()

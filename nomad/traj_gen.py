@@ -662,7 +662,7 @@ class Agent:
 
         if self.destination_diary.empty:
             start_time_local = self.last_ping['datetime']
-            start_time = int(self.last_ping['timestamp'])
+            start_time = self.last_ping['timestamp']
             curr_info = self.city.get_block((int(np.floor(self.last_ping['x'])), int(np.floor(self.last_ping['y']))))
             curr = curr_info['building_id'] if curr_info['building_type'] is not None and curr_info['building_type'] != 'street' and curr_info['building_id'] is not None else self.home
         else:
@@ -676,9 +676,9 @@ class Agent:
                 start_time = to_timestamp(last_entry.datetime) + int(last_entry.duration*60)
             curr = last_entry.location
 
-        # Check if start_time is already past end_time
-        if start_time >= end_time:
-            warnings.warn(
+        # Check if start_time exceeds end_time
+        if start_time > end_time:
+            raise ValueError(
                 f"Agent {self.identifier}: last_ping timestamp ({start_time}) is at or beyond end_time ({end_time}). "
                 "No destinations will be generated. Consider providing an earlier last_ping or later end_time."
             )
