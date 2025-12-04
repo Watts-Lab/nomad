@@ -171,5 +171,3 @@ parallel_population.save_pop(
     fmt='parquet'
 )
 print(f"Saved sparse trajectories to {output_path}")
-
-# %%
