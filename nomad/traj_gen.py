@@ -404,7 +404,7 @@ class Agent:
 
         # Check if cached geometry is valid for current destination
         use_cache = False
-        if self._cached_path_ml is not None and self._cached_bound_poly is not None and self._cached_dest_id == brow['id']:
+        if self._cached_bound_poly is not None and self._cached_dest_id == brow['id']:
             use_cache = True
 
         if use_cache:
@@ -454,11 +454,10 @@ class Agent:
 
             if path_coord[0] > path_ml.length:
                 coord = np.array(brow['door_point'])
-                break
+            else:
+                coord = _cartesian_coords(path_ml, *path_coord)
 
-            coord = _cartesian_coords(path_ml, *path_coord)
-
-            if _point_in_blocks(coord, bound_poly_blocks_set):
+            if _point_in_blocks(coord, bound_poly_blocks_set) or _point_in_blocks(coord, self._current_dest_building_row.get('blocks_set')):
                 break
 
         return coord, location
@@ -506,14 +505,10 @@ class Agent:
             # Shift: previous = current, current = new destination (skip shift on first iteration)
             if i > 0:
                 self._previous_dest_building_row = self._current_dest_building_row
-            if building_id in city.buildings_gdf.index:
-                building_dict = city.buildings_gdf.loc[building_id].to_dict()
-                if not building_dict['blocks']:
-                    print("[DEBUG traj_gen] missing blocks for", building_id)
-                building_dict['blocks_set'] = set(building_dict['blocks'])
-                self._current_dest_building_row = building_dict
-            else:
-                self._current_dest_building_row = None
+
+            building_dict = city.buildings_gdf.loc[building_id].to_dict()
+            building_dict['blocks_set'] = set(building_dict.get('blocks', []))
+            self._current_dest_building_row = building_dict
 
             duration_in_ticks = int(destination_diary.iloc[i]['duration'] / dt)
             for _ in range(duration_in_ticks):
@@ -1120,11 +1115,26 @@ def _sample_horizontal_noise(n,
 
 
 def _point_in_blocks(point_arr, blocks_set):
-    """Check if point is in any block using integer truncation."""
-    if blocks_set is None:
-        return False
-    block_idx = (int(np.floor(point_arr[0])), int(np.floor(point_arr[1])))
-    return block_idx in blocks_set
+    x, y = point_arr
+    ix = int(np.floor(x))
+    iy = int(np.floor(y))
+
+    # primary block
+    if (ix, iy) in blocks_set:
+        return True
+
+    on_x = x == ix
+    on_y = y == iy
+
+    # boundary checks
+    if on_x and (ix - 1, iy) in blocks_set:
+        return True
+    if on_y and (ix, iy - 1) in blocks_set:
+        return True
+    if on_x and on_y and (ix - 1, iy - 1) in blocks_set:
+        return True
+
+    return False
 
 
 def _cartesian_coords(multilines, distance, offset, eps=0.001):
