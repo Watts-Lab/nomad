@@ -20,41 +20,50 @@
 
 # %%
 # %matplotlib inline
+import matplotlib
+matplotlib.use('TkAgg')
+import matplotlib.pyplot as plt
+plt.ion()
 
 # Imports
 import nomad.io.base as loader
 import geopandas as gpd
 from shapely.geometry import box
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-from nomad.stop_detection.viz import plot_stops_barcode, plot_time_barcode
+from nomad.stop_detection.viz import plot_stops_barcode, plot_time_barcode, plot_stops, plot_pings
 import nomad.stop_detection.hdbscan as HDBSCAN
-import nomad.stop_detection.postprocessing as post
 
 # Load data
-from nomad.city_gen import City
-city_obj = City.from_geopackage("garden-city.gpkg")
-outer_box = box(0, 0, city_obj.dimensions[0], city_obj.dimensions[1])
+import nomad.data as data_folder
+from pathlib import Path
+data_dir = Path(data_folder.__file__).parent
+city = gpd.read_parquet(data_dir / 'garden-city-buildings-mercator.parquet')
+outer_box = box(*city.total_bounds)
 
 filepath_root = 'gc_data_long/'
 tc = {"user_id": "gc_identifier", "x": "dev_x", "y": "dev_y", "timestamp": "unix_ts"}
 
 users = ['admiring_brattain']
-traj = loader.sample_from_file(filepath_root, format='parquet', users=users, filters = ('date','==', '2024-01-01'), traj_cols=tc)
+traj = loader.sample_from_file(filepath_root, format='parquet', users=users, filters=('date','==', '2024-01-01'), traj_cols=tc)
 
-user_data_hdb = traj.assign(cluster=HDBSCAN.hdbscan_labels(traj, time_thresh=240, min_pts=3, min_cluster_size=2, traj_cols=tc))
 stops_hdb = HDBSCAN.st_hdbscan(traj,
                     time_thresh=720,
                     min_pts=3,
                     complete_output=True,
-                    traj_cols=tc)
-stops_hdb["cluster"] = post.remove_overlaps(user_data_hdb, time_thresh=240, method='cluster', traj_cols=tc, min_pts=3, dur_min=5, min_cluster_size=3)    
+                    traj_cols=tc)    
 
 # %%
-fig, ax_barcode = plt.subplots(figsize=(10,1.5))
+fig, (ax_map, ax_barcode) = plt.subplots(2, 1, figsize=(6,6.5),
+                                         gridspec_kw={'height_ratios':[10,1]})
+
+gpd.GeoDataFrame(geometry=[outer_box], crs='EPSG:3857').plot(ax=ax_map, color='#d3d3d3')
+city.plot(ax=ax_map, edgecolor='white', linewidth=1, color='#8c8c8c')
+
+plot_stops(stops_hdb, ax=ax_map, cmap='Blues')
+plot_pings(traj, ax=ax_map, s=6, color='black', alpha=0.5, traj_cols=tc)
+ax_map.set_axis_off()
 
 plot_time_barcode(traj['unix_ts'], ax=ax_barcode, set_xlim=True)
-plot_stops_barcode(stops_hdb, ax=ax_barcode, stop_color='blue', set_xlim=False, timestamp='unix_ts')
-fig.suptitle("HDBSCAN stops with post-processing")
+plot_stops_barcode(stops_hdb, ax=ax_barcode, cmap='Blues', set_xlim=False, timestamp='unix_ts')
+
+plt.tight_layout(pad=0.1)
 plt.show()
