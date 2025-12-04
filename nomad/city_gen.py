@@ -161,7 +161,7 @@ class City:
         self.dimensions = dimensions
 
         self.buildings_gdf = gpd.GeoDataFrame(
-            columns=['id','building_type','door_cell_x','door_cell_y','door_point','size','geometry'],
+            columns=['id','building_type','door_cell_x','door_cell_y','door_point','size','geometry','blocks'],
             geometry='geometry', crs=None
         )
         self.buildings_gdf.set_index('id', inplace=True, drop=False)
@@ -169,7 +169,7 @@ class City:
         
         if manual_streets:
             self.blocks_gdf = gpd.GeoDataFrame(
-                columns=['coord_x','coord_y','kind','building_id','building_type','geometry'],
+                columns=['coord_x','coord_y','building_id','building_type','geometry'],
                 geometry='geometry', crs=None
             )
             self.blocks_gdf.set_index(['coord_x', 'coord_y'], inplace=True, drop=False)
@@ -196,7 +196,7 @@ class City:
 
     def _derive_streets_from_blocks(self):
         """
-        Derives streets GeoDataFrame from blocks_gdf where kind is 'street'.
+        Derives streets GeoDataFrame from blocks_gdf rows tagged as streets.
         """
         if self.blocks_gdf.empty:
             self.blocks_gdf = self._init_blocks_gdf()
@@ -213,7 +213,7 @@ class City:
         """Initialize grid of unit blocks covering current dimensions."""
         width, height = self.dimensions
         if width <= 0 or height <= 0:
-            return gpd.GeoDataFrame(columns=['coord_x','coord_y','kind','building_id','building_type','geometry'], geometry='geometry', crs=None)
+            return gpd.GeoDataFrame(columns=['coord_x','coord_y','building_id','building_type','geometry'], geometry='geometry', crs=None)
 
         x_coords = np.arange(width) # must be in city_block units
         y_coords = np.arange(height) # must be in city_block units
@@ -251,12 +251,11 @@ class City:
         if hasattr(self, 'blocks_gdf'):
             mask = (self.blocks_gdf['coord_x'] == x) & (self.blocks_gdf['coord_y'] == y)
             if mask.any():
-                self.blocks_gdf.loc[mask, ['kind','building_id','building_type']] = ['street', None, None]
+                self.blocks_gdf.loc[mask, ['building_id','building_type']] = [None, 'street']
             else:
                 self.blocks_gdf = pd.concat([self.blocks_gdf, gpd.GeoDataFrame([{
                     'coord_x': x,
                     'coord_y': y,
-                    'kind': 'street',
                     'building_id': None,
                     'building_type': None,
                     'geometry': box(x, y, x+1, y+1)
@@ -342,20 +341,18 @@ class City:
         # is validated via door_line above.
         
         if blocks is not None and len(blocks) > 0:
-            building_blocks_set = set(blocks)
             existing_building_blocks = set()
             if hasattr(self, 'blocks_gdf') and not self.blocks_gdf.empty:
                 existing_building_blocks = set(
                     self.blocks_gdf[(self.blocks_gdf['building_type'].notna()) & (self.blocks_gdf['building_type'] != 'street')].index.tolist()
                 )
             
-            if building_blocks_set & existing_building_blocks:
+            if set(blocks) & existing_building_blocks:
                 raise ValueError(
                     "New building overlaps with existing buildings."
                 )
         else:
-            geom_only_overlaps = self.buildings_outline.contains(geom) or self.buildings_outline.overlaps(geom)
-            if geom_only_overlaps:
+            if self.buildings_outline.contains(geom) or self.buildings_outline.overlaps(geom):
                 raise ValueError(
                     "New building overlaps with existing buildings."
                 )
@@ -383,7 +380,6 @@ class City:
             building_id = f"{building_type[0]}-x{int(candidate[0])}-y{int(candidate[1])}"
         self.buildings_outline = unary_union([self.buildings_outline, geom])
         # Append to buildings_gdf
-        size_blocks = len(blocks) if blocks is not None else 0
         new_row = gpd.GeoDataFrame([
             {
                 'id': building_id,
@@ -391,8 +387,9 @@ class City:
                 'door_cell_x': door[0],
                 'door_cell_y': door[1],
                 'door_point': door_centroid,
-                'size': size_blocks,
-                'geometry': geom
+                'size': len(blocks),
+                'geometry': geom,
+                'blocks': list(blocks)
             }
         ], geometry='geometry', crs=self.buildings_gdf.crs)
         new_row.set_index('id', inplace=True, drop=False)
@@ -405,14 +402,14 @@ class City:
             self.buildings_gdf = pd.concat([self.buildings_gdf, new_row], axis=0, ignore_index=False)
 
         # blocks are no longer streets
-        for block in blocks:
-            # update blocks_gdf record
-            if hasattr(self, 'blocks_gdf') and not self.blocks_gdf.empty:
-                cx, cy = block
-                self.blocks_gdf.loc[(cx, cy), ['kind','building_id','building_type']] = ['building', building_id, building_type]
-            # remove from streets_gdf if present
-            if hasattr(self, 'streets_gdf') and not self.streets_gdf.empty and (cx, cy) in self.streets_gdf.index:
-                self.streets_gdf = self.streets_gdf.drop(index=(cx, cy))
+        block_index = pd.MultiIndex.from_tuples(blocks)
+        if hasattr(self, 'blocks_gdf') and not self.blocks_gdf.empty:
+            self.blocks_gdf.loc[block_index, 'building_id'] = building_id
+            self.blocks_gdf.loc[block_index, 'building_type'] = building_type
+        if hasattr(self, 'streets_gdf') and not self.streets_gdf.empty:
+            drop_index = self.streets_gdf.index.intersection(block_index)
+            if len(drop_index):
+                self.streets_gdf = self.streets_gdf.drop(index=drop_index)
 
         # expand city boundary if necessary
         minx, miny, maxx, maxy = geom.bounds
@@ -1163,6 +1160,8 @@ class City:
         # Blocks/street layers
         if blocks_gdf is not None and not blocks_gdf.empty:
             city.blocks_gdf = gpd.GeoDataFrame(blocks_gdf, geometry='geometry', crs=blocks_gdf.crs)
+            city.blocks_gdf['coord_x'] = city.blocks_gdf['coord_x'].astype(int)
+            city.blocks_gdf['coord_y'] = city.blocks_gdf['coord_y'].astype(int)
             city.blocks_gdf.set_index(['coord_x', 'coord_y'], inplace=True, drop=False)
             city.blocks_gdf.index.names = [None, None]
             city.streets_gdf = city._derive_streets_from_blocks()
@@ -1171,8 +1170,8 @@ class City:
             city.streets_gdf.set_index(['coord_x', 'coord_y'], inplace=True, drop=False)
             city.streets_gdf.index.names = [None, None]
             # Regenerate blocks from dimensions (integer grid: 0 to width-1, 0 to height-1)
-            blocks = [{'coord_x': x, 'coord_y': y, 'kind': 'street', 'building_id': None, 
-                       'building_type': None, 'geometry': box(x, y, x+1, y+1)}
+            blocks = [{'coord_x': x, 'coord_y': y, 'building_id': None, 
+                       'building_type': 'street', 'geometry': box(x, y, x+1, y+1)}
                       for x in range(width) for y in range(height)]
             city.blocks_gdf = gpd.GeoDataFrame(blocks, geometry='geometry', crs=city.buildings_gdf.crs)
             city.blocks_gdf.set_index(['coord_x', 'coord_y'], inplace=True, drop=False)
@@ -1187,10 +1186,10 @@ class City:
                 minx, miny, maxx, maxy = building_bounds.iloc[i]
                 mask = (city.blocks_gdf['coord_x'] >= int(np.floor(minx))) & (city.blocks_gdf['coord_x'] < int(np.ceil(maxx))) & \
                        (city.blocks_gdf['coord_y'] >= int(np.floor(miny))) & (city.blocks_gdf['coord_y'] < int(np.ceil(maxy)))
-                city.blocks_gdf.loc[mask, ['kind', 'building_id', 'building_type']] = ['building', bid, btype]
+                city.blocks_gdf.loc[mask, ['building_id', 'building_type']] = [bid, btype]
 
-        # Populate blocks column in buildings_gdf if missing
-        if 'blocks' not in city.buildings_gdf.columns and not city.blocks_gdf.empty:
+        # Populate blocks column in buildings_gdf
+        if not city.blocks_gdf.empty:
             building_blocks_map = {}
             for building_id in city.blocks_gdf['building_id'].dropna().unique():
                 mask = city.blocks_gdf['building_id'] == building_id
@@ -2114,7 +2113,7 @@ class RasterCity(City):
         
         self.buildings_gdf_input = buildings_gdf
         
-        self.blocks_gdf = generate_canvas_blocks(self.boundary_polygon, self.block_side_length, self.crs, verbose=verbose)
+        self.blocks_gdf = generate_canvas_blocks(self.boundary_polygon, self.block_side_length, self.crs, verbose=verbose).reset_index(drop=True)
         
         # Calculate offset and apply to all gdfs
         minx, miny, maxx, maxy = self.boundary_polygon.bounds

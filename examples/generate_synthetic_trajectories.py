@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.1
+#       jupytext_version: 1.17.3
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -22,9 +22,8 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-plt.style.use('default')
 import time
-import os
+from pathlib import Path
 from joblib import Parallel, delayed
 
 from nomad.city_gen import City
@@ -32,9 +31,10 @@ from nomad.traj_gen import Agent, Population
 from nomad.stop_detection.viz import plot_pings, plot_time_barcode
 
 # %%
-city = City.from_geopackage('garden-city.gpkg', edges_path='garden-city-edges.parquet')
+city = City.from_geopackage('garden-city.gpkg')
 city._build_hub_network(hub_size=16)
 city.compute_gravity(exponent=2.0)
+city.compute_shortest_paths(callable_only=True)
 
 print(f"City: {city.name}")
 print(f"Dimensions: {city.dimensions}")
@@ -47,7 +47,6 @@ print(f"Buildings: {len(city.buildings_gdf)}")
 # to show their effect on sparsity (q = observed points / ground truth points).
 
 # %%
-np.random.seed(42)
 population = Population(city)
 population.generate_agents(N=3, seed=42, name_count=2)
 
@@ -111,10 +110,10 @@ plt.show()
 def generate_agent_trajectory(args):
     """Worker function for parallel generation."""
     identifier, home, work, seed = args
-    
-    city = City.from_geopackage('garden-city.gpkg', edges_path='garden-city-edges.parquet')
+    city = City.from_geopackage('garden-city.gpkg')
     city._build_hub_network(hub_size=16)
     city.compute_gravity(exponent=2.0)
+    city.compute_shortest_paths(callable_only=True)
     agent = Agent(identifier=identifier, city=city, home=home, workplace=work)
     
     agent.generate_trajectory(
@@ -122,27 +121,27 @@ def generate_agent_trajectory(args):
         end_time=pd.Timestamp("2024-01-08T07:00-04:00"),
         seed=seed
     )
-
     agent.sample_trajectory(
         beta_ping=5,
         replace_sparse_traj=True,
         seed=seed
     )
-    
     sparse_df = agent.sparse_traj.copy()
     sparse_df['user_id'] = identifier
+    sparse_df['home'] = home
+    sparse_df['workplace'] = work
     return sparse_df
 
 # %%
-np.random.seed(100)
 n_agents = 15
-homes = city.buildings_gdf[city.buildings_gdf['building_type'] == 'home']['id'].tolist()
-workplaces = city.buildings_gdf[city.buildings_gdf['building_type'] == 'workplace']['id'].tolist()
+rng = np.random.default_rng(100)
+homes = city.buildings_gdf[city.buildings_gdf['building_type'] == 'home']['id'].to_numpy()
+workplaces = city.buildings_gdf[city.buildings_gdf['building_type'] == 'workplace']['id'].to_numpy()
 
 agent_params = [
-    (f'agent_{i:04d}', 
-     np.random.choice(homes),
-     np.random.choice(workplaces),
+    (f'agent_{i:04d}',
+     rng.choice(homes),
+     rng.choice(workplaces),
      i)
     for i in range(n_agents)
 ]
@@ -159,13 +158,18 @@ generation_time = time.time() - start_time
 print(f"Generated {n_agents} agents in {generation_time:.2f}s ({generation_time/n_agents:.2f}s per agent)")
 
 # %%
-all_trajectories = pd.concat(results, ignore_index=True)
-all_trajectories = city.to_mercator(all_trajectories)
-all_trajectories['date'] = pd.to_datetime(all_trajectories['datetime']).dt.date
+parallel_population = Population(city)
+for df, params in zip(results, agent_params):
+    identifier, home, work, seed = params
+    agent = Agent(identifier=identifier, city=city, home=home, workplace=work, seed=seed)
+    agent.sparse_traj = df.drop(columns=['home', 'workplace'])
+    parallel_population.add_agent(agent, verbose=False)
 
 output_path = 'data/trajectories_15_users'
-for date, group in all_trajectories.groupby('date'):
-    os.makedirs(f'{output_path}/date={str(date)}', exist_ok=True)
-    group.to_parquet(f'{output_path}/date={str(date)}/data.parquet', index=False)
+parallel_population.save_pop(
+    sparse_path=str(output_path),
+    fmt='parquet'
+)
+print(f"Saved sparse trajectories to {output_path}")
 
-print(f"Saved {len(all_trajectories):,} records to {output_path}/")
+# %%

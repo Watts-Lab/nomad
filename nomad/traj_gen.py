@@ -360,8 +360,12 @@ class Agent:
         start_point_arr = np.asarray(start_point, dtype=float)
         
         # Check if agent is in building using integer truncation
-        in_current_dest = _point_in_blocks(start_point_arr, self._current_dest_building_row.get('blocks_set')) if self._current_dest_building_row is not None else False
-        in_previous_dest = _point_in_blocks(start_point_arr, self._previous_dest_building_row.get('blocks_set')) if self._previous_dest_building_row is not None else False
+        in_current_dest = False
+        if self._current_dest_building_row is not None:
+            in_current_dest = _point_in_blocks(start_point_arr, self._current_dest_building_row['blocks_set'])
+        in_previous_dest = False
+        if self._previous_dest_building_row is not None:
+            in_previous_dest = _point_in_blocks(start_point_arr, self._previous_dest_building_row['blocks_set'])
 
         # If already at destination building area, stay-within-building dynamics
         if in_current_dest:
@@ -379,7 +383,7 @@ class Agent:
                 # Draw until coord falls inside building
                 while True:
                     coord = rng.normal(loc=start_point_arr, scale=sigma*np.sqrt(dt), size=2)
-                    if _point_in_blocks(coord, brow.get('blocks_set')):
+                    if _point_in_blocks(coord, brow['blocks_set']):
                         break
 
             return coord, location
@@ -426,7 +430,7 @@ class Agent:
             
             # Build bound_poly_blocks_set from components
             if in_previous_dest and self._previous_dest_building_row is not None:
-                start_blocks = self._previous_dest_building_row.get('blocks_set', set())
+                start_blocks = self._previous_dest_building_row['blocks_set']
             else:
                 start_blocks = {start_block}
             bound_poly_blocks_set = start_blocks | set(street_path)
@@ -483,9 +487,9 @@ class Agent:
         start_block = tuple(np.floor(start_point).astype(int))
         start_info = city.get_block(start_block)
 
-        if start_info['building_type'] is not None and start_info['building_type'] != 'street' and start_info['building_id'] is not None:
+        if start_info['building_id'] is not None:
             building_dict = city.buildings_gdf.loc[start_info['building_id']].to_dict()
-            building_dict['blocks_set'] = set(building_dict.get('blocks', []))
+            building_dict['blocks_set'] = set(building_dict['blocks'])
             self._previous_dest_building_row = building_dict
         else:
             self._previous_dest_building_row = None
@@ -493,7 +497,7 @@ class Agent:
         # Initialize current destination building to first entry
         first_building_id = destination_diary.iloc[0]['location']
         building_dict = city.buildings_gdf.loc[first_building_id].to_dict()
-        building_dict['blocks_set'] = set(building_dict.get('blocks', []))
+        building_dict['blocks_set'] = set(building_dict['blocks'])
         self._current_dest_building_row = building_dict
         entry_update = []
         for i in range(destination_diary.shape[0]):
@@ -504,7 +508,9 @@ class Agent:
                 self._previous_dest_building_row = self._current_dest_building_row
             if building_id in city.buildings_gdf.index:
                 building_dict = city.buildings_gdf.loc[building_id].to_dict()
-                building_dict['blocks_set'] = set(building_dict.get('blocks', []))
+                if not building_dict['blocks']:
+                    print("[DEBUG traj_gen] missing blocks for", building_id)
+                building_dict['blocks_set'] = set(building_dict['blocks'])
                 self._current_dest_building_row = building_dict
             else:
                 self._current_dest_building_row = None
@@ -1495,13 +1501,9 @@ def _choose_destination(visit_freqs, x, rng):
     else:
         return rng.choice(visit_freqs.index)
 
-
 def allowed_buildings(local_ts):
     """
     Finds allowed buildings for the timestamp
     """
     hour = local_ts.hour
     return ALLOWED_BUILDINGS[hour]
-
-
-## moved into Agent as _initialize_visits_unif
