@@ -56,13 +56,16 @@ Installation
    :caption: Examples
    :hidden:
 
+   source/ingesting-data
    source/benchmarking_of_stop_detection_algorithms
    source/lachesis_demo
    source/tadbscan_demo
    source/hdbscan_demo
    source/grid_based_demo
-   source/poi_synthetic
-   source/poi_osm
+   source/generate_synthetic_pois
+   source/download_poi_data_from_OSM
+   source/generate_synthetic_trajectories
+   source/random_city
 
 .. toctree::
    :maxdepth: 2
