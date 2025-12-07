@@ -188,8 +188,8 @@ def rog(stops, agg_freq='d', weighted=True, traj_cols=None, time_weights=None, e
     rog = stops.groupby(keys).apply(_group_rog)
     return rog.reset_index(name='rog')
 
-def self_containment(stops, threshold, agg_freq='d', weighted=True, home_activity_type='Home',
-                     activity_type_col='activity_type', traj_cols=None, time_weights=None,
+def self_containment(stops, threshold, agg_freq='d', weighted=True, home_activity_type='home',
+                     traj_cols=None, time_weights=None,
                      exploded=True, **kwargs):
     """
     Compute self-containment (proportion of non-home time spent within threshold distance from home).
@@ -200,7 +200,7 @@ def self_containment(stops, threshold, agg_freq='d', weighted=True, home_activit
     Parameters
     ----------
     stops : pd.DataFrame
-        Stop data with spatial coordinates, duration, and activity type.
+        Stop data with spatial coordinates, duration, and location_id.
     threshold : float
         Distance threshold in the same units as coordinates (meters for projected, degrees for lat/lon).
         Activities within this distance from home are considered "contained".
@@ -209,17 +209,16 @@ def self_containment(stops, threshold, agg_freq='d', weighted=True, home_activit
     weighted : bool
         If True, weight by duration; else unweighted (count activities).
     home_activity_type : str
-        Value in activity_type_col that identifies home locations. Default is 'Home'.
-    activity_type_col : str
-        Column name containing activity type. Default is 'activity_type'.
+        Value in location_id column that identifies home locations. Default is 'home'.
+        Can be 'home_id' or any other location_id value.
     traj_cols : dict, optional
-        Mapping for x/y (or lon/lat), timestamp/datetime, duration, user_id.
+        Mapping for x/y (or lon/lat), timestamp/datetime, duration, user_id, location_id.
     time_weights : pd.Series, optional
         Additional time weights to multiply with duration (if weighted=True).
     exploded : bool
         If True, explode stops that straddle multiple time periods. Default is True.
     **kwargs
-        Additional arguments passed to explode_stops.
+        Additional arguments passed to explode_stops or column overrides.
 
     Returns
     -------
@@ -234,9 +233,20 @@ def self_containment(stops, threshold, agg_freq='d', weighted=True, home_activit
     if agg_freq not in allowed_freqs:
         raise ValueError(f"agg_freq must be one of {allowed_freqs} (got '{agg_freq}')")
 
-    # Check for required columns
-    if activity_type_col not in stops.columns:
-        raise ValueError(f"Missing required '{activity_type_col}' column")
+    # Parse column mappings (similar to compute_candidate_homes)
+    traj_cols = loader._parse_traj_cols(stops.columns, traj_cols, kwargs)
+
+    # Check for required location_id column
+    if traj_cols["location_id"] not in stops.columns:
+        raise ValueError(f"Missing required '{traj_cols['location_id']}' column")
+
+    # Warn if no home locations exist in the entire dataset
+    if (stops[traj_cols["location_id"]] == home_activity_type).sum() == 0:
+        warnings.warn(
+            f"No home locations found (location_id == '{home_activity_type}'). "
+            f"Self-containment cannot be calculated without home locations.",
+            UserWarning
+        )
 
     # Add time_weights column if provided
     if time_weights is not None:
@@ -254,7 +264,6 @@ def self_containment(stops, threshold, agg_freq='d', weighted=True, home_activit
 
     # 1) Column mapping + check
     t_key, coord_x, coord_y, use_datetime, use_lon_lat = utils._fallback_st_cols(stops.columns, traj_cols, kwargs)
-    traj_cols = loader._parse_traj_cols(stops.columns, traj_cols, kwargs, warn=False)
     dur_key = traj_cols['duration']
     if dur_key not in stops.columns:
         raise ValueError("Missing required 'duration' column")
@@ -283,7 +292,7 @@ def self_containment(stops, threshold, agg_freq='d', weighted=True, home_activit
 
     # Calculate for each group
     for group_keys_tuple, group_df in stops.groupby(keys):
-        home_stops = group_df[group_df[activity_type_col] == home_activity_type]
+        home_stops = group_df[group_df[traj_cols["location_id"]] == home_activity_type]
 
         if len(home_stops) == 0:
             # No home location in this group
@@ -308,15 +317,15 @@ def self_containment(stops, threshold, agg_freq='d', weighted=True, home_activit
     # 5) Calculate self-containment per group
     def _group_self_containment(g):
         """Calculate self-containment for a group (time period + user)."""
+        # If no activities at all, return NaN
+        if len(g) == 0:
+            return np.nan
+
         # Filter for non-home activities
-        non_home = g[g[activity_type_col] != home_activity_type]
+        non_home = g[g[traj_cols["location_id"]] != home_activity_type]
 
         if len(non_home) == 0:
-            return np.nan  # No non-home activities
-
-        # Check if all distances are NaN (no home location found)
-        if non_home['dist_from_home'].isna().all():
-            return np.nan
+            return 1.0  # No non-home activities = perfectly contained at home
 
         # Check which are within threshold
         within_threshold = non_home['dist_from_home'] <= threshold

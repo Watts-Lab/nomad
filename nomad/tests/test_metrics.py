@@ -124,7 +124,7 @@ def test_self_containment_basic():
             '2024-01-01 02:30',
             '2024-01-01 03:30'
         ]),
-        'activity_type': ['Home', 'Work', 'Shopping', 'Restaurant'],
+        'location_id': ['home', 'work', 'shopping', 'restaurant'],
         'user_id': [1, 1, 1, 1]
     })
 
@@ -134,7 +134,7 @@ def test_self_containment_basic():
         threshold=15,
         agg_freq='d',
         weighted=True,
-        traj_cols={'x': 'x', 'y': 'y', 'duration': 'duration', 'user_id': 'user_id'},
+        traj_cols={'x': 'x', 'y': 'y', 'duration': 'duration', 'user_id': 'user_id', 'location_id': 'location_id'},
         start_col='start_timestamp',
         end_col='end_timestamp',
         use_datetime=True,
@@ -164,7 +164,7 @@ def test_self_containment_unweighted():
             '2024-01-01 02:50',
             '2024-01-01 03:30'
         ]),
-        'activity_type': ['Home', 'Work', 'Shopping', 'Restaurant'],
+        'location_id': ['home', 'work', 'shopping', 'restaurant'],
         'user_id': [1, 1, 1, 1]
     })
 
@@ -173,7 +173,7 @@ def test_self_containment_unweighted():
         threshold=15,
         agg_freq='d',
         weighted=False,  # Unweighted
-        traj_cols={'x': 'x', 'y': 'y', 'duration': 'duration', 'user_id': 'user_id'},
+        traj_cols={'x': 'x', 'y': 'y', 'duration': 'duration', 'user_id': 'user_id', 'location_id': 'location_id'},
         start_col='start_timestamp',
         end_col='end_timestamp',
         use_datetime=True,
@@ -202,7 +202,7 @@ def test_self_containment_multi_user():
             '2024-01-01 01:00',
             '2024-01-01 01:30'
         ]),
-        'activity_type': ['Home', 'Work', 'Home', 'Work'],
+        'location_id': ['home', 'work', 'home', 'work'],
         'user_id': [1, 1, 2, 2]
     })
 
@@ -211,7 +211,7 @@ def test_self_containment_multi_user():
         threshold=10,  # User 1's work is within, User 2's is not
         agg_freq='d',
         weighted=True,
-        traj_cols={'x': 'x', 'y': 'y', 'duration': 'duration', 'user_id': 'user_id'},
+        traj_cols={'x': 'x', 'y': 'y', 'duration': 'duration', 'user_id': 'user_id', 'location_id': 'location_id'},
         start_col='start_timestamp',
         end_col='end_timestamp',
         use_datetime=True,
@@ -243,25 +243,27 @@ def test_self_containment_no_home():
             '2024-01-01 02:30',
             '2024-01-01 03:30'
         ]),
-        'activity_type': ['Work', 'Shopping', 'Restaurant'],
+        'location_id': ['work', 'shopping', 'restaurant'],
         'user_id': [1, 1, 1]
     })
 
-    result = self_containment(
-        stops,
-        threshold=15,
-        agg_freq='d',
-        weighted=True,
-        traj_cols={'x': 'x', 'y': 'y', 'duration': 'duration', 'user_id': 'user_id'},
-        start_col='start_timestamp',
-        end_col='end_timestamp',
-        use_datetime=True,
-        exploded=False
-    )
+    # Should trigger a warning about no home locations
+    with pytest.warns(UserWarning, match="No home locations found"):
+        result = self_containment(
+            stops,
+            threshold=15,
+            agg_freq='d',
+            weighted=True,
+            traj_cols={'x': 'x', 'y': 'y', 'duration': 'duration', 'user_id': 'user_id', 'location_id': 'location_id'},
+            start_col='start_timestamp',
+            end_col='end_timestamp',
+            use_datetime=True,
+            exploded=False
+        )
 
-    # Should return NaN when there's no home location
+    # Should return 0.0 when there's no home location (no activities within threshold of non-existent home)
     assert len(result) == 1
-    assert pd.isna(result['self_containment'].values[0])
+    assert np.allclose(result['self_containment'].values[0], 0.0)
 
 def test_self_containment_all_home():
     """Test self-containment when all activities are at home."""
@@ -279,7 +281,7 @@ def test_self_containment_all_home():
             '2024-01-01 02:30',
             '2024-01-01 03:30'
         ]),
-        'activity_type': ['Home', 'Home', 'Home'],
+        'location_id': ['home', 'home', 'home'],
         'user_id': [1, 1, 1]
     })
 
@@ -288,16 +290,16 @@ def test_self_containment_all_home():
         threshold=15,
         agg_freq='d',
         weighted=True,
-        traj_cols={'x': 'x', 'y': 'y', 'duration': 'duration', 'user_id': 'user_id'},
+        traj_cols={'x': 'x', 'y': 'y', 'duration': 'duration', 'user_id': 'user_id', 'location_id': 'location_id'},
         start_col='start_timestamp',
         end_col='end_timestamp',
         use_datetime=True,
         exploded=False
     )
 
-    # Should return NaN when there are no non-home activities
+    # Should return 1.0 when there are no non-home activities (perfectly contained)
     assert len(result) == 1
-    assert pd.isna(result['self_containment'].values[0])
+    assert np.allclose(result['self_containment'].values[0], 1.0)
 
 def test_self_containment_with_time_weights():
     """Test self-containment with additional time weights."""
@@ -317,7 +319,7 @@ def test_self_containment_with_time_weights():
             '2024-01-01 02:30',
             '2024-01-01 03:30'
         ]),
-        'activity_type': ['Home', 'Work', 'Shopping', 'Restaurant'],
+        'location_id': ['home', 'work', 'shopping', 'restaurant'],
         'user_id': [1, 1, 1, 1]
     })
 
@@ -330,7 +332,7 @@ def test_self_containment_with_time_weights():
         agg_freq='d',
         weighted=True,
         time_weights=time_weights,
-        traj_cols={'x': 'x', 'y': 'y', 'duration': 'duration', 'user_id': 'user_id'},
+        traj_cols={'x': 'x', 'y': 'y', 'duration': 'duration', 'user_id': 'user_id', 'location_id': 'location_id'},
         start_col='start_timestamp',
         end_col='end_timestamp',
         use_datetime=True,
