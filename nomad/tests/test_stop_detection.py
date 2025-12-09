@@ -13,6 +13,7 @@ from nomad import constants
 from nomad import filters
 import nomad.stop_detection.dbscan as DBSCAN
 import nomad.stop_detection.lachesis as LACHESIS
+import nomad.stop_detection.sliding as SLIDING
 import pdb
 
 @pytest.fixture
@@ -397,3 +398,245 @@ def test_empty_dataframe_consistency():
     assert 'latitude' in hdbscan_result.columns
     assert 'longitude' in lachesis_result.columns
     assert 'latitude' in lachesis_result.columns
+
+##########################################
+####        LOCATION CLUSTERING      ####
+####           (SLIDING.PY)          ####
+##########################################
+
+@pytest.fixture
+def stops_for_clustering():
+    """Create sample stops for location clustering tests"""
+    # Create stops at two distinct locations
+    # Location 1: stops at (0, 0) with small variations
+    # Location 2: stops at (1000, 1000) with small variations
+    stops_data = {
+        'x': [0, 5, 10, 1000, 1005, 1010, 2000],  # Third location with single stop
+        'y': [0, 5, 10, 1000, 1005, 1010, 2000],
+        'timestamp': [
+            1704067200,  # 2024-01-01 00:00:00
+            1704070800,  # 2024-01-01 01:00:00
+            1704074400,  # 2024-01-01 02:00:00
+            1704078000,  # 2024-01-01 03:00:00
+            1704081600,  # 2024-01-01 04:00:00
+            1704085200,  # 2024-01-01 05:00:00
+            1704088800,  # 2024-01-01 06:00:00
+        ],
+        'duration': [10, 15, 20, 10, 15, 20, 10],  # minutes
+        'user_id': ['user1', 'user1', 'user1', 'user1', 'user1', 'user1', 'user1']
+    }
+    return pd.DataFrame(stops_data)
+
+
+@pytest.fixture
+def multi_user_stops():
+    """Create sample stops for multiple users"""
+    stops_data = {
+        'x': [0, 5, 10, 0, 5, 10],
+        'y': [0, 5, 10, 0, 5, 10],
+        'timestamp': [1704067200 + i*3600 for i in range(6)],
+        'duration': [10, 15, 20, 10, 15, 20],
+        'user_id': ['user1', 'user1', 'user1', 'user2', 'user2', 'user2']
+    }
+    return pd.DataFrame(stops_data)
+
+
+def test_cluster_locations_basic(stops_for_clustering):
+    """Test basic location clustering with default parameters"""
+    traj_cols = {'x': 'x', 'y': 'y', 'timestamp': 'timestamp', 'user_id': 'user_id'}
+    
+    stops_labeled, locations = SLIDING.cluster_locations_dbscan(
+        stops_for_clustering,
+        epsilon=50,
+        num_samples=1,
+        distance_metric='euclidean',
+        agg_level='dataset',
+        traj_cols=traj_cols
+    )
+    
+    # Should create 3 locations (2 clusters + 1 single stop at 2000,2000)
+    assert len(locations) == 3
+    
+    # All stops should have location_id assigned
+    assert 'location_id' in stops_labeled.columns
+    
+    # Check that first 3 stops belong to same location
+    loc_ids = stops_labeled['location_id'].values
+    assert loc_ids[0] == loc_ids[1] == loc_ids[2]
+    
+    # Check that stops 3,4,5 belong to same location (different from first)
+    assert loc_ids[3] == loc_ids[4] == loc_ids[5]
+    assert loc_ids[3] != loc_ids[0]
+    
+    # Check locations have proper columns
+    assert 'center' in locations.columns
+    assert 'extent' in locations.columns
+    assert 'n_stops' in locations.columns
+
+
+def test_cluster_locations_per_user(multi_user_stops):
+    """Test per-user location clustering"""
+    traj_cols = {'x': 'x', 'y': 'y', 'timestamp': 'timestamp', 'user_id': 'user_id'}
+    
+    stops_labeled, locations = SLIDING.cluster_locations_dbscan(
+        multi_user_stops,
+        epsilon=50,
+        num_samples=1,
+        distance_metric='euclidean',
+        agg_level='user',
+        traj_cols=traj_cols
+    )
+    
+    # Should create 2 locations (one per user, both at same spatial location)
+    assert len(locations) == 2
+    
+    # Check that each user has their own location
+    assert 'user_id' in locations.columns
+    user1_locs = locations[locations['user_id'] == 'user1']
+    user2_locs = locations[locations['user_id'] == 'user2']
+    assert len(user1_locs) == 1
+    assert len(user2_locs) == 1
+    
+    # Check that user1 stops have different location_id than user2 stops
+    user1_stops = stops_labeled[stops_labeled['user_id'] == 'user1']
+    user2_stops = stops_labeled[stops_labeled['user_id'] == 'user2']
+    assert user1_stops['location_id'].iloc[0] != user2_stops['location_id'].iloc[0]
+
+
+def test_cluster_locations_dataset_level(multi_user_stops):
+    """Test dataset-level location clustering (shared across users)"""
+    traj_cols = {'x': 'x', 'y': 'y', 'timestamp': 'timestamp', 'user_id': 'user_id'}
+    
+    stops_labeled, locations = SLIDING.cluster_locations_dbscan(
+        multi_user_stops,
+        epsilon=50,
+        num_samples=1,
+        distance_metric='euclidean',
+        agg_level='dataset',
+        traj_cols=traj_cols
+    )
+    
+    # Should create 1 shared location
+    assert len(locations) == 1
+    
+    # All stops should have same location_id
+    location_ids = stops_labeled['location_id'].dropna().unique()
+    assert len(location_ids) == 1
+
+
+def test_cluster_locations_empty_input():
+    """Test handling of empty DataFrame"""
+    empty_df = pd.DataFrame(columns=['x', 'y', 'timestamp', 'user_id'])
+    traj_cols = {'x': 'x', 'y': 'y', 'timestamp': 'timestamp', 'user_id': 'user_id'}
+    
+    stops_labeled, locations = SLIDING.cluster_locations_dbscan(
+        empty_df,
+        epsilon=50,
+        num_samples=1,
+        traj_cols=traj_cols
+    )
+    
+    assert len(stops_labeled) == 0
+    assert len(locations) == 0
+    assert 'location_id' in stops_labeled.columns
+
+
+def test_cluster_locations_geographic_coords():
+    """Test clustering with lat/lon coordinates using haversine metric"""
+    # Create stops near SF (37.7749° N, 122.4194° W)
+    stops_data = {
+        'longitude': [-122.4194, -122.4195, -122.4196, -122.5000],  # ~100m apart, then far
+        'latitude': [37.7749, 37.7750, 37.7751, 37.8000],
+        'timestamp': [1704067200 + i*3600 for i in range(4)],
+        'duration': [10, 15, 20, 10],
+        'user_id': ['user1'] * 4
+    }
+    stops_df = pd.DataFrame(stops_data)
+    
+    traj_cols = {'longitude': 'longitude', 'latitude': 'latitude', 
+                 'timestamp': 'timestamp', 'user_id': 'user_id'}
+    
+    stops_labeled, locations = SLIDING.cluster_locations_dbscan(
+        stops_df,
+        epsilon=200,  # 200 meters
+        num_samples=2,
+        distance_metric='haversine',
+        agg_level='dataset',
+        traj_cols=traj_cols
+    )
+    
+    # Should cluster first 3 stops, last one is noise
+    assert len(locations) == 1
+    assert stops_labeled.loc[0, 'location_id'] == stops_labeled.loc[1, 'location_id']
+    assert pd.isna(stops_labeled.loc[3, 'location_id'])
+
+
+def test_cluster_locations_per_user_convenience():
+    """Test the cluster_locations_per_user convenience function"""
+    stops_data = {
+        'x': [0, 5, 10, 0, 5, 10],
+        'y': [0, 5, 10, 0, 5, 10],
+        'timestamp': [1704067200 + i*3600 for i in range(6)],
+        'duration': [10, 15, 20, 10, 15, 20],
+        'user_id': ['user1', 'user1', 'user1', 'user2', 'user2', 'user2']
+    }
+    stops_df = pd.DataFrame(stops_data)
+    
+    traj_cols = {'x': 'x', 'y': 'y', 'timestamp': 'timestamp', 'user_id': 'user_id'}
+    
+    stops_labeled, locations = SLIDING.cluster_locations_per_user(
+        stops_df,
+        epsilon=50,
+        num_samples=1,
+        traj_cols=traj_cols
+    )
+    
+    # Should behave same as agg_level='user'
+    assert len(locations) == 2
+    assert 'user_id' in locations.columns
+
+
+def test_location_center_calculation(stops_for_clustering):
+    """Test that location centers are calculated correctly"""
+    traj_cols = {'x': 'x', 'y': 'y', 'timestamp': 'timestamp', 'user_id': 'user_id'}
+    
+    stops_labeled, locations = SLIDING.cluster_locations_dbscan(
+        stops_for_clustering,
+        epsilon=50,
+        num_samples=2,
+        distance_metric='euclidean',
+        agg_level='dataset',
+        traj_cols=traj_cols
+    )
+    
+    # First location should be centered around (5, 5) - mean of [0,5,10]
+    # Second location should be centered around (1005, 1005)
+    centers = [(loc.center.x, loc.center.y) for _, loc in locations.iterrows()]
+    
+    # Check first location center is near (5, 5)
+    assert any(abs(cx - 5) < 10 and abs(cy - 5) < 10 for cx, cy in centers)
+    
+    # Check second location center is near (1005, 1005)
+    assert any(abs(cx - 1005) < 10 and abs(cy - 1005) < 10 for cx, cy in centers)
+
+
+def test_location_extent_calculation(stops_for_clustering):
+    """Test that location extents (convex hull + buffer) are created"""
+    traj_cols = {'x': 'x', 'y': 'y', 'timestamp': 'timestamp', 'user_id': 'user_id'}
+    
+    stops_labeled, locations = SLIDING.cluster_locations_dbscan(
+        stops_for_clustering,
+        epsilon=50,
+        num_samples=1,
+        distance_metric='euclidean',
+        agg_level='dataset',
+        traj_cols=traj_cols
+    )
+    
+    # All locations should have extent geometries
+    assert all(locations['extent'].notna())
+    
+    # Extents should be polygons (or points buffered to polygons)
+    from shapely.geometry import Polygon, Point
+    assert all(isinstance(ext, Polygon) or isinstance(ext, Point) 
+               for ext in locations['extent'])
