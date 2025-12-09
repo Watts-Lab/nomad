@@ -111,18 +111,6 @@ def cluster_locations_dbscan(
     tuple of (pd.DataFrame, gpd.GeoDataFrame)
         - stops with added 'location_id' column (NaN for unclustered stops)
         - locations GeoDataFrame with cluster centers and extents
-
-    Examples
-    --------
-    >>> # Cluster stops within 50 meters into locations
-    >>> stops_labeled, locations = cluster_locations_dbscan(
-    ...     stops, epsilon=50, num_samples=2
-    ... )
-
-    >>> # Use dataset-level clustering (locations shared across users)
-    >>> stops_labeled, locations = cluster_locations_dbscan(
-    ...     stops, epsilon=100, agg_level='dataset'
-    ... )
     """
     if not isinstance(stops, (pd.DataFrame, gpd.GeoDataFrame)):
         raise TypeError("Input 'stops' must be a pandas DataFrame or GeoDataFrame")
