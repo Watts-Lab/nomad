@@ -350,9 +350,7 @@ def generate_staypoints(
 
     n_jobs: int, default 1
         The maximum number of concurrently running jobs. If -1 all CPUs are used. If 1 is given, no parallel
-        computing code is used at all, which is useful for debugging. See
-        https://joblib.readthedocs.io/en/latest/parallel.html#parallel-reference-documentation
-        for a detailed description
+        computing code is used at all.
 
     Returns
     -------
@@ -361,18 +359,6 @@ def generate_staypoints(
 
     sp: gpd.GeoDataFrame
         The generated staypoints.
-
-    Notes
-    -----
-    The 'sliding' method is adapted from Li et al. (2008). In the original algorithm, the 'finished_at'
-    time for the current staypoint lasts until the 'tracked_at' time of the first positionfix outside
-    this staypoint. Users are assumed to be stationary during this missing period and potential tracking
-    gaps may be included in staypoints. To avoid including too large missing signal gaps, set 'gap_threshold'
-    to a small value, e.g., 15 min.
-
-    Examples
-    --------
-    >>> pfs, sp = generate_staypoints(pfs, method='sliding', dist_threshold=100)
 
     References
     ----------
