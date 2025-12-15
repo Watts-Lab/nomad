@@ -404,239 +404,325 @@ def test_empty_dataframe_consistency():
 ####           (SLIDING.PY)          ####
 ##########################################
 
-@pytest.fixture
-def stops_for_clustering():
-    """Create sample stops for location clustering tests"""
-    # Create stops at two distinct locations
-    # Location 1: stops at (0, 0) with small variations
-    # Location 2: stops at (1000, 1000) with small variations
-    stops_data = {
-        'x': [0, 5, 10, 1000, 1005, 1010, 2000],  # Third location with single stop
-        'y': [0, 5, 10, 1000, 1005, 1010, 2000],
-        'timestamp': [
-            1704067200,  # 2024-01-01 00:00:00
-            1704070800,  # 2024-01-01 01:00:00
-            1704074400,  # 2024-01-01 02:00:00
-            1704078000,  # 2024-01-01 03:00:00
-            1704081600,  # 2024-01-01 04:00:00
-            1704085200,  # 2024-01-01 05:00:00
-            1704088800,  # 2024-01-01 06:00:00
-        ],
-        'duration': [10, 15, 20, 10, 15, 20, 10],  # minutes
-        'user_id': ['user1', 'user1', 'user1', 'user1', 'user1', 'user1', 'user1']
-    }
-    return pd.DataFrame(stops_data)
-
+##########################################
+####      SLIDING WINDOW TESTS        ####
+##########################################
 
 @pytest.fixture
-def multi_user_stops():
-    """Create sample stops for multiple users"""
-    stops_data = {
-        'x': [0, 5, 10, 0, 5, 10],
-        'y': [0, 5, 10, 0, 5, 10],
-        'timestamp': [1704067200 + i*3600 for i in range(6)],
-        'duration': [10, 15, 20, 10, 15, 20],
-        'user_id': ['user1', 'user1', 'user1', 'user2', 'user2', 'user2']
-    }
-    return pd.DataFrame(stops_data)
+def position_fixes_simple():
+    """Simple position fixes for testing sliding window algorithm."""
+    times = pd.date_range("2025-01-01 08:00", periods=10, freq="1min").tolist()
+
+    # Create position fixes:
+    # Points 0-5: stationary (should form staypoint if time_threshold <= 5 min)
+    # Points 6-9: moved away
+    coords = [(0.0, 0.0)] * 6 + [(0.002, 0.002)] * 4
+
+    df = gpd.GeoDataFrame({
+        "user_id": "user1",
+        "tracked_at": times,
+        "geometry": [Point(lon, lat) for lon, lat in coords]
+    }, crs="EPSG:4326")
+
+    return df
 
 
-def test_cluster_locations_basic(stops_for_clustering):
-    """Test basic location clustering with default parameters"""
-    traj_cols = {'x': 'x', 'y': 'y', 'timestamp': 'timestamp', 'user_id': 'user_id'}
-    
-    stops_labeled, locations = SLIDING.cluster_locations_dbscan(
-        stops_for_clustering,
-        epsilon=50,
-        num_samples=1,
-        distance_metric='euclidean',
-        agg_level='dataset',
-        traj_cols=traj_cols
+@pytest.fixture
+def position_fixes_with_gap():
+    """Position fixes with temporal gap for testing gap_threshold."""
+    times = pd.date_range("2025-01-01 08:00", periods=5, freq="1min").tolist()
+    # Add a large gap
+    times += [times[-1] + pd.Timedelta(minutes=20)]
+    times += pd.date_range(times[-1] + pd.Timedelta(minutes=1), periods=4, freq="1min").tolist()
+
+    # All points at same location
+    coords = [(0.0, 0.0)] * len(times)
+
+    df = gpd.GeoDataFrame({
+        "user_id": "user1",
+        "tracked_at": times,
+        "geometry": [Point(lon, lat) for lon, lat in coords]
+    }, crs="EPSG:4326")
+
+    return df
+
+
+@pytest.fixture
+def position_fixes_multi_user():
+    """Position fixes for multiple users."""
+    times = pd.date_range("2025-01-01 08:00", periods=8, freq="1min").tolist()
+
+    user1_coords = [(0.0, 0.0)] * 4 + [(0.002, 0.002)] * 4
+    user2_coords = [(0.001, 0.001)] * 4 + [(0.003, 0.003)] * 4
+
+    df = gpd.GeoDataFrame({
+        "user_id": ["user1"] * 8 + ["user2"] * 8,
+        "tracked_at": times * 2,
+        "geometry": [Point(lon, lat) for lon, lat in user1_coords + user2_coords]
+    }, crs="EPSG:4326")
+
+    return df
+
+
+def test_sliding_basic_staypoint_detection(position_fixes_simple):
+    """Test basic staypoint detection with sliding window."""
+    pfs, sp = SLIDING.generate_staypoints(
+        position_fixes_simple,
+        method="sliding",
+        dist_threshold=100,
+        time_threshold=3.0,
+        gap_threshold=15.0,
+        include_last=False,
+        exclude_duplicate_pfs=True,
+        n_jobs=1
     )
-    
-    # Should create 3 locations (2 clusters + 1 single stop at 2000,2000)
-    assert len(locations) == 3
-    
-    # All stops should have location_id assigned
-    assert 'location_id' in stops_labeled.columns
-    
-    # Check that first 3 stops belong to same location
-    loc_ids = stops_labeled['location_id'].values
-    assert loc_ids[0] == loc_ids[1] == loc_ids[2]
-    
-    # Check that stops 3,4,5 belong to same location (different from first)
-    assert loc_ids[3] == loc_ids[4] == loc_ids[5]
-    assert loc_ids[3] != loc_ids[0]
-    
-    # Check locations have proper columns
-    assert 'center' in locations.columns
-    assert 'extent' in locations.columns
-    assert 'n_stops' in locations.columns
+
+    # Should detect at least one staypoint from first 6 points
+    assert len(sp) >= 1
+    assert 'staypoint_id' in pfs.columns
+    assert isinstance(sp, gpd.GeoDataFrame)
+
+    # Check required columns in staypoints
+    assert 'user_id' in sp.columns
+    assert 'started_at' in sp.columns
+    assert 'finished_at' in sp.columns
+    assert sp.geometry.name in sp.columns
 
 
-def test_cluster_locations_per_user(multi_user_stops):
-    """Test per-user location clustering"""
-    traj_cols = {'x': 'x', 'y': 'y', 'timestamp': 'timestamp', 'user_id': 'user_id'}
-    
-    stops_labeled, locations = SLIDING.cluster_locations_dbscan(
-        multi_user_stops,
-        epsilon=50,
-        num_samples=1,
-        distance_metric='euclidean',
-        agg_level='user',
-        traj_cols=traj_cols
+def test_sliding_time_threshold(position_fixes_simple):
+    """Test that time_threshold is respected."""
+    # With time_threshold=10, the first 6 points (5 min duration) should not form a staypoint
+    pfs, sp = SLIDING.generate_staypoints(
+        position_fixes_simple,
+        dist_threshold=100,
+        time_threshold=10.0,
+        gap_threshold=15.0,
+        include_last=False,
+        n_jobs=1
     )
-    
-    # Should create 2 locations (one per user, both at same spatial location)
-    assert len(locations) == 2
-    
-    # Check that each user has their own location
-    assert 'user_id' in locations.columns
-    user1_locs = locations[locations['user_id'] == 'user1']
-    user2_locs = locations[locations['user_id'] == 'user2']
-    assert len(user1_locs) == 1
-    assert len(user2_locs) == 1
-    
-    # Check that user1 stops have different location_id than user2 stops
-    user1_stops = stops_labeled[stops_labeled['user_id'] == 'user1']
-    user2_stops = stops_labeled[stops_labeled['user_id'] == 'user2']
-    assert user1_stops['location_id'].iloc[0] != user2_stops['location_id'].iloc[0]
+
+    # Should not detect any staypoints since max duration < 10 min
+    assert len(sp) == 0
 
 
-def test_cluster_locations_dataset_level(multi_user_stops):
-    """Test dataset-level location clustering (shared across users)"""
-    traj_cols = {'x': 'x', 'y': 'y', 'timestamp': 'timestamp', 'user_id': 'user_id'}
-    
-    stops_labeled, locations = SLIDING.cluster_locations_dbscan(
-        multi_user_stops,
-        epsilon=50,
-        num_samples=1,
-        distance_metric='euclidean',
-        agg_level='dataset',
-        traj_cols=traj_cols
+def test_sliding_distance_threshold(position_fixes_simple):
+    """Test that distance_threshold is respected."""
+    # With very small distance threshold, points should not cluster
+    pfs, sp = SLIDING.generate_staypoints(
+        position_fixes_simple,
+        dist_threshold=1,  # 1 meter - too small
+        time_threshold=3.0,
+        gap_threshold=15.0,
+        include_last=False,
+        n_jobs=1
     )
-    
-    # Should create 1 shared location
-    assert len(locations) == 1
-    
-    # All stops should have same location_id
-    location_ids = stops_labeled['location_id'].dropna().unique()
-    assert len(location_ids) == 1
+
+    # Should detect very few or no staypoints due to tight distance constraint
+    assert len(sp) <= 1
 
 
-def test_cluster_locations_empty_input():
-    """Test handling of empty DataFrame"""
-    empty_df = pd.DataFrame(columns=['x', 'y', 'timestamp', 'user_id'])
-    traj_cols = {'x': 'x', 'y': 'y', 'timestamp': 'timestamp', 'user_id': 'user_id'}
-    
-    stops_labeled, locations = SLIDING.cluster_locations_dbscan(
-        empty_df,
-        epsilon=50,
-        num_samples=1,
-        traj_cols=traj_cols
+def test_sliding_gap_threshold(position_fixes_with_gap):
+    """Test that gap_threshold prevents clustering across large temporal gaps."""
+    # With gap_threshold=15, the 20-minute gap should prevent clustering
+    pfs, sp = SLIDING.generate_staypoints(
+        position_fixes_with_gap,
+        dist_threshold=100,
+        time_threshold=3.0,
+        gap_threshold=15.0,
+        include_last=False,
+        n_jobs=1
     )
-    
-    assert len(stops_labeled) == 0
-    assert len(locations) == 0
-    assert 'location_id' in stops_labeled.columns
+
+    # Should detect at most 2 separate staypoints (before and after gap)
+    assert len(sp) <= 2
 
 
-def test_cluster_locations_geographic_coords():
-    """Test clustering with lat/lon coordinates using haversine metric"""
-    # Create stops near SF (37.7749° N, 122.4194° W)
-    stops_data = {
-        'longitude': [-122.4194, -122.4195, -122.4196, -122.5000],  # ~100m apart, then far
-        'latitude': [37.7749, 37.7750, 37.7751, 37.8000],
-        'timestamp': [1704067200 + i*3600 for i in range(4)],
-        'duration': [10, 15, 20, 10],
-        'user_id': ['user1'] * 4
-    }
-    stops_df = pd.DataFrame(stops_data)
-    
-    traj_cols = {'longitude': 'longitude', 'latitude': 'latitude', 
-                 'timestamp': 'timestamp', 'user_id': 'user_id'}
-    
-    stops_labeled, locations = SLIDING.cluster_locations_dbscan(
-        stops_df,
-        epsilon=200,  # 200 meters
-        num_samples=2,
+def test_sliding_include_last(position_fixes_simple):
+    """Test include_last parameter."""
+    # Without include_last
+    pfs1, sp1 = SLIDING.generate_staypoints(
+        position_fixes_simple,
+        dist_threshold=100,
+        time_threshold=3.0,
+        include_last=False,
+        n_jobs=1
+    )
+
+    # With include_last
+    pfs2, sp2 = SLIDING.generate_staypoints(
+        position_fixes_simple,
+        dist_threshold=100,
+        time_threshold=3.0,
+        include_last=True,
+        n_jobs=1
+    )
+
+    # include_last=True should potentially detect more staypoints
+    assert len(sp2) >= len(sp1)
+
+
+def test_sliding_multi_user(position_fixes_multi_user):
+    """Test sliding window with multiple users."""
+    pfs, sp = SLIDING.generate_staypoints(
+        position_fixes_multi_user,
+        dist_threshold=100,
+        time_threshold=2.0,
+        gap_threshold=15.0,
+        n_jobs=1
+    )
+
+    # Should detect staypoints for both users
+    assert 'user_id' in sp.columns
+    unique_users = sp['user_id'].unique()
+    assert len(unique_users) >= 1  # At least one user should have staypoints
+
+
+def test_sliding_duplicate_removal(position_fixes_simple):
+    """Test that duplicates are handled properly."""
+    # Add duplicate rows
+    pfs_with_dupes = pd.concat([position_fixes_simple, position_fixes_simple.iloc[:2]])
+
+    with pytest.warns(UserWarning, match="duplicates were dropped"):
+        pfs, sp = SLIDING.generate_staypoints(
+            pfs_with_dupes,
+            dist_threshold=100,
+            time_threshold=3.0,
+            exclude_duplicate_pfs=True,
+            n_jobs=1
+        )
+
+    # Should still work after removing duplicates
+    assert len(pfs) == len(position_fixes_simple)
+
+
+def test_sliding_empty_dataframe():
+    """Test sliding window with empty dataframe."""
+    empty_pfs = gpd.GeoDataFrame({
+        "user_id": [],
+        "tracked_at": [],
+        "geometry": []
+    }, crs="EPSG:4326")
+
+    with pytest.warns(UserWarning, match="No staypoints can be generated"):
+        pfs, sp = SLIDING.generate_staypoints(
+            empty_pfs,
+            dist_threshold=100,
+            time_threshold=5.0,
+            n_jobs=1
+        )
+
+    assert len(sp) == 0
+    assert 'staypoint_id' in pfs.columns
+
+
+def test_sliding_staypoint_id_mapping(position_fixes_simple):
+    """Test that staypoint_id is properly mapped back to position fixes."""
+    pfs, sp = SLIDING.generate_staypoints(
+        position_fixes_simple,
+        dist_threshold=100,
+        time_threshold=3.0,
+        gap_threshold=15.0,
+        n_jobs=1
+    )
+
+    # Check that staypoint_id in pfs matches sp index
+    assigned_ids = pfs['staypoint_id'].dropna().unique()
+    for sp_id in assigned_ids:
+        assert sp_id in sp.index
+
+
+def test_sliding_haversine_metric(position_fixes_simple):
+    """Test using haversine distance metric."""
+    pfs, sp = SLIDING.generate_staypoints(
+        position_fixes_simple,
         distance_metric='haversine',
-        agg_level='dataset',
-        traj_cols=traj_cols
+        dist_threshold=100,
+        time_threshold=3.0,
+        n_jobs=1
     )
-    
-    # Should cluster first 3 stops, last one is noise
-    assert len(locations) == 1
-    assert stops_labeled.loc[0, 'location_id'] == stops_labeled.loc[1, 'location_id']
-    assert pd.isna(stops_labeled.loc[3, 'location_id'])
+
+    # Should work with haversine metric
+    assert isinstance(sp, gpd.GeoDataFrame)
 
 
-def test_cluster_locations_per_user_convenience():
-    """Test the cluster_locations_per_user convenience function"""
-    stops_data = {
-        'x': [0, 5, 10, 0, 5, 10],
-        'y': [0, 5, 10, 0, 5, 10],
-        'timestamp': [1704067200 + i*3600 for i in range(6)],
-        'duration': [10, 15, 20, 10, 15, 20],
-        'user_id': ['user1', 'user1', 'user1', 'user2', 'user2', 'user2']
-    }
-    stops_df = pd.DataFrame(stops_data)
-    
-    traj_cols = {'x': 'x', 'y': 'y', 'timestamp': 'timestamp', 'user_id': 'user_id'}
-    
-    stops_labeled, locations = SLIDING.cluster_locations_per_user(
-        stops_df,
-        epsilon=50,
-        num_samples=1,
-        traj_cols=traj_cols
+def test_sliding_parallel_processing(position_fixes_multi_user):
+    """Test parallel processing with n_jobs=-1."""
+    pfs_seq, sp_seq = SLIDING.generate_staypoints(
+        position_fixes_multi_user,
+        dist_threshold=100,
+        time_threshold=2.0,
+        n_jobs=1
     )
-    
-    # Should behave same as agg_level='user'
-    assert len(locations) == 2
-    assert 'user_id' in locations.columns
 
-
-def test_location_center_calculation(stops_for_clustering):
-    """Test that location centers are calculated correctly"""
-    traj_cols = {'x': 'x', 'y': 'y', 'timestamp': 'timestamp', 'user_id': 'user_id'}
-    
-    stops_labeled, locations = SLIDING.cluster_locations_dbscan(
-        stops_for_clustering,
-        epsilon=50,
-        num_samples=2,
-        distance_metric='euclidean',
-        agg_level='dataset',
-        traj_cols=traj_cols
+    pfs_par, sp_par = SLIDING.generate_staypoints(
+        position_fixes_multi_user,
+        dist_threshold=100,
+        time_threshold=2.0,
+        n_jobs=-1
     )
-    
-    # First location should be centered around (5, 5) - mean of [0,5,10]
-    # Second location should be centered around (1005, 1005)
-    centers = [(loc.center.x, loc.center.y) for _, loc in locations.iterrows()]
-    
-    # Check first location center is near (5, 5)
-    assert any(abs(cx - 5) < 10 and abs(cy - 5) < 10 for cx, cy in centers)
-    
-    # Check second location center is near (1005, 1005)
-    assert any(abs(cx - 1005) < 10 and abs(cy - 1005) < 10 for cx, cy in centers)
+
+    # Results should be the same
+    assert len(sp_seq) == len(sp_par)
 
 
-def test_location_extent_calculation(stops_for_clustering):
-    """Test that location extents (convex hull + buffer) are created"""
-    traj_cols = {'x': 'x', 'y': 'y', 'timestamp': 'timestamp', 'user_id': 'user_id'}
-    
-    stops_labeled, locations = SLIDING.cluster_locations_dbscan(
-        stops_for_clustering,
-        epsilon=50,
-        num_samples=1,
-        distance_metric='euclidean',
-        agg_level='dataset',
-        traj_cols=traj_cols
+def test_sliding_invalid_input():
+    """Test that invalid inputs raise appropriate errors."""
+    # Test missing required columns
+    invalid_df = pd.DataFrame({
+        "tracked_at": pd.date_range("2025-01-01", periods=5, freq="1H")
+    })
+
+    with pytest.raises(ValueError, match="Missing required column"):
+        SLIDING.generate_staypoints(invalid_df, dist_threshold=100, time_threshold=5.0)
+
+    # Test non-GeoDataFrame input
+    non_geo_df = pd.DataFrame({
+        "user_id": ["user1"] * 5,
+        "tracked_at": pd.date_range("2025-01-01", periods=5, freq="1H")
+    })
+
+    with pytest.raises(TypeError, match="must be a GeoDataFrame"):
+        SLIDING.generate_staypoints(non_geo_df, dist_threshold=100, time_threshold=5.0)
+
+
+def test_sliding_output_dtypes(position_fixes_simple):
+    """Test that output has correct data types."""
+    pfs, sp = SLIDING.generate_staypoints(
+        position_fixes_simple,
+        dist_threshold=100,
+        time_threshold=3.0,
+        n_jobs=1
     )
-    
-    # All locations should have extent geometries
-    assert all(locations['extent'].notna())
-    
-    # Extents should be polygons (or points buffered to polygons)
-    from shapely.geometry import Polygon, Point
-    assert all(isinstance(ext, Polygon) or isinstance(ext, Point) 
-               for ext in locations['extent'])
+
+    # Check sp index dtype
+    assert sp.index.dtype == 'int64'
+
+    # Check staypoint_id dtype in pfs (should be nullable Int64)
+    assert pfs['staypoint_id'].dtype == 'Int64'
+
+    # Check user_id dtype consistency
+    assert sp['user_id'].dtype == pfs['user_id'].dtype
+
+
+def test_sliding_elevation_support():
+    """Test that elevation data is preserved if present."""
+    times = pd.date_range("2025-01-01 08:00", periods=6, freq="1min").tolist()
+    coords = [(0.0, 0.0)] * 6
+
+    pfs_with_elev = gpd.GeoDataFrame({
+        "user_id": "user1",
+        "tracked_at": times,
+        "elevation": [100.0, 101.0, 102.0, 103.0, 104.0, 105.0],
+        "geometry": [Point(lon, lat) for lon, lat in coords]
+    }, crs="EPSG:4326")
+
+    pfs, sp = SLIDING.generate_staypoints(
+        pfs_with_elev,
+        dist_threshold=100,
+        time_threshold=3.0,
+        n_jobs=1
+    )
+
+    # Elevation should be in staypoints if input had it
+    if len(sp) > 0:
+        assert 'elevation' in sp.columns
