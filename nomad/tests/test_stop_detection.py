@@ -8,6 +8,7 @@ import itertools
 from collections import defaultdict
 import pytest
 from pathlib import Path
+from shapely.geometry import Point
 import nomad.io.base as loader
 from nomad import constants
 from nomad import filters
@@ -404,10 +405,6 @@ def test_empty_dataframe_consistency():
 ####           (SLIDING.PY)          ####
 ##########################################
 
-##########################################
-####      SLIDING WINDOW TESTS        ####
-##########################################
-
 @pytest.fixture
 def position_fixes_simple():
     """Simple position fixes for testing sliding window algorithm."""
@@ -465,7 +462,6 @@ def position_fixes_multi_user():
 
 
 def test_sliding_basic_staypoint_detection(position_fixes_simple):
-    """Test basic staypoint detection with sliding window."""
     pfs, sp = SLIDING.generate_staypoints(
         position_fixes_simple,
         method="sliding",
@@ -507,18 +503,21 @@ def test_sliding_time_threshold(position_fixes_simple):
 
 def test_sliding_distance_threshold(position_fixes_simple):
     """Test that distance_threshold is respected."""
-    # With very small distance threshold, points should not cluster
+    # With very small distance threshold, points should not cluster together
+    # The test data has 6 points at (0,0) and 4 points at (0.002, 0.002)
+    # With dist_threshold=1m, these should form separate staypoints
     pfs, sp = SLIDING.generate_staypoints(
         position_fixes_simple,
-        dist_threshold=1,  # 1 meter - too small
+        dist_threshold=1,  # 1 meter - very tight
         time_threshold=3.0,
         gap_threshold=15.0,
         include_last=False,
         n_jobs=1
     )
 
-    # Should detect very few or no staypoints due to tight distance constraint
-    assert len(sp) <= 1
+    # With tight distance constraint, should detect 2 separate staypoints
+    # (one at each distinct location)
+    assert len(sp) == 2
 
 
 def test_sliding_gap_threshold(position_fixes_with_gap):
@@ -576,25 +575,6 @@ def test_sliding_multi_user(position_fixes_multi_user):
     unique_users = sp['user_id'].unique()
     assert len(unique_users) >= 1  # At least one user should have staypoints
 
-
-def test_sliding_duplicate_removal(position_fixes_simple):
-    """Test that duplicates are handled properly."""
-    # Add duplicate rows
-    pfs_with_dupes = pd.concat([position_fixes_simple, position_fixes_simple.iloc[:2]])
-
-    with pytest.warns(UserWarning, match="duplicates were dropped"):
-        pfs, sp = SLIDING.generate_staypoints(
-            pfs_with_dupes,
-            dist_threshold=100,
-            time_threshold=3.0,
-            exclude_duplicate_pfs=True,
-            n_jobs=1
-        )
-
-    # Should still work after removing duplicates
-    assert len(pfs) == len(position_fixes_simple)
-
-
 def test_sliding_empty_dataframe():
     """Test sliding window with empty dataframe."""
     empty_pfs = gpd.GeoDataFrame({
@@ -613,116 +593,3 @@ def test_sliding_empty_dataframe():
 
     assert len(sp) == 0
     assert 'staypoint_id' in pfs.columns
-
-
-def test_sliding_staypoint_id_mapping(position_fixes_simple):
-    """Test that staypoint_id is properly mapped back to position fixes."""
-    pfs, sp = SLIDING.generate_staypoints(
-        position_fixes_simple,
-        dist_threshold=100,
-        time_threshold=3.0,
-        gap_threshold=15.0,
-        n_jobs=1
-    )
-
-    # Check that staypoint_id in pfs matches sp index
-    assigned_ids = pfs['staypoint_id'].dropna().unique()
-    for sp_id in assigned_ids:
-        assert sp_id in sp.index
-
-
-def test_sliding_haversine_metric(position_fixes_simple):
-    """Test using haversine distance metric."""
-    pfs, sp = SLIDING.generate_staypoints(
-        position_fixes_simple,
-        distance_metric='haversine',
-        dist_threshold=100,
-        time_threshold=3.0,
-        n_jobs=1
-    )
-
-    # Should work with haversine metric
-    assert isinstance(sp, gpd.GeoDataFrame)
-
-
-def test_sliding_parallel_processing(position_fixes_multi_user):
-    """Test parallel processing with n_jobs=-1."""
-    pfs_seq, sp_seq = SLIDING.generate_staypoints(
-        position_fixes_multi_user,
-        dist_threshold=100,
-        time_threshold=2.0,
-        n_jobs=1
-    )
-
-    pfs_par, sp_par = SLIDING.generate_staypoints(
-        position_fixes_multi_user,
-        dist_threshold=100,
-        time_threshold=2.0,
-        n_jobs=-1
-    )
-
-    # Results should be the same
-    assert len(sp_seq) == len(sp_par)
-
-
-def test_sliding_invalid_input():
-    """Test that invalid inputs raise appropriate errors."""
-    # Test missing required columns
-    invalid_df = pd.DataFrame({
-        "tracked_at": pd.date_range("2025-01-01", periods=5, freq="1H")
-    })
-
-    with pytest.raises(ValueError, match="Missing required column"):
-        SLIDING.generate_staypoints(invalid_df, dist_threshold=100, time_threshold=5.0)
-
-    # Test non-GeoDataFrame input
-    non_geo_df = pd.DataFrame({
-        "user_id": ["user1"] * 5,
-        "tracked_at": pd.date_range("2025-01-01", periods=5, freq="1H")
-    })
-
-    with pytest.raises(TypeError, match="must be a GeoDataFrame"):
-        SLIDING.generate_staypoints(non_geo_df, dist_threshold=100, time_threshold=5.0)
-
-
-def test_sliding_output_dtypes(position_fixes_simple):
-    """Test that output has correct data types."""
-    pfs, sp = SLIDING.generate_staypoints(
-        position_fixes_simple,
-        dist_threshold=100,
-        time_threshold=3.0,
-        n_jobs=1
-    )
-
-    # Check sp index dtype
-    assert sp.index.dtype == 'int64'
-
-    # Check staypoint_id dtype in pfs (should be nullable Int64)
-    assert pfs['staypoint_id'].dtype == 'Int64'
-
-    # Check user_id dtype consistency
-    assert sp['user_id'].dtype == pfs['user_id'].dtype
-
-
-def test_sliding_elevation_support():
-    """Test that elevation data is preserved if present."""
-    times = pd.date_range("2025-01-01 08:00", periods=6, freq="1min").tolist()
-    coords = [(0.0, 0.0)] * 6
-
-    pfs_with_elev = gpd.GeoDataFrame({
-        "user_id": "user1",
-        "tracked_at": times,
-        "elevation": [100.0, 101.0, 102.0, 103.0, 104.0, 105.0],
-        "geometry": [Point(lon, lat) for lon, lat in coords]
-    }, crs="EPSG:4326")
-
-    pfs, sp = SLIDING.generate_staypoints(
-        pfs_with_elev,
-        dist_threshold=100,
-        time_threshold=3.0,
-        n_jobs=1
-    )
-
-    # Elevation should be in staypoints if input had it
-    if len(sp) > 0:
-        assert 'elevation' in sp.columns

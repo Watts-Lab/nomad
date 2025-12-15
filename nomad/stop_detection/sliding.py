@@ -83,7 +83,7 @@ def _generate_staypoints_sliding_user(
     include_last=False
 ):
     """
-    Generate staypoints for a single user using sliding window algorithm.
+    Generate staypoints for a single user using sliding stop detection.
 
     Parameters
     ----------
@@ -114,8 +114,9 @@ def _generate_staypoints_sliding_user(
     if len(pfs) == 0:
         return pd.DataFrame()
 
-    # Sort by time
-    pfs = pfs.sort_values('tracked_at').reset_index(drop=True)
+    # Sort by time but preserve original index
+    pfs = pfs.sort_values('tracked_at').reset_index(drop=False)
+    original_index_col = pfs.columns[0]  # The original index is now the first column
 
     staypoints = []
     pfs_ids = []
@@ -194,7 +195,7 @@ def _generate_staypoints_sliding_user(
                 'started_at': sp_pfs.iloc[0]['tracked_at'],
                 'finished_at': sp_pfs.iloc[-1]['tracked_at'],
                 geo_col: Point(center_lon, center_lat),
-                'pfs_id': list(sp_pfs.index)
+                'pfs_id': list(sp_pfs[original_index_col])  # Use original index
             }
 
             if elevation_flag and 'elevation' in sp_pfs.columns:
@@ -242,7 +243,7 @@ def _generate_staypoints_sliding_user(
                 'started_at': sp_pfs.iloc[0]['tracked_at'],
                 'finished_at': sp_pfs.iloc[-1]['tracked_at'],
                 geo_col: Point(center_lon, center_lat),
-                'pfs_id': list(sp_pfs.index)
+                'pfs_id': list(sp_pfs[original_index_col])  # Use original index
             }
 
             if elevation_flag and 'elevation' in sp_pfs.columns:
