@@ -1094,7 +1094,7 @@ def thin_traj_by_times(traj,
 
 def _sample_horizontal_noise(n,
                              *,
-                             ha=3/4,
+                             ha=15/15,
                              rng=None):
     """Sample per-ping horizontal accuracy and Gaussian noise (internal)."""
     if ha is None or ha==0:
