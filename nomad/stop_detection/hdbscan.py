@@ -591,8 +591,15 @@ def select_clusters_by_epsilon(hierarchy_df, label_history_df, epsilon):
     if len(available_scales) == 0:
         return set()
 
-    # Find the scale closest to epsilon
-    closest_scale = available_scales[np.argmin(np.abs(available_scales - epsilon))]
+    # Find the next smallest scale ≤ epsilon
+    smaller_scales = available_scales[available_scales <= epsilon]
+    
+    if len(smaller_scales) == 0:
+        # No scales below epsilon
+        return set()
+    else:
+        # largest scale that is ≤ epsilon
+        closest_scale = smaller_scales.max()
 
     # Get all clusters that exist at this scale
     clusters_at_scale = label_history_df[
