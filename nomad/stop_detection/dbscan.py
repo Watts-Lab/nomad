@@ -9,12 +9,13 @@ from nomad.stop_detection import utils
 from nomad.stop_detection.postprocessing import remove_overlaps
 from nomad.filters import to_timestamp
 from nomad.stop_detection.preprocessing import _find_neighbors
+import pdb
 
 ##########################################
 ########         DBSCAN           ########
 ##########################################
 
-def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False, traj_cols=None, **kwargs):
+def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, dur_min=5, return_cores=False, remove_overlaps=False, traj_cols=None, **kwargs):
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
          raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
     if data.empty:
@@ -35,6 +36,8 @@ def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False
     core_df = pd.Series(-3, index=valid_times, name='core')
     # Initialize cluster label
     cid = -1
+
+    # replace with connected components of core points?
     
     for i, cluster in cluster_df.items():
         if cluster < 0:
@@ -49,12 +52,65 @@ def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False
                 while S:
                     j = S.pop()
                     if cluster_df[j] < 0:  # Process if not yet in a cluster
-                        cluster_df[j] = cid
-                        if len(neighbor_dict[j]) >= min_pts:
-                            core_df[j] = cid  # Assign core label
+                        if remove_overlaps:
+                            cluster_df[j] = -1
+                        else:
+                            cluster_df[j] = cid  # delay adding border points, set to -1 (visited)
+                        if len(neighbor_dict[j]) >= min_pts: # if core point reachable from i
+                            core_df[j] = cid  # Add to i's cluster, assigning cid label
                             for k in neighbor_dict[j]:
-                                if cluster_df[k] < 0:
-                                    S.append(k)  # Add new neighbors
+                                if remove_overlaps:
+                                    if cluster_df[k] < -1: #unvisited
+                                        S.append(k)  # Add new neighbors
+                                else:
+                                    if cluster_df[k] < 0: #unassigned
+                                        S.append(k)
+    
+    ### Remove overlaps (optional) and attach clusters ###
+    if remove_overlaps:
+        new_label = cid
+        i = 0
+        start_time = cluster_df.index[0] if not cluster_df.empty else -1
+
+        while i<len(cluster_df): #i is end time
+            if cluster_df.index[i] < start_time:
+                i = i+1
+                continue
+            
+            if len(core_df[(core_df.index>=start_time)&(core_df>0)])>0:
+                label = core_df[(core_df.index>=start_time)&(core_df>0)].iloc[0]
+            else:
+                break
+            
+            # how do I find the cutoff? 
+            next_labels = core_df.loc[(core_df>0)&(core_df!=label)&(core_df.index>start_time)]
+            if len(next_labels)>0:
+                end_time = next_labels.index[0]
+            else:
+                end_time = np.inf
+                
+            if len(core_df.loc[(core_df==label)&(core_df.index>end_time)])>0: # cluster "label" is split
+                new_label = new_label + 1
+                core_df.loc[(core_df==label)&(core_df.index>end_time)] = new_label
+                
+            # attach border points all neighbors of "label" cores within time window
+            set_list = [neighbor_dict[idx] for idx in core_df.loc[core_df==label].index]
+            set_list = set_list + [set(core_df.loc[core_df==label].index)]
+            label_neighbors = sorted(set().union(*set_list))
+
+            mask = (cluster_df.index>=start_time)&(cluster_df.index<end_time)&(cluster_df.index.isin(label_neighbors))
+            
+            filtered = cluster_df[mask]
+                
+            if filtered.index.max() - filtered.index.min() >= dur_min*60:
+                start_time = filtered.index.max()
+                cluster_df.loc[mask] = label
+                
+            else:
+                cluster_df.loc[mask] = -1
+                core_df.loc[mask] = -3
+
+            i = i+1
 
     output = pd.DataFrame({'cluster': cluster_df, 'core': core_df})
 
@@ -123,26 +179,28 @@ def ta_dbscan(
         dist_thresh=dist_thresh,
         min_pts=min_pts,
         time_thresh=time_thresh,
+        dur_min=5,
         return_cores=False,
+        remove_overlaps=True,
         traj_cols=traj_cols,
         **kwargs
     )
     merged = data.join(labels)
 
-    if len(merged.cluster.unique())>2:
-        # Get adjusted cluster labels (not summary table)
-        adjusted_labels = remove_overlaps(
-            merged,
-            dist_thresh=dist_thresh,
-            min_pts=min_pts,
-            time_thresh=time_thresh,
-            method="cluster",
-            traj_cols=traj_cols,
-            summarize_stops=False,  # Return cluster labels, not summary table
-            **kwargs)
+    # if len(merged.cluster.unique())>2:
+    #     # Get adjusted cluster labels (not summary table)
+    #     adjusted_labels = remove_overlaps(
+    #         merged,
+    #         dist_thresh=dist_thresh,
+    #         min_pts=min_pts,
+    #         time_thresh=time_thresh,
+    #         method="cluster",
+    #         traj_cols=traj_cols,
+    #         summarize_stops=False,  # Return cluster labels, not summary table
+    #         **kwargs)
         
-        # Update the cluster column with adjusted labels
-        merged['cluster'] = adjusted_labels
+    #     # Update the cluster column with adjusted labels
+    #     merged['cluster'] = adjusted_labels
     
     # Filter out noise points after overlap removal
     merged = merged[merged.cluster != -1]
