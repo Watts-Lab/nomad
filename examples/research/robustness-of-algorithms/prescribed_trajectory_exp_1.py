@@ -31,7 +31,6 @@ from nomad.city_gen import City
 import nomad.data as data_folder
 from pathlib import Path
 data_dir = Path(data_folder.__file__).parent
-path = data_dir / "garden_city.gpkg"
 
 # %% [markdown]
 # ## Load city and configure destination diaries

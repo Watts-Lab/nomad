@@ -8,6 +8,7 @@ import pandas as pd
 import numpy as np
 import nomad.io.base as loader
 import h3
+import pdb
 pd.plotting.register_matplotlib_converters()
 
 def h3_cell_to_polygon(cell):
@@ -63,10 +64,10 @@ def _plot_base_geometry(ax, base_geometry, gdf_crs, base_geom_color='#2c353c', b
     
     if isinstance(base_geom_color, str) and base_geom_color in base_geometry.columns:
         base_geometry.plot(ax=ax, column=base_geom_color, edgecolor='white', 
-                          linewidth=0.5, zorder=0, autolim=False)
+                          linewidth=1, zorder=0, autolim=False)
     else:
         base_geometry.plot(ax=ax, color=base_geom_color, edgecolor='white', 
-                          linewidth=0.5, zorder=0, autolim=False)
+                          linewidth=1, zorder=0, autolim=False)
 
 def _map_cluster_colors(gdf, cmap):
     """Map cluster IDs to colors, filtering noise."""
@@ -556,16 +557,32 @@ def plot_stops(stops, ax,
             **kwargs
         )
 
-def plot_time_barcode(ts_series, ax, current_idx=None, color=None, set_xlim=True):
+def plot_time_barcode(data, ax, color='black', cmap=None, current_idx=None, set_xlim=True, lw=1):
     """
     Plot a barcode of timestamps on ax. Optionally highlight current_idx in red.
     If set_xlim is True, auto-sets x-axis to padded timestamp range.
     """
-    ts_dt = pd.to_datetime(ts_series, unit='s')
+    if isinstance(data, pd.DataFrame):
+        # color logic
+        if color == 'cluster' and 'cluster' in data.columns:
+            if not cmap:
+                raise ValueError("cmap required when color='cluster'")
+            data, colors = _map_cluster_colors(data, cmap)
+        else:
+            colors="black"
+
+        ts_dt = pd.to_datetime(data['timestamp'], unit='s')
+                    
+    elif isinstance(data, pd.Series):
+        ts_dt = pd.to_datetime(data, unit='s')
+        colors="black"
+    
     if set_xlim:
         pad = pd.Timedelta(minutes=20)
         ax.set_xlim(ts_dt.min() - pad, ts_dt.max() + pad)
-    vlines = ax.vlines(ts_dt, 0.2, 0.8, colors='black', lw=0.5)
+
+
+    vlines = ax.vlines(ts_dt, 0.2, 0.8, colors=colors, lw=lw)
     if current_idx is not None:
         ax.vlines(ts_dt.iloc[current_idx], 0, 1, colors='red', lw=1.5)
     ax.set_yticks([])
@@ -600,7 +617,7 @@ def plot_time_barcode(ts_series, ax, current_idx=None, color=None, set_xlim=True
     ax.tick_params(axis='x', which='major', labelsize=10)
     return vlines
 
-def plot_stops_barcode(stops, ax, cmap='Reds', stop_color=None, set_xlim=True, traj_cols=None, **kwargs):
+def plot_stops_barcode(stops, ax, cmap='Reds', stop_color=None, set_xlim=True, stop_alpha=0.75, traj_cols=None, **kwargs):
     """
     Plot colored stop intervals as bars on ax using temporal columns and colors by cluster with cmap.
     If set_xlim is True, auto-sets x-axis to padded range.
@@ -632,7 +649,7 @@ def plot_stops_barcode(stops, ax, cmap='Reds', stop_color=None, set_xlim=True, t
         raise ValueError("Specify either a color map (cmap) or a solid color (stop_color).")
         
     for s, e, color in zip(start, end, colors):
-        ax.fill_betweenx([0, 1], s, e, color=color, alpha=0.75)
+        ax.fill_betweenx([0, 1], s, e, color=color, alpha=stop_alpha)
     
     ax.set_ylim(0, 1)
     ax.set_yticks([])

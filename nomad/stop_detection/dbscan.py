@@ -129,7 +129,7 @@ def ta_dbscan(
     )
     merged = data.join(labels)
 
-    if len(merged.cluster.unique())>2:
+    if len(merged.cluster.unique())>2: # labels.loc[labels!=-1].nunique() > 1
         # Get adjusted cluster labels (not summary table)
         adjusted_labels = remove_overlaps(
             merged,
@@ -141,12 +141,10 @@ def ta_dbscan(
             summarize_stops=False,  # Return cluster labels, not summary table
             **kwargs)
         
-        # Update the cluster column with adjusted labels
         merged['cluster'] = adjusted_labels
-    
-    # Filter out noise points after overlap removal
+        
     merged = merged[merged.cluster != -1]
-
+    
     if merged.empty:
         # Get column names by calling summarize function on dummy data
         cols = utils._get_empty_stop_columns(

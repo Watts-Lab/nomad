@@ -5,41 +5,8 @@ from collections import defaultdict
 import warnings
 import nomad.io.base as loader
 from nomad.stop_detection import utils
-from nomad.filters import to_timestamp
+from nomad.stop_detection.preprocessing import _find_temp_neighbors
 import pdb
-
-def _find_temp_neighbors(times, time_thresh, use_datetime):
-    """
-    Find timestamp pairs that are within time threshold.
-
-    Parameters
-    ----------
-    times : array of timestamps.
-    time_thresh : time threshold for finding what timestamps are close in time.
-    use_datetime : Whether to process timestamps as datetime objects.
-
-    Returns
-    -------
-    time_pairs : list of tuples of timestamps [(t1, t2), ...] that are close in time given time_thresh.
-
-    TC: O(n^2)
-    """
-    # getting times based on whether they are datetime values or timestamps, changed to seconds for calculations
-    times = to_timestamp(times).values if use_datetime else times.values
-        
-    # Pairwise time differences
-    # times[:, np.newaxis]: from shape (n,) -> to shape (n, 1) – a column vector
-    time_diffs = np.abs(times[:, np.newaxis] - times)
-    time_diffs = time_diffs.astype(int)
-    
-    # Filter by time threshold
-    within_time_thresh = np.triu(time_diffs <= (time_thresh * 60), k=1) # keep upper triangle
-    i_idx, j_idx = np.where(within_time_thresh)
-    
-    # Return a list of (timestamp1, timestamp2) tuples
-    time_pairs = [(times[i], times[j]) for i, j in zip(i_idx, j_idx)]
-    
-    return time_pairs, times
 
 def _build_neighbor_graph(time_pairs, times):
     # Build neighbor map from time_pairs
@@ -77,22 +44,17 @@ def _compute_core_distance(data, time_pairs, times, use_lon_lat, traj_cols, min_
     else:
         coords = data[[traj_cols['x'], traj_cols['y']]].values # TC: O(n)
     
-    n = len(coords)
     # get the index of timestamp in the arrays (for accessing their value later)
     ts_indices = {ts: idx for idx, ts in enumerate(times)} # TC: O(n)
-
-    # Build neighbor map from time_pairs
     neighbors = _build_neighbor_graph(time_pairs, times)
 
     D_INF = np.pi * 6_371_000  # max distance on earth
     core_distances = {}
 
-    for i in range(n): # TC: O(n+m (mlogm)) 
-        u = times[i]
-        allowed_neighbors = neighbors[u]
+    for i in range(len(coords)): # TC: O(n+m (mlogm)) 
         dists = [0.0]  # distance to itself
 
-        for v in allowed_neighbors:
+        for v in neighbors[times[i]]:
             j = ts_indices.get(v)
             if j is not None:
                 if use_lon_lat:
@@ -107,7 +69,7 @@ def _compute_core_distance(data, time_pairs, times, use_lon_lat, traj_cols, min_
             dists.append(D_INF) # use a very large number e.g. infinity for edges between points not temporally close
 
         sorted_dists = np.sort(dists) # TC: O(nlogn)
-        core_distances[u] = np.round(sorted_dists[min_pts - 1] * 4)/4
+        core_distances[times[i]] = np.round(sorted_dists[min_pts - 1] * 4)/4
     return core_distances, coords
 
 def _mst(mrd_graph):
