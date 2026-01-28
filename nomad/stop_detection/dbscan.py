@@ -90,20 +90,41 @@ def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False
         for i in range(len(core_segments)):
             start_i, end_i, cid_i = core_segments[i]
             
-            for j in range(i + 1, len(core_segments)):
+            # Check if this cluster reappears after other clusters
+            for j in range(len(core_segments)):
+                if i == j:
+                    continue
+                    
                 start_j, end_j, cid_j = core_segments[j]
                 
-                if start_j <= end_i and cid_i != cid_j:
-                    # Split: points after start_j get new label
+                # If same cluster ID but j comes after i, check for intervening clusters
+                if cid_i == cid_j and start_j > end_i:
+                    # Check if any other cluster exists between segment i and j
+                    has_intervening = any(
+                        start_k > end_i and end_k < start_j and cid_k != cid_i
+                        for k, (start_k, end_k, cid_k) in enumerate(core_segments)
+                    )
+                    
+                    if has_intervening:
+                        # Relabel the later occurrence
+                        mask = (core_df.index >= start_j) & (core_df.index <= end_j) & (core_df == cid_j)
+                        cluster_df[mask] = new_label
+                        core_df[mask] = new_label
+                        
+                        segments_to_add.append((start_j, end_j, new_label))
+                        core_segments[j] = (start_j, end_j, new_label)
+                        new_label += 1
+                
+                # Original overlap check for different clusters
+                elif start_j <= end_i and cid_i != cid_j and j > i:
                     mask = (core_df.index >= start_j) & (core_df == cid_i)
                     cluster_df[mask] = new_label
                     core_df[mask] = new_label
                     
-                    # Track new segment separately
                     segments_to_add.append((start_j, end_i, new_label))
-                    core_segments[i] = (start_i, start_j - 1, cid_i)  # Update original
+                    core_segments[i] = (start_i, start_j - 1, cid_i)
                     new_label += 1
-                    break  # Move to next segment
+                    break
         
         core_segments.extend(segments_to_add)
         core_segments.sort(key=lambda x: x[0])
