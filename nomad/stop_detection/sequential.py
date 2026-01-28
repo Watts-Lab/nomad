@@ -11,6 +11,7 @@ from nomad.filters import to_timestamp
 
 
 def haversine_dist(lat1, lon1, lat2, lon2):
+    # remove this and use what's in utils.py 
     """
     Calculate haversine distance between two points in meters.
 
@@ -197,225 +198,169 @@ def applyParallel(groups, func, n_jobs=1, print_progress=False, **kwargs):
     return results
 
 
-def generate_staypoints(
-    positionfixes,
-    method="sliding",
-    distance_metric="haversine",
-    dist_threshold=100,
-    time_threshold=5.0,
-    gap_threshold=15.0,
-    print_progress=False,
-    exclude_duplicate_pfs=True,
-    n_jobs=1,
+def detect_stops(
+    data,
+    delta_roam=100,
+    dt_max=15.0,
+    dur_min=5.0,
+    method='sliding',
+    complete_output=False,
+    passthrough_cols=[],
+    keep_col_names=True,
+    traj_cols=None,
+    **kwargs
 ):
     """
-    Generate staypoints from positionfixes using sliding window approach.
+    Sequential stop detection using sliding window approach.
+    
+    Analogous to lachesis function but uses sliding window method.
 
     Parameters
     ----------
-    positionfixes : pd.DataFrame or gpd.GeoDataFrame
-        Position fixes with columns: user_id, timestamp, geometry
-
-    method : {'sliding'}
-        Method to create staypoints. 'sliding' applies a sliding window over the data.
-
-    distance_metric : {'haversine', 'euclidean'}
-        The distance metric used by the applied method.
-
-    dist_threshold : float, default 100
-        The distance threshold for the 'sliding' method, i.e., how far someone has to travel to
-        generate a new staypoint. Units depend on distance_metric. If 'haversine': meters.
-
-    time_threshold : float, default 5.0 (minutes)
-        The time threshold for the 'sliding' method in minutes.
-
-    gap_threshold : float, default 15.0 (minutes)
-        Maximum temporal gap between consecutive points. Consecutive points with
-        temporal gaps larger than 'gap_threshold' will be excluded from staypoints.
-
-    print_progress: boolean, default False
-        Show per-user progress if set to True.
-
-    exclude_duplicate_pfs: boolean, default True
-        Filters duplicate positionfixes before generating staypoints. Duplicates can lead to problems in later
-        processing steps (e.g., when generating triplegs). It is not recommended to set this to False.
-
-    n_jobs: int, default 1
-        The maximum number of concurrently running jobs. If -1 all CPUs are used. If 1 is given, no parallel
-        computing code is used at all.
+    data : pd.DataFrame or GeoDataFrame
+        Input trajectory with spatial and temporal columns.
+    delta_roam : float, default 100
+        Maximum distance threshold in meters (for haversine) or map units (for euclidean).
+    dt_max : float, default 15.0
+        Maximum allowed gap in minutes between consecutive points in a stop.
+    dur_min : float, default 5.0
+        Minimum duration in minutes for a valid stop.
+    method : str, default 'sliding'
+        Method to use ('sliding' currently supported).
+    complete_output : bool, default False
+        If True, include additional summary statistics in output.
+    passthrough_cols : list, optional
+        Columns to retain (and summarize/propagate) per stop.
+    keep_col_names : bool, default True
+        Whether to keep original column names in output.
+    traj_cols : dict, optional
+        Mapping for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'.
+    **kwargs
+        Passed along to column detection helper.
 
     Returns
     -------
-    pfs: pd.DataFrame or gpd.GeoDataFrame
-        The original positionfixes with a new column ``[`staypoint_id`]``.
+    pd.DataFrame
+        Stop table with one row per detected stop.
 
-    sp: gpd.GeoDataFrame
-        The generated staypoints.
-
-    References
-    ----------
-    Zheng, Y. (2015). Trajectory data mining: an overview. ACM Transactions on Intelligent Systems
-    and Technology (TIST), 6(3), 29.
-
-    Li, Q., Zheng, Y., Xie, X., Chen, Y., Liu, W., & Ma, W. Y. (2008, November). Mining user
-    similarity based on location history. In Proceedings of the 16th ACM SIGSPATIAL international
-    conference on Advances in geographic information systems (p. 34). ACM.
+    Raises
+    ------
+    ValueError if multiple users found; use detect_stops_per_user instead.
     """
-    # Validate required columns
-    required_cols = ['user_id', 'timestamp']
-    for col in required_cols:
-        if col not in positionfixes.columns:
-            raise ValueError(f"Missing required column: {col}")
-
-    if not isinstance(positionfixes, gpd.GeoDataFrame):
-        raise TypeError("positionfixes must be a GeoDataFrame with geometry column")
-
-    # Copy the original pfs for adding 'staypoint_id' column
-    pfs = positionfixes.copy()
-
-    if exclude_duplicate_pfs:
-        len_org = pfs.shape[0]
-        pfs = pfs.drop_duplicates()
-        nb_dropped = len_org - pfs.shape[0]
-        if nb_dropped > 0:
-            warn_str = (
-                f"{nb_dropped} duplicates were dropped from your positionfixes. Dropping duplicates is"
-                + " recommended but can be prevented using the 'exclude_duplicate_pfs' flag."
-            )
-            warnings.warn(warn_str)
-
-    # If the positionfixes already have a column "staypoint_id", we drop it
-    if "staypoint_id" in pfs.columns:
-        pfs.drop(columns="staypoint_id", inplace=True)
-
-    geo_col = pfs.geometry.name
-    
-    # Setup traj_cols based on distance_metric
-    if distance_metric == 'haversine':
-        # Extract lat/lon from geometry for haversine
-        pfs['_temp_lat'] = pfs[geo_col].apply(lambda g: g.y)
-        pfs['_temp_lon'] = pfs[geo_col].apply(lambda g: g.x)
-        traj_cols = {'latitude': '_temp_lat', 'longitude': '_temp_lon', 'timestamp': 'timestamp', 'user_id': 'user_id'}
+    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    if 'user_id' in traj_cols_temp and traj_cols_temp['user_id'] in data.columns:
+        uid_col = data[traj_cols_temp['user_id']]
+        arr = uid_col.values
+        if len(arr) > 0:
+            first = arr[0]
+            if any(x != first for x in arr[1:]):
+                raise ValueError("Multi-user data? Use detect_stops_per_user instead.")
+            passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
     else:
-        # Use x/y coordinates for euclidean
-        pfs['_temp_x'] = pfs[geo_col].apply(lambda g: g.x)
-        pfs['_temp_y'] = pfs[geo_col].apply(lambda g: g.y)
-        traj_cols = {'x': '_temp_x', 'y': '_temp_y', 'timestamp': 'timestamp', 'user_id': 'user_id'}
+        uid_col = None
 
-    if method != "sliding":
-        raise ValueError(f"Unknown method: {method}. Only 'sliding' is supported.")
+    labels = detect_stop_labels(
+        data=data,
+        delta_roam=delta_roam,
+        dt_max=dt_max,
+        dur_min=dur_min,
+        method=method,
+        traj_cols=traj_cols,
+        **kwargs
+    )
+    merged = data.join(labels)
+    merged = merged[merged.cluster != -1]
 
-    # Process each user and get labels
-    def process_user(user_group):
-        user_id, user_data = user_group
-        labels = detect_stop_labels(
-            data=user_data,
-            delta_roam=dist_threshold,
-            dt_max=gap_threshold,
-            dur_min=time_threshold,
-            method=method,
-            traj_cols=traj_cols
+    if merged.empty:
+        # Get column names by calling summarize function on dummy data
+        cols = utils._get_empty_stop_columns(
+            data.columns, complete_output, passthrough_cols, traj_cols, 
+            keep_col_names=keep_col_names, is_grid_based=False, **kwargs
         )
-        return user_data.index, labels
+        return pd.DataFrame(columns=cols, dtype=object)
 
-    # Apply to all users using applyParallel
-    results = applyParallel(
-        pfs.groupby('user_id'),
-        process_user,
-        n_jobs=n_jobs,
-        print_progress=print_progress
+    stop_table = merged.groupby('cluster', as_index=False, sort=False).apply(
+        lambda grp: utils.summarize_stop(
+            grp,
+            complete_output=complete_output,
+            traj_cols=traj_cols,
+            keep_col_names=keep_col_names,
+            passthrough_cols=passthrough_cols,
+            **kwargs
+        ),
+        include_groups=False
     )
 
-    # Combine all labels into a single series
-    all_labels = pd.Series(dtype=int)
-    cluster_offset = 0
-    for indices, labels in results:
-        # Offset cluster IDs to make them globally unique across users
-        adjusted_labels = labels.copy()
-        mask = adjusted_labels != -1
-        adjusted_labels[mask] = adjusted_labels[mask] + cluster_offset
+    return stop_table
+
+
+def detect_stops_per_user(
+    data,
+    delta_roam=100,
+    dt_max=15.0,
+    dur_min=5.0,
+    method='sliding',
+    complete_output=False,
+    passthrough_cols=[],
+    keep_col_names=True,
+    traj_cols=None,
+    **kwargs
+):
+    """
+    Run detect_stops on each user separately, then concatenate results.
+    
+    Parameters
+    ----------
+    data : pd.DataFrame or GeoDataFrame
+        Input trajectory with spatial and temporal columns.
+    delta_roam : float, default 100
+        Maximum distance threshold in meters (for haversine) or map units (for euclidean).
+    dt_max : float, default 15.0
+        Maximum allowed gap in minutes between consecutive points in a stop.
+    dur_min : float, default 5.0
+        Minimum duration in minutes for a valid stop.
+    method : str, default 'sliding'
+        Method to use ('sliding' currently supported).
+    complete_output : bool, default False
+        If True, include additional summary statistics in output.
+    passthrough_cols : list, optional
+        Columns to retain (and summarize/propagate) per stop.
+    keep_col_names : bool, default True
+        Whether to keep original column names in output.
+    traj_cols : dict, optional
+        Mapping for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'.
+    **kwargs
+        Passed along to column detection helper.
+
+    Returns
+    -------
+    pd.DataFrame
+        Concatenated stop table with stops from all users.
         
-        all_labels = pd.concat([all_labels, pd.Series(adjusted_labels.values, index=indices)])
-        
-        # Update offset for next user
-        if (labels != -1).any():
-            cluster_offset = adjusted_labels.max() + 1
-
-    # Add labels to pfs
-    pfs['_cluster'] = all_labels
-
-    # Create staypoints from labeled data
-    labeled_pfs = pfs[pfs['_cluster'] != -1].copy()
+    Raises
+    ------
+    ValueError if 'user_id' not in traj_cols or missing from data.
+    """
+    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    if 'user_id' not in traj_cols_temp or traj_cols_temp['user_id'] not in data.columns:
+        raise ValueError("detect_stops_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
+    uid = traj_cols_temp['user_id']
     
-    if labeled_pfs.empty:
-        warnings.warn("No staypoints can be generated, returning empty sp.")
-        pfs['staypoint_id'] = pd.Series(dtype='Int64')
-        sp = gpd.GeoDataFrame(columns=['user_id', 'started_at', 'finished_at', geo_col], 
-                              geometry=geo_col, crs=pfs.crs)
-        # Cleanup temporary columns
-        pfs = pfs.drop(columns=[col for col in pfs.columns if col.startswith('_temp_') or col == '_cluster'])
-        return pfs, sp
-
-    # Aggregate by cluster to create staypoints
-    sp_list = []
-    cluster_ids = []
-    for cluster_id, group in labeled_pfs.groupby('_cluster'):
-        cluster_ids.append(cluster_id)
-        # Calculate centroid using spherical mean for haversine, simple mean for euclidean
-        if distance_metric == 'haversine':
-            lats = group['_temp_lat'].values
-            lons = group['_temp_lon'].values
-            
-            lats_rad = np.radians(lats)
-            lons_rad = np.radians(lons)
-            
-            x = np.cos(lats_rad) * np.cos(lons_rad)
-            y = np.cos(lats_rad) * np.sin(lons_rad)
-            z = np.sin(lats_rad)
-            
-            mean_x = np.mean(x)
-            mean_y = np.mean(y)
-            mean_z = np.mean(z)
-            
-            mean_lon = np.arctan2(mean_y, mean_x)
-            hyp = np.sqrt(mean_x**2 + mean_y**2)
-            mean_lat = np.arctan2(mean_z, hyp)
-            
-            center_lat = np.degrees(mean_lat)
-            center_lon = np.degrees(mean_lon)
-        else:
-            center_lon = group['_temp_x'].mean()
-            center_lat = group['_temp_y'].mean()
-        
-        sp_dict = {
-            'user_id': group['user_id'].iloc[0],
-            'started_at': group['timestamp'].min(),
-            'finished_at': group['timestamp'].max(),
-            geo_col: Point(center_lon, center_lat)
-        }
-        
-        sp_list.append(sp_dict)
-
-    sp = pd.DataFrame(sp_list)
+    pt_cols = passthrough_cols + [uid]
     
-    # Add staypoint IDs
-    sp['staypoint_id'] = sp.index
-    sp.index.name = 'id'
-    
-    # Map staypoint IDs back to original positionfixes (use cluster_ids to maintain correct mapping)
-    cluster_to_sp_id = dict(zip(cluster_ids, sp.index))
-    pfs['staypoint_id'] = pfs['_cluster'].map(cluster_to_sp_id)
-    
-    # Cleanup temporary columns
-    pfs = pfs.drop(columns=[col for col in pfs.columns if col.startswith('_temp_') or col == '_cluster'])
-    
-    # Convert to GeoDataFrame
-    sp_columns = ['user_id', 'started_at', 'finished_at', geo_col]
-    sp = gpd.GeoDataFrame(sp, columns=sp_columns, geometry=geo_col, crs=pfs.crs)
-
-    # dtype consistency
-    sp.index = sp.index.astype("int64")
-    pfs["staypoint_id"] = pfs["staypoint_id"].astype("Int64")
-    sp["user_id"] = sp["user_id"].astype(pfs["user_id"].dtype)
-
-    return pfs, sp
+    results = [
+        detect_stops(
+            group,
+            delta_roam=delta_roam,
+            dt_max=dt_max,
+            dur_min=dur_min,
+            method=method,
+            complete_output=complete_output,
+            passthrough_cols=pt_cols,
+            keep_col_names=keep_col_names,
+            traj_cols=traj_cols,
+            **kwargs
+        )
+        for _, group in data.groupby(uid, sort=False)
+    ]
+    return pd.concat(results, ignore_index=True)
