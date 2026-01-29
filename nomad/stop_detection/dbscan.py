@@ -129,7 +129,7 @@ def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False
         core_segments.extend(segments_to_add)
         core_segments.sort(key=lambda x: x[0])
         
-        # Reassign border points using actual timestamps
+        # Border points
         cluster_df.loc[core_df < 0] = -1
         
         for i, (start, end, cid) in enumerate(core_segments):
@@ -224,21 +224,6 @@ def ta_dbscan(
         **kwargs
     )
     merged = data.join(labels)
-
-    # if len(merged.cluster.unique())>2:
-    #     # Get adjusted cluster labels (not summary table)
-    #     adjusted_labels = remove_overlaps(
-    #         merged,
-    #         dist_thresh=dist_thresh,
-    #         min_pts=min_pts,
-    #         time_thresh=time_thresh,
-    #         method="cluster",
-    #         traj_cols=traj_cols,
-    #         summarize_stops=False,  # Return cluster labels, not summary table
-    #         **kwargs)
-        
-    #     # Update the cluster column with adjusted labels
-    #     merged['cluster'] = adjusted_labels
     
     # Filter out noise points after overlap removal
     merged = merged[merged.cluster != -1]
