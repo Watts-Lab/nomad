@@ -58,55 +58,62 @@ def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False
                             for k in neighbor_dict[j]:
                                 if cluster_df[k] < 0:
                                     S.append(k)  # Add new neighbors
-    
-    ### Remove overlaps (optional) reassign all border points
+
+    ### Remove overlaps (optional) reassign all border points after core labeling
     if remove_overlaps:
         # Build core segments
         core_segments = []
         current_cid = None
         start_idx = None
         
-        for idx in core_df.index:
-            cid_val = core_df[idx]
-            if cid_val >= 0:
+        for idx in core_df.index: # iterate through each timestamp
+            cid_val = core_df[idx] # select cluster id at that timestamp
+
+            if cid_val >= 0: # if it's a core point
                 if cid_val != current_cid:
                     if current_cid is not None:
                         core_segments.append((start_idx, prev_idx, current_cid))
                     current_cid = cid_val
                     start_idx = idx
-                prev_idx = idx
-            else:
+                prev_idx = idx # keeps track of last index in segment of same core cluster
+            else: # if it's not a core point
                 if current_cid is not None:
                     core_segments.append((start_idx, prev_idx, current_cid))
                     current_cid = None
         
         if current_cid is not None:
             core_segments.append((start_idx, prev_idx, current_cid))
-        
+                
         # Split overlaps
-        new_label = cluster_df.max() + 1 if len(cluster_df[cluster_df >= 0]) > 0 else 0
+        if len(cluster_df[cluster_df >= 0]) > 0: # if there are any core points, start new labels from max core value + 1
+            new_label = cluster_df.max() + 1
+        else: # if no core points, start labeling from 0
+            new_label = 0
+        
         segments_to_add = []
         
         for i in range(len(core_segments)):
             start_i, end_i, cid_i = core_segments[i]
             
-            # Check if this cluster reappears after other clusters
             for j in range(len(core_segments)):
-                if i == j:
+                if i == j: # Skip same segment
                     continue
-                    
+                
                 start_j, end_j, cid_j = core_segments[j]
                 
-                # If same cluster ID but j comes after i, check for intervening clusters
+                # Check if core reappears after other cores to relabel
+                # Segment i: Core 0 [8:00 - 9:00]
+                #            Core 1 [10:00 - 11:00]
+                # Segment j: Core 0 [17:00 - 18:00]  (same ID, but later in time)
+                # e.g. 0 0 1 1 0 0
                 if cid_i == cid_j and start_j > end_i:
-                    # Check if any other cluster exists between segment i and j
-                    has_intervening = any(
-                        start_k > end_i and end_k < start_j and cid_k != cid_i
-                        for k, (start_k, end_k, cid_k) in enumerate(core_segments)
-                    )
+                    # Check if any other cores exists between segment i and j
+                    has_intervening = any(start_k > end_i and end_k < start_j and cid_k != cid_i
+                                          for _, (start_k, end_k, cid_k) in enumerate(core_segments))
                     
                     if has_intervening:
                         # Relabel the later occurrence
+                        # e.g. 0 0 1 1 0 0 becomes 0 0 1 1 2 2
                         mask = (core_df.index >= start_j) & (core_df.index <= end_j) & (core_df == cid_j)
                         cluster_df[mask] = new_label
                         core_df[mask] = new_label
@@ -115,9 +122,11 @@ def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False
                         core_segments[j] = (start_j, end_j, new_label)
                         new_label += 1
                 
-                # Original overlap check for different clusters
+                # Temporal overlap of different cores
+                # Segment i: Core 0 [8:00 - 9:00]  (Home)
+                # Segment j: Core 1 [8:30 - 10:00] (Work - starts during Home)
                 elif start_j <= end_i and cid_i != cid_j and j > i:
-                    mask = (core_df.index >= start_j) & (core_df == cid_i)
+                    mask = (core_df.index >= start_j) & (core_df.index <= end_i) & (core_df == cid_i) # only relabel overlapping part
                     cluster_df[mask] = new_label
                     core_df[mask] = new_label
                     
@@ -128,23 +137,39 @@ def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False
         
         core_segments.extend(segments_to_add)
         core_segments.sort(key=lambda x: x[0])
+
+        print(core_segments)
         
         # Border points
+        # Reset non-core points to -1
         cluster_df.loc[core_df < 0] = -1
-        
+
+        # iterate through core segments to assign border points
         for i, (start, end, cid) in enumerate(core_segments):
-            prev_end_time = core_segments[i-1][1] if i > 0 else cluster_df.index.min() - 1
-            next_start_time = core_segments[i+1][0] if i < len(core_segments) - 1 else cluster_df.index.max() + 1
+            # for each core segment, find temporal bounds
+            # Segment 0 (Home):  [8:00 - 9:00]
+            # Segment 1 (Work):  [9:30 - 17:00]
+            # Segment 2 (Home2): [17:30 - 18:00]
+            
+            # For Segment 1:
+            #   prev_end_time = 9:00  (end of Segment 0)
+            #   next_start_time = 17:30 (start of Segment 2)
+            prev_end_time = core_segments[i-1][1] if i > 0 else cluster_df.index.min() - 1 # end of previous segment
+            next_start_time = core_segments[i+1][0] if i < len(core_segments) - 1 else cluster_df.index.max() + 1 # start of next segment
             
             core_indices = core_df.loc[core_df == cid].index
+
             if len(core_indices) == 0:
                 continue
             
+            # Collect neighbors of core points within the segment
             neighbor_set = set()
             for core_idx in core_indices:
                 neighbor_set.update(neighbor_dict[core_idx])
             
             # Assign border points within temporal bounds
+            # It falls temporally BETWEEN the previous and next segments
+            # It's currently marked as noise (-1)
             for neighbor_idx in neighbor_set:
                 if (prev_end_time < neighbor_idx < next_start_time and 
                     cluster_df[neighbor_idx] == -1):
