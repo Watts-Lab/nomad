@@ -350,7 +350,7 @@ def detect_stops_per_user(
     
     results = [
         detect_stops(
-            group,
+            group.reset_index(drop=True),
             delta_roam=delta_roam,
             dt_max=dt_max,
             dur_min=dur_min,
