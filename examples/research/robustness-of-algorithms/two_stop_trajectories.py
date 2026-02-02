@@ -31,7 +31,10 @@ from nomad.city_gen import City
 import nomad.data as data_folder
 from pathlib import Path
 data_dir = Path(data_folder.__file__).parent
+<<<<<<< HEAD
 path = data_dir / "garden_city.gpkg"
+=======
+>>>>>>> exp_hdbscan_paper
 
 # %% [markdown]
 # ## Load city and configure destination diaries
@@ -64,7 +67,11 @@ destinations.to_csv("exp_2_stops.csv", index=False)
 
 # %%
 # option 1 (reduced for quick demo run)
+<<<<<<< HEAD
 N_reps = 250
+=======
+N_reps = 100
+>>>>>>> exp_hdbscan_paper
 sparsity_samples = 1
 config = dict(
     dt = 0.20,
@@ -72,6 +79,10 @@ config = dict(
     name_count=2,
     name_seed=2025,
     city_file=str(data_dir / "garden-city.gpkg"),
+<<<<<<< HEAD
+=======
+    buildings_file=str(data_dir / "garden-city-buildings-mercator.parquet"),
+>>>>>>> exp_hdbscan_paper
     destination_diary_file='exp_2_stops.csv',
     output_files = dict(
         sparse_path='./sparse_2_stops',
@@ -83,10 +94,17 @@ config = dict(
         agent_workplaces='w-x17-y8',
         seed_trajectory=list(range(N_reps*sparsity_samples)),
         seed_sparsity= list(range(N_reps*sparsity_samples)),
+<<<<<<< HEAD
         beta_ping= np.repeat(np.linspace(1, 20, sparsity_samples), N_reps).tolist(),
         beta_durations=None,
         beta_start=None,
         ha=17/15
+=======
+        beta_ping= np.repeat(7, N_reps).tolist(),
+        beta_durations=None,
+        beta_start=None,
+        ha=15/15
+>>>>>>> exp_hdbscan_paper
     )
 )
 
@@ -140,9 +158,12 @@ print("Reprojecting trajectories to Web Mercator...")
 population.reproject_to_mercator(sparse_traj=True, full_traj=False, diaries=True, poi_data=poi_data)
 
 # %%
+<<<<<<< HEAD
 agent.sparse_traj
 
 # %%
+=======
+>>>>>>> exp_hdbscan_paper
 # Save output files using save_pop method
 print("Saving output files...")
 population.save_pop(

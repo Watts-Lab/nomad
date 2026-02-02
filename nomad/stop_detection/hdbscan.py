@@ -514,6 +514,63 @@ def select_most_stable_clusters(hierarchy_df, cluster_stability_df):
 
     return selected_clusters
 
+def select_clusters_by_epsilon(hierarchy_df, label_history_df, epsilon):
+    """
+    Select clusters by performing a flat cut at a specific scale in the dendrogram.
+    
+    Instead of using stability to choose clusters, this method returns all clusters
+    that exist at the specified scale threshold.
+    
+    Parameters
+    ----------
+    hierarchy_df : pd.DataFrame
+        Cluster hierarchy with columns ['child', 'parent', 'scale'].
+    label_history_df : pd.DataFrame
+        Full label history with columns ['time', 'cluster_id', 'dendogram_scale'].
+    cut_scale : float
+        The scale at which to cut the dendrogram. All clusters alive at this
+        scale will be selected.
+    
+    Returns
+    -------
+    set
+        Set of cluster IDs that are active at the cut_scale.
+    
+    Examples
+    --------
+    >>> # Get clusters at scale 50 meters
+    >>> selected = select_clusters_by_epsilon(hierarchy_df, label_history_df, epsilon=50.0)
+    """
+    if hierarchy_df.empty or label_history_df.empty:
+        return set()
+    
+    if 'parent' not in hierarchy_df.columns or 'child' not in hierarchy_df.columns:
+        return set()
+    
+    # Filter label history to the specified scale
+    # Find the closest scale that exists in the data
+    available_scales = label_history_df['dendogram_scale'].dropna().unique()
+    if len(available_scales) == 0:
+        return set()
+
+    # Find the next smallest scale ≤ epsilon
+    smaller_scales = available_scales[available_scales <= epsilon]
+    
+    if len(smaller_scales) == 0:
+        # No scales below epsilon
+        return set()
+    else:
+        # largest scale that is ≤ epsilon
+        closest_scale = smaller_scales.max()
+
+    # Get all clusters that exist at this scale
+    clusters_at_scale = label_history_df[
+        (label_history_df['dendogram_scale'] == closest_scale) &
+        (label_history_df['cluster_id'] > 0)
+    ]['cluster_id'].unique()
+    
+    return set(clusters_at_scale)
+
 def _build_hdbscan_graphs(coords, ts_idx, neighbors, core_dist, use_lon_lat):
     """
     Computes all graphs required for the HDBSCAN algorithm in one pass.
@@ -583,7 +640,13 @@ def _build_hdbscan_graphs(coords, ts_idx, neighbors, core_dist, use_lon_lat):
     )
     return edges_sorted_df, d_graph
 
-def hdbscan_labels(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min=5, traj_cols=None, **kwargs):
+def hdbscan_labels(data,
+                   time_thresh,
+                   min_pts = 2,
+                   min_cluster_size = 1,
+                   dur_min=5,
+                   delta_roam=None,
+                   traj_cols=None, **kwargs):
     """
     Compute HDBSCAN cluster labels for trajectory data, with core/border assignment.
 
@@ -650,10 +713,12 @@ def hdbscan_labels(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min
         d_graph=d_graph,
         min_cluster_size=min_cluster_size,
         dur_min=dur_min)
-    
-    cluster_stability_df = compute_cluster_stability(label_history_df) # default old func
-    # cluster_stability_df = compute_cluster_stability(label_history_df, cdf_function=_piecewise_linear_cdf)
-    selected_clusters = select_most_stable_clusters(hierarchy_df, cluster_stability_df)
+
+    if delta_roam is None:
+        cluster_stability_df = compute_cluster_stability(label_history_df)
+        selected_clusters = select_most_stable_clusters(hierarchy_df, cluster_stability_df)
+    else:
+        selected_clusters = select_clusters_by_epsilon(hierarchy_df, label_history_df, epsilon=delta_roam)
 
     final_labels = pd.Series(-1, index=core_distances.index, name='cluster', dtype=int)
     

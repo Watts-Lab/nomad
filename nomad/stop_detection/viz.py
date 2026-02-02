@@ -8,7 +8,6 @@ import pandas as pd
 import numpy as np
 import nomad.io.base as loader
 import h3
-import pdb
 pd.plotting.register_matplotlib_converters()
 
 def h3_cell_to_polygon(cell):
@@ -633,12 +632,10 @@ def plot_stops_barcode(stops, ax, cmap='Reds', stop_color=None, set_xlim=True, s
     if not (end_col_present or duration_col_present):
         raise ValueError("Missing required (end or duration) temporal columns for true_visits dataframe.")
     elif not end_col_present:
-        # end = stops[traj_cols[t_key]] + pd.to_timedelta(stops[traj_cols['duration']] * 60, unit='s')
         start = pd.to_datetime(stops[traj_cols[t_key]], unit='s')
         end = start + pd.to_timedelta(stops[traj_cols['duration']] * 60, unit='s')
     else:
         end = stops[traj_cols[end_t_key]] if use_datetime else pd.to_datetime(stops[traj_cols[end_t_key]], unit='s')
-        
     clusters = np.arange(len(stops)) if 'cluster' not in stops else stops['cluster']
     n = len(stops)
     if stop_color:
