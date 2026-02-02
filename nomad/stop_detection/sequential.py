@@ -304,6 +304,8 @@ def detect_stops_per_user(
     passthrough_cols=[],
     keep_col_names=True,
     traj_cols=None,
+    n_jobs=1,
+    print_progress=False,
     **kwargs
 ):
     """
@@ -329,6 +331,10 @@ def detect_stops_per_user(
         Whether to keep original column names in output.
     traj_cols : dict, optional
         Mapping for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'.
+    n_jobs : int, default 1
+        Number of parallel jobs to use. 1 means sequential processing.
+    print_progress : bool, default False
+        Whether to show progress bar during processing.
     **kwargs
         Passed along to column detection helper.
 
@@ -348,9 +354,10 @@ def detect_stops_per_user(
     
     pt_cols = passthrough_cols + [uid]
     
-    results = [
-        detect_stops(
-            group.reset_index(drop=True),
+    def process_user_group(group):
+        """Helper function to process a single user group."""
+        return detect_stops(
+            group[1].reset_index(drop=True),
             delta_roam=delta_roam,
             dt_max=dt_max,
             dur_min=dur_min,
@@ -361,6 +368,14 @@ def detect_stops_per_user(
             traj_cols=traj_cols,
             **kwargs
         )
-        for _, group in data.groupby(uid, sort=False)
-    ]
+    
+    # Use applyParallel to process groups in parallel
+    grouped = data.groupby(uid, sort=False)
+    results = applyParallel(
+        grouped,
+        process_user_group,
+        n_jobs=n_jobs,
+        print_progress=print_progress
+    )
+    
     return pd.concat(results, ignore_index=True)
