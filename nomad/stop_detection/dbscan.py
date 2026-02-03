@@ -8,117 +8,10 @@ import nomad.io.base as loader
 from nomad.stop_detection import utils
 from nomad.filters import to_timestamp
 from nomad.stop_detection.preprocessing import _find_neighbors
-import pdb
 
 ##########################################
 ########         DBSCAN           ########
 ##########################################
-
-def ta_dbscan_labels_paco(data, dist_thresh, min_pts, time_thresh, return_cores=False, remove_overlaps=False, traj_cols=None, **kwargs):
-    if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
-         raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
-    if data.empty:
-        return pd.DataFrame()
-
-    t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)        
-    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
-
-    # Tests to check for spatial and temporal columns
-    loader._has_spatial_cols(data.columns, traj_cols)
-    loader._has_time_cols(data.columns, traj_cols)
-
-    valid_times = to_timestamp(data[traj_cols[t_key]]) if use_datetime else data[traj_cols[t_key]]
-    
-    neighbor_dict = _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, traj_cols)
-
-    cluster_df = pd.Series(-2, index=valid_times, name='cluster')
-    core_df = pd.Series(-3, index=valid_times, name='core')
-    # Initialize cluster label
-    cid = -1
-
-    # replace with connected components of core points?
-    
-    for i, cluster in cluster_df.items():
-        if cluster < 0:
-            if len(neighbor_dict[i]) < min_pts:
-                # Mark as noise if below min_pts
-                cluster_df[i] = -1
-            else:
-                cid += 1
-                cluster_df[i] = cid  # Assign new cluster label
-                core_df[i] = cid  # Assign new core label
-                S = list(neighbor_dict[i])  # Initialize stack with neighbors
-                while S:
-                    j = S.pop()
-                    if cluster_df[j] < 0:  # Process if not yet in a cluster
-                        cluster_df[j] = cid
-                        if len(neighbor_dict[j]) >= min_pts:
-                            core_df[j] = cid  # Assign core label
-                            for k in neighbor_dict[j]:
-                                if cluster_df[k] < 0:
-                                    S.append(k)  # Add new neighbors
-                                    
-    ### Remove overlaps (optional) reassign all border points
-    if remove_overlaps:
-
-        max_label = cid
-        # initialize core relabeling variables
-        if len(cluster_df.loc[cluster_df>0])>0:
-            cid = 0
-            processed = set()
-            while True: # iterate over cluster labels
-                curr_cores = core_df.loc[core_df == cid]
-                if len(curr_cores)==0:
-                    break
-                                   
-                if len(core_df.loc[(~core_df.isin(processed))&(core_df != cid)&(core_df>-1)])>0: # might not exist
-                    processed.add(cid)
-                    first_other_idx = core_df.loc[(~core_df.isin(processed))&(core_df>-1)].index[0]
-
-                    if len(cluster_df.loc[(core_df.index>first_other_idx)&(core_df==cid)])>0:
-                        cluster_df.loc[(core_df.index>first_other_idx)&(core_df==cid)] = max_label+1
-                        core_df.loc[(core_df.index>first_other_idx)&(core_df==cid)] = max_label+1
-                        max_label = max_label+1                    
-                
-                    cid = core_df[first_other_idx]
-                
-                else:
-                    processed.add(cid)
-                    break
-                                      
-            # Attach border points again
-            cluster_df.loc[core_df<0] = -1  # reset to -2
-            start_time = cluster_df.index[0] - 1
-            end_time = core_df.loc[(core_df>-1)&(core_df!=cid)].index[0]
-            
-            cid = core_df.loc[core_df>-1].iloc[0]
-
-            while end_time < cluster_df.index[-1]:
-                S = set.union(*[neighbor_dict[i] for i in core_df.loc[core_df==cid].index])
-                S = {i for i in S if (i<end_time) and i>start_time} # neighbors in time window
-                
-                for i in S:
-                    if cluster_df[i] < 0:  # Process if not yet in a cluster
-                        cluster_df[i] = cid
-
-                start_time = core_df.loc[core_df==cid].index[-1]
-                cid_debug = cid
-                if len(core_df.loc[(core_df>-1)&(core_df.index>start_time)])>0:
-                    cid = core_df.loc[(core_df>-1)&(core_df.index>start_time)].iloc[0] # 6 to 7
-                    if len(core_df.loc[(core_df>-1)&(core_df!=cid)&(core_df.index>start_time)])>0:
-                        end_time = core_df.loc[(core_df>-1)&(core_df!=cid)&(core_df.index>start_time)].index[0]
-                    else:
-                        end_time = cluster_df.index[-1]
-                else:
-                    break
-            
-    output = pd.DataFrame({'cluster': cluster_df, 'core': core_df})
-
-    if return_cores:
-        return output.set_axis(data.index)
-    else:
-        labels = output.cluster
-        return labels.set_axis(data.index)
 
 def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False, remove_overlaps=False, traj_cols=None, **kwargs):
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
@@ -142,8 +35,6 @@ def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False
     # Initialize cluster label
     cid = -1
 
-    # replace with connected components of core points?
-    
     for i, cluster in cluster_df.items():
         if cluster < 0:
             if len(neighbor_dict[i]) < min_pts:
@@ -178,13 +69,7 @@ def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False
             if raw not in assigned_of:
                 assigned_of[raw] = raw
     
-            assigned = assigned_of[raw]
-    
-            # label change (not the first core, and not continuing the same assigned run)
-            # if t == 1717232924:
-            #     print("active: ", active)
-            #     print("seen before: ", raw in seen)
-            #     pdb.set_trace()
+            assigned = assigned_of[raw]    
                 
             if active is not None and assigned != active:
                 if raw in seen:
