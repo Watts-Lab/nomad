@@ -7,114 +7,154 @@ import pdb
 def seqscan_labels(
     df,
     eps,
+    delta, # presence treshold: min time to count as stay
     min_pts=3,
     user_id=None,
     x_col="x",
     y_col="y",
     t_col="timestamp",
 ):
-    """
-    W = [start, end] over time-sorted points.
-
-    Repeat:
-      - Run DBSCAN on points in W.
-      - If DBSCAN produces <= 1 non-noise cluster -> end += 1 (grow window).
-      - Else (>= 2 clusters):
-          * take the first cluster (label 0 if present; else smallest cluster id)
-          * cut = latest (largest time index) point in that cluster that is also a core point
-            - if cluster 0 has no core points, fall back to latest point in cluster 0
-          * permanently label ALL points in that cluster strictly BEFORE the cut
-          * start = cut (keep cut point for the next window)
-          * end = start
-          * current_label += 1
-
-    Returns a copy of df (time-sorted) with:
-      - sw_label: permanent labels assigned by this algorithm (-1 = unassigned)
-      - sw_dbscan_last: last DBSCAN label seen for debugging
-    """
     data = df.copy()
 
     if user_id is not None:
         data = data.loc[data["user_id"] == user_id].copy()
 
-    n = len(data)
-    if n == 0:
-        data["sw_label"] = []
-        data["sw_dbscan_last"] = []
-        return data
+    # not necessary?
+    # sort points and keep orig idex so can return aligned labels
+    # data = data.sort_values(t_col, kind="mergesort").reset_index(drop=False)
+    orig_idx = data["index"].to_numpy()
 
     X = data[[x_col, y_col]].to_numpy()
+    t = data[t_col].to_numpy().astype(float)
+    n = len(data)
+    out = np.full(n, -1, dtype=int)
 
-    # perm = np.full(n, -1, dtype=int)
-    perm = pd.Series(-1, index=data.index, name='cluster')
-    last_db = np.full(n, -2, dtype=int)
+    # presence def: stay must satisfy a minimum time spent in the region
+    def presence(curr_window, lo, hi):
+        total = 0.0
+        for k in range(lo, hi):
+            if curr_window[k - lo] and curr_window[k + 1 - lo]:
+                total += (t[k + 1] - t[k])
+        return total
+    
+    def expand(active_cluster, lo, hi, newPoint):
+        labels = DBSCAN(eps=eps, min_samples=min_pts).fit_predict(X[lo:hi+1])
+        return labels, (labels[newPoint - lo] == active_cluster)
 
-    start = 0
-    end = 0
-    current_label = 0
+    # SeqScan main loop start
+    start = 0        # current time context ind
+    end = -1         # last ind in active stay
+    active_cid = None  # which DBSCAN cluster id is curr stay
+    labels = 0      # permanent stay label
 
-    while start < n:
-        # print("Entering while")
+    for c in range(n):
+        lo, hi = start, c # curr timeContext
 
-        if end < start:
-            end = start
-        if end >= n:
-            break
+        # if already have active stay,, expand
+        if active_cid is not None:
+            _, ok = expand(active_cid, lo, hi, c)
+            if ok:
+                end = c
+                continue
 
-        # 1) DBSCAN on window W=[start,end]
-        Xw = X[start:end+1]
-        db = DBSCAN(eps=eps, min_samples=min_pts + 1)
-        labels = db.fit_predict(Xw)
-        last_db[start:end+1] = labels + current_label
+        # if can't expand, look for new stay in segment after end of last stay
+        seg_lo, seg_hi = end + 1, c
+        next_cid = None
 
-        # 2) Determine how many clusters exist (excluding noise=-1)
-        # clusters = sorted([c for c in set(labels) if c != -1])
+        if seg_lo <= seg_hi:
+            # Run DBSCNA on potential segment
+            labels_seg = DBSCAN(eps=eps, min_samples=min_pts).fit_predict(X[seg_lo:seg_hi+1])
 
-        # grow window
-        if not(labels > 0).any():
-            end += 1
-            continue
+            # Find first non-noise cluster >= delta
+            #sorted?
+            for cid in sorted(set(labels_seg)):
+                if cid == -1:
+                    continue
+                curr_window = (labels_seg == cid)
+                if (presence(curr_window, seg_lo, seg_hi) >= delta):
+                    next_cid = cid
+                    break
+        
+        # if find next stay cluster, close old stay
+        if next_cid is not None:
+            # close old stay, assign perm label
+            if active_cid is not None:
+                labels_old = DBSCAN(eps=eps, min_samples=min_pts).fit_predict(X[start:end+1])
+                for i in range(start, end + 1):
+                    if labels_old[i - start] == active_cid:
+                        out[i] = labels
+                # move stay labels
+                labels += 1
+                start = end + 1
+        # switch active stay
+            active_cid = next_cid
+            end = c
 
-        # Else: "cut and log" first cluster (prefer label 0)
+    return pd.Series(out, index=orig_idx, name="seqscan")
+        
 
-        # TODO: labels = an array of len w, core_indices also array, we want to find np.where(labels[core_indices]==0[-1]])
-        # want the last core indices that is value 0
-        in_target = (labels == 0)
+    # while start < n:
+    #     # print("Entering while")
 
-        # Core points are indices in the window that are core samples
-        core_rel = set(getattr(db, "core_sample_indices_", []))
+    #     if end < start:
+    #         end = start
+    #     if end >= n:
+    #         break
 
-        # Latest core point inside the target cluster (by window index)
-        core_in_target = [i for i in np.where(in_target)[0] if i in core_rel]
-        # TODO: consider [-1] instead of max, for computational reasons
-        cut_rel = max(core_in_target)
+    #     # 1) DBSCAN on window W=[start,end]
+    #     Xw = X[start:end+1]
+    #     db = DBSCAN(eps=eps, min_samples=min_pts + 1)
+    #     labels = db.fit_predict(Xw)
+    #     last_db[start:end+1] = labels + current_label
 
-        cut_global = start + cut_rel
+    #     # 2) Determine how many clusters exist (excluding noise=-1)
+    #     # clusters = sorted([c for c in set(labels) if c != -1])
 
-        # TODO: start after the cut maybe?
-        # Permanently label all points in target cluster strictly before cut
-        # TODO: rewrite to be simpler, is sorted so should be easier
-        finalize_rel = np.where(in_target & (np.arange(len(labels)) < cut_rel))[0]
-        print("finalizerel", finalize_rel)
-        finalize_global = start + finalize_rel
-        print("finalize global", finalize_global)
+    #     # grow window
+    #     if not(labels > 0).any():
+    #         end += 1
+    #         continue
 
-        # assign only those not already assigned
-        mask = (perm.iloc[finalize_global] == -1)
-        print("mask:", mask)
-        perm.iloc[finalize_global[mask]] = current_label
+    #     # Else: "cut and log" first cluster (prefer label 0)
 
-        # move window start to cut point; reset window
-        start = cut_global
-        end = start
-        current_label += 1
-    print("finished while")
+    #     # TODO: labels = an array of len w, core_indices also array, we want to find np.where(labels[core_indices]==0[-1]])
+    #     # want the last core indices that is value 0
+    #     in_target = (labels == 0)
 
-    out = data.copy()
-    print("out", out)
-    out["sw_label"] = perm
-    out["sw_dbscan_last"] = last_db
-    return perm
+    #     # Core points are indices in the window that are core samples
+    #     core_rel = set(getattr(db, "core_sample_indices_", []))
+
+    #     # Latest core point inside the target cluster (by window index)
+    #     core_in_target = [i for i in np.where(in_target)[0] if i in core_rel]
+    #     # TODO: consider [-1] instead of max, for computational reasons
+    #     cut_rel = max(core_in_target)
+
+    #     cut_global = start + cut_rel
+
+    #     # TODO: start after the cut maybe?
+    #     # Permanently label all points in target cluster strictly before cut
+    #     # TODO: rewrite to be simpler, is sorted so should be easier
+    #     finalize_rel = np.where(in_target & (np.arange(len(labels)) < cut_rel))[0]
+    #     print("finalizerel", finalize_rel)
+    #     finalize_global = start + finalize_rel
+    #     print("finalize global", finalize_global)
+
+    #     # assign only those not already assigned
+    #     mask = (perm.iloc[finalize_global] == -1)
+    #     print("mask:", mask)
+    #     perm.iloc[finalize_global[mask]] = current_label
+
+    #     # move window start to cut point; reset window
+    #     start = cut_global
+    #     end = start
+    #     current_label += 1
+    # print("finished while")
+
+    # out = data.copy()
+    # print("out", out)
+    # out["sw_label"] = perm
+    # out["sw_dbscan_last"] = last_db
+    # return perm
 
 #TODO: dont use np.where, key can use same indices 1-n, look at exp_hdbscan_paper dbscan impl 
 #TODO: perm should be labels
