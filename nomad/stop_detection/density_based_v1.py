@@ -8,7 +8,7 @@ import geopandas as gpd
 def seqscan_labels(
     data,
     dist_thresh,
-    min_dur, # presence treshold: min time to count as stay
+    min_dur, # min time to count as stay in minutes
     min_pts=3,
     user_id=None,
     x_col="x",
@@ -23,7 +23,9 @@ def seqscan_labels(
     if user_id is not None:
         data = data.loc[data["user_id"] == user_id].copy()
 
-    t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)        
+    t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(
+        data.columns, traj_cols, kwargs
+    )        
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
 
     # Tests to check for spatial and temporal columns
@@ -47,6 +49,20 @@ def seqscan_labels(
     active_cid = None  # or -1, which DBSCAN cluster id is curr stay
     # thus active_cid - 1 is the preceeding cluster id
     temp_c_id = -1 # for internal dbscan until new active cluster is found
+
+    perm_cid = 0
+
+    def findCluster(start_time, cur_time):
+        window = cluster_df.loc[(cluster_df.index >= start_time) & (cluster_df.index <= cur_time)]
+        for c in window.loc[window >= 0].unique():
+            cluster = window.loc[window == c]
+            if cluster.empty:
+                continue
+            if (cluster.index.max() - cluster.index.min()) >= (min_dur * 60):
+                return c, cluster.index.max()
+        return None, None
+
+
     for t in valid_times:
         # current timeContext is (start, t]        
         curr_dur = 0
@@ -54,16 +70,16 @@ def seqscan_labels(
         if active_cid is None:
             # add point with available neighbors
             temp_neighbor_dict[t] = {nb for nb in neighbor_dict[t] if t > nb >= start}
-            t_is_core = len(temp_neighbor_dict[t])>=min_pts
+            t_is_core = len(temp_neighbor_dict[t]) >= min_pts
             if t_is_core:
-                temp_c_id = temp_c_id + 1
+                temp_c_id += 1
                 core_df[t] = temp_c_id
                 cluster_df[t] = temp_c_id
                 
             # update neighbors and merge
             for s in temp_neighbor_dict[t]:
-                temp_neighbor_dict[s].add(t)
-                if len(temp_neighbor_dict[s])>=k:
+                temp_neighbor_dict.setdefault(s, set()).add(t)
+                if len(temp_neighbor_dict[s]) >= min_pts:
                     if core_df[s] >= 0:
                         # already was a temporary core point
                         # just merge "through" t
@@ -79,15 +95,20 @@ def seqscan_labels(
                         for nb in temp_neighbor_dict[s]:
                             if core_df[nb] >= 0:
                                 # for later relabel of entire connected component
-                                nb_labs.add(core_df[s])
+                                nb_labs.add(core_df[nb])
                             else:
                                 cluster_df[nb] = core_df[s] # (re) assign border point                            
                         # bulk relabel and merge of all affected connected components
-                        core_df.loc[core_df.isin(nb_labs)] = core_df[s]
+
+                        # merge all visited core nodes into core_df[s]
+                        for lab in nb_labs:
+                            if lab != core_df[s]:
+                                core_df.loc[core_df == lab] = core_df[s]
+                                cluster_df.loc[cluster_df == lab] = core_df[s]
                         cluster_df.loc[core_df==core_df[s]] = core_df[s]
                         
                     elif cluster_df[s] == -1: # is a new cluster
-                        temp_c_id = temp_c_id + 1 # increase temporary label counter
+                        temp_c_id += 1 # increase temporary label counter
                         core_df[s] = temp_c_id
                         # propagate label
                         for nb in temp_neighbor_dict[s]:
@@ -95,21 +116,40 @@ def seqscan_labels(
                             cluster_df[nb] = core_df[s]
 
             # Check for first non-spurious cluster regardless of overlaps, discard anything within it, promote to active cluster
-            for c in cluster_df.loc[start, t].loc[lambda s: s >= 0].unique(): # <<< preserves order of appearance 
-                clus_ = cluster_df.loc[start, t].loc[lambda s: s == c]
-                if (clus_.index.max() - clus_.index.min()) >= min_dur * 60:
-                    # c is the next active cluster
-                    break
-                #find cluster routine end
+            # for c in cluster_df.loc[start, t].loc[lambda s: s >= 0].unique(): # <<< preserves order of appearance 
+            #     clus_ = cluster_df.loc[start, t].loc[lambda s: s == c]
+            #     if (clus_.index.max() - clus_.index.min()) >= min_dur * 60:
+            #         # c is the next active cluster
+            #         break
+            #     #find cluster routine end
 
-            active_cid = active_cid + 1
-            # disregard all other temporary labels
-            cluster_df.loc[start, t].loc[lambda s: s != c] = -1
-            core_df.loc[start, t].loc[lambda s: s != c] = -1
+            c, cluster_end = findCluster(start, t)
+            if c is None:
+                continue
+
+            active_cid = perm_cid
+            perm_cid += 1
+
+            # discard other temp labels, only keep c
+            mask = (cluster_df.index >= start) & (cluster_df.index <= t)
+            cluster_df.loc[mask & (cluster_df != c)] = -1
+            core_df.loc[mask & (core_df != c)] = -1
+
             # log permanent label for active cluster
-            cluster_df.loc[start, t].loc[lambda s: s == c] = active_cid
-            core_df.loc[start, t].loc[lambda s: s == c] = active_cid
-            end = clus_.index.max()
+            cluster_df.loc[mask & (cluster_df == c)] = active_cid
+            core_df.loc[mask & (core_df == c)] = active_cid
+
+            end = cluster_end
+            continue
+
+            # active_cid = active_cid + 1
+            # # disregard all other temporary labels
+            # cluster_df.loc[start, t].loc[lambda s: s != c] = -1
+            # core_df.loc[start, t].loc[lambda s: s != c] = -1
+            # # log permanent label for active cluster
+            # cluster_df.loc[start, t].loc[lambda s: s == c] = active_cid
+            # core_df.loc[start, t].loc[lambda s: s == c] = active_cid
+            # end = clus_.index.max()
 
         #TODO: when active_cluster, if next iter can be expand as a core point and neighbor to active_cluster, move to end and continue
         #TODO: when not core point, do find_cluster on tail from end to t
@@ -117,7 +157,7 @@ def seqscan_labels(
             # try to attach + merge with previous cluster
             return None
                 
-        return cluster_df
+    return cluster_df
         
         #TODO: do we want immediately previous cluster to be mergeable with curr cluster if already cut
 
