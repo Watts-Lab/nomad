@@ -42,105 +42,182 @@ def seqscan_labels(
     # SeqScan main loop start
     start = valid_times[0]        # current time context start
     end = valid_times[0] - 1        # current candidate to cut time context
-
-
     #find cluster routine start
     temp_neighbor_dict = {} # in time context
-    active_cid = None  # or -1, which DBSCAN cluster id is curr stay
+    active_cid = -1  # or -1, which DBSCAN cluster id is curr stay
     # thus active_cid - 1 is the preceeding cluster id
-    temp_c_id = -1 # for internal dbscan until new active cluster is found
-
+    temp_cid = -1 # for internal dbscan until new active cluster is found
     perm_cid = 0
 
-    def findCluster(start_time, cur_time):
-        window = cluster_df.loc[(cluster_df.index >= start_time) & (cluster_df.index <= cur_time)]
-        for c in window.loc[window >= 0].unique():
-            cluster = window.loc[window == c]
-            if cluster.empty:
-                continue
-            if (cluster.index.max() - cluster.index.min()) >= (min_dur * 60):
-                return c, cluster.index.max()
-        return None, None
+    def findCluster(start_time, t):
+        # should ensure only have cluster from time context, should never be older than t
+        # want time indices to be >= start
+        temp_neighbor_dict = {idx:nbs for idx, nbs in temp_neighbor_dict.items() if idx >= start}
+        temp_neighbor_dict[t] = {nb for nb in neighbor_dict[t] if t > nb >= start}
+        t_is_core = len(temp_neighbor_dict[t]) >= min_pts
+        if t_is_core:
+            temp_cid += 1
+            core_df[t] = temp_cid
+            cluster_df[t] = temp_cid
 
-
-    for t in valid_times:
-        # current timeContext is (start, t]        
-        curr_dur = 0
-
-        if active_cid is None:
-            # add point with available neighbors
-            temp_neighbor_dict[t] = {nb for nb in neighbor_dict[t] if t > nb >= start}
-            t_is_core = len(temp_neighbor_dict[t]) >= min_pts
-            if t_is_core:
-                temp_c_id += 1
-                core_df[t] = temp_c_id
-                cluster_df[t] = temp_c_id
-                
-            # update neighbors and merge
-            for s in temp_neighbor_dict[t]:
-                temp_neighbor_dict.setdefault(s, set()).add(t)
-                if len(temp_neighbor_dict[s]) >= min_pts:
-                    if core_df[s] >= 0:
-                        # already was a temporary core point
-                        # just merge "through" t
-                        if t_is_core:
-                            cluster_df.loc[core_df==core_df[t]] = core_df[s]
-                            core_df.loc[core_df==core_df[t]] = core_df[s]
-                        
-                    elif cluster_df[s] >= 0:
-                        # was already a core's neighbor
-                        core_df[s] = cluster_df[s]
-                        # propagate label
-                        nb_labs = set()
-                        for nb in temp_neighbor_dict[s]:
-                            if core_df[nb] >= 0:
-                                # for later relabel of entire connected component
-                                nb_labs.add(core_df[nb])
-                            else:
-                                cluster_df[nb] = core_df[s] # (re) assign border point                            
-                        # bulk relabel and merge of all affected connected components
-
-                        # merge all visited core nodes into core_df[s]
-                        for lab in nb_labs:
-                            if lab != core_df[s]:
+        for s in temp_neighbor_dict[t]:
+            temp_neighbor_dict.add(t)
+            if len(temp_neighbor_dict[s]) >= min_pts:
+                if core_df[s] >= 0:
+                    # already was a temporary core point
+                    # just merge "through" t
+                    # if t is core, relabel s and its neighbors (relabeling for merge)
+                    if t_is_core:
+                        cluster_df.loc[core_df==core_df[t]] = core_df[s]
+                        core_df.loc[core_df==core_df[t]] = core_df[s]
+                    
+                elif cluster_df[s] >= 0:
+                    core_df[s] = cluster_df[s]
+                    if t_is_core:
+                        cluster_df.loc[core_df==core_df[t]] = core_df[s]
+                        core_df.loc[core_df==core_df[t]] = core_df[s]
+                    for nb in temp_neighbor_dict[s]:
+                        if core_df[nb]:
+                            # TODO: border points might be neighbors of 2 disconnected core points
+                            # every core point and every neighor of core point should be relabeled
+                            nb_labs = set()
+                            for nb in temp_neighbor_dict[s]:
+                                if core_df[nb] >= 0:
+                                    # for later relabel of entire connected component
+                                    nb_labs.add(core_df[nb])
+                                else:
+                                    cluster_df[nb] = core_df[s] # (re) assign border point                            
+                            # bulk relabel and merge of all affected connected components
+                            for lab in nb_labs:
                                 core_df.loc[core_df == lab] = core_df[s]
                                 cluster_df.loc[cluster_df == lab] = core_df[s]
-                        cluster_df.loc[core_df==core_df[s]] = core_df[s]
-                        
-                    elif cluster_df[s] == -1: # is a new cluster
-                        temp_c_id += 1 # increase temporary label counter
-                        core_df[s] = temp_c_id
+                
+                elif cluster_df[s] == -1: # is a new cluster
+                    if t_is_core:
+                        core_df[s] = core_df[t]
+                        cluster_df[s] = cluster_df[t]
+                    else:
+                        temp_cid += 1 # increase temporary label counter
+                        core_df[s] = temp_cid
+                        cluster_df[s] = temp_cid
                         # propagate label
                         for nb in temp_neighbor_dict[s]:
                             # there is no case in which nb is core point: otherwise cluster_df[s] would have had a label
                             cluster_df[nb] = core_df[s]
 
-            # Check for first non-spurious cluster regardless of overlaps, discard anything within it, promote to active cluster
-            # for c in cluster_df.loc[start, t].loc[lambda s: s >= 0].unique(): # <<< preserves order of appearance 
-            #     clus_ = cluster_df.loc[start, t].loc[lambda s: s == c]
-            #     if (clus_.index.max() - clus_.index.min()) >= min_dur * 60:
-            #         # c is the next active cluster
-            #         break
-            #     #find cluster routine end
 
-            c, cluster_end = findCluster(start, t)
-            if c is None:
+        window = cluster_df.loc[(cluster_df.index >= start_time) & (cluster_df.index <= t)]
+        for c in window.loc[window >= 0].unique():
+            cluster = window.loc[window == c]
+            if (cluster.index.max() - cluster.index.min()) >= (min_dur * 60):
+                # return clusterid and end time
+                # get rid?
+                active_cid = active_cid + 1
+                # disregard all other temporary labels
+                cluster_df.loc[start, t].loc[lambda s: s != c] = -1
+                core_df.loc[start, t].loc[lambda s: s != c] = -1
+                # log permanent label for active cluster
+                cluster_df.loc[start, t].loc[lambda s: s == c] = active_cid
+                core_df.loc[start, t].loc[lambda s: s == c] = active_cid
+                end = cluster.index.max()
+                temp_cid = -1
+                # vars changed: temp_neighbors_df, core_df, cluster_df, active_cid, end, temp_cid
+                return True
+        # vars changed: temp_neighbors_df, core_df, cluster_df
+        return False
+
+
+
+    for t in valid_times:
+        if active_cid == -1:
+            new_active_cid = findCluster(start, t)
+        else:
+            # TODO: impl expand
+            expanded = expand()
+            if expanded:
                 continue
+            else:
+                findCluster(end, t)
 
-            active_cid = perm_cid
-            perm_cid += 1
 
-            # discard other temp labels, only keep c
-            mask = (cluster_df.index >= start) & (cluster_df.index <= t)
-            cluster_df.loc[mask & (cluster_df != c)] = -1
-            core_df.loc[mask & (core_df != c)] = -1
 
-            # log permanent label for active cluster
-            cluster_df.loc[mask & (cluster_df == c)] = active_cid
-            core_df.loc[mask & (core_df == c)] = active_cid
 
-            end = cluster_end
-            continue
+        # if active_cid is None:
+        #     # add point with available neighbors
+        #     temp_neighbor_dict[t] = {nb for nb in neighbor_dict[t] if t > nb >= start}
+        #     t_is_core = len(temp_neighbor_dict[t]) >= min_pts
+        #     if t_is_core:
+        #         temp_cid += 1
+        #         core_df[t] = temp_cid
+        #         cluster_df[t] = temp_cid
+                
+        #     # update neighbors and merge
+        #     for s in temp_neighbor_dict[t]:
+        #         temp_neighbor_dict.setdefault(s, set()).add(t)
+        #         if len(temp_neighbor_dict[s]) >= min_pts:
+        #             if core_df[s] >= 0:
+        #                 # already was a temporary core point
+        #                 # just merge "through" t
+        #                 if t_is_core:
+        #                     cluster_df.loc[core_df==core_df[t]] = core_df[s]
+        #                     core_df.loc[core_df==core_df[t]] = core_df[s]
+                        
+        #             elif cluster_df[s] >= 0:
+        #                 # was already a core's neighbor
+        #                 # if has label already, should alr be core point
+        #                 # core_df[s] = cluster_df[s]
+
+        #                 # propagate label
+        #                 nb_labs = set()
+        #                 for nb in temp_neighbor_dict[s]:
+        #                     if core_df[nb] >= 0:
+        #                         # for later relabel of entire connected component
+        #                         nb_labs.add(core_df[nb])
+        #                     else:
+        #                         cluster_df[nb] = core_df[s] # (re) assign border point                            
+        #                 # bulk relabel and merge of all affected connected components
+
+        #                 # merge all visited core nodes into core_df[s]
+        #                 for lab in nb_labs:
+        #                     if lab != core_df[s]:
+        #                         core_df.loc[core_df == lab] = core_df[s]
+        #                         cluster_df.loc[cluster_df == lab] = core_df[s]
+        #                 cluster_df.loc[core_df==core_df[s]] = core_df[s]
+                        
+        #             elif cluster_df[s] == -1: # is a new cluster
+        #                 temp_cid += 1 # increase temporary label counter
+        #                 core_df[s] = temp_cid
+        #                 # propagate label
+        #                 for nb in temp_neighbor_dict[s]:
+        #                     # there is no case in which nb is core point: otherwise cluster_df[s] would have had a label
+        #                     cluster_df[nb] = core_df[s]
+
+        #     # Check for first non-spurious cluster regardless of overlaps, discard anything within it, promote to active cluster
+        #     # for c in cluster_df.loc[start, t].loc[lambda s: s >= 0].unique(): # <<< preserves order of appearance 
+        #         clus_ = cluster_df.loc[start, t].loc[lambda s: s == c]
+        #         if (clus_.index.max() - clus_.index.min()) >= min_dur * 60:
+        #             # c is the next active cluster
+        #             break
+        #         #find cluster routine end
+
+        #     c, cluster_end = findCluster(start, t)
+        #     if c is None:
+        #         continue
+
+        #     active_cid = perm_cid
+        #     perm_cid += 1
+
+        #     # discard other temp labels, only keep c
+        #     mask = (cluster_df.index >= start) & (cluster_df.index <= t)
+        #     cluster_df.loc[mask & (cluster_df != c)] = -1
+        #     core_df.loc[mask & (core_df != c)] = -1
+
+        #     # log permanent label for active cluster
+        #     cluster_df.loc[mask & (cluster_df == c)] = active_cid
+        #     core_df.loc[mask & (core_df == c)] = active_cid
+
+        #     end = cluster_end
+        #     continue
 
             # active_cid = active_cid + 1
             # # disregard all other temporary labels
