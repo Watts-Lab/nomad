@@ -1,8 +1,6 @@
 import pandas as pd
 import numpy as np
 import geopandas as gpd
-from shapely.geometry import Point
-import warnings
 from joblib import Parallel, delayed
 from tqdm import tqdm
 import nomad.io.base as loader
@@ -114,6 +112,8 @@ def detect_stop_labels(
         # Get starting point info
         if use_lon_lat:
             start_lat, start_lon = coords[i, 0], coords[i, 1]
+        else:
+            start_coords = coords[i]
         start_time = time_series.iloc[i]
         
         # Slide window forward
@@ -123,19 +123,33 @@ def detect_stop_labels(
             if time_gap > dt_max:
                 break
             
-            # Calculate distance from first point (anchor)
+            # Calculate distance from first point (anchor) or centroid
             if method == 'sliding':
                 if use_lon_lat:
                     curr_lat, curr_lon = coords[j, 0], coords[j, 1]
                     dist = haversine_dist(start_lat, start_lon, curr_lat, curr_lon)
                 else:
                     dist = np.linalg.norm(coords[j] - coords[i])
+            elif method == 'centroid':
+                if use_lon_lat:
+                    curr_lat, curr_lon = coords[j, 0], coords[j, 1]
+                    dist = haversine_dist(start_lat, start_lon, curr_lat, curr_lon)
+                else:
+                    dist = np.linalg.norm(coords[j] - start_coords)
             else:
                 raise ValueError(f"Unknown method: {method}")
             
             # Check if moved beyond distance threshold
             if dist > delta_roam:
                 break
+            
+            # Update centroid if using centroid method
+            if method == 'centroid':
+                if use_lon_lat:
+                    start_lat = np.mean(coords[i:j+1, 0])
+                    start_lon = np.mean(coords[i:j+1, 1])
+                else:
+                    start_coords = np.mean(coords[i:j+1], axis=0)
             
             j += 1
         
@@ -194,7 +208,6 @@ def applyParallel(groups, func, n_jobs=1, print_progress=False, **kwargs):
             results = Parallel(n_jobs=n_jobs)(
                 delayed(func)(group, **kwargs) for group in group_list
             )
-
     return results
 
 
@@ -289,7 +302,7 @@ def detect_stops(
             **kwargs
         ),
         include_groups=False
-    )
+    ).reset_index(drop=True)
 
     return stop_table
 
@@ -370,7 +383,7 @@ def detect_stops_per_user(
         )
     
     # Use applyParallel to process groups in parallel
-    grouped = data.groupby(uid, sort=False)
+    grouped = data.groupby(uid, sort=False, as_index=False)
     results = applyParallel(
         grouped,
         process_user_group,
