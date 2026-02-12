@@ -9,6 +9,7 @@ import numpy as np
 import nomad.io.base as loader
 import h3
 pd.plotting.register_matplotlib_converters()
+import pdb
 
 def h3_cell_to_polygon(cell):
     """Return shapely Polygon for H3 cell (lon/lat)."""
@@ -658,7 +659,6 @@ def plot_stops_barcode(stops, ax, cmap='Reds', stop_color=None, set_xlim=True, s
         
         # Use same tick logic as plot_time_barcode for consistency
         time_range = (end.max() - start.min()).total_seconds()
-        
         if time_range <= 3600 * 12:  # Up to 12 hours - hourly major ticks
             major_locator = mdates.HourLocator(interval=1)
             formatter = mdates.DateFormatter('%I %p')
