@@ -66,3 +66,5 @@ virtual-environments/
 Thumbs.db
 *.tmp
 sandbox/sandbox_data.gpkg
+**/*.svg
+**/*.eps

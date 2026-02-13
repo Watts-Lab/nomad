@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.3
+#       jupytext_version: 1.17.1
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -31,7 +31,6 @@ from nomad.city_gen import City
 import nomad.data as data_folder
 from pathlib import Path
 data_dir = Path(data_folder.__file__).parent
-path = data_dir / "garden_city.gpkg"
 
 # %% [markdown]
 # ## Load city and configure destination diaries

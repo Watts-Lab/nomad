@@ -5,41 +5,8 @@ from collections import defaultdict
 import warnings
 import nomad.io.base as loader
 from nomad.stop_detection import utils
-from nomad.filters import to_timestamp
+from nomad.stop_detection.preprocessing import _find_temp_neighbors
 import pdb
-
-def _find_temp_neighbors(times, time_thresh, use_datetime):
-    """
-    Find timestamp pairs that are within time threshold.
-
-    Parameters
-    ----------
-    times : array of timestamps.
-    time_thresh : time threshold for finding what timestamps are close in time.
-    use_datetime : Whether to process timestamps as datetime objects.
-
-    Returns
-    -------
-    time_pairs : list of tuples of timestamps [(t1, t2), ...] that are close in time given time_thresh.
-
-    TC: O(n^2)
-    """
-    # getting times based on whether they are datetime values or timestamps, changed to seconds for calculations
-    times = to_timestamp(times).values if use_datetime else times.values
-        
-    # Pairwise time differences
-    # times[:, np.newaxis]: from shape (n,) -> to shape (n, 1) – a column vector
-    time_diffs = np.abs(times[:, np.newaxis] - times)
-    time_diffs = time_diffs.astype(int)
-    
-    # Filter by time threshold
-    within_time_thresh = np.triu(time_diffs <= (time_thresh * 60), k=1) # keep upper triangle
-    i_idx, j_idx = np.where(within_time_thresh)
-    
-    # Return a list of (timestamp1, timestamp2) tuples
-    time_pairs = [(times[i], times[j]) for i, j in zip(i_idx, j_idx)]
-    
-    return time_pairs, times
 
 def _build_neighbor_graph(time_pairs, times):
     # Build neighbor map from time_pairs
@@ -77,22 +44,17 @@ def _compute_core_distance(data, time_pairs, times, use_lon_lat, traj_cols, min_
     else:
         coords = data[[traj_cols['x'], traj_cols['y']]].values # TC: O(n)
     
-    n = len(coords)
     # get the index of timestamp in the arrays (for accessing their value later)
     ts_indices = {ts: idx for idx, ts in enumerate(times)} # TC: O(n)
-
-    # Build neighbor map from time_pairs
     neighbors = _build_neighbor_graph(time_pairs, times)
 
     D_INF = np.pi * 6_371_000  # max distance on earth
     core_distances = {}
 
-    for i in range(n): # TC: O(n+m (mlogm)) 
-        u = times[i]
-        allowed_neighbors = neighbors[u]
+    for i in range(len(coords)): # TC: O(n+m (mlogm)) 
         dists = [0.0]  # distance to itself
 
-        for v in allowed_neighbors:
+        for v in neighbors[times[i]]:
             j = ts_indices.get(v)
             if j is not None:
                 if use_lon_lat:
@@ -107,7 +69,7 @@ def _compute_core_distance(data, time_pairs, times, use_lon_lat, traj_cols, min_
             dists.append(D_INF) # use a very large number e.g. infinity for edges between points not temporally close
 
         sorted_dists = np.sort(dists) # TC: O(nlogn)
-        core_distances[u] = np.round(sorted_dists[min_pts - 1] * 4)/4
+        core_distances[times[i]] = np.round(sorted_dists[min_pts - 1] * 4)/4
     return core_distances, coords
 
 def _mst(mrd_graph):
@@ -552,6 +514,63 @@ def select_most_stable_clusters(hierarchy_df, cluster_stability_df):
 
     return selected_clusters
 
+def select_clusters_by_epsilon(hierarchy_df, label_history_df, epsilon):
+    """
+    Select clusters by performing a flat cut at a specific scale in the dendrogram.
+    
+    Instead of using stability to choose clusters, this method returns all clusters
+    that exist at the specified scale threshold.
+    
+    Parameters
+    ----------
+    hierarchy_df : pd.DataFrame
+        Cluster hierarchy with columns ['child', 'parent', 'scale'].
+    label_history_df : pd.DataFrame
+        Full label history with columns ['time', 'cluster_id', 'dendogram_scale'].
+    cut_scale : float
+        The scale at which to cut the dendrogram. All clusters alive at this
+        scale will be selected.
+    
+    Returns
+    -------
+    set
+        Set of cluster IDs that are active at the cut_scale.
+    
+    Examples
+    --------
+    >>> # Get clusters at scale 50 meters
+    >>> selected = select_clusters_by_epsilon(hierarchy_df, label_history_df, epsilon=50.0)
+    """
+    if hierarchy_df.empty or label_history_df.empty:
+        return set()
+    
+    if 'parent' not in hierarchy_df.columns or 'child' not in hierarchy_df.columns:
+        return set()
+    
+    # Filter label history to the specified scale
+    # Find the closest scale that exists in the data
+    available_scales = label_history_df['dendogram_scale'].dropna().unique()
+    if len(available_scales) == 0:
+        return set()
+
+    # Find the next smallest scale ≤ epsilon
+    smaller_scales = available_scales[available_scales <= epsilon]
+    
+    if len(smaller_scales) == 0:
+        # No scales below epsilon
+        return set()
+    else:
+        # largest scale that is ≤ epsilon
+        closest_scale = smaller_scales.max()
+
+    # Get all clusters that exist at this scale
+    clusters_at_scale = label_history_df[
+        (label_history_df['dendogram_scale'] == closest_scale) &
+        (label_history_df['cluster_id'] > 0)
+    ]['cluster_id'].unique()
+    
+    return set(clusters_at_scale)
+
 def _build_hdbscan_graphs(coords, ts_idx, neighbors, core_dist, use_lon_lat):
     """
     Computes all graphs required for the HDBSCAN algorithm in one pass.
@@ -621,7 +640,13 @@ def _build_hdbscan_graphs(coords, ts_idx, neighbors, core_dist, use_lon_lat):
     )
     return edges_sorted_df, d_graph
 
-def hdbscan_labels(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min=5, traj_cols=None, **kwargs):
+def hdbscan_labels(data,
+                   time_thresh,
+                   min_pts = 2,
+                   min_cluster_size = 1,
+                   dur_min=5,
+                   delta_roam=None,
+                   traj_cols=None, **kwargs):
     """
     Compute HDBSCAN cluster labels for trajectory data, with core/border assignment.
 
@@ -688,10 +713,12 @@ def hdbscan_labels(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min
         d_graph=d_graph,
         min_cluster_size=min_cluster_size,
         dur_min=dur_min)
-    
-    cluster_stability_df = compute_cluster_stability(label_history_df) # default old func
-    # cluster_stability_df = compute_cluster_stability(label_history_df, cdf_function=_piecewise_linear_cdf)
-    selected_clusters = select_most_stable_clusters(hierarchy_df, cluster_stability_df)
+
+    if delta_roam is None:
+        cluster_stability_df = compute_cluster_stability(label_history_df)
+        selected_clusters = select_most_stable_clusters(hierarchy_df, cluster_stability_df)
+    else:
+        selected_clusters = select_clusters_by_epsilon(hierarchy_df, label_history_df, epsilon=delta_roam)
 
     final_labels = pd.Series(-1, index=core_distances.index, name='cluster', dtype=int)
     

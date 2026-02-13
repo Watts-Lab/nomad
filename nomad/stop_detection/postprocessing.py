@@ -180,6 +180,8 @@ def remove_overlaps(data, time_thresh=None, min_pts=None, dist_thresh=None, dur_
         if not summarize_stops:
             # Return just the cluster labels
             stops = stops['cluster']
+    else:
+        raise ValueError(f"method {method} not implemented")        
     
     return stops
 

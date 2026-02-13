@@ -10,6 +10,7 @@ import warnings
 import geopandas as gpd
 import nomad.io.base as loader
 from nomad.stop_detection import utils
+from nomad.stop_detection.sequential import applyParallel
 from nomad.filters import to_timestamp
 
 ##########################################
@@ -189,11 +190,44 @@ def lachesis_per_user(
     complete_output=False,
     passthrough_cols=[],
     traj_cols=None,
+    n_jobs=1,
+    print_progress=False,
     **kwargs
 ):
     """
     Run lachesis on each user separately, then concatenate results.
-    Raises if 'user_id' not in traj_cols or missing from data.
+    
+    Parameters
+    ----------
+    data : pd.DataFrame or GeoDataFrame
+        Input trajectory with spatial and temporal columns.
+    dt_max : int
+        Maximum allowed gap in minutes between consecutive pings in a stop.
+    delta_roam : float
+        Maximum spatial diameter for a stop.
+    dur_min : int
+        Minimum duration in minutes for a valid stop.
+    complete_output : bool, default False
+        If True, include additional summary statistics in output.
+    passthrough_cols : list, optional
+        Columns to retain (and summarize/propagate) per stop.
+    traj_cols : dict, optional
+        Mapping for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'.
+    n_jobs : int, default 1
+        Number of parallel jobs to use. 1 means sequential processing.
+    print_progress : bool, default False
+        Whether to show progress bar during processing.
+    **kwargs
+        Passed along to column detection helper.
+        
+    Returns
+    -------
+    pd.DataFrame
+        Concatenated stop table with stops from all users.
+        
+    Raises
+    ------
+    ValueError if 'user_id' not in traj_cols or missing from data.
     """
     traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     if 'user_id' not in traj_cols_temp or traj_cols_temp['user_id'] not in data.columns:
@@ -202,9 +236,10 @@ def lachesis_per_user(
     
     pt_cols = passthrough_cols + [uid]
     
-    results = [
-        lachesis(
-            group,
+    def process_user_group(group):
+        """Helper function to process a single user group."""
+        return lachesis(
+            group[1],
             dt_max=dt_max,
             delta_roam=delta_roam,
             dur_min=dur_min,
@@ -213,6 +248,14 @@ def lachesis_per_user(
             traj_cols=traj_cols,
             **kwargs
         )
-        for _, group in data.groupby(uid, sort=False)
-    ]
+    
+    # Use applyParallel to process groups in parallel
+    grouped = data.groupby(uid, sort=False)
+    results = applyParallel(
+        grouped,
+        process_user_group,
+        n_jobs=n_jobs,
+        print_progress=print_progress
+    )
+    
     return pd.concat(results, ignore_index=True)

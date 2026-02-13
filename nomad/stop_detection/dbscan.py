@@ -6,7 +6,6 @@ import warnings
 import geopandas as gpd
 import nomad.io.base as loader
 from nomad.stop_detection import utils
-from nomad.stop_detection.postprocessing import remove_overlaps
 from nomad.filters import to_timestamp
 from nomad.stop_detection.preprocessing import _find_neighbors
 
@@ -14,7 +13,7 @@ from nomad.stop_detection.preprocessing import _find_neighbors
 ########         DBSCAN           ########
 ##########################################
 
-def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False, traj_cols=None, **kwargs):
+def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False, remove_overlaps=False, traj_cols=None, **kwargs):
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
          raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
     if data.empty:
@@ -35,7 +34,7 @@ def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False
     core_df = pd.Series(-3, index=valid_times, name='core')
     # Initialize cluster label
     cid = -1
-    
+
     for i, cluster in cluster_df.items():
         if cluster < 0:
             if len(neighbor_dict[i]) < min_pts:
@@ -55,7 +54,93 @@ def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False
                             for k in neighbor_dict[j]:
                                 if cluster_df[k] < 0:
                                     S.append(k)  # Add new neighbors
-
+                                    
+    ### Remove overlaps (optional) reassign all border points
+    if remove_overlaps and (core_df >= 0).any():
+        next_label = cid + 1
+    
+        assigned_of = {}   # raw_label -> assigned_label (raw until first split, then new id)
+        seen = set()
+        active = None      # active assigned label
+    
+        for t in core_df.index[core_df >= 0]:
+            raw = int(core_df.at[t])
+    
+            if raw not in assigned_of:
+                assigned_of[raw] = raw
+    
+            assigned = assigned_of[raw]    
+                
+            if active is not None and assigned != active:
+                if raw in seen:
+                    assigned_of[raw] = next_label
+                    next_label += 1
+                    assigned = assigned_of[raw]
+    
+            active = assigned
+            core_df.at[t] = assigned
+            cluster_df.at[t] = assigned
+            seen.add(raw)
+        
+        # Border points
+        cluster_df.loc[core_df < 0] = -1  
+        prev_run_end = -np.inf                           # left bound (exclusive)
+        
+        run_label = None
+        run_end = None
+        run_neighbors = set()                            # union of neighbors of cores in current run
+        
+        for t in core_df.index[core_df >= 0]:
+            lab = core_df.at[t]
+        
+            if run_label is None:
+                run_label = lab
+                run_end = t
+                run_neighbors.clear()
+                run_neighbors.update(neighbor_dict[t])
+                continue
+        
+            if lab == run_label:
+                run_end = t
+                run_neighbors.update(neighbor_dict[t])
+                continue
+        
+            # label changed => t is the start of the next run, so flush current run now
+            next_run_start = t
+            max_assigned = prev_run_end
+        
+            for nb in run_neighbors:
+                if prev_run_end < nb < next_run_start and cluster_df.at[nb] == -1:
+                    cluster_df.at[nb] = run_label
+                    if nb > max_assigned:
+                        max_assigned = nb
+        
+            # advance left bound for the next run:
+            # at least to the last core of the run, and also to the latest border we just assigned
+            if run_end > max_assigned:
+                max_assigned = run_end
+            prev_run_end = max_assigned
+        
+            # start new run
+            run_label = lab
+            run_end = t
+            run_neighbors.clear()
+            run_neighbors.update(neighbor_dict[t])
+        
+        # flush last run to +inf
+        next_run_start = np.inf
+        max_assigned = prev_run_end
+        
+        for nb in run_neighbors:
+            if prev_run_end < nb < next_run_start and cluster_df.at[nb] == -1:
+                cluster_df.at[nb] = run_label
+                if nb > max_assigned:
+                    max_assigned = nb
+        
+        if run_end is not None and run_end > max_assigned:
+            max_assigned = run_end
+        prev_run_end = max_assigned
+            
     output = pd.DataFrame({'cluster': cluster_df, 'core': core_df})
 
     if return_cores:
@@ -70,6 +155,7 @@ def ta_dbscan(
     min_pts,
     time_thresh,
     dur_min=5,
+    remove_overlaps=True,
     complete_output=False,
     passthrough_cols=[],
     keep_col_names=True,
@@ -124,25 +210,11 @@ def ta_dbscan(
         min_pts=min_pts,
         time_thresh=time_thresh,
         return_cores=False,
+        remove_overlaps=remove_overlaps,
         traj_cols=traj_cols,
         **kwargs
     )
     merged = data.join(labels)
-
-    if len(merged.cluster.unique())>2:
-        # Get adjusted cluster labels (not summary table)
-        adjusted_labels = remove_overlaps(
-            merged,
-            dist_thresh=dist_thresh,
-            min_pts=min_pts,
-            time_thresh=time_thresh,
-            method="cluster",
-            traj_cols=traj_cols,
-            summarize_stops=False,  # Return cluster labels, not summary table
-            **kwargs)
-        
-        # Update the cluster column with adjusted labels
-        merged['cluster'] = adjusted_labels
     
     # Filter out noise points after overlap removal
     merged = merged[merged.cluster != -1]
