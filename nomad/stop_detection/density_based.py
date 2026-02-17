@@ -16,6 +16,7 @@ def seqscan_labels(
     user_id=None,
     return_cores=False,
     traj_cols=None,
+    back_merge=True,
     **kwargs
 ):
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
@@ -115,13 +116,18 @@ def seqscan_labels(
         
             if not eligible.empty:
                 c = eligible.index[0]
-        
+
+                first = spans.loc[c, "first"]
+                stub_mask = (cluster_df.index <= first)
+                prev_border = window_mask & (cluster_df == active_cid) & stub_mask
+                
                 active_cid += 1
                 keep = window_mask & (cluster_df == c)
                 drop = window_mask & ~keep
         
                 cluster_df.loc[drop] = -1
                 core_df.loc[drop] = -1
+                cluster_df.loc[prev_border] = active_cid - 1
                 cluster_df.loc[keep] = active_cid
                 core_df.loc[keep] = active_cid
         
@@ -145,13 +151,20 @@ def seqscan_labels(
             for nb in core_df[core_df == active_cid].index:
             	if nb in temp_neighbor_dict[curr_time]:
                     is_reachable = True
-                    cluster_df[curr_time] = active_cid            
+                    cluster_df[curr_time] = active_cid
+                    break           
             if curr_is_core and is_reachable:
                 core_df[curr_time] = active_cid
                 end = curr_time
+                if back_merge:
+                    for nb in core_df[core_df == (active_cid - 1)].index:
+                        if curr_time in neighbor_dict[nb]:
+                            cluster_df[cluster_df == (active_cid - 1)] = active_cid
+                            core_df[core_df == (active_cid - 1)] = active_cid
+                            break
             else:
-                findCluster(end + 1, t)
-                
+                findCluster(end + 1, curr_time)
+    # TODO: find better way to avoid collisions    
     cluster_df.loc[cluster_df > 100000] = -1
     core_df.loc[core_df > 100000] = -1
     output = pd.DataFrame({'cluster': cluster_df, 'core': core_df})
