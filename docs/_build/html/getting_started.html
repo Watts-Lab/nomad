@@ -1,0 +1,217 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Getting Started &mdash; NOMAD 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="_static/doctools.js?v=9a2dae69"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="_static/design-tabs.js?v=f930bc37"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html">
+            
+              <img src="_static/nomad-logo-black.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="data_ingestion.html">Data Ingestion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="filtering.html">Filtering &amp; Completeness</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tessellation.html">Tessellation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="stop_detection.html">Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="visit_attribution.html">Visit Attribution</a></li>
+<li class="toctree-l1"><a class="reference internal" href="metrics.html">Mobility Metrics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="colocation.html">Co-location &amp; Contact Networks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="aggregation.html">Aggregation &amp; Debiasing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="synthetic_data_generation.html">Synthetic Data Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="source/ingesting-data.html">Loading Trajectory Data</a></li>
+<li class="toctree-l1"><a class="reference internal" href="source/benchmarking_of_stop_detection_algorithms.html">Comparing runtimes of different stop detection algorithms on toy datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="source/lachesis_demo.html">Lachesis Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="source/tadbscan_demo.html">TADBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="source/hdbscan_demo.html">HDBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="source/grid_based_demo.html">Grid-Based Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="source/download_poi_data_from_OSM.html">Downloading places of interest (POI) Data from OSM</a></li>
+<li class="toctree-l1"><a class="reference internal" href="source/generate_synthetic_trajectories.html">Synthetic Trajectory Generation with Nomad</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">NOMAD</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Getting Started</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/getting_started.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="getting-started">
+<h1>Getting Started<a class="headerlink" href="#getting-started" title="Link to this heading"></a></h1>
+<section id="what-is-nomad">
+<h2>What is NOMAD?<a class="headerlink" href="#what-is-nomad" title="Link to this heading"></a></h2>
+<p><strong>NOMAD</strong> (Network for Open Mobility Analysis and Data) is an open-source Python library for end-to-end processing of large-scale GPS mobility data. The library supports:</p>
+<ul class="simple">
+<li><p>Data ingestion from various formats (CSV, Parquet, GeoJSON)</p></li>
+<li><p>Quality control and filtering</p></li>
+<li><p>Spatial-temporal transformation</p></li>
+<li><p>Derivation of mobility metrics</p></li>
+<li><p>Synthetic trajectory generation</p></li>
+</ul>
+<p>NOMAD is part of the NSF-funded NOMAD research infrastructure project and builds on previous software resources like <em>scikit-mobility</em>, <em>mobilkit</em>, and <em>trackintel</em>. The goal is to provide a single, production-ready library that covers the entire processing pipeline and is suitable for analysis of massive datasets.</p>
+</section>
+<section id="key-features">
+<h2>Key Features<a class="headerlink" href="#key-features" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p><strong>Dual API</strong>: All functions implemented in Python with parallel equivalents in PySpark</p></li>
+<li><p><strong>Scalable</strong>: Same analysis notebook runs on a workstation or Spark cluster without API changes</p></li>
+<li><p><strong>Production-ready</strong>: Designed for large-scale mobility data processing</p></li>
+<li><p><strong>Research-focused</strong>: Aids in the replicability of existing research</p></li>
+</ul>
+</section>
+<section id="installation">
+<h2>Installation<a class="headerlink" href="#installation" title="Link to this heading"></a></h2>
+<section id="basic-installation">
+<h3>Basic Installation<a class="headerlink" href="#basic-installation" title="Link to this heading"></a></h3>
+<p>Install directly from GitHub:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>git+https://github.com/Watts-Lab/nomad.git
+</pre></div>
+</div>
+</section>
+<section id="with-spark-support">
+<h3>With Spark Support<a class="headerlink" href="#with-spark-support" title="Link to this heading"></a></h3>
+<p>For large-scale data processing with PySpark:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>git+https://github.com/Watts-Lab/nomad.git#egg<span class="o">=</span>nomad<span class="o">[</span>spark<span class="o">]</span>
+</pre></div>
+</div>
+</section>
+<section id="requirements">
+<h3>Requirements<a class="headerlink" href="#requirements" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p>Python 3.9 or higher</p></li>
+<li><p>Core dependencies: pandas, geopandas, numpy, shapely, networkx</p></li>
+<li><p>Optional: PySpark 3.4.4+ for distributed processing</p></li>
+</ul>
+</section>
+</section>
+<section id="quick-start">
+<h2>Quick Start<a class="headerlink" href="#quick-start" title="Link to this heading"></a></h2>
+<p>Here’s a simple example to get started with NOMAD:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">nomad.io.base</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">loader</span>
+
+<span class="c1"># Load mobility data</span>
+<span class="n">df</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">read_data</span><span class="p">(</span><span class="s1">&#39;data/sample.csv&#39;</span><span class="p">)</span>
+
+<span class="c1"># Perform stop detection</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">nomad.stop_detection</span><span class="w"> </span><span class="kn">import</span> <span class="n">dbscan</span>
+<span class="n">stops</span> <span class="o">=</span> <span class="n">dbscan</span><span class="o">.</span><span class="n">detect_stops</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">min_samples</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+
+<span class="c1"># Compute mobility metrics</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">nomad.metrics</span><span class="w"> </span><span class="kn">import</span> <span class="n">metrics</span>
+<span class="n">metrics_df</span> <span class="o">=</span> <span class="n">metrics</span><span class="o">.</span><span class="n">compute_radius_of_gyration</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="next-steps">
+<h2>Next Steps<a class="headerlink" href="#next-steps" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p><a class="reference internal" href="data_ingestion.html"><span class="doc">Data Ingestion</span></a> - Learn how to load and validate your mobility data</p></li>
+<li><p><a class="reference internal" href="filtering.html"><span class="doc">Filtering &amp; Completeness</span></a> - Filter and assess data completeness</p></li>
+<li><p><a class="reference internal" href="stop_detection.html"><span class="doc">Stop Detection</span></a> - Detect stops and trips from GPS traces</p></li>
+<li><p><a class="reference internal" href="visit_attribution.html"><span class="doc">Visit Attribution</span></a> - Infer home and workplace locations</p></li>
+<li><p><a class="reference internal" href="metrics.html"><span class="doc">Mobility Metrics</span></a> - Compute mobility metrics</p></li>
+<li><p><a class="reference internal" href="synthetic_data_generation.html"><span class="doc">Synthetic Data Generation</span></a> - Generate synthetic trajectories</p></li>
+</ul>
+</section>
+<section id="examples">
+<h2>Examples<a class="headerlink" href="#examples" title="Link to this heading"></a></h2>
+<p>The <code class="docutils literal notranslate"><span class="pre">examples/</span></code> folder contains Jupyter notebooks demonstrating various NOMAD features:</p>
+<ul class="simple">
+<li><p><strong>[1] Reading Data</strong> - Loading different data formats</p></li>
+<li><p><strong>[2] Filtering</strong> - Data quality control and filtering</p></li>
+<li><p><strong>[3] Stop Detection</strong> - Different stop detection algorithms</p></li>
+<li><p><strong>[4] Home Attribution</strong> - Inferring residential locations</p></li>
+</ul>
+</section>
+<section id="license">
+<h2>License<a class="headerlink" href="#license" title="Link to this heading"></a></h2>
+<p>MIT © University of Pennsylvania 2025</p>
+<p>For more information, visit <a class="reference external" href="https://nomad.seas.upenn.edu">nomad.seas.upenn.edu</a>.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, CSSLab.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,289 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Loading Trajectory Data &mdash; NOMAD 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
+      <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../_static/doctools.js?v=9a2dae69"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../_static/design-tabs.js?v=f930bc37"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+      <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Comparing runtimes of different stop detection algorithms on toy datasets" href="benchmarking_of_stop_detection_algorithms.html" />
+    <link rel="prev" title="Synthetic Data Generation" href="../synthetic_data_generation.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html">
+            
+              <img src="../_static/nomad-logo-black.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../data_ingestion.html">Data Ingestion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../filtering.html">Filtering &amp; Completeness</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tessellation.html">Tessellation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../stop_detection.html">Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../visit_attribution.html">Visit Attribution</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../metrics.html">Mobility Metrics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../colocation.html">Co-location &amp; Contact Networks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../aggregation.html">Aggregation &amp; Debiasing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../synthetic_data_generation.html">Synthetic Data Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Loading Trajectory Data</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#Pandas-vs-nomad.io-for-partitioned-data">Pandas vs nomad.io for partitioned data</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="benchmarking_of_stop_detection_algorithms.html">Comparing runtimes of different stop detection algorithms on toy datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="lachesis_demo.html">Lachesis Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tadbscan_demo.html">TADBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="hdbscan_demo.html">HDBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="grid_based_demo.html">Grid-Based Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="download_poi_data_from_OSM.html">Downloading places of interest (POI) Data from OSM</a></li>
+<li class="toctree-l1"><a class="reference internal" href="generate_synthetic_trajectories.html">Synthetic Trajectory Generation with Nomad</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NOMAD</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Loading Trajectory Data</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/source/ingesting-data.ipynb.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="Loading-Trajectory-Data">
+<h1>Loading Trajectory Data<a class="headerlink" href="#Loading-Trajectory-Data" title="Link to this heading"></a></h1>
+<p>Mobility data comes in many formats: timestamps as unix integers or ISO strings (with timezones), coordinates in lat/lon or projected, files as single CSVs or partitioned directories.</p>
+<p><code class="docutils literal notranslate"><span class="pre">nomad.io.from_file</span></code> handles these cases with a single function call.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">glob</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">nomad.io.base</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">loader</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">nomad.data</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">data_folder</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+
+<span class="n">data_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">data_folder</span><span class="o">.</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">parent</span>
+</pre></div>
+</div>
+</div>
+<section id="Pandas-vs-nomad.io-for-partitioned-data">
+<h2>Pandas vs nomad.io for partitioned data<a class="headerlink" href="#Pandas-vs-nomad.io-for-partitioned-data" title="Link to this heading"></a></h2>
+<p>Partitioned directories (e.g., <code class="docutils literal notranslate"><span class="pre">date=2024-01-01/</span></code>, <code class="docutils literal notranslate"><span class="pre">date=2024-01-02/</span></code>, …) require a loop with pandas:</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">csv_files</span> <span class="o">=</span> <span class="n">glob</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">data_dir</span> <span class="o">/</span> <span class="s2">&quot;partitioned_csv&quot;</span> <span class="o">/</span> <span class="s2">&quot;*&quot;</span> <span class="o">/</span> <span class="s2">&quot;*.csv&quot;</span><span class="p">))</span>
+<span class="n">df_list</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">csv_files</span><span class="p">:</span>
+    <span class="n">df_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">f</span><span class="p">))</span>
+<span class="n">df_pandas</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="n">df_list</span><span class="p">,</span> <span class="n">ignore_index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Pandas: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">df_pandas</span><span class="p">)</span><span class="si">}</span><span class="s2"> rows&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">df_pandas</span><span class="o">.</span><span class="n">dtypes</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">First few rows:&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">df_pandas</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="mi">3</span><span class="p">))</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Pandas: 25835 rows
+user_id            object
+dev_lat           float64
+dev_lon           float64
+local_datetime     object
+dtype: object
+
+First few rows:
+             user_id    dev_lat    dev_lon                 local_datetime
+0    wizardly_joliot  38.321711 -36.667334  2024-01-01 14:29:00.000000000
+1    wizardly_joliot  38.321676 -36.667365  2024-01-01 14:35:00.000000000
+2  wonderful_swirles  38.321017 -36.667869  2024-01-01 15:06:00.000000000
+</pre></div></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">nomad.io.from_file</span></code> handles partitioned directories in one line, plus automatic type casting and column mapping:</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">traj_cols</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;user_id&quot;</span><span class="p">:</span> <span class="s2">&quot;user_id&quot;</span><span class="p">,</span>
+             <span class="s2">&quot;latitude&quot;</span><span class="p">:</span> <span class="s2">&quot;dev_lat&quot;</span><span class="p">,</span>
+             <span class="s2">&quot;longitude&quot;</span><span class="p">:</span> <span class="s2">&quot;dev_lon&quot;</span><span class="p">,</span>
+             <span class="s2">&quot;datetime&quot;</span><span class="p">:</span> <span class="s2">&quot;local_datetime&quot;</span><span class="p">}</span>
+
+<span class="n">df</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="n">data_dir</span> <span class="o">/</span> <span class="s2">&quot;partitioned_csv&quot;</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;csv&quot;</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="n">traj_cols</span><span class="p">,</span> <span class="n">parse_dates</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;nomad.io: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">df</span><span class="p">)</span><span class="si">}</span><span class="s2"> rows&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">dtypes</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">First few rows:&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="mi">3</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Note: &#39;local_datetime&#39; is now datetime64[ns], not object!&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+nomad.io: 25835 rows
+user_id                   object
+dev_lat                  float64
+dev_lon                  float64
+local_datetime    datetime64[ns]
+dtype: object
+
+First few rows:
+          user_id    dev_lat    dev_lon      local_datetime
+0  admiring_curie  38.320444 -36.666827 2024-01-04 02:40:00
+1  admiring_curie  38.320438 -36.666755 2024-01-04 03:16:00
+2  admiring_curie  38.320434 -36.666877 2024-01-04 19:21:00
+
+Note: &#39;local_datetime&#39; is now datetime64[ns], not object!
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+C:\Users\pacob\Desktop\Brain\Code Development\nomad\nomad\io\base.py:621: UserWarning: The &#39;local_datetime&#39; column has timezone-naive records consider localizing or using unix timestamps.
+  warnings.warn(f&#34;The &#39;{col}&#39; column has timezone-naive records consider localizing or using unix timestamps.&#34;)
+</pre></div></div>
+</div>
+<p>The same pattern works for Parquet files, with the type casting and processing relying on passing to the functions which columns correspond to the default “typical” spatio-temporal column names</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">traj_cols</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;user_id&quot;</span><span class="p">:</span> <span class="s2">&quot;uid&quot;</span><span class="p">,</span> <span class="s2">&quot;timestamp&quot;</span><span class="p">:</span> <span class="s2">&quot;timestamp&quot;</span><span class="p">,</span>
+             <span class="s2">&quot;latitude&quot;</span><span class="p">:</span> <span class="s2">&quot;latitude&quot;</span><span class="p">,</span> <span class="s2">&quot;longitude&quot;</span><span class="p">:</span> <span class="s2">&quot;longitude&quot;</span><span class="p">,</span> <span class="s2">&quot;date&quot;</span><span class="p">:</span> <span class="s2">&quot;date&quot;</span><span class="p">}</span>
+
+<span class="n">df</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="n">data_dir</span> <span class="o">/</span> <span class="s2">&quot;partitioned_parquet&quot;</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;parquet&quot;</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="n">traj_cols</span><span class="p">,</span> <span class="n">parse_dates</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Loaded </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">df</span><span class="p">)</span><span class="si">}</span><span class="s2"> rows&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">dtypes</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Loaded 25835 rows
+uid           object
+timestamp      Int64
+latitude     float64
+longitude    float64
+date          object
+dtype: object
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># These are the default canonical columnn names</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">nomad.constants</span><span class="w"> </span><span class="kn">import</span> <span class="n">DEFAULT_SCHEMA</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">DEFAULT_SCHEMA</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+dict_keys([&#39;user_id&#39;, &#39;latitude&#39;, &#39;longitude&#39;, &#39;datetime&#39;, &#39;start_datetime&#39;, &#39;end_datetime&#39;, &#39;start_timestamp&#39;, &#39;end_timestamp&#39;, &#39;timestamp&#39;, &#39;date&#39;, &#39;utc_date&#39;, &#39;x&#39;, &#39;y&#39;, &#39;geohash&#39;, &#39;tz_offset&#39;, &#39;duration&#39;, &#39;ha&#39;, &#39;h3_cell&#39;, &#39;location_id&#39;])
+</pre></div></div>
+</div>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="../synthetic_data_generation.html" class="btn btn-neutral float-left" title="Synthetic Data Generation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="benchmarking_of_stop_detection_algorithms.html" class="btn btn-neutral float-right" title="Comparing runtimes of different stop detection algorithms on toy datasets" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, CSSLab.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

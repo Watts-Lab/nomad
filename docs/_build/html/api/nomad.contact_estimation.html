@@ -1,0 +1,178 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>contact_estimation &mdash; NOMAD 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../_static/doctools.js?v=9a2dae69"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../_static/design-tabs.js?v=f930bc37"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html">
+            
+              <img src="../_static/nomad-logo-black.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../data_ingestion.html">Data Ingestion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../filtering.html">Filtering &amp; Completeness</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tessellation.html">Tessellation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../stop_detection.html">Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../visit_attribution.html">Visit Attribution</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../metrics.html">Mobility Metrics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../colocation.html">Co-location &amp; Contact Networks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../aggregation.html">Aggregation &amp; Debiasing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../synthetic_data_generation.html">Synthetic Data Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../source/ingesting-data.html">Loading Trajectory Data</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/benchmarking_of_stop_detection_algorithms.html">Comparing runtimes of different stop detection algorithms on toy datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/lachesis_demo.html">Lachesis Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/tadbscan_demo.html">TADBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/hdbscan_demo.html">HDBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/grid_based_demo.html">Grid-Based Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/download_poi_data_from_OSM.html">Downloading places of interest (POI) Data from OSM</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/generate_synthetic_trajectories.html">Synthetic Trajectory Generation with Nomad</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NOMAD</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">contact_estimation</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/api/nomad.contact_estimation.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-nomad.contact_estimation">
+<span id="contact-estimation"></span><h1>contact_estimation<a class="headerlink" href="#module-nomad.contact_estimation" title="Link to this heading"></a></h1>
+<p>Various algorithms for estimating individual co-location</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.contact_estimation.compute_stop_detection_metrics">
+<span class="sig-prename descclassname"><span class="pre">nomad.contact_estimation.</span></span><span class="sig-name descname"><span class="pre">compute_stop_detection_metrics</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">stops</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">truth</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">user_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">algorithm</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/contact_estimation.html#compute_stop_detection_metrics"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.contact_estimation.compute_stop_detection_metrics" title="Link to this definition"></a></dt>
+<dd><p>Compute stop detection metrics for a single user/algorithm combination.</p>
+<section id="parameters">
+<h2>Parameters<a class="headerlink" href="#parameters" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>stops<span class="classifier">pd.DataFrame</span></dt><dd><p>Predicted stops with columns: building_id, duration, start_timestamp, etc.</p>
+</dd>
+<dt>truth<span class="classifier">pd.DataFrame  </span></dt><dd><p>Ground truth stops with columns: building_id, duration, timestamp, etc.</p>
+</dd>
+<dt>user_id<span class="classifier">str, optional</span></dt><dd><p>User identifier for the results</p>
+</dd>
+<dt>algorithm<span class="classifier">str, optional</span></dt><dd><p>Algorithm name for the results</p>
+</dd>
+<dt>traj_cols<span class="classifier">dict, optional</span></dt><dd><p>Column name mappings</p>
+</dd>
+</dl>
+</section>
+<section id="returns">
+<h2>Returns<a class="headerlink" href="#returns" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>dict</dt><dd><p>Dictionary with metrics: precision, recall, f1, missed_fraction, 
+merged_fraction, split_fraction, user_id, algorithm</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.contact_estimation.compute_visitation_errors">
+<span class="sig-prename descclassname"><span class="pre">nomad.contact_estimation.</span></span><span class="sig-name descname"><span class="pre">compute_visitation_errors</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">overlaps</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">true_visits</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/contact_estimation.html#compute_visitation_errors"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.contact_estimation.compute_visitation_errors" title="Link to this definition"></a></dt>
+<dd><p>Return missed / merged / split fractions for a set of ground-truth stops
+and an overlap table produced by <cite>overlapping_visits</cite>.</p>
+<p>The start-timestamp column in <cite>true_visits</cite> <em>must</em> be unique; if not,
+a ValueError is raised.  No gap filling is performed here: the caller
+must supply already-filled tables where appropriate.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.contact_estimation.overlapping_visits">
+<span class="sig-prename descclassname"><span class="pre">nomad.contact_estimation.</span></span><span class="sig-name descname"><span class="pre">overlapping_visits</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">left</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">right</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">match_location</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/contact_estimation.html#overlapping_visits"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.contact_estimation.overlapping_visits" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.contact_estimation.precision_recall_f1_from_minutes">
+<span class="sig-prename descclassname"><span class="pre">nomad.contact_estimation.</span></span><span class="sig-name descname"><span class="pre">precision_recall_f1_from_minutes</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">total_pred</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">total_truth</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tp</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/contact_estimation.html#precision_recall_f1_from_minutes"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.contact_estimation.precision_recall_f1_from_minutes" title="Link to this definition"></a></dt>
+<dd><p>Compute P/R/F1 from minute totals.</p>
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, CSSLab.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

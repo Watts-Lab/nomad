@@ -1,0 +1,409 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>filters &mdash; NOMAD 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../_static/doctools.js?v=9a2dae69"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../_static/design-tabs.js?v=f930bc37"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html">
+            
+              <img src="../_static/nomad-logo-black.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../data_ingestion.html">Data Ingestion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../filtering.html">Filtering &amp; Completeness</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tessellation.html">Tessellation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../stop_detection.html">Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../visit_attribution.html">Visit Attribution</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../metrics.html">Mobility Metrics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../colocation.html">Co-location &amp; Contact Networks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../aggregation.html">Aggregation &amp; Debiasing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../synthetic_data_generation.html">Synthetic Data Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../source/ingesting-data.html">Loading Trajectory Data</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/benchmarking_of_stop_detection_algorithms.html">Comparing runtimes of different stop detection algorithms on toy datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/lachesis_demo.html">Lachesis Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/tadbscan_demo.html">TADBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/hdbscan_demo.html">HDBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/grid_based_demo.html">Grid-Based Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/download_poi_data_from_OSM.html">Downloading places of interest (POI) Data from OSM</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/generate_synthetic_trajectories.html">Synthetic Trajectory Generation with Nomad</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NOMAD</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">filters</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/api/nomad.filters.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-nomad.filters">
+<span id="filters"></span><h1>filters<a class="headerlink" href="#module-nomad.filters" title="Link to this heading"></a></h1>
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.filters.completeness">
+<span class="sig-prename descclassname"><span class="pre">nomad.filters.</span></span><span class="sig-name descname"><span class="pre">completeness</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">periods</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'h'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">offset_col</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">relative</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">str_from_time</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">agg_freq</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/filters.html#completeness"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.filters.completeness" title="Link to this definition"></a></dt>
+<dd><p>Measure trajectory completeness as the fraction of expected time intervals
+(‘buckets’) containing at least one observation.</p>
+<section id="parameters">
+<h2>Parameters<a class="headerlink" href="#parameters" title="Link to this heading"></a></h2>
+<dl>
+<dt>data<span class="classifier">pandas.Series or pandas.DataFrame</span></dt><dd><p>Trajectory data containing timestamps, either as:
+- A pandas Series of Unix-second integers or datetime64 values.
+- A DataFrame, from which timestamp and user columns are identified</p>
+<blockquote>
+<div><p>via <cite>traj_cols</cite> or default column naming conventions.</p>
+</div></blockquote>
+</dd>
+<dt>periods<span class="classifier">int, default 1</span></dt><dd><p>Number of units of <cite>freq</cite> per bucket (must be ≥ 1). For example,
+<cite>periods=3, freq=’h’</cite> results in 3-hour buckets.</p>
+</dd>
+<dt>freq<span class="classifier">{‘s’, ‘min’, ‘h’, ‘d’, ‘w’}, default ‘h’</span></dt><dd><p>Time resolution used to define buckets: seconds (‘s’), minutes (‘min’),
+hours (‘h’), days (‘d’), or weeks (‘w’).</p>
+</dd>
+<dt>start, end<span class="classifier">scalar, optional</span></dt><dd><p>Explicit time bounds to define the bucket range. If either is omitted,
+the range is inferred from the data. Ignored if <cite>relative=True</cite>.</p>
+</dd>
+<dt>relative<span class="classifier">bool, default False</span></dt><dd><p>If False, completeness is measured within a common time span shared
+by all users. If True, each user’s completeness is computed only within
+their own individual time span (from their first to their last record).</p>
+</dd>
+<dt>offset_col<span class="classifier">pandas.Series or int, default 0</span></dt><dd><p>Offset in seconds to apply to timestamps (useful for handling time zones).
+If a <cite>tz_offset</cite> column is present in the data and indicated via
+<cite>traj_cols</cite> or <cite>kwargs</cite>, this argument is ignored.</p>
+</dd>
+<dt>agg_freq<span class="classifier">str, optional</span></dt><dd><p>Aggregation frequency (e.g., ‘D’ for daily, ‘W’ for weekly, ‘M’ for monthly).
+If specified, returns completeness aggregated at this frequency instead
+of overall completeness.</p>
+</dd>
+<dt>traj_cols<span class="classifier">dict, optional</span></dt><dd><p>Mapping from standard keys (‘timestamp’, ‘datetime’, ‘user_id’,
+‘tz_offset’) to column names in <cite>data</cite>. If omitted, defaults are used.</p>
+</dd>
+<dt><a href="#id1"><span class="problematic" id="id2">**</span></a>kwargs</dt><dd><p>Shorthand overrides for entries in <cite>traj_cols</cite>.</p>
+</dd>
+</dl>
+</section>
+<section id="returns">
+<h2>Returns<a class="headerlink" href="#returns" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>float or pandas.Series or pandas.DataFrame</dt><dd><ul class="simple">
+<li><p>If input is a single Series and <cite>agg_freq=None</cite>, returns a single float.</p></li>
+<li><p>If input is a DataFrame and <cite>agg_freq=None</cite>, returns a Series indexed by user_id.</p></li>
+<li><p>If <cite>agg_freq</cite> is specified, returns completeness aggregated by the specified
+frequency, either as a Series (single user) or DataFrame (rows per user,
+columns per aggregation bucket).</p></li>
+</ul>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.filters.coverage_matrix">
+<span class="sig-prename descclassname"><span class="pre">nomad.filters.</span></span><span class="sig-name descname"><span class="pre">coverage_matrix</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">periods</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'h'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">offset_col</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">relative</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">str_from_time</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/filters.html#coverage_matrix"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.filters.coverage_matrix" title="Link to this definition"></a></dt>
+<dd><p>Matrix of 0/1 flags; rows=user (or the single Series), columns=bucket start.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.filters.downsample">
+<span class="sig-prename descclassname"><span class="pre">nomad.filters.</span></span><span class="sig-name descname"><span class="pre">downsample</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">periods</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'min'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">keep</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'first'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/filters.html#downsample"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.filters.downsample" title="Link to this definition"></a></dt>
+<dd><p>Down-sample <em>df</em> so that each user contributes at most one row
+in every consecutive <code class="docutils literal notranslate"><span class="pre">periods</span> <span class="pre">×</span> <span class="pre">freq</span></code> window.</p>
+<section id="id3">
+<h2>Parameters<a class="headerlink" href="#id3" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>df<span class="classifier">pandas.DataFrame</span></dt><dd><p>The input data.</p>
+</dd>
+<dt>periods<span class="classifier">int, default 1</span></dt><dd><p>Size of the window expressed in multiples of <em>freq</em>; must be ≥ 1.</p>
+</dd>
+<dt>freq<span class="classifier">{‘s’, ‘min’, ‘h’, ‘d’, ‘w’}, default ‘min’</span></dt><dd><p>Unit of the window: second, minute, hour, day, or week
+(lower-case aliases).</p>
+</dd>
+<dt>keep<span class="classifier">{‘first’, ‘last’, False}, default ‘first’</span></dt><dd><p>Which duplicate inside each window to retain, matching
+<code class="docutils literal notranslate"><span class="pre">pandas.Series.duplicated</span></code> semantics.</p>
+</dd>
+<dt>traj_cols<span class="classifier">dict, optional</span></dt><dd><p>Mapping from the standard keys <cite>‘timestamp’</cite>, <cite>‘datetime’</cite>,
+<cite>‘user_id’</cite>, and <cite>‘tz_offset’</cite> to the actual column names in <em>df</em>.
+Any key may be absent if the corresponding column is not present.</p>
+</dd>
+<dt>verbose<span class="classifier">bool, default False</span></dt><dd><p>When True, prints the fraction of rows removed and the window size.</p>
+</dd>
+<dt><a href="#id4"><span class="problematic" id="id5">**</span></a>kwargs</dt><dd><p>Shorthand overrides for entries in <em>traj_cols</em></p>
+</dd>
+</dl>
+</section>
+<section id="id6">
+<h2>Returns<a class="headerlink" href="#id6" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>pandas.DataFrame</dt><dd><p>A view of <em>df</em> containing the surviving rows.</p>
+</dd>
+</dl>
+</section>
+<section id="raises">
+<h2>Raises<a class="headerlink" href="#raises" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>ValueError</dt><dd><p>If <em>periods</em> is not a positive integer or <em>freq</em> is invalid.</p>
+</dd>
+<dt>KeyError</dt><dd><p>If no suitable time column is found after parsing <em>traj_cols</em>.</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.filters.is_within">
+<span class="sig-prename descclassname"><span class="pre">nomad.filters.</span></span><span class="sig-name descname"><span class="pre">is_within</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">within</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">poly_crs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_crs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/filters.html#is_within"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.filters.is_within" title="Link to this definition"></a></dt>
+<dd><p>Filter a DataFrame to include only points within the given polygon.</p>
+<section id="id7">
+<h2>Parameters<a class="headerlink" href="#id7" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>df<span class="classifier">pd.DataFrame or GeoDataFrame</span></dt><dd><p>Trajectory data.</p>
+</dd>
+<dt>within<span class="classifier">shapely Polygon/MultiPolygon or WKT string</span></dt><dd><p>Polygon defining the spatial filter.</p>
+</dd>
+<dt>traj_cols<span class="classifier">dict, optional</span></dt><dd><p>Mapping of logical trajectory column names to actual columns.</p>
+</dd>
+<dt>poly_crs<span class="classifier">CRS or str, optional</span></dt><dd><p>CRS of the polygon.</p>
+</dd>
+<dt>data_crs<span class="classifier">CRS or str, optional</span></dt><dd><p>CRS of the DataFrame coordinates.</p>
+</dd>
+<dt><a href="#id8"><span class="problematic" id="id9">**</span></a>kwargs</dt><dd><p>Additional parameters for trajectory columns resolution.</p>
+</dd>
+</dl>
+</section>
+<section id="id10">
+<h2>Returns<a class="headerlink" href="#id10" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>pd.Series</dt><dd><p>Boolean mask for which points are in the polygon within</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.filters.q_filter">
+<span class="sig-prename descclassname"><span class="pre">nomad.filters.</span></span><span class="sig-name descname"><span class="pre">q_filter</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">qbar</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dict</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">user_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'user_id'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timestamp</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'timestamp'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/filters.html#q_filter"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.filters.q_filter" title="Link to this definition"></a></dt>
+<dd><p>Computes the q statistic for each user as the proportion of unique hours with pings 
+over the total observed hours (last hour - first hour) and filters users where q &gt; qbar.</p>
+<section id="id11">
+<h2>Parameters<a class="headerlink" href="#id11" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>df<span class="classifier">pd.DataFrame</span></dt><dd><p>Input DataFrame with user_id and timestamp columns.</p>
+</dd>
+<dt>qbar<span class="classifier">float</span></dt><dd><p>The threshold q value; users with q &gt; qbar will be retained.</p>
+</dd>
+<dt>traj_cols<span class="classifier">dict, optional</span></dt><dd><p>Dictionary containing column mappings, 
+e.g., {“user_id”: “user_id”, “timestamp”: “timestamp”}.</p>
+</dd>
+<dt>user_id<span class="classifier">str, optional</span></dt><dd><p>Name of the user_id column (default is “user_id”).</p>
+</dd>
+<dt>timestamp<span class="classifier">str, optional</span></dt><dd><p>Name of the timestamp column (default is “timestamp”).</p>
+</dd>
+</dl>
+</section>
+<section id="id12">
+<h2>Returns<a class="headerlink" href="#id12" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>pd.Series</dt><dd><p>A Series containing the user IDs for users whose q_stat &gt; qbar.</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.filters.to_projection">
+<span class="sig-prename descclassname"><span class="pre">nomad.filters.</span></span><span class="sig-name descname"><span class="pre">to_projection</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">crs_to</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_crs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/filters.html#to_projection"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.filters.to_projection" title="Link to this definition"></a></dt>
+<dd><p>Project coordinates from data_crs to crs_to, with robust column handling.</p>
+<p>Warns if coordinate columns and CRS type appear mismatched.</p>
+<section id="id13">
+<h2>Parameters<a class="headerlink" href="#id13" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>data<span class="classifier">pd.DataFrame</span></dt><dd><p>Data to project.</p>
+</dd>
+<dt>crs_to<span class="classifier">str or CRS</span></dt><dd><p>Output CRS (required).</p>
+</dd>
+<dt>data_crs<span class="classifier">str or CRS, optional</span></dt><dd><p>Source CRS (default: inferred).</p>
+</dd>
+<dt>traj_cols<span class="classifier">dict, optional</span></dt><dd><p>Mapping of logical column names to actual columns.</p>
+</dd>
+<dt><a href="#id14"><span class="problematic" id="id15">**</span></a>kwargs</dt><dd><p>Passed to trajectory column parsing.</p>
+</dd>
+</dl>
+</section>
+<section id="id16">
+<h2>Returns<a class="headerlink" href="#id16" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>pd.Series, pd.Series</dt><dd><p>Projected x and y as Series, aligned to data.index</p>
+</dd>
+</dl>
+</section>
+<section id="note">
+<h2>Note<a class="headerlink" href="#note" title="Link to this heading"></a></h2>
+<p>To assign directly, use np.column_stack. For example
+df[[‘lon’,’lat’]] = np.column_stack(to_projection(…))</p>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.filters.to_tessellation">
+<span class="sig-prename descclassname"><span class="pre">nomad.filters.</span></span><span class="sig-name descname"><span class="pre">to_tessellation</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">index</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">res</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_crs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/filters.html#to_tessellation"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.filters.to_tessellation" title="Link to this definition"></a></dt>
+<dd><p>Project coordinates from data_crs to crs_to, with robust column handling.</p>
+<section id="id17">
+<h2>Parameters<a class="headerlink" href="#id17" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>data<span class="classifier">pd.DataFrame</span></dt><dd><p>Data to project.</p>
+</dd>
+<dt>index<span class="classifier">str</span></dt><dd><p>One of ‘h3’, ‘geohash’, or ‘s2’.</p>
+</dd>
+<dt>data_crs<span class="classifier">str or CRS, optional</span></dt><dd><p>Source CRS (default: inferred).</p>
+</dd>
+<dt>traj_cols<span class="classifier">dict, optional</span></dt><dd><p>Mapping of logical column names to actual columns.</p>
+</dd>
+<dt><a href="#id18"><span class="problematic" id="id19">**</span></a>kwargs</dt><dd><p>Passed to trajectory column parsing.</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.filters.to_timestamp">
+<span class="sig-prename descclassname"><span class="pre">nomad.filters.</span></span><span class="sig-name descname"><span class="pre">to_timestamp</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">datetime</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tz_offset</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/filters.html#to_timestamp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.filters.to_timestamp" title="Link to this definition"></a></dt>
+<dd><p>Convert a datetime Series or scalar into UNIX timestamps (seconds).</p>
+<section id="id20">
+<h2>Parameters<a class="headerlink" href="#id20" title="Link to this heading"></a></h2>
+<p>datetime : pd.Series, str, pd.Timestamp, or scalar
+tz_offset : pd.Series, optional</p>
+</section>
+<section id="id21">
+<h2>Returns<a class="headerlink" href="#id21" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>pd.Series or int</dt><dd><p>UNIX timestamps as int64 values (seconds since epoch).
+Returns scalar int if input was scalar.</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.filters.to_yyyymmdd">
+<span class="sig-prename descclassname"><span class="pre">nomad.filters.</span></span><span class="sig-name descname"><span class="pre">to_yyyymmdd</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">time_values</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tz_offset</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/filters.html#to_yyyymmdd"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.filters.to_yyyymmdd" title="Link to this definition"></a></dt>
+<dd><p>Convert datetimes/timestamps to integer YYYYMMDD.</p>
+<p>Accepts heterogeneous inputs and optional per-row timezone offsets.
+If tz_offset is provided (seconds), the date is computed in that local time;
+otherwise dates are computed in UTC.</p>
+<section id="id22">
+<h2>Parameters<a class="headerlink" href="#id22" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>time_values<span class="classifier">pd.Series</span></dt><dd><p>Series of datetime64, strings, pandas.Timestamp objects, or Unix seconds.</p>
+</dd>
+<dt>tz_offset<span class="classifier">pd.Series or scalar, optional</span></dt><dd><p>Seconds offset from UTC to local time (e.g., -18000 for UTC-5). If provided,
+the conversion uses local dates; otherwise UTC dates.</p>
+</dd>
+</dl>
+</section>
+<section id="id23">
+<h2>Returns<a class="headerlink" href="#id23" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>pd.Series</dt><dd><p>Integer dates encoded as YYYYMMDD (dtype Int64, NA-friendly).</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.filters.to_zoned_datetime">
+<span class="sig-prename descclassname"><span class="pre">nomad.filters.</span></span><span class="sig-name descname"><span class="pre">to_zoned_datetime</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">utc_timestamps</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timezone_offset</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/filters.html#to_zoned_datetime"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.filters.to_zoned_datetime" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.filters.within">
+<span class="sig-prename descclassname"><span class="pre">nomad.filters.</span></span><span class="sig-name descname"><span class="pre">within</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">within</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">poly_crs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_crs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/filters.html#within"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.filters.within" title="Link to this definition"></a></dt>
+<dd><p>Return a filtered DataFrame containing only rows within the given polygon.</p>
+<p>All arguments are passed to is_within.</p>
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, CSSLab.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

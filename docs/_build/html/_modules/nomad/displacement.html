@@ -1,0 +1,251 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nomad.displacement &mdash; NOMAD 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../_static/doctools.js?v=9a2dae69"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html">
+            
+              <img src="../../_static/nomad-logo-black.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../data_ingestion.html">Data Ingestion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../filtering.html">Filtering &amp; Completeness</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tessellation.html">Tessellation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../stop_detection.html">Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../visit_attribution.html">Visit Attribution</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../metrics.html">Mobility Metrics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../colocation.html">Co-location &amp; Contact Networks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../aggregation.html">Aggregation &amp; Debiasing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../synthetic_data_generation.html">Synthetic Data Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../source/ingesting-data.html">Loading Trajectory Data</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/benchmarking_of_stop_detection_algorithms.html">Comparing runtimes of different stop detection algorithms on toy datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/lachesis_demo.html">Lachesis Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/tadbscan_demo.html">TADBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/hdbscan_demo.html">HDBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/grid_based_demo.html">Grid-Based Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/download_poi_data_from_OSM.html">Downloading places of interest (POI) Data from OSM</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/generate_synthetic_trajectories.html">Synthetic Trajectory Generation with Nomad</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">NOMAD</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">nomad.displacement</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nomad.displacement</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">nomad.agg.privacy</span><span class="w"> </span><span class="kn">import</span> <span class="n">_laplace_pcts</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+
+<div class="viewcode-block" id="normalize_od">
+<a class="viewcode-back" href="../../api/nomad.displacement.html#nomad.displacement.normalize_od">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">normalize_od</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">origin_col</span><span class="p">,</span> <span class="n">dest_col</span><span class="p">,</span> <span class="n">weight_col</span><span class="p">,</span>
+                 <span class="n">diff_privacy_eps</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Convert an origin–destination table to percentages</span>
+<span class="sd">    (share of total trips) with optional Laplace DP noise.</span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    data            : pandas DataFrame, OD table.</span>
+<span class="sd">    origin_col      : str, column with origin geography.</span>
+<span class="sd">    dest_col        : str, column with destination geography.</span>
+<span class="sd">    weight_col      : str, column with trip counts (non-negative ints).</span>
+<span class="sd">    diff_privacy_eps: float or None.  If set, add Laplace noise with</span>
+<span class="sd">                      privacy budget ε; if None, return exact percentages.</span>
+<span class="sd">    seed            : optional int for reproducibility when ε is given.</span>
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pandas DataFrame with columns</span>
+<span class="sd">        [origin_col, dest_col, &#39;percentage&#39;]</span>
+<span class="sd">    where &#39;percentage&#39; sums to 100.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="p">[</span><span class="n">origin_col</span><span class="p">,</span> <span class="n">dest_col</span><span class="p">,</span> <span class="n">weight_col</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="n">col</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Column &#39;</span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s2">&#39; not found in data.&quot;</span><span class="p">)</span>
+
+    <span class="n">N</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">weight_col</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">out</span><span class="p">[</span><span class="s1">&#39;_fraction&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">out</span><span class="p">[</span><span class="n">weight_col</span><span class="p">]</span> <span class="o">/</span> <span class="n">N</span>        <span class="c1"># in [0,1]</span>
+
+    <span class="k">if</span> <span class="n">diff_privacy_eps</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">out</span><span class="p">[</span><span class="s1">&#39;_fraction&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">_laplace_pcts</span><span class="p">(</span>
+            <span class="n">out</span><span class="p">[</span><span class="s1">&#39;_fraction&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(),</span>
+            <span class="n">total_trips</span><span class="o">=</span><span class="n">N</span><span class="p">,</span>
+            <span class="n">epsilon</span><span class="o">=</span><span class="n">diff_privacy_eps</span><span class="p">,</span>
+            <span class="n">seed</span><span class="o">=</span><span class="n">seed</span>
+        <span class="p">)</span>
+
+    <span class="n">out</span><span class="p">[</span><span class="s1">&#39;percentage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">100</span> <span class="o">*</span> <span class="n">out</span><span class="p">[</span><span class="s1">&#39;_fraction&#39;</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">out</span><span class="p">[[</span><span class="n">origin_col</span><span class="p">,</span> <span class="n">dest_col</span><span class="p">,</span> <span class="s1">&#39;percentage&#39;</span><span class="p">]]</span></div>
+
+
+
+<div class="viewcode-block" id="normalized_remained">
+<a class="viewcode-back" href="../../api/nomad.displacement.html#nomad.displacement.normalized_remained">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">normalized_remained</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">origin_col</span><span class="p">,</span> <span class="n">dest_col</span><span class="p">,</span> <span class="n">weight_col</span><span class="p">,</span>
+                         <span class="n">diff_privacy_eps</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Percentage of trips that *remain* in the origin geography,</span>
+<span class="sd">    with optional per-origin Laplace DP noise.</span>
+<span class="sd">    Each origin contributes a single row; percentages are computed</span>
+<span class="sd">    relative to that origin’s total outgoing trips.</span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    data, origin_col, dest_col, weight_col : see `normalize_od`.</span>
+<span class="sd">    diff_privacy_eps : float or None.  ε for DP; None for exact values.</span>
+<span class="sd">    seed             : optional int.</span>
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pandas DataFrame with columns</span>
+<span class="sd">        [origin_col, &#39;percentage&#39;].</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="p">[</span><span class="n">origin_col</span><span class="p">,</span> <span class="n">dest_col</span><span class="p">,</span> <span class="n">weight_col</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="n">col</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Column &#39;</span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s2">&#39; not found in data.&quot;</span><span class="p">)</span>
+
+    <span class="n">origin_totals</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="n">origin_col</span><span class="p">)[</span><span class="n">weight_col</span><span class="p">]</span>
+            <span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+            <span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="s1">&#39;origin_total&#39;</span><span class="p">)</span>
+    <span class="p">)</span>
+
+    <span class="n">stayed</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">data</span><span class="p">[</span><span class="n">origin_col</span><span class="p">]</span> <span class="o">==</span> <span class="n">data</span><span class="p">[</span><span class="n">dest_col</span><span class="p">]]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">stayed</span> <span class="o">=</span> <span class="n">stayed</span><span class="o">.</span><span class="n">merge</span><span class="p">(</span><span class="n">origin_totals</span><span class="p">,</span> <span class="n">left_on</span><span class="o">=</span><span class="n">origin_col</span><span class="p">,</span> <span class="n">right_index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">stayed</span><span class="p">[</span><span class="s1">&#39;_fraction&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">stayed</span><span class="p">[</span><span class="n">weight_col</span><span class="p">]</span> <span class="o">/</span> <span class="n">stayed</span><span class="p">[</span><span class="s1">&#39;origin_total&#39;</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">diff_privacy_eps</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+         <span class="n">stayed</span><span class="p">[</span><span class="s1">&#39;_fraction&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">_laplace_pcts</span><span class="p">(</span>
+             <span class="n">stayed</span><span class="p">[</span><span class="s1">&#39;_fraction&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(),</span>
+             <span class="n">total_trips</span><span class="o">=</span><span class="n">stayed</span><span class="p">[</span><span class="s1">&#39;origin_total&#39;</span><span class="p">],</span>
+             <span class="n">epsilon</span><span class="o">=</span><span class="n">diff_privacy_eps</span><span class="p">,</span>
+             <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">)</span>
+        
+    <span class="n">stayed</span><span class="p">[</span><span class="s1">&#39;percentage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">100</span> <span class="o">*</span> <span class="n">stayed</span><span class="p">[</span><span class="s1">&#39;_fraction&#39;</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">stayed</span><span class="p">[[</span><span class="n">origin_col</span><span class="p">,</span> <span class="s1">&#39;percentage&#39;</span><span class="p">]]</span></div>
+
+
+
+<div class="viewcode-block" id="normalized_moved">
+<a class="viewcode-back" href="../../api/nomad.displacement.html#nomad.displacement.normalized_moved">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">normalized_moved</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">origin_col</span><span class="p">,</span> <span class="n">dest_col</span><span class="p">,</span> <span class="n">weight_col</span><span class="p">,</span>
+                     <span class="n">diff_privacy_eps</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Normalised list of *moving* OD flows</span>
+<span class="sd">    (origin ≠ destination) with optional DP noise.</span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    data, origin_col, dest_col, weight_col : see `normalize_od`.</span>
+<span class="sd">    diff_privacy_eps : float or None.  ε for DP; None for exact values.</span>
+<span class="sd">    seed             : optional int.</span>
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pandas DataFrame with columns</span>
+<span class="sd">        [origin_col, dest_col, &#39;percentage&#39;]  whose percentages sum to 100.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="p">[</span><span class="n">origin_col</span><span class="p">,</span> <span class="n">dest_col</span><span class="p">,</span> <span class="n">weight_col</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="n">col</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Column &#39;</span><span class="si">{</span><span class="n">col</span><span class="si">}</span><span class="s2">&#39; not found in data.&quot;</span><span class="p">)</span>
+
+    <span class="n">moved</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">data</span><span class="p">[</span><span class="n">origin_col</span><span class="p">]</span> <span class="o">!=</span> <span class="n">data</span><span class="p">[</span><span class="n">dest_col</span><span class="p">]]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">moved_total</span> <span class="o">=</span> <span class="n">moved</span><span class="p">[</span><span class="n">weight_col</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+    <span class="n">moved</span><span class="p">[</span><span class="s1">&#39;_fraction&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">moved</span><span class="p">[</span><span class="n">weight_col</span><span class="p">]</span> <span class="o">/</span> <span class="n">moved_total</span>
+
+    <span class="k">if</span> <span class="n">diff_privacy_eps</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+         <span class="n">moved</span><span class="p">[</span><span class="s1">&#39;_fraction&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">_laplace_pcts</span><span class="p">(</span>
+             <span class="n">moved</span><span class="p">[</span><span class="s1">&#39;_fraction&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(),</span>
+             <span class="n">total_trips</span><span class="o">=</span><span class="n">moved</span><span class="p">[</span><span class="s1">&#39;origin_total&#39;</span><span class="p">],</span>
+             <span class="n">epsilon</span><span class="o">=</span><span class="n">diff_privacy_eps</span><span class="p">,</span>
+             <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">)</span>
+
+    <span class="n">moved</span><span class="p">[</span><span class="s1">&#39;percentage&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">100</span> <span class="o">*</span> <span class="n">moved</span><span class="p">[</span><span class="s1">&#39;_fraction&#39;</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">moved</span><span class="p">[[</span><span class="n">origin_col</span><span class="p">,</span> <span class="n">dest_col</span><span class="p">,</span> <span class="s1">&#39;percentage&#39;</span><span class="p">]]</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, CSSLab.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

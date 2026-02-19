@@ -1,0 +1,718 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>city_gen &mdash; NOMAD 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../_static/doctools.js?v=9a2dae69"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../_static/design-tabs.js?v=f930bc37"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html">
+            
+              <img src="../_static/nomad-logo-black.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../data_ingestion.html">Data Ingestion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../filtering.html">Filtering &amp; Completeness</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tessellation.html">Tessellation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../stop_detection.html">Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../visit_attribution.html">Visit Attribution</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../metrics.html">Mobility Metrics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../colocation.html">Co-location &amp; Contact Networks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../aggregation.html">Aggregation &amp; Debiasing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../synthetic_data_generation.html">Synthetic Data Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../source/ingesting-data.html">Loading Trajectory Data</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/benchmarking_of_stop_detection_algorithms.html">Comparing runtimes of different stop detection algorithms on toy datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/lachesis_demo.html">Lachesis Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/tadbscan_demo.html">TADBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/hdbscan_demo.html">HDBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/grid_based_demo.html">Grid-Based Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/download_poi_data_from_OSM.html">Downloading places of interest (POI) Data from OSM</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/generate_synthetic_trajectories.html">Synthetic Trajectory Generation with Nomad</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NOMAD</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">city_gen</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/api/nomad.city_gen.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-nomad.city_gen">
+<span id="city-gen"></span><h1>city_gen<a class="headerlink" href="#module-nomad.city_gen" title="Link to this heading"></a></h1>
+<dl class="py class">
+<dt class="sig sig-object py" id="nomad.city_gen.City">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">nomad.city_gen.</span></span><span class="sig-name descname"><span class="pre">City</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dimensions</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">tuple</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">(0,</span> <span class="pre">0)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">manual_streets</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'Garden</span> <span class="pre">City'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">block_side_length</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">15.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">web_mercator_origin_x</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">-4265699.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">web_mercator_origin_y</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">4392976.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rotation_deg</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">offset_x</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">offset_y</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#City"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.City" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Class for representing a city containing buildings, streets, and methods for city management.</p>
+<section id="attributes">
+<h2>Attributes<a class="headerlink" href="#attributes" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>buildings<span class="classifier">dict</span></dt><dd><p>A dictionary of Building objects with their IDs as keys.</p>
+</dd>
+<dt>streets<span class="classifier">dict</span></dt><dd><p>A dictionary of Street objects with their coordinates as keys.</p>
+</dd>
+<dt>buildings_outline<span class="classifier">shapely.geometry.polygon.Polygon</span></dt><dd><p>A polygon representing the combined geometry of all buildings in the city.</p>
+</dd>
+<dt>city_boundary<span class="classifier">shapely.geometry.polygon.Polygon</span></dt><dd><p>A polygon representing the boundary of the city.</p>
+</dd>
+<dt>dimensions<span class="classifier">tuple</span></dt><dd><p>A tuple representing the dimensions of the city (width, height).</p>
+</dd>
+<dt>street_graph<span class="classifier">dict</span></dt><dd><p>A dictionary representing the graph of streets with their neighbors.</p>
+</dd>
+<dt>shortest_paths<span class="classifier">dict</span></dt><dd><p>A dictionary containing the shortest paths between all pairs of streets.</p>
+</dd>
+<dt>gravity<span class="classifier">pandas.DataFrame</span></dt><dd><p>A DataFrame containing the gravity values between all pairs of streets.</p>
+</dd>
+</dl>
+</section>
+<section id="methods">
+<h2>Methods<a class="headerlink" href="#methods" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>add_building</dt><dd><p>Adds a building to the city.</p>
+</dd>
+<dt>get_block</dt><dd><p>Returns the block (Street or Building) at the given coordinates.</p>
+</dd>
+<dt>get_street_graph</dt><dd><p>Constructs the graph of streets and calculates the shortest paths between all pairs of streets.</p>
+</dd>
+<dt>save</dt><dd><p>Saves the city object to a file.</p>
+</dd>
+<dt>plot_city</dt><dd><p>Plots the city on a given matplotlib axis.</p>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.city_gen.City.add_building">
+<span class="sig-name descname"><span class="pre">add_building</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">building_type</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">door</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">geom</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">blocks</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gdf_row</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#City.add_building"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.City.add_building" title="Link to this definition"></a></dt>
+<dd><p>Adds a building to the city with the specified type, door location, and geometry.</p>
+<section id="parameters">
+<h3>Parameters<a class="headerlink" href="#parameters" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>building_type<span class="classifier">str</span></dt><dd><p>The type of the building (‘home’, ‘workplace’, ‘retail’, ‘park’).</p>
+</dd>
+<dt>door<span class="classifier">tuple</span></dt><dd><p>A tuple representing the (x, y) coordinates of the door of the building.</p>
+</dd>
+<dt>geom<span class="classifier">shapely.geometry.polygon.Polygon, optional</span></dt><dd><p>The geometry of the building (can be a box or MultiPolygon).</p>
+</dd>
+<dt>blocks<span class="classifier">list of tuples, optional</span></dt><dd><p>A list of (x, y) coordinates representing the blocks occupied by the building.</p>
+</dd>
+<dt>gdf_row<span class="classifier">geopandas.GeoDataFrame or pandas.Series, optional</span></dt><dd><p>A single row GeoDataFrame or Series containing building information.</p>
+</dd>
+</dl>
+</section>
+<section id="raises">
+<h3>Raises<a class="headerlink" href="#raises" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>ValueError</dt><dd><p>If the door is not on an existing street, if the building overlaps with existing buildings,
+or if the geometry/blocks do not align with the grid.</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.city_gen.City.add_buildings_from_gdf">
+<span class="sig-name descname"><span class="pre">add_buildings_from_gdf</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">buildings_gdf</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#City.add_buildings_from_gdf"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.City.add_buildings_from_gdf" title="Link to this definition"></a></dt>
+<dd><p>Initialize or add multiple buildings from a GeoDataFrame.</p>
+<section id="id1">
+<h3>Parameters<a class="headerlink" href="#id1" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>buildings_gdf<span class="classifier">geopandas.GeoDataFrame</span></dt><dd><p>A GeoDataFrame containing building information with columns for type, door coordinates, and geometry.</p>
+</dd>
+</dl>
+</section>
+<section id="id2">
+<h3>Raises<a class="headerlink" href="#id2" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>ValueError</dt><dd><p>If the GeoDataFrame lacks required columns or contains invalid data.</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.city_gen.City.add_street">
+<span class="sig-name descname"><span class="pre">add_street</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">coords</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#City.add_street"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.City.add_street" title="Link to this definition"></a></dt>
+<dd><p>Adds a street to the city at the specified (x, y) coordinates.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="nomad.city_gen.City.buildings_df">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">buildings_df</span></span><a class="headerlink" href="#nomad.city_gen.City.buildings_df" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.city_gen.City.check_adjacent">
+<span class="sig-name descname"><span class="pre">check_adjacent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">geom1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">geom2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">graph</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#City.check_adjacent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.City.check_adjacent" title="Link to this definition"></a></dt>
+<dd><p>Adjacency on a grid of 1x1 blocks. Returns list[bool].</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.city_gen.City.compute_gravity">
+<span class="sig-name descname"><span class="pre">compute_gravity</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">exponent</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">callable_only</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_chunks</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_proxy_hub_distance</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#City.compute_gravity"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.City.compute_gravity" title="Link to this definition"></a></dt>
+<dd><p>Precompute building-to-building gravity from door-to-door distances.</p>
+<section id="id3">
+<h3>Parameters<a class="headerlink" href="#id3" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>exponent<span class="classifier">float</span></dt><dd><p>The gravity decay exponent (default 2.0)</p>
+</dd>
+<dt>callable_only<span class="classifier">bool</span></dt><dd><p>If True, store callable function instead of dense matrix (default False)</p>
+</dd>
+<dt>n_chunks<span class="classifier">int</span></dt><dd><p>Number of chunks for computing nearby doors in hub mode (default 10)</p>
+</dd>
+<dt>use_proxy_hub_distance<span class="classifier">bool</span></dt><dd><p>If True, use hub-based distance approximation (fast, scales to large cities).
+If False, compute true graph distances between all door pairs (slow but exact, 
+suitable for small cities with &lt;200 buildings). Default True.</p>
+</dd>
+</dl>
+</section>
+<section id="notes">
+<h3>Notes<a class="headerlink" href="#notes" title="Link to this heading"></a></h3>
+<p>Hub mode approximates: dist(i,j) ≈ manhattan(door_i, hub_i) + graph(hub_i, hub_j) + manhattan(hub_j, door_j)
+True mode computes: dist(i,j) = shortest_path_length(door_i, door_j) on street graph</p>
+<p>Stores result in self.grav as DataFrame (callable_only=False) or callable (callable_only=True)</p>
+<p>Persistence:
+- Hub mode (use_proxy_hub_distance=True): Gravity infrastructure is saved by</p>
+<blockquote>
+<div><p>save_geopackage() and restored by from_geopackage(load_gravity=True). The 
+city.grav callable works immediately after loading.</p>
+</div></blockquote>
+<ul class="simple">
+<li><p>True distance mode (use_proxy_hub_distance=False): Not persisted. Must call 
+compute_gravity(…, use_proxy_hub_distance=False) after loading. This is 
+fast for small cities (&lt;200 buildings) where this mode is intended.</p></li>
+</ul>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.city_gen.City.compute_shortest_paths">
+<span class="sig-name descname"><span class="pre">compute_shortest_paths</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">callable_only</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#City.compute_shortest_paths"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.City.compute_shortest_paths" title="Link to this definition"></a></dt>
+<dd><p>Compute shortest paths between street blocks.</p>
+<section id="id4">
+<h3>Parameters<a class="headerlink" href="#id4" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>callable_only<span class="classifier">bool, default False</span></dt><dd><p>If False, precompute all-pairs shortest paths (only for small cities)
+If True, store on-demand callable (placeholder for hub-based routing)</p>
+</dd>
+</dl>
+</section>
+<section id="id5">
+<h3>Notes<a class="headerlink" href="#id5" title="Link to this heading"></a></h3>
+<p>Callable mode currently uses nx.shortest_path() on demand—this is a 
+PLACEHOLDER. Production use with _sample_step requires hub-based routing 
+for scalability (billions of calls). Current implementation too slow for 
+large-scale trajectory generation.</p>
+<p>Stores result in self.shortest_paths as dict or callable</p>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.city_gen.City.from_geodataframes">
+<em class="property"><span class="pre">classmethod</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">from_geodataframes</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">buildings_gdf</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">streets_gdf</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">blocks_gdf</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">edges_df</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">city_boundary</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#City.from_geodataframes"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.City.from_geodataframes" title="Link to this definition"></a></dt>
+<dd><p>Construct a City from buildings and streets GeoDataFrames.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.city_gen.City.from_geopackage">
+<em class="property"><span class="pre">classmethod</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">from_geopackage</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">gpkg_path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">edges_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">poi_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">load_gravity</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#City.from_geopackage"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.City.from_geopackage" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.city_gen.City.from_mercator">
+<span class="sig-name descname"><span class="pre">from_mercator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#City.from_mercator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.City.from_mercator" title="Link to this definition"></a></dt>
+<dd><p>Convert Web Mercator coordinates back to city block coordinates using city’s parameters.</p>
+<section id="id6">
+<h3>Parameters<a class="headerlink" href="#id6" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>data<span class="classifier">pd.DataFrame</span></dt><dd><p>DataFrame with ‘x’, ‘y’ columns in Web Mercator coordinates</p>
+</dd>
+</dl>
+</section>
+<section id="returns">
+<h3>Returns<a class="headerlink" href="#returns" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>pd.DataFrame</dt><dd><p>DataFrame with ‘x’, ‘y’ columns updated to city block coordinates.
+If ‘ha’ column exists, it is also scaled back.</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.city_gen.City.get_block">
+<span class="sig-name descname"><span class="pre">get_block</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">coordinates</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#City.get_block"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.City.get_block" title="Link to this definition"></a></dt>
+<dd><p>Returns information about the block at the given coordinates.</p>
+<section id="id7">
+<h3>Parameters<a class="headerlink" href="#id7" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>coordinates<span class="classifier">tuple</span></dt><dd><p>A tuple representing the (x, y) coordinates of the block.</p>
+</dd>
+</dl>
+</section>
+<section id="id8">
+<h3>Returns<a class="headerlink" href="#id8" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>dict</dt><dd><p>A dictionary containing the kind of block (‘street’ or ‘building’), the ID of the building if
+applicable, the type of building if applicable, and the geometry of the block.</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.city_gen.City.get_building">
+<span class="sig-name descname"><span class="pre">get_building</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">identifier</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">door_coords</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">any_coords</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#City.get_building"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.City.get_building" title="Link to this definition"></a></dt>
+<dd><p>Retrieve a building by string ID, door coordinates, or any coordinates within the city’s bounds.</p>
+<section id="id9">
+<h3>Parameters:<a class="headerlink" href="#id9" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>identifier<span class="classifier">str, optional</span></dt><dd><p>The string ID of the building (e.g., ‘h-x8-y8’).</p>
+</dd>
+<dt>door_coords<span class="classifier">tuple, optional</span></dt><dd><p>The (x, y) coordinates of the building’s door.</p>
+</dd>
+<dt>any_coords<span class="classifier">tuple, optional</span></dt><dd><p>Any (x, y) coordinates within the city’s bounds to find a building that contains this point.</p>
+</dd>
+</dl>
+</section>
+<section id="id10">
+<h3>Returns:<a class="headerlink" href="#id10" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>geopandas.GeoDataFrame or None</dt><dd><p>A GeoDataFrame with a single row containing building details if found, None otherwise.</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.city_gen.City.get_building_coordinates">
+<span class="sig-name descname"><span class="pre">get_building_coordinates</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#City.get_building_coordinates"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.City.get_building_coordinates" title="Link to this definition"></a></dt>
+<dd><p>Get building coordinates as a DataFrame with building_id, x, y, building_type, size columns.</p>
+<section id="id11">
+<h3>Returns<a class="headerlink" href="#id11" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>pd.DataFrame</dt><dd><p>DataFrame with columns: building_id, x, y, building_type, size</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.city_gen.City.get_distance_fast">
+<span class="sig-name descname"><span class="pre">get_distance_fast</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">start_coord</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">tuple</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end_coord</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">tuple</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#City.get_distance_fast"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.City.get_distance_fast" title="Link to this definition"></a></dt>
+<dd><p>Return shortest path distance (number of edges) between two street cells.</p>
+<section id="id12">
+<h3>Parameters<a class="headerlink" href="#id12" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>start_coord<span class="classifier">tuple[int, int]</span></dt><dd><p>Starting street block (x, y).</p>
+</dd>
+<dt>end_coord<span class="classifier">tuple[int, int]</span></dt><dd><p>Ending street block (x, y).</p>
+</dd>
+</dl>
+</section>
+<section id="id13">
+<h3>Returns<a class="headerlink" href="#id13" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>int</dt><dd><p>Number of edges in the shortest path from start to end.</p>
+</dd>
+</dl>
+</section>
+<section id="id14">
+<h3>Notes<a class="headerlink" href="#id14" title="Link to this heading"></a></h3>
+<p>Uses the same shortest_paths mechanism as get_shortest_path(), but returns
+only the distance (len(path) - 1) for efficiency.</p>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.city_gen.City.get_paths_fast">
+<span class="sig-name descname"><span class="pre">get_paths_fast</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">start_coord</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">tuple</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end_coord</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">tuple</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#City.get_paths_fast"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.City.get_paths_fast" title="Link to this definition"></a></dt>
+<dd><p>DEPRECATED: Return shortest path with LRU-style caching.</p>
+<p>This method wraps get_shortest_path() with a simple cache. May be useful
+for future optimizations but currently not sufficient for large-scale
+trajectory generation needs.</p>
+<section id="id15">
+<h3>Parameters<a class="headerlink" href="#id15" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>start_coord<span class="classifier">tuple[int, int]</span></dt><dd><p>Starting street block (x, y).</p>
+</dd>
+<dt>end_coord<span class="classifier">tuple[int, int]</span></dt><dd><p>Ending street block (x, y).</p>
+</dd>
+</dl>
+</section>
+<section id="id16">
+<h3>Returns<a class="headerlink" href="#id16" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>list[tuple[int, int]]</dt><dd><p>Sequence of street blocks from start to end, or empty list if no path.</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.city_gen.City.get_shortest_path">
+<span class="sig-name descname"><span class="pre">get_shortest_path</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">start_coord</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">tuple</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end_coord</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">tuple</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plot</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ax</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#City.get_shortest_path"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.City.get_shortest_path" title="Link to this definition"></a></dt>
+<dd><p>Return a block path between two street cells.</p>
+<section id="id17">
+<h3>Parameters<a class="headerlink" href="#id17" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>start_coord<span class="classifier">tuple[int, int]</span></dt><dd><p>Starting street block (x, y).</p>
+</dd>
+<dt>end_coord<span class="classifier">tuple[int, int]</span></dt><dd><p>Ending street block (x, y).</p>
+</dd>
+<dt>plot<span class="classifier">bool, optional</span></dt><dd><p>Plot the resulting path on the city map when True.</p>
+</dd>
+<dt>ax<span class="classifier">matplotlib.axes.Axes, optional</span></dt><dd><p>Target axis used when <cite>plot=True</cite>.</p>
+</dd>
+</dl>
+</section>
+<section id="id18">
+<h3>Returns<a class="headerlink" href="#id18" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>list[tuple[int, int]]</dt><dd><p>Sequence of street blocks from start to end.</p>
+</dd>
+</dl>
+</section>
+<section id="id19">
+<h3>Raises<a class="headerlink" href="#id19" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>ValueError</dt><dd><p>If either coordinate is not a valid street block or if shortest_paths
+has not been computed.</p>
+</dd>
+</dl>
+</section>
+<section id="id20">
+<h3>Notes<a class="headerlink" href="#id20" title="Link to this heading"></a></h3>
+<p>Requires compute_shortest_paths() to be called first. Uses precomputed
+paths (dict) or on-demand callable depending on mode.</p>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.city_gen.City.get_street_graph">
+<span class="sig-name descname"><span class="pre">get_street_graph</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#City.get_street_graph"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.City.get_street_graph" title="Link to this definition"></a></dt>
+<dd><p>Build the street graph needed for routing.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.city_gen.City.plot_city">
+<span class="sig-name descname"><span class="pre">plot_city</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ax</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">doors</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">address</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">zorder</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">heatmap_agent</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">colors</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alpha</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">legend</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#City.plot_city"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.City.plot_city" title="Link to this definition"></a></dt>
+<dd><p>Plots the city on a given matplotlib axis.</p>
+<section id="id21">
+<h3>Parameters<a class="headerlink" href="#id21" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>ax<span class="classifier">matplotlib.axes.Axes</span></dt><dd><p>The axis on which to plot the city.</p>
+</dd>
+<dt>doors<span class="classifier">bool</span></dt><dd><p>Whether to plot doors of buildings.</p>
+</dd>
+<dt>address<span class="classifier">bool</span></dt><dd><p>Whether to plot the address of buildings.</p>
+</dd>
+<dt>zorder<span class="classifier">int</span></dt><dd><p>The z-order of the plot.</p>
+</dd>
+<dt>heatmap_agent<span class="classifier">Agent</span></dt><dd><p>The agent for which to plot a heatmap of time spent in each building.</p>
+</dd>
+<dt>colors<span class="classifier">dict</span></dt><dd><p>A dictionary mapping building types to colors for plotting.</p>
+</dd>
+<dt>legend<span class="classifier">bool</span></dt><dd><p>Whether to display a legend for building types.</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.city_gen.City.save">
+<span class="sig-name descname"><span class="pre">save</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filename</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#City.save"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.City.save" title="Link to this definition"></a></dt>
+<dd><p>Saves the city object to a file.</p>
+<section id="id22">
+<h3>Parameters<a class="headerlink" href="#id22" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>filename<span class="classifier">str</span></dt><dd><p>The name of the file to save the city object to.</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.city_gen.City.save_geopackage">
+<span class="sig-name descname"><span class="pre">save_geopackage</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">gpkg_path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">persist_blocks</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">persist_city_properties</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">persist_gravity_data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reverse_affine</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">edges_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">street_graphml_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#City.save_geopackage"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.City.save_geopackage" title="Link to this definition"></a></dt>
+<dd><p>Save city to GeoPackage with all spatial objects for simulation continuity.</p>
+<section id="id23">
+<h3>Parameters<a class="headerlink" href="#id23" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>gpkg_path<span class="classifier">str</span></dt><dd><p>Path to GeoPackage (.gpkg) for buildings, streets, and auxiliary layers</p>
+</dd>
+<dt>persist_blocks<span class="classifier">bool, default False</span></dt><dd><p>If True, save blocks_gdf layer</p>
+</dd>
+<dt>persist_city_properties<span class="classifier">bool, default True</span></dt><dd><p>If True, save city properties (name, block_side_length, origins, etc.)</p>
+</dd>
+<dt>persist_gravity_data<span class="classifier">bool, default True</span></dt><dd><p>If True, save gravity infrastructure (hubs, distances, nearby doors)</p>
+</dd>
+<dt>reverse_affine<span class="classifier">bool, default False</span></dt><dd><p>If True, transform geometries from garden city units to Web Mercator meters</p>
+</dd>
+<dt>edges_path<span class="classifier">str, optional</span></dt><dd><p>Path to save edges parquet (ox, oy, dx, dy, distance, gravity)</p>
+</dd>
+<dt>street_graphml_path<span class="classifier">str, optional</span></dt><dd><p>Path to save street graph as GraphML</p>
+</dd>
+</dl>
+</section>
+<section id="id24">
+<h3>Notes<a class="headerlink" href="#id24" title="Link to this heading"></a></h3>
+<p>This method saves everything needed to reload and continue a simulation.
+Use from_geopackage() to reload.</p>
+</section>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="nomad.city_gen.City.streets_df">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">streets_df</span></span><a class="headerlink" href="#nomad.city_gen.City.streets_df" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.city_gen.City.to_file">
+<span class="sig-name descname"><span class="pre">to_file</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">buildings_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">streets_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">street_graphml_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">driver</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'GeoJSON'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">to_crs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reverse_affine</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#City.to_file"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.City.to_file" title="Link to this definition"></a></dt>
+<dd><p>Export city layers to file with optional coordinate transformations.</p>
+<section id="id25">
+<h3>Parameters<a class="headerlink" href="#id25" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>buildings_path<span class="classifier">str, optional</span></dt><dd><p>Path to save buildings layer</p>
+</dd>
+<dt>streets_path<span class="classifier">str, optional</span></dt><dd><p>Path to save streets layer</p>
+</dd>
+<dt>street_graphml_path<span class="classifier">str, optional</span></dt><dd><p>Path to save street graph as GraphML</p>
+</dd>
+<dt>driver<span class="classifier">str, default ‘GeoJSON’</span></dt><dd><p>Output format: ‘GeoJSON’, ‘GPKG’, ‘Parquet’, ‘ESRI Shapefile’</p>
+</dd>
+<dt>to_crs<span class="classifier">str or CRS, optional</span></dt><dd><p>Target CRS for reprojection (e.g., ‘EPSG:4326’)</p>
+</dd>
+<dt>reverse_affine<span class="classifier">bool, default False</span></dt><dd><p>If True, transform from garden city units to Web Mercator meters
+using self.block_side_length, offset_x, offset_y, rotation_deg</p>
+</dd>
+</dl>
+</section>
+<section id="id26">
+<h3>Notes<a class="headerlink" href="#id26" title="Link to this heading"></a></h3>
+<p>For GeoJSON output, to_crs=’EPSG:4326’ is required if reverse_affine=True.</p>
+</section>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.city_gen.City.to_mercator">
+<span class="sig-name descname"><span class="pre">to_mercator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#City.to_mercator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.City.to_mercator" title="Link to this definition"></a></dt>
+<dd><p>Convert city block coordinates to Web Mercator coordinates using city’s parameters.</p>
+<section id="id27">
+<h3>Parameters<a class="headerlink" href="#id27" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>data<span class="classifier">pd.DataFrame</span></dt><dd><p>DataFrame with ‘x’, ‘y’ columns in city block coordinates</p>
+</dd>
+</dl>
+</section>
+<section id="id28">
+<h3>Returns<a class="headerlink" href="#id28" title="Link to this heading"></a></h3>
+<dl class="simple">
+<dt>pd.DataFrame</dt><dd><p>DataFrame with ‘x’, ‘y’ columns updated to Web Mercator coordinates.
+If ‘ha’ column exists, it is also scaled.</p>
+</dd>
+</dl>
+</section>
+</dd></dl>
+
+</section>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nomad.city_gen.RandomCityGenerator">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">nomad.city_gen.</span></span><span class="sig-name descname"><span class="pre">RandomCityGenerator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">width</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">height</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">street_spacing</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">park_ratio</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">home_ratio</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.4</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">work_ratio</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.3</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">retail_ratio</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">42</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#RandomCityGenerator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.RandomCityGenerator" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.city_gen.RandomCityGenerator.fill_block">
+<span class="sig-name descname"><span class="pre">fill_block</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">block_x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">block_y</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">block_type</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#RandomCityGenerator.fill_block"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.RandomCityGenerator.fill_block" title="Link to this definition"></a></dt>
+<dd><p>Fills a block with multiple buildings of the specified type.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.city_gen.RandomCityGenerator.generate_city">
+<span class="sig-name descname"><span class="pre">generate_city</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#RandomCityGenerator.generate_city"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.RandomCityGenerator.generate_city" title="Link to this definition"></a></dt>
+<dd><p>Generates a systematically structured city where blocks are fully occupied with buildings.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.city_gen.RandomCityGenerator.generate_streets">
+<span class="sig-name descname"><span class="pre">generate_streets</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#RandomCityGenerator.generate_streets"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.RandomCityGenerator.generate_streets" title="Link to this definition"></a></dt>
+<dd><p>Predefine streets in a systematic grid pattern using a NumPy mask.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.city_gen.RandomCityGenerator.get_adjacent_street">
+<span class="sig-name descname"><span class="pre">get_adjacent_street</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">location</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#RandomCityGenerator.get_adjacent_street"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.RandomCityGenerator.get_adjacent_street" title="Link to this definition"></a></dt>
+<dd><p>Finds the closest predefined street to assign as the door, ensuring it is within bounds.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.city_gen.RandomCityGenerator.get_block_type">
+<span class="sig-name descname"><span class="pre">get_block_type</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">y</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#RandomCityGenerator.get_block_type"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.RandomCityGenerator.get_block_type" title="Link to this definition"></a></dt>
+<dd><p>Dynamically assigns a block type instead of storing all in memory.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.city_gen.RandomCityGenerator.place_buildings_in_blocks">
+<span class="sig-name descname"><span class="pre">place_buildings_in_blocks</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#RandomCityGenerator.place_buildings_in_blocks"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.RandomCityGenerator.place_buildings_in_blocks" title="Link to this definition"></a></dt>
+<dd><p>Fills each block completely with buildings using proportional distribution.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nomad.city_gen.RasterCity">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">nomad.city_gen.</span></span><span class="sig-name descname"><span class="pre">RasterCity</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">boundary_polygon</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">streets_gdf</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">buildings_gdf</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">block_side_length</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">15.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">crs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'EPSG:3857'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">building_type_col</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'building_type'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'Rasterized</span> <span class="pre">City'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">resolve_overlaps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">other_building_behavior</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'keep'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rotation_deg</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rotation_origin</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#RasterCity"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.RasterCity" title="Link to this definition"></a></dt>
+<dd><p>Bases: <a class="reference internal" href="#nomad.city_gen.City" title="nomad.city_gen.City"><code class="xref py py-class docutils literal notranslate"><span class="pre">City</span></code></a></p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="nomad.city_gen.Street">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">nomad.city_gen.</span></span><span class="sig-name descname"><span class="pre">Street</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">coordinates</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">tuple</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">geometry</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Polygon</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#Street"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.Street" title="Link to this definition"></a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<p>Class for street block in the city through which individuals move from building to building.</p>
+<section id="id29">
+<h2>Attributes<a class="headerlink" href="#id29" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>coordinates<span class="classifier">tuple</span></dt><dd><p>A tuple representing the (x, y) coordinates of the street block.</p>
+</dd>
+<dt>geometry<span class="classifier">shapely.geometry.polygon.Polygon</span></dt><dd><p>A polygon representing the geometry of the street block.</p>
+</dd>
+<dt>id<span class="classifier">str</span></dt><dd><p>A unique identifier for the street block, formatted as ‘s-x{coordinates[0]}-y{coordinates[1]}’.</p>
+</dd>
+</dl>
+</section>
+<section id="id30">
+<h2>Methods<a class="headerlink" href="#id30" title="Link to this heading"></a></h2>
+<p>(none)</p>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.city_gen.assign_block_types">
+<span class="sig-prename descclassname"><span class="pre">nomad.city_gen.</span></span><span class="sig-name descname"><span class="pre">assign_block_types</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">blocks_gdf</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">streets_gdf</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">buildings_gdf_input</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#assign_block_types"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.assign_block_types" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.city_gen.assign_door_to_building">
+<span class="sig-prename descclassname"><span class="pre">nomad.city_gen.</span></span><span class="sig-name descname"><span class="pre">assign_door_to_building</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">building_blocks</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">available_blocks</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">graph</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#assign_door_to_building"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.assign_door_to_building" title="Link to this definition"></a></dt>
+<dd><p>Find adjacent block that can serve as door (not occupied by buildings).</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.city_gen.find_connected_components">
+<span class="sig-prename descclassname"><span class="pre">nomad.city_gen.</span></span><span class="sig-name descname"><span class="pre">find_connected_components</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">block_coords</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">connectivity</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'4-connected'</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Set</span><span class="p"><span class="pre">[</span></span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/nomad/city_gen.html#find_connected_components"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.find_connected_components" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.city_gen.find_intersecting_blocks">
+<span class="sig-prename descclassname"><span class="pre">nomad.city_gen.</span></span><span class="sig-name descname"><span class="pre">find_intersecting_blocks</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">geometries_gdf</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">GeoDataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">blocks_gdf</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">GeoDataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">predicate</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'intersects'</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/nomad/city_gen.html#find_intersecting_blocks"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.find_intersecting_blocks" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.city_gen.generate_canvas_blocks">
+<span class="sig-prename descclassname"><span class="pre">nomad.city_gen.</span></span><span class="sig-name descname"><span class="pre">generate_canvas_blocks</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">boundary_polygon</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">block_size</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">crs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'EPSG:3857'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">with_block_groups</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#generate_canvas_blocks"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.generate_canvas_blocks" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.city_gen.load">
+<span class="sig-prename descclassname"><span class="pre">nomad.city_gen.</span></span><span class="sig-name descname"><span class="pre">load</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filename</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#load"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.load" title="Link to this definition"></a></dt>
+<dd><p>Load a city object from a file.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.city_gen.save">
+<span class="sig-prename descclassname"><span class="pre">nomad.city_gen.</span></span><span class="sig-name descname"><span class="pre">save</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">city</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">filename</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#save"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.save" title="Link to this definition"></a></dt>
+<dd><p>Save the city object to a file.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.city_gen.verify_street_connectivity">
+<span class="sig-prename descclassname"><span class="pre">nomad.city_gen.</span></span><span class="sig-name descname"><span class="pre">verify_street_connectivity</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">streets_gdf</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/city_gen.html#verify_street_connectivity"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.city_gen.verify_street_connectivity" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, CSSLab.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

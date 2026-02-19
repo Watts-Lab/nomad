@@ -1,0 +1,383 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>map_utils &mdash; NOMAD 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../_static/doctools.js?v=9a2dae69"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../_static/design-tabs.js?v=f930bc37"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html">
+            
+              <img src="../_static/nomad-logo-black.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../data_ingestion.html">Data Ingestion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../filtering.html">Filtering &amp; Completeness</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tessellation.html">Tessellation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../stop_detection.html">Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../visit_attribution.html">Visit Attribution</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../metrics.html">Mobility Metrics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../colocation.html">Co-location &amp; Contact Networks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../aggregation.html">Aggregation &amp; Debiasing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../synthetic_data_generation.html">Synthetic Data Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../source/ingesting-data.html">Loading Trajectory Data</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/benchmarking_of_stop_detection_algorithms.html">Comparing runtimes of different stop detection algorithms on toy datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/lachesis_demo.html">Lachesis Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/tadbscan_demo.html">TADBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/hdbscan_demo.html">HDBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/grid_based_demo.html">Grid-Based Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/download_poi_data_from_OSM.html">Downloading places of interest (POI) Data from OSM</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../source/generate_synthetic_trajectories.html">Synthetic Trajectory Generation with Nomad</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NOMAD</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">map_utils</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/api/nomad.map_utils.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-nomad.map_utils">
+<span id="map-utils"></span><h1>map_utils<a class="headerlink" href="#module-nomad.map_utils" title="Link to this heading"></a></h1>
+<p>OpenStreetMap data utilities used to download, process, rotate, and persist
+geospatial layers for the NOMAD library.</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.map_utils.blocks_to_mercator">
+<span class="sig-prename descclassname"><span class="pre">nomad.map_utils.</span></span><span class="sig-name descname"><span class="pre">blocks_to_mercator</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">block_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">15.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">false_easting</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">-4265699.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">false_northing</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">4392976.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rotation_deg</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rotation_origin</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/map_utils.html#blocks_to_mercator"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.map_utils.blocks_to_mercator" title="Link to this definition"></a></dt>
+<dd><p>Convert city block coordinates to Web Mercator coordinates.</p>
+<p>This function applies an affine transformation to convert abstract city block
+coordinates (in units of blocks) to Web Mercator projection coordinates (EPSG:3857)
+in meters. The transformation is: x_mercator = block_size * x_block + false_easting</p>
+<section id="parameters">
+<h2>Parameters<a class="headerlink" href="#parameters" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>data<span class="classifier">pd.DataFrame</span></dt><dd><p>DataFrame with ‘x’, ‘y’ columns in city block coordinates</p>
+</dd>
+<dt>block_size<span class="classifier">float, default 15.0</span></dt><dd><p>Size of one city block in meters</p>
+</dd>
+<dt>false_easting<span class="classifier">float, default -4265699.0</span></dt><dd><p>False easting offset (x-origin) in Web Mercator meters</p>
+</dd>
+<dt>false_northing<span class="classifier">float, default 4392976.0</span></dt><dd><p>False northing offset (y-origin) in Web Mercator meters</p>
+</dd>
+<dt>rotation_deg<span class="classifier">float, default 0.0</span></dt><dd><p>Rotation to undo (degrees counterclockwise). If non-zero, rotates by -rotation_deg
+around rotation_origin after scaling and translation.</p>
+</dd>
+<dt>rotation_origin<span class="classifier">tuple of (x, y), optional</span></dt><dd><p>Rotation origin in Web Mercator coordinates. If None and rotation_deg != 0,
+uses (false_easting, false_northing) as origin.</p>
+</dd>
+</dl>
+</section>
+<section id="returns">
+<h2>Returns<a class="headerlink" href="#returns" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>pd.DataFrame</dt><dd><p>DataFrame with ‘x’, ‘y’ columns updated to Web Mercator coordinates.
+If ‘ha’ column exists, it is also scaled by block_size.</p>
+</dd>
+</dl>
+</section>
+<section id="examples">
+<h2>Examples<a class="headerlink" href="#examples" title="Link to this heading"></a></h2>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s1">&#39;x&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">],</span> <span class="s1">&#39;y&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">]})</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">result</span> <span class="o">=</span> <span class="n">blocks_to_mercator</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">block_size</span><span class="o">=</span><span class="mi">15</span><span class="p">,</span> <span class="n">false_easting</span><span class="o">=-</span><span class="mi">4265699</span><span class="p">,</span> <span class="n">false_northing</span><span class="o">=</span><span class="mi">4392976</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">result</span><span class="p">[</span><span class="s1">&#39;x&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+<span class="go">[-4265699.0, -4265684.0, -4265669.0]</span>
+</pre></div>
+</div>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.map_utils.blocks_to_mercator_gdf">
+<span class="sig-prename descclassname"><span class="pre">nomad.map_utils.</span></span><span class="sig-name descname"><span class="pre">blocks_to_mercator_gdf</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">gdf</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">block_size</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">false_easting</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">false_northing</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rotation_deg</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">drop_garden_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/map_utils.html#blocks_to_mercator_gdf"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.map_utils.blocks_to_mercator_gdf" title="Link to this definition"></a></dt>
+<dd><p>Transform GeoDataFrame from garden city block units to Web Mercator meters.</p>
+<section id="id1">
+<h2>Parameters<a class="headerlink" href="#id1" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>gdf<span class="classifier">gpd.GeoDataFrame</span></dt><dd><p>Input with geometries in garden city block units</p>
+</dd>
+<dt>block_size<span class="classifier">float</span></dt><dd><p>Block side length in meters</p>
+</dd>
+<dt>false_easting<span class="classifier">float</span></dt><dd><p>Web Mercator origin x in meters</p>
+</dd>
+<dt>false_northing<span class="classifier">float</span></dt><dd><p>Web Mercator origin y in meters</p>
+</dd>
+<dt>rotation_deg<span class="classifier">float, default 0.0</span></dt><dd><p>Rotation applied to input (will be undone by rotating -rotation_deg)</p>
+</dd>
+<dt>drop_garden_cols<span class="classifier">bool, default True</span></dt><dd><p>If True, drop coord_x, coord_y, door_cell_x, door_cell_y columns</p>
+</dd>
+</dl>
+</section>
+<section id="id2">
+<h2>Returns<a class="headerlink" href="#id2" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>gpd.GeoDataFrame</dt><dd><p>Transformed GeoDataFrame with CRS=’EPSG:3857’</p>
+</dd>
+</dl>
+</section>
+<section id="notes">
+<h2>Notes<a class="headerlink" href="#notes" title="Link to this heading"></a></h2>
+<p>Transformation sequence:
+1. Scale geometries by block_size (blocks → meters)
+2. Translate by false_easting, false_northing (move to Web Mercator position)
+3. Rotate by -rotation_deg (undo rotation around centroid)
+4. Set CRS to EPSG:3857
+5. Optionally drop garden city columns</p>
+<p>This is the GeoDataFrame equivalent of blocks_to_mercator() for DataFrames.</p>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.map_utils.download_osm_buildings">
+<span class="sig-prename descclassname"><span class="pre">nomad.map_utils.</span></span><span class="sig-name descname"><span class="pre">download_osm_buildings</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bbox_or_city</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">crs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'EPSG:4326'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">schema</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'garden_city'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">clip</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">infer_building_types</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">explode</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/map_utils.html#download_osm_buildings"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.map_utils.download_osm_buildings" title="Link to this definition"></a></dt>
+<dd><p>Download buildings + parks from OSM and categorize them.</p>
+<p>Parameters
+- bbox_or_city: bbox tuple, city name, or shapely polygon
+- crs: output CRS
+- schema: category schema name
+- clip: retained for API parity (bbox path uses Overpass bbox)
+- infer_building_types: heuristics for building=”yes”
+- explode: explode MultiPolygons into Polygons</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.map_utils.download_osm_streets">
+<span class="sig-prename descclassname"><span class="pre">nomad.map_utils.</span></span><span class="sig-name descname"><span class="pre">download_osm_streets</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bbox_or_city</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">crs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'EPSG:4326'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">clip</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">clip_to_gdf</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">explode</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">graphml_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/map_utils.html#download_osm_streets"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.map_utils.download_osm_streets" title="Link to this definition"></a></dt>
+<dd><p>Download filtered street network from OSM and return edges as GeoDataFrame.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.map_utils.get_category_for_subtype">
+<span class="sig-prename descclassname"><span class="pre">nomad.map_utils.</span></span><span class="sig-name descname"><span class="pre">get_category_for_subtype</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">subtype</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">schema</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'garden_city'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/map_utils.html#get_category_for_subtype"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.map_utils.get_category_for_subtype" title="Link to this definition"></a></dt>
+<dd><p>Return the category name for a subtype in the given schema.</p>
+<p>If the subtype is not present, returns ‘unknown’ for ‘geolife_plus’ or
+‘other’ for all other schemas.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.map_utils.get_category_summary">
+<span class="sig-prename descclassname"><span class="pre">nomad.map_utils.</span></span><span class="sig-name descname"><span class="pre">get_category_summary</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">gdf</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/map_utils.html#get_category_summary"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.map_utils.get_category_summary" title="Link to this definition"></a></dt>
+<dd><p>Return a dict of building_type counts.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.map_utils.get_city_boundary_osm">
+<span class="sig-prename descclassname"><span class="pre">nomad.map_utils.</span></span><span class="sig-name descname"><span class="pre">get_city_boundary_osm</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">simplify</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">crs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'EPSG:4326'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/map_utils.html#get_city_boundary_osm"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.map_utils.get_city_boundary_osm" title="Link to this definition"></a></dt>
+<dd><p>Fetch a city’s boundary from OSM.</p>
+<p>Returns a tuple of (boundary_multipolygon, center_coordinates, population).
+If a boundary cannot be retrieved, returns (None, None, None).</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.map_utils.get_subtype_summary">
+<span class="sig-prename descclassname"><span class="pre">nomad.map_utils.</span></span><span class="sig-name descname"><span class="pre">get_subtype_summary</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">gdf</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/map_utils.html#get_subtype_summary"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.map_utils.get_subtype_summary" title="Link to this definition"></a></dt>
+<dd><p>Return a dict of subtype counts.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.map_utils.load_geodata">
+<span class="sig-prename descclassname"><span class="pre">nomad.map_utils.</span></span><span class="sig-name descname"><span class="pre">load_geodata</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">layer</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">GeoDataFrame</span></span></span><a class="reference internal" href="../_modules/nomad/map_utils.html#load_geodata"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.map_utils.load_geodata" title="Link to this definition"></a></dt>
+<dd><p>Load a GeoDataFrame from disk based on file extension.</p>
+<p>Supports .geojson/.json, .parquet/.geoparquet, .shp, .gpkg</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.map_utils.mercator_to_blocks">
+<span class="sig-prename descclassname"><span class="pre">nomad.map_utils.</span></span><span class="sig-name descname"><span class="pre">mercator_to_blocks</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">block_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">15.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">false_easting</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">-4265699.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">false_northing</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">4392976.0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/map_utils.html#mercator_to_blocks"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.map_utils.mercator_to_blocks" title="Link to this definition"></a></dt>
+<dd><p>Convert Web Mercator coordinates back to city block coordinates.</p>
+<p>This function applies the inverse affine transformation to convert Web Mercator
+projection coordinates (EPSG:3857) in meters back to abstract city block
+coordinates. The transformation is: x_block = (x_mercator - false_easting) / block_size</p>
+<section id="id3">
+<h2>Parameters<a class="headerlink" href="#id3" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>data<span class="classifier">pd.DataFrame</span></dt><dd><p>DataFrame with ‘x’, ‘y’ columns in Web Mercator coordinates</p>
+</dd>
+<dt>block_size<span class="classifier">float, default 15.0</span></dt><dd><p>Size of one city block in meters</p>
+</dd>
+<dt>false_easting<span class="classifier">float, default -4265699.0</span></dt><dd><p>False easting offset (x-origin) in Web Mercator meters</p>
+</dd>
+<dt>false_northing<span class="classifier">float, default 4392976.0</span></dt><dd><p>False northing offset (y-origin) in Web Mercator meters</p>
+</dd>
+</dl>
+</section>
+<section id="id4">
+<h2>Returns<a class="headerlink" href="#id4" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>pd.DataFrame</dt><dd><p>DataFrame with ‘x’, ‘y’ columns updated to city block coordinates.
+If ‘ha’ column exists, it is also scaled back by dividing by block_size.</p>
+</dd>
+</dl>
+</section>
+<section id="id5">
+<h2>Examples<a class="headerlink" href="#id5" title="Link to this heading"></a></h2>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s1">&#39;x&#39;</span><span class="p">:</span> <span class="p">[</span><span class="o">-</span><span class="mf">4265699.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">4265684.0</span><span class="p">],</span> <span class="s1">&#39;y&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">4392976.0</span><span class="p">,</span> <span class="mf">4392991.0</span><span class="p">]})</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">result</span> <span class="o">=</span> <span class="n">mercator_to_blocks</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">block_size</span><span class="o">=</span><span class="mi">15</span><span class="p">,</span> <span class="n">false_easting</span><span class="o">=-</span><span class="mi">4265699</span><span class="p">,</span> <span class="n">false_northing</span><span class="o">=</span><span class="mi">4392976</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">result</span><span class="p">[</span><span class="s1">&#39;x&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+<span class="go">[0.0, 1.0]</span>
+</pre></div>
+</div>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.map_utils.mercator_to_blocks_gdf">
+<span class="sig-prename descclassname"><span class="pre">nomad.map_utils.</span></span><span class="sig-name descname"><span class="pre">mercator_to_blocks_gdf</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">gdf</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">block_size</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">false_easting</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">false_northing</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rotation_deg</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/map_utils.html#mercator_to_blocks_gdf"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.map_utils.mercator_to_blocks_gdf" title="Link to this definition"></a></dt>
+<dd><p>Transform GeoDataFrame from Web Mercator meters to garden city block units.</p>
+<section id="id6">
+<h2>Parameters<a class="headerlink" href="#id6" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>gdf<span class="classifier">gpd.GeoDataFrame</span></dt><dd><p>Input with geometries in Web Mercator (EPSG:3857)</p>
+</dd>
+<dt>block_size<span class="classifier">float</span></dt><dd><p>Block side length in meters</p>
+</dd>
+<dt>false_easting<span class="classifier">float</span></dt><dd><p>Web Mercator origin x in meters</p>
+</dd>
+<dt>false_northing<span class="classifier">float</span></dt><dd><p>Web Mercator origin y in meters</p>
+</dd>
+<dt>rotation_deg<span class="classifier">float, default 0.0</span></dt><dd><p>Rotation to apply (degrees counterclockwise)</p>
+</dd>
+</dl>
+</section>
+<section id="id7">
+<h2>Returns<a class="headerlink" href="#id7" title="Link to this heading"></a></h2>
+<dl class="simple">
+<dt>gpd.GeoDataFrame</dt><dd><p>Transformed GeoDataFrame with CRS=None (garden city units)</p>
+</dd>
+</dl>
+</section>
+<section id="id8">
+<h2>Notes<a class="headerlink" href="#id8" title="Link to this heading"></a></h2>
+<p>Transformation sequence (inverse of blocks_to_mercator_gdf):
+1. Rotate by rotation_deg around centroid
+2. Translate by -false_easting, -false_northing (move from Web Mercator position)
+3. Scale geometries by 1/block_size (meters → blocks)
+4. Set CRS to None (abstract units)</p>
+<p>This is the GeoDataFrame equivalent of mercator_to_blocks() for DataFrames.</p>
+</section>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.map_utils.remove_overlaps">
+<span class="sig-prename descclassname"><span class="pre">nomad.map_utils.</span></span><span class="sig-name descname"><span class="pre">remove_overlaps</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">gdf</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exclude_categories</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/map_utils.html#remove_overlaps"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.map_utils.remove_overlaps" title="Link to this definition"></a></dt>
+<dd><p>Remove polygons fully contained within others, keeping one of any identical shapes.</p>
+<p>If exclude_categories is provided and a ‘category’ column exists, rows in
+those categories are not considered for removal. Uses spatial indexing for
+efficiency.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.map_utils.rotate">
+<span class="sig-prename descclassname"><span class="pre">nomad.map_utils.</span></span><span class="sig-name descname"><span class="pre">rotate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">gdf</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rotation_deg</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">origin</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'centroid'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/map_utils.html#rotate"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.map_utils.rotate" title="Link to this definition"></a></dt>
+<dd><p>Rotate all geometries around a single origin.</p>
+<p>Parameters
+- gdf: input GeoDataFrame
+- rotation_deg: degrees counterclockwise
+- origin: ‘centroid’ or a tuple of (x, y)</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.map_utils.rotate_streets_to_align">
+<span class="sig-prename descclassname"><span class="pre">nomad.map_utils.</span></span><span class="sig-name descname"><span class="pre">rotate_streets_to_align</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">streets_gdf</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">k</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">200</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/map_utils.html#rotate_streets_to_align"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.map_utils.rotate_streets_to_align" title="Link to this definition"></a></dt>
+<dd><p>Estimate grid alignment from street bearings and rotate the network.</p>
+<p>Returns a tuple of (rotated_streets_gdf, rotation_degrees).</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.map_utils.save_geodata">
+<span class="sig-prename descclassname"><span class="pre">nomad.map_utils.</span></span><span class="sig-name descname"><span class="pre">save_geodata</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">gdf</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">GeoDataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">layer</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/map_utils.html#save_geodata"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.map_utils.save_geodata" title="Link to this definition"></a></dt>
+<dd><p>Persist a GeoDataFrame to disk based on file extension.</p>
+<p>Supported formats:
+- .geojson/.json -&gt; GeoJSON
+- .parquet/.geoparquet -&gt; GeoParquet
+- .shp -&gt; ESRI Shapefile (multiple files created alongside)
+- .gpkg -&gt; GeoPackage (layer optional, defaults to ‘data’)</p>
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, CSSLab.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

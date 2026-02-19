@@ -14,10 +14,6 @@
 # Exclude pycache
 __pycache__/
 
-# Exclude Sphinx build artifacts
-docs/_build/*
-docs/_build/
-
 # Exclude images from research folder only
 examples/research/**/*.png
 

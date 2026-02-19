@@ -1,0 +1,279 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>&lt;no title&gt; &mdash; NOMAD 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
+      <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
+
+  
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../_static/doctools.js?v=9a2dae69"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../_static/design-tabs.js?v=f930bc37"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+      <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="prev" title="Synthetic Trajectory Generation with Nomad" href="generate_synthetic_trajectories.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html">
+            
+              <img src="../_static/nomad-logo-black.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../data_ingestion.html">Data Ingestion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../filtering.html">Filtering &amp; Completeness</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tessellation.html">Tessellation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../stop_detection.html">Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../visit_attribution.html">Visit Attribution</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../metrics.html">Mobility Metrics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../colocation.html">Co-location &amp; Contact Networks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../aggregation.html">Aggregation &amp; Debiasing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../synthetic_data_generation.html">Synthetic Data Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="ingesting-data.html">Loading Trajectory Data</a></li>
+<li class="toctree-l1"><a class="reference internal" href="benchmarking_of_stop_detection_algorithms.html">Comparing runtimes of different stop detection algorithms on toy datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="lachesis_demo.html">Lachesis Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tadbscan_demo.html">TADBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="hdbscan_demo.html">HDBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="grid_based_demo.html">Grid-Based Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="download_poi_data_from_OSM.html">Downloading places of interest (POI) Data from OSM</a></li>
+<li class="toctree-l1"><a class="reference internal" href="generate_synthetic_trajectories.html">Synthetic Trajectory Generation with Nomad</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">NOMAD</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">&lt;no title&gt;</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/source/random_city.ipynb.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <p>Install the <code class="docutils literal notranslate"><span class="pre">nomad</span></code> package from GitHub</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="o">%</span><span class="k">load_ext</span> autoreload
+<span class="o">%</span><span class="k">autoreload</span> 2
+</pre></div>
+</div>
+</div>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timedelta</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy.random</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">npr</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">shapely.geometry</span><span class="w"> </span><span class="kn">import</span> <span class="n">box</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pprint</span><span class="w"> </span><span class="kn">import</span> <span class="n">pprint</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">nomad.city_gen</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">cg</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">nomad.city_gen</span><span class="w"> </span><span class="kn">import</span> <span class="n">City</span><span class="p">,</span> <span class="n">Street</span><span class="p">,</span> <span class="n">RandomCityGenerator</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">nomad.traj_gen</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">tg</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">nomad.traj_gen</span><span class="w"> </span><span class="kn">import</span> <span class="n">Agent</span><span class="p">,</span> <span class="n">Population</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">nomad.stop_detection</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">sd</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">nomad.constants</span><span class="w"> </span><span class="kn">import</span> <span class="n">DEFAULT_SPEEDS</span><span class="p">,</span> <span class="n">FAST_SPEEDS</span><span class="p">,</span> <span class="n">SLOW_SPEEDS</span><span class="p">,</span> <span class="n">DEFAULT_STILL_PROBS</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">nomad.constants</span><span class="w"> </span><span class="kn">import</span> <span class="n">FAST_STILL_PROBS</span><span class="p">,</span> <span class="n">SLOW_STILL_PROBS</span><span class="p">,</span> <span class="n">ALLOWED_BUILDINGS</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+</pre></div>
+</div>
+</div>
+<p>Create City</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">city_generator</span> <span class="o">=</span> <span class="n">RandomCityGenerator</span><span class="p">(</span><span class="n">width</span><span class="o">=</span><span class="mi">101</span><span class="p">,</span>
+                                     <span class="n">height</span><span class="o">=</span><span class="mi">101</span><span class="p">,</span>
+                                     <span class="n">street_spacing</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
+                                     <span class="n">park_ratio</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span>
+                                     <span class="n">home_ratio</span><span class="o">=</span><span class="mf">0.4</span><span class="p">,</span>
+                                     <span class="n">work_ratio</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span>
+                                     <span class="n">retail_ratio</span><span class="o">=</span><span class="mf">0.25</span><span class="p">,</span>
+                                     <span class="n">seed</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
+<span class="n">clustered_city</span> <span class="o">=</span> <span class="n">city_generator</span><span class="o">.</span><span class="n">generate_city</span><span class="p">()</span>
+<span class="n">clustered_city</span><span class="o">.</span><span class="n">compute_gravity</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+C:\Users\pacob\Desktop\Brain\Code Development\nomad\nomad\city_gen.py:694: UserWarning: Hub network not available. Initializing with 6 hubs.
+  warnings.warn(f&#34;Hub network not available. Initializing with {hub_size} hubs.&#34;)
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="o">%</span><span class="k">matplotlib</span> inline
+
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">10</span><span class="p">))</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">box</span><span class="p">(</span><span class="n">on</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+<span class="n">clustered_city</span><span class="o">.</span><span class="n">plot_city</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">doors</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">address</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+<span class="c1"># remove axis labels and ticks</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_yticklabels</span><span class="p">([])</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_xticklabels</span><span class="p">([])</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_xticks</span><span class="p">([])</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_yticks</span><span class="p">([])</span>
+
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s2">&quot;random-city.png&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/source_random_city_5_0.png" src="../_images/source_random_city_5_0.png" />
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+&lt;Figure size 640x480 with 0 Axes&gt;
+</pre></div></div>
+</div>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">population</span> <span class="o">=</span> <span class="n">Population</span><span class="p">(</span><span class="n">clustered_city</span><span class="p">)</span>
+<span class="n">population</span><span class="o">.</span><span class="n">generate_agents</span><span class="p">(</span><span class="n">N</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">datetimes</span><span class="o">=</span><span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">(</span><span class="s2">&quot;2025-01-01 00:00&quot;</span><span class="p">,</span> <span class="n">tz</span><span class="o">=</span><span class="s2">&quot;America/New_York&quot;</span><span class="p">))</span>
+
+<span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">agent_id</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">population</span><span class="o">.</span><span class="n">roster</span><span class="p">):</span>
+    <span class="n">agent</span> <span class="o">=</span> <span class="n">population</span><span class="o">.</span><span class="n">roster</span><span class="p">[</span><span class="n">agent_id</span><span class="p">]</span>
+    <span class="n">agent</span><span class="o">.</span><span class="n">generate_trajectory</span><span class="p">(</span><span class="n">end_time</span><span class="o">=</span><span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">(</span><span class="s2">&quot;2025-01-02 00:59&quot;</span><span class="p">,</span> <span class="n">tz</span><span class="o">=</span><span class="s2">&quot;America/New_York&quot;</span><span class="p">),</span>
+                              <span class="n">seed</span><span class="o">=</span><span class="mi">100</span><span class="o">+</span><span class="n">i</span><span class="p">)</span>
+    <span class="n">agent</span><span class="o">.</span><span class="n">sample_trajectory</span><span class="p">(</span>
+        <span class="n">beta_start</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span>
+        <span class="n">beta_durations</span><span class="o">=</span><span class="mi">60</span><span class="p">,</span>
+        <span class="n">beta_ping</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span>
+        <span class="n">seed</span><span class="o">=</span><span class="mi">100</span><span class="o">+</span><span class="n">i</span><span class="p">)</span>
+    <span class="n">sampled_traj</span> <span class="o">=</span> <span class="n">agent</span><span class="o">.</span><span class="n">sparse_traj</span>
+</pre></div>
+</div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Visualization</span>
+<span class="n">sample_user</span> <span class="o">=</span> <span class="n">population</span><span class="o">.</span><span class="n">roster</span><span class="p">[</span><span class="s1">&#39;nifty_saha&#39;</span><span class="p">]</span>
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">10</span><span class="p">))</span>
+<span class="n">clustered_city</span><span class="o">.</span><span class="n">plot_city</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">doors</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">address</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">zorder</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+<span class="n">ax</span><span class="o">.</span><span class="n">set_yticklabels</span><span class="p">([])</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_xticklabels</span><span class="p">([])</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_xticks</span><span class="p">([])</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_yticks</span><span class="p">([])</span>
+
+<span class="n">ax</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="n">sample_user</span><span class="o">.</span><span class="n">trajectory</span><span class="o">.</span><span class="n">x</span><span class="p">,</span>
+           <span class="n">y</span><span class="o">=</span><span class="n">sample_user</span><span class="o">.</span><span class="n">trajectory</span><span class="o">.</span><span class="n">y</span><span class="p">,</span>
+           <span class="n">s</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;red&#39;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span>
+
+<span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s2">&quot;random-city-one-user.png&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/source_random_city_7_0.png" src="../_images/source_random_city_7_0.png" />
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="generate_synthetic_trajectories.html" class="btn btn-neutral float-left" title="Synthetic Trajectory Generation with Nomad" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, CSSLab.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

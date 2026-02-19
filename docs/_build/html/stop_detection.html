@@ -1,0 +1,256 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stop Detection &mdash; NOMAD 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="_static/doctools.js?v=9a2dae69"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="_static/design-tabs.js?v=f930bc37"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Visit Attribution" href="visit_attribution.html" />
+    <link rel="prev" title="Tessellation" href="tessellation.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html">
+            
+              <img src="_static/nomad-logo-black.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="data_ingestion.html">Data Ingestion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="filtering.html">Filtering &amp; Completeness</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tessellation.html">Tessellation</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Stop Detection</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#overview-of-stop-detection-methods">Overview of stop-detection methods</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#dbscan">DBSCAN</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#hdbscan">HDBSCAN</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#grid-based">Grid-based</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#lachesis">Lachesis</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="visit_attribution.html">Visit Attribution</a></li>
+<li class="toctree-l1"><a class="reference internal" href="metrics.html">Mobility Metrics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="colocation.html">Co-location &amp; Contact Networks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="aggregation.html">Aggregation &amp; Debiasing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="synthetic_data_generation.html">Synthetic Data Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="source/ingesting-data.html">Loading Trajectory Data</a></li>
+<li class="toctree-l1"><a class="reference internal" href="source/benchmarking_of_stop_detection_algorithms.html">Comparing runtimes of different stop detection algorithms on toy datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="source/lachesis_demo.html">Lachesis Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="source/tadbscan_demo.html">TADBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="source/hdbscan_demo.html">HDBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="source/grid_based_demo.html">Grid-Based Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="source/download_poi_data_from_OSM.html">Downloading places of interest (POI) Data from OSM</a></li>
+<li class="toctree-l1"><a class="reference internal" href="source/generate_synthetic_trajectories.html">Synthetic Trajectory Generation with Nomad</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">NOMAD</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Stop Detection</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/stop_detection.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="stop-detection">
+<span id="id1"></span><h1>Stop Detection<a class="headerlink" href="#stop-detection" title="Link to this heading"></a></h1>
+<p>Stop detection is the process of identifying stationary periods in GPS mobility
+trajectories. It distinguishes between <strong>stops</strong> (meaningful stationary locations)
+and <strong>trips</strong> (movement between stops), which is fundamental for understanding
+human mobility patterns.</p>
+<section id="overview-of-stop-detection-methods">
+<h2>Overview of stop-detection methods<a class="headerlink" href="#overview-of-stop-detection-methods" title="Link to this heading"></a></h2>
+<p>A comparison of the stop-detection algorithms in NOMAD is shown below.</p>
+<figure class="align-center" id="id2">
+<a class="reference external image-reference" href="source/benchmarking_of_stop_detection_algorithms.html"><img alt="_images/source_benchmarking_of_stop_detection_algorithms_10_0.png" src="_images/source_benchmarking_of_stop_detection_algorithms_10_0.png" style="width: 80%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Runtime comparison of stop-detection algorithms.</span><a class="headerlink" href="#id2" title="Link to this image"></a></p>
+</figcaption>
+</figure>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 20.0%" />
+<col style="width: 25.0%" />
+<col style="width: 55.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Method name</p></th>
+<th class="head"><p>Parameters</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><a class="reference internal" href="#dbscan-stop"><span class="std std-ref">ta_dbscan</span></a></p></td>
+<td><p>dist_thresh, min_pts, time_thresh</p></td>
+<td><p>Density-based clustering that finds stops as spatial clusters where points are within distance and time thresholds</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#hdbscan-stop"><span class="std std-ref">st_hdbscan</span></a></p></td>
+<td><p>time_thresh, min_pts, min_cluster_size</p></td>
+<td><p>Hierarchical density-based clustering that adapts to varying density levels and automatically selects clusters</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#grid-based-stop"><span class="std std-ref">grid_based</span></a></p></td>
+<td><p>time_thresh, min_cluster_size, dur_min</p></td>
+<td><p>Tessellation-based approach that groups consecutive pings in the same spatial cell for privacy-aware stop detection</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#lachesis-stop"><span class="std std-ref">lachesis</span></a></p></td>
+<td><p>dt_max, delta_roam, dur_min</p></td>
+<td><p>Sequential algorithm that scans trajectories chronologically, identifying stops based on spatial diameter and temporal gaps</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="dbscan">
+<span id="dbscan-stop"></span><h2>DBSCAN<a class="headerlink" href="#dbscan" title="Link to this heading"></a></h2>
+<p>The TA-DBSCAN (Temporal-Augmented DBSCAN) algorithm is an adaptation of DBSCAN. Unlike in plain DBSCAN, we also incorporate the time dimension to determine if two pings are “neighbors”. This implementation relies on 3 parameters:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">time_thresh</span></code> defines the maximum time difference (in minutes) between two consecutive pings for them to be considered neighbors within the same cluster.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">dist_thresh</span></code> specifies the maximum spatial distance (in meters) between two pings for them to be considered neighbors.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">min_pts</span></code> sets the minimum number of neighbors required for a ping to form a cluster.</p></li>
+</ul>
+<p>Notice that this method also works with <strong>geographic coordinates</strong> (lon, lat), using Haversine distance.</p>
+<p><strong>Source:</strong> Ester, M., Kriegel, H. P., Sander, J., &amp; Xu, X. (1996). A density-based algorithm for discovering clusters in large spatial databases with noise. <em>Proceedings of the Second International Conference on Knowledge Discovery and Data Mining (KDD-96)</em>, 226-231.</p>
+<figure class="align-center" id="id3">
+<a class="reference external image-reference" href="source/tadbscan_demo.html"><img alt="_images/source_tadbscan_demo_3_0.png" src="_images/source_tadbscan_demo_3_0.png" style="width: 80%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">TA-DBSCAN stops with post-processing. See the <a class="reference internal" href="source/tadbscan_demo.html"><span class="doc">full example</span></a>.</span><a class="headerlink" href="#id3" title="Link to this image"></a></p>
+</figcaption>
+</figure>
+</section>
+<section id="hdbscan">
+<span id="hdbscan-stop"></span><h2>HDBSCAN<a class="headerlink" href="#hdbscan" title="Link to this heading"></a></h2>
+<p>The HDBSCAN algorithm constructs a hierarchy of non-overlapping clusters from different radius values and selects those that maximize stability.</p>
+<p><strong>Source:</strong> Campello, R. J., Moulavi, D., &amp; Sander, J. (2013). Density-based clustering based on hierarchical density estimates. <em>Pacific-Asia Conference on Knowledge Discovery and Data Mining (PAKDD)</em>, 160-172.</p>
+<figure class="align-center" id="id4">
+<a class="reference external image-reference" href="source/hdbscan_demo.html"><img alt="_images/source_hdbscan_demo_3_0.png" src="_images/source_hdbscan_demo_3_0.png" style="width: 80%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">HDBSCAN stops with post-processing. See the <a class="reference internal" href="source/hdbscan_demo.html"><span class="doc">full example</span></a>.</span><a class="headerlink" href="#id4" title="Link to this image"></a></p>
+</figcaption>
+</figure>
+</section>
+<section id="grid-based">
+<span id="grid-based-stop"></span><h2>Grid-based<a class="headerlink" href="#grid-based" title="Link to this heading"></a></h2>
+<p>The stop detection algorithms implemented in <code class="docutils literal notranslate"><span class="pre">nomad</span></code> support different combinations of input formats that are common in commercial datasets, detecting default names when possible:</p>
+<ul class="simple">
+<li><p>timestamps in <code class="docutils literal notranslate"><span class="pre">datetime64[ns,</span> <span class="pre">tz]</span></code> or as unix seconds in integers</p></li>
+<li><p>geographic coordinates (<code class="docutils literal notranslate"><span class="pre">lon</span></code>, <code class="docutils literal notranslate"><span class="pre">lat</span></code>) which use the Haversine distance or projected coordinates (<code class="docutils literal notranslate"><span class="pre">x</span></code>, <code class="docutils literal notranslate"><span class="pre">y</span></code>) using meters and euclidean distance.</p></li>
+<li><p>Alternatively, if locations are only given through a spatial index like H3 or geohash, there is a <strong>grid_based</strong> clustering algorithm requiring no coordinates.</p></li>
+</ul>
+<p>The algorithms work with the same call, provided there is at least a pair of coordinates (or a location/spatial index) as well as at least a temporal column.</p>
+<p><strong>Source:</strong> NOMAD implementation using spatial tessellation (H3, S2) for trajectory segmentation.</p>
+<figure class="align-center" id="id5">
+<a class="reference external image-reference" href="source/grid_based_demo.html"><img alt="_images/source_grid_based_demo_3_0.png" src="_images/source_grid_based_demo_3_0.png" style="width: 80%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Grid-based stops. See the <a class="reference internal" href="source/grid_based_demo.html"><span class="doc">full example</span></a>.</span><a class="headerlink" href="#id5" title="Link to this image"></a></p>
+</figcaption>
+</figure>
+</section>
+<section id="lachesis">
+<span id="lachesis-stop"></span><h2>Lachesis<a class="headerlink" href="#lachesis" title="Link to this heading"></a></h2>
+<p>The Lachesis algorithm is a sequential algorithm inspired by the one in <em>Project Lachesis: Parsing and Modeling Location Histories</em> (Hariharan &amp; Toyama). This algorithm for extracting stays is dependent on two parameters: the roaming distance and the stay duration.</p>
+<ul class="simple">
+<li><p>Roaming distance represents the maximum distance an object can move away from a point location and still be considered to be staying at that location.</p></li>
+<li><p>Stop duration is the minimum amount of time an object must spend within the roaming distance of a location to qualify as a stop.</p></li>
+</ul>
+<p>The algorithm identifies stops as contiguous sequences of pings that stay within the roaming distance for at least the duration of the stop duration.</p>
+<p>This algorithm has the following parameters, which determine the size of the resulting stops:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">dur_min</span></code>: Minimum duration for a stay in minutes.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">dt_max</span></code>: Maximum time gap permitted between consecutive pings in a stay in minutes (dt_max should be greater than dur_min).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">delta_roam</span></code>: Maximum roaming distance for a stay in meters.</p></li>
+</ul>
+<p><strong>Source:</strong> Hariharan, R., &amp; Toyama, K. (2004). Project Lachesis: Parsing and modeling location histories. <em>International Conference on Geographic Information Science</em>, 106-124.</p>
+<figure class="align-center" id="id6">
+<a class="reference external image-reference" href="source/lachesis_demo.html"><img alt="_images/source_lachesis_demo_3_0.png" src="_images/source_lachesis_demo_3_0.png" style="width: 80%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Lachesis stops. See the <a class="reference internal" href="source/lachesis_demo.html"><span class="doc">full example</span></a>.</span><a class="headerlink" href="#id6" title="Link to this image"></a></p>
+</figcaption>
+</figure>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="tessellation.html" class="btn btn-neutral float-left" title="Tessellation" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="visit_attribution.html" class="btn btn-neutral float-right" title="Visit Attribution" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, CSSLab.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
