@@ -1,3 +1,5 @@
+import pdb
+
 import numpy as np
 import pandas as pd
 import geopandas as gpd
@@ -10,13 +12,13 @@ from nomad.filters import to_timestamp
 def seqscan_labels(
     data,
     dist_thresh,
-    min_dur=5,
+    dur_min=5,
     time_thresh=90,
     min_pts=3,
     user_id=None,
     return_cores=False,
     traj_cols=None,
-    back_merge=True,
+    back_merge=False,
     **kwargs
 ):
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
@@ -69,14 +71,16 @@ def seqscan_labels(
                     # just merge "through" t
                     # if t is core, relabel s and its neighbors (relabeling for merge)
                     if curr_is_core:
-                        cluster_df.loc[core_df==core_df[t]] = core_df[s]
-                        core_df.loc[core_df==core_df[t]] = core_df[s]
+                        relabel_mask = (cluster_df.index >= start_time) & (cluster_df.index <= t) & (core_df == core_df[t])
+                        cluster_df.loc[relabel_mask] = core_df[s]
+                        core_df.loc[relabel_mask] = core_df[s]
                     
                 elif cluster_df[s] >= 0:
                     core_df[s] = cluster_df[s]
                     if curr_is_core:
-                        cluster_df.loc[core_df==core_df[t]] = core_df[s]
-                        core_df.loc[core_df==core_df[t]] = core_df[s]
+                        relabel_mask = (cluster_df.index >= start_time) & (cluster_df.index <= t) & (core_df == core_df[t])
+                        cluster_df.loc[relabel_mask] = core_df[s]
+                        core_df.loc[relabel_mask] = core_df[s]
                     for nb in temp_neighbor_dict[s]:
                         if core_df[nb] >= 0:
                             # TODO: border points might be neighbors of 2 disconnected core points
@@ -90,8 +94,10 @@ def seqscan_labels(
                                     cluster_df[nb] = core_df[s] # (re) assign border point                            
                             # bulk relabel and merge of all affected connected components
                             for lab in nb_labs:
-                                core_df.loc[core_df == lab] = core_df[s]
-                                cluster_df.loc[cluster_df == lab] = core_df[s]
+                                relabel_core = (cluster_df.index >= start_time) & (cluster_df.index <= t) & (core_df == lab)
+                                relabel_cluster = (cluster_df.index >= start_time) & (cluster_df.index <= t) & (cluster_df == lab)
+                                core_df.loc[relabel_core] = core_df[s]
+                                cluster_df.loc[relabel_cluster] = core_df[s]
                 
                 elif cluster_df[s] == -1: # is a new cluster
                     if curr_is_core:
@@ -106,13 +112,12 @@ def seqscan_labels(
                             # there is no case in which nb is core point: otherwise cluster_df[s] would have had a label
                             cluster_df[nb] = core_df[s]
 
-
         window_mask = (cluster_df.index >= start_time) & (cluster_df.index <= t)
         cand = cluster_df.loc[window_mask & (cluster_df >= 0)]
         
         if not cand.empty:
             spans = cand.index.to_series().groupby(cand, sort=False).agg(["first", "last"])
-            eligible = spans[(spans["last"] - spans["first"]) >= (min_dur * 60)]
+            eligible = spans[(spans["last"] - spans["first"]) >= (dur_min * 60)]
         
             if not eligible.empty:
                 c = eligible.index[0]
@@ -156,11 +161,14 @@ def seqscan_labels(
             if curr_is_core and is_reachable:
                 core_df[curr_time] = active_cid
                 end = curr_time
-                if back_merge:
-                    for nb in core_df[core_df == (active_cid - 1)].index:
+                if back_merge & active_cid > 0:
+                    prev_lab = active_cid - 1
+                    for nb in core_df[core_df == prev_lab].index:
                         if curr_time in neighbor_dict[nb]:
-                            cluster_df[cluster_df == (active_cid - 1)] = active_cid
-                            core_df[core_df == (active_cid - 1)] = active_cid
+                            relabel_mask = (cluster_df.index <= curr_time) & (cluster_df == prev_lab)
+                            relabel_core_mask = (core_df.index <= curr_time) & (core_df == prev_lab)
+                            cluster_df.loc[relabel_mask] = active_cid
+                            core_df.loc[relabel_core_mask] = active_cid
                             break
             else:
                 findCluster(end + 1, curr_time)
@@ -174,3 +182,94 @@ def seqscan_labels(
     else:
         labels = output.cluster
         return labels.set_axis(data.index)
+    
+def seqscan(
+    data,
+    dist_thresh,
+    min_pts,
+    time_thresh,
+    dur_min=5,
+    complete_output=False,
+    passthrough_cols=[],
+    keep_col_names=True,
+    traj_cols=None,
+    **kwargs
+):
+    """
+    Temporal-augmented DBSCAN stop detection with summarization.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Input trajectory with spatial and temporal columns.
+    time_thresh : int
+        Max time gap (minutes) for neighbors.
+    dist_thresh : float
+        Max spatial distance for neighbors.
+    min_pts : int
+        Minimum number of neighbors for a core point.
+    dur_min : int, optional
+        Minimum duration (minutes) for a stop (default: 5).
+    complete_output : bool, optional
+        Include extra stats if True (default: False).
+    passthrough_cols : list, optional
+        Columns to retain per stop.
+    traj_cols : dict, optional
+        Mapping for column names.
+    **kwargs
+        Passed to internal helpers.
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per stop with medoid/centroid, duration, and optionally extra columns.
+
+    Raises
+    ------
+    ValueError if multi-user data detected; use ta_dbscan_per_user instead.
+    """
+    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    if 'user_id' in traj_cols_temp and traj_cols_temp['user_id'] in data.columns:
+        uid_col = data[traj_cols_temp['user_id']]
+        arr = uid_col.values
+        first = arr[0]
+        if any(x != first for x in arr[1:]):
+            raise ValueError("Multi-user data? Use ta_dbscan_per_user instead.")
+        passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
+
+    labels = seqscan_labels(
+        data=data,
+        dist_thresh=dist_thresh,
+        min_pts=min_pts,
+        time_thresh=time_thresh,
+        dur_min=dur_min,
+        return_cores=False,
+        traj_cols=traj_cols,
+        **kwargs
+    )
+    merged = data.join(labels)
+    
+    # Filter out noise points after overlap removal
+    merged = merged[merged.cluster != -1]
+
+    if merged.empty:
+        # Get column names by calling summarize function on dummy data
+        cols = utils._get_empty_stop_columns(
+            data.columns, complete_output, passthrough_cols, traj_cols, 
+            keep_col_names=keep_col_names, is_grid_based=False, **kwargs
+        )
+        return pd.DataFrame(columns=cols, dtype=object)
+
+    stop_table = merged.groupby('cluster', as_index=False, sort=False).apply(
+        lambda grp: utils.summarize_stop(
+            grp,
+            complete_output=complete_output,
+            traj_cols=traj_cols,
+            keep_col_names=keep_col_names,
+            passthrough_cols=passthrough_cols,
+            **kwargs
+        ),
+        include_groups=False
+    )
+    return stop_table
+
