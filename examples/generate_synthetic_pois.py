@@ -8,9 +8,9 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.17.3
 #   kernelspec:
-#     display_name: Python (nomad repo venv)
+#     display_name: Python 3 (ipykernel)
 #     language: python
-#     name: nomad-repo-venv
+#     name: python3
 # ---
 
 # %%
@@ -149,12 +149,3 @@ plt.box(on=False)
 city.plot_city(ax, doors=True, address=False)
 plt.show(block=False)
 plt.close(fig)
-
-# %% [markdown]
-# ## Plotting a shortest path
-
-# %%
-# Use the new get_shortest_path method for simplicity
-start_coord = (15, 21)
-end_coord = (9, 6)
-path = city.get_shortest_path(start_coord, end_coord, plot=True)

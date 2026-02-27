@@ -54,6 +54,7 @@ def sample_bursts_gaps(traj,
                      beta_durations=None,
                      beta_ping=5,
                      ha=3/4,
+                     pareto_prior=True,
                      seed=None,
                      output_bursts=False,
                      deduplicate=True):
@@ -121,7 +122,7 @@ def sample_bursts_gaps(traj,
     # Step 3: add horizontal noise
     rng = npr.default_rng(seed)
     n = len(sampled_traj)
-    ha_realized, noise = _sample_horizontal_noise(n, ha=ha, rng=rng)
+    ha_realized, noise = _sample_horizontal_noise(n, ha=ha, rng=rng, pareto_prior=pareto_prior)
     sampled_traj['ha'] = ha_realized
     sampled_traj[['x', 'y']] += noise
 
@@ -360,8 +361,12 @@ class Agent:
         start_point_arr = np.asarray(start_point, dtype=float)
         
         # Check if agent is in building using integer truncation
-        in_current_dest = _point_in_blocks(start_point_arr, self._current_dest_building_row.get('blocks_set'))
-        in_previous_dest = _point_in_blocks(start_point_arr, self._previous_dest_building_row.get('blocks_set')) if self._previous_dest_building_row is not None else False
+        in_current_dest = False
+        if self._current_dest_building_row is not None:
+            in_current_dest = _point_in_blocks(start_point_arr, self._current_dest_building_row['blocks_set'])
+        in_previous_dest = False
+        if self._previous_dest_building_row is not None:
+            in_previous_dest = _point_in_blocks(start_point_arr, self._previous_dest_building_row['blocks_set'])
 
         # If already at destination building area, stay-within-building dynamics
         if in_current_dest:
@@ -379,7 +384,7 @@ class Agent:
                 # Draw until coord falls inside building
                 while True:
                     coord = rng.normal(loc=start_point_arr, scale=sigma*np.sqrt(dt), size=2)
-                    if _point_in_blocks(coord, brow.get('blocks_set')):
+                    if _point_in_blocks(coord, brow['blocks_set']):
                         break
 
             return coord, location
@@ -426,7 +431,7 @@ class Agent:
             
             # Build bound_poly_blocks_set from components
             if in_previous_dest and self._previous_dest_building_row is not None:
-                start_blocks = self._previous_dest_building_row.get('blocks_set', set())
+                start_blocks = self._previous_dest_building_row['blocks_set']
             else:
                 start_blocks = {start_block}
             bound_poly_blocks_set = start_blocks | set(street_path)
@@ -482,9 +487,9 @@ class Agent:
         start_block = tuple(np.floor(start_point).astype(int))
         start_info = city.get_block(start_block)
 
-        if start_info['building_type'] is not None and start_info['building_type'] != 'street' and start_info['building_id'] is not None:
+        if start_info['building_id'] is not None:
             building_dict = city.buildings_gdf.loc[start_info['building_id']].to_dict()
-            building_dict['blocks_set'] = set(building_dict.get('blocks', []))
+            building_dict['blocks_set'] = set(building_dict['blocks'])
             self._previous_dest_building_row = building_dict
         else:
             self._previous_dest_building_row = None
@@ -492,7 +497,7 @@ class Agent:
         # Initialize current destination building to first entry
         first_building_id = destination_diary.iloc[0]['location']
         building_dict = city.buildings_gdf.loc[first_building_id].to_dict()
-        building_dict['blocks_set'] = set(building_dict.get('blocks', []))
+        building_dict['blocks_set'] = set(building_dict['blocks'])
         self._current_dest_building_row = building_dict
         entry_update = []
         for i in range(destination_diary.shape[0]):
@@ -659,7 +664,7 @@ class Agent:
 
         if self.destination_diary.empty:
             start_time_local = self.last_ping['datetime']
-            start_time = int(self.last_ping['timestamp'])
+            start_time = self.last_ping['timestamp']
             curr_info = self.city.get_block((int(np.floor(self.last_ping['x'])), int(np.floor(self.last_ping['y']))))
             curr = curr_info['building_id'] if curr_info['building_type'] is not None and curr_info['building_type'] != 'street' and curr_info['building_id'] is not None else self.home
         else:
@@ -673,9 +678,9 @@ class Agent:
                 start_time = to_timestamp(last_entry.datetime) + int(last_entry.duration*60)
             curr = last_entry.location
 
-        # Check if start_time is already past end_time
-        if start_time >= end_time:
-            warnings.warn(
+        # Check if start_time exceeds end_time
+        if start_time > end_time:
+            raise ValueError(
                 f"Agent {self.identifier}: last_ping timestamp ({start_time}) is at or beyond end_time ({end_time}). "
                 "No destinations will be generated. Consider providing an earlier last_ping or later end_time."
             )
@@ -861,6 +866,7 @@ class Agent:
                           beta_ping=5,
                           seed=0,
                           ha=3/4,
+                          pareto_prior=True,
                           dt=None,
                           output_bursts=False,
                           deduplicate=True,
@@ -901,6 +907,7 @@ class Agent:
             beta_durations, 
             beta_ping, 
             ha=ha,
+            pareto_prior=pareto_prior,
             seed=seed, 
             output_bursts=output_bursts,
             deduplicate=deduplicate
@@ -1089,8 +1096,10 @@ def thin_traj_by_times(traj,
 
 
 def _sample_horizontal_noise(n,
-                             *,
+                             pareto_prior=True,
                              ha=3/4,
+                             lower_bound=8/15,
+                             upper_bound=20,
                              rng=None):
     """Sample per-ping horizontal accuracy and Gaussian noise (internal)."""
     if ha is None or ha==0:
@@ -1098,15 +1107,20 @@ def _sample_horizontal_noise(n,
 
     if rng is None:
         rng = npr.default_rng()
-    x_m = 8/15
-    if ha <= x_m:
-        raise ValueError("ha must exceed 8 m / 15 m ≈ 0.533 blocks")
-    alpha = ha / (ha - x_m)
-    ha_realized = (rng.pareto(alpha, size=n) + 1) * x_m
-    ha_realized = np.minimum(ha_realized, 20, out=ha_realized)
+
+    if pareto_prior:
+        #for heavy tailed noise
+        if ha <= lower_bound:
+            raise ValueError(f"mean ha must exceed {lower_bound} blocks")
+        alpha = ha / (ha - lower_bound)
+        ha_realized = (rng.pareto(alpha, size=n) + 1) * lower_bound
+        ha_realized = np.minimum(ha_realized, upper_bound/2, out=ha_realized)
+    else:
+        ha_realized= np.array([ha]*n)
+        
     sigma = ha_realized / 1.515
     noise = rng.standard_normal((n, 2)) * sigma[:, None]
-    np.clip(noise, -250, 250, out=noise)
+    np.clip(noise, -upper_bound, upper_bound, out=noise) #300m
     return ha_realized, noise
 
 
@@ -1507,13 +1521,9 @@ def _choose_destination(visit_freqs, x, rng):
     else:
         return rng.choice(visit_freqs.index)
 
-
 def allowed_buildings(local_ts):
     """
     Finds allowed buildings for the timestamp
     """
     hour = local_ts.hour
     return ALLOWED_BUILDINGS[hour]
-
-
-## moved into Agent as _initialize_visits_unif

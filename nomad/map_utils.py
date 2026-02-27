@@ -939,8 +939,7 @@ def mercator_to_blocks(data, block_size=15.0, false_easting=-4265699.0, false_no
 
 
 def blocks_to_mercator_gdf(gdf, block_size, false_easting, false_northing, 
-                           offset_x=0, offset_y=0, rotation_deg=0.0, 
-                           drop_garden_cols=True):
+                           rotation_deg=0.0, drop_garden_cols=True):
     """
     Transform GeoDataFrame from garden city block units to Web Mercator meters.
     
@@ -951,13 +950,9 @@ def blocks_to_mercator_gdf(gdf, block_size, false_easting, false_northing,
     block_size : float
         Block side length in meters
     false_easting : float
-        Web Mercator origin x
+        Web Mercator origin x in meters
     false_northing : float
-        Web Mercator origin y
-    offset_x : int, default 0
-        Grid offset in block units along x-axis
-    offset_y : int, default 0
-        Grid offset in block units along y-axis
+        Web Mercator origin y in meters
     rotation_deg : float, default 0.0
         Rotation applied to input (will be undone by rotating -rotation_deg)
     drop_garden_cols : bool, default True
@@ -971,12 +966,15 @@ def blocks_to_mercator_gdf(gdf, block_size, false_easting, false_northing,
     Notes
     -----
     Transformation sequence:
-    1. Scale geometries by block_size
-    2. Translate by offset * block_size
+    1. Scale geometries by block_size (blocks → meters)
+    2. Translate by false_easting, false_northing (move to Web Mercator position)
     3. Rotate by -rotation_deg (undo rotation around centroid)
     4. Set CRS to EPSG:3857
     5. Optionally drop garden city columns
+    
+    This is the GeoDataFrame equivalent of blocks_to_mercator() for DataFrames.
     """
+    from shapely.affinity import scale, rotate as shapely_rotate
     
     result = gdf.copy()
     
@@ -990,10 +988,10 @@ def blocks_to_mercator_gdf(gdf, block_size, false_easting, false_northing,
         lambda g: scale(g, xfact=block_size, yfact=block_size, origin=(0, 0))
     )
     
-    # Translate by offset
+    # Translate to Web Mercator position
     result['geometry'] = result['geometry'].translate(
-        xoff=offset_x * block_size,
-        yoff=offset_y * block_size
+        xoff=false_easting,
+        yoff=false_northing
     )
     
     # Undo rotation (rotate by negative angle around centroid)
@@ -1009,7 +1007,7 @@ def blocks_to_mercator_gdf(gdf, block_size, false_easting, false_northing,
 
 
 def mercator_to_blocks_gdf(gdf, block_size, false_easting, false_northing,
-                           offset_x=0, offset_y=0, rotation_deg=0.0):
+                           rotation_deg=0.0):
     """
     Transform GeoDataFrame from Web Mercator meters to garden city block units.
     
@@ -1020,13 +1018,9 @@ def mercator_to_blocks_gdf(gdf, block_size, false_easting, false_northing,
     block_size : float
         Block side length in meters
     false_easting : float
-        Web Mercator origin x
+        Web Mercator origin x in meters
     false_northing : float
-        Web Mercator origin y
-    offset_x : int, default 0
-        Grid offset in block units along x-axis
-    offset_y : int, default 0
-        Grid offset in block units along y-axis
+        Web Mercator origin y in meters
     rotation_deg : float, default 0.0
         Rotation to apply (degrees counterclockwise)
     
@@ -1039,9 +1033,11 @@ def mercator_to_blocks_gdf(gdf, block_size, false_easting, false_northing,
     -----
     Transformation sequence (inverse of blocks_to_mercator_gdf):
     1. Rotate by rotation_deg around centroid
-    2. Translate by -offset * block_size
-    3. Scale geometries by 1/block_size
+    2. Translate by -false_easting, -false_northing (move from Web Mercator position)
+    3. Scale geometries by 1/block_size (meters → blocks)
     4. Set CRS to None (abstract units)
+    
+    This is the GeoDataFrame equivalent of mercator_to_blocks() for DataFrames.
     """
     from shapely.affinity import scale, rotate as shapely_rotate
     
@@ -1055,10 +1051,10 @@ def mercator_to_blocks_gdf(gdf, block_size, false_easting, false_northing,
             lambda g: shapely_rotate(g, rotation_deg, origin=(origin_point.x, origin_point.y))
         )
     
-    # Translate by negative offset
+    # Translate from Web Mercator position
     result['geometry'] = result['geometry'].translate(
-        xoff=-offset_x * block_size,
-        yoff=-offset_y * block_size
+        xoff=-false_easting,
+        yoff=-false_northing
     )
     
     # Scale from meters to garden city units
