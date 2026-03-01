@@ -54,6 +54,7 @@ def sample_bursts_gaps(traj,
                      beta_durations=None,
                      beta_ping=5,
                      ha=3/4,
+                     pareto_prior=True,
                      seed=None,
                      output_bursts=False,
                      deduplicate=True):
@@ -121,7 +122,7 @@ def sample_bursts_gaps(traj,
     # Step 3: add horizontal noise
     rng = npr.default_rng(seed)
     n = len(sampled_traj)
-    ha_realized, noise = _sample_horizontal_noise(n, ha=ha, rng=rng)
+    ha_realized, noise = _sample_horizontal_noise(n, ha=ha, rng=rng, pareto_prior=pareto_prior)
     sampled_traj['ha'] = ha_realized
     sampled_traj[['x', 'y']] += noise
 
@@ -865,6 +866,7 @@ class Agent:
                           beta_ping=5,
                           seed=0,
                           ha=3/4,
+                          pareto_prior=True,
                           dt=None,
                           output_bursts=False,
                           deduplicate=True,
@@ -905,6 +907,7 @@ class Agent:
             beta_durations, 
             beta_ping, 
             ha=ha,
+            pareto_prior=pareto_prior,
             seed=seed, 
             output_bursts=output_bursts,
             deduplicate=deduplicate
@@ -1093,8 +1096,10 @@ def thin_traj_by_times(traj,
 
 
 def _sample_horizontal_noise(n,
-                             *,
+                             pareto_prior=True,
                              ha=3/4,
+                             lower_bound=8/15,
+                             upper_bound=20,
                              rng=None):
     """Sample per-ping horizontal accuracy and Gaussian noise (internal)."""
     if ha is None or ha==0:
@@ -1102,15 +1107,20 @@ def _sample_horizontal_noise(n,
 
     if rng is None:
         rng = npr.default_rng()
-    x_m = 8/15
-    if ha <= x_m:
-        raise ValueError("ha must exceed 8 m / 15 m ≈ 0.533 blocks")
-    alpha = ha / (ha - x_m)
-    ha_realized = (rng.pareto(alpha, size=n) + 1) * x_m
-    ha_realized = np.minimum(ha_realized, 20, out=ha_realized)
+
+    if pareto_prior:
+        #for heavy tailed noise
+        if ha <= lower_bound:
+            raise ValueError(f"mean ha must exceed {lower_bound} blocks")
+        alpha = ha / (ha - lower_bound)
+        ha_realized = (rng.pareto(alpha, size=n) + 1) * lower_bound
+        ha_realized = np.minimum(ha_realized, upper_bound/2, out=ha_realized)
+    else:
+        ha_realized= np.array([ha]*n)
+        
     sigma = ha_realized / 1.515
     noise = rng.standard_normal((n, 2)) * sigma[:, None]
-    np.clip(noise, -250, 250, out=noise)
+    np.clip(noise, -upper_bound, upper_bound, out=noise) #300m
     return ha_realized, noise
 
 
