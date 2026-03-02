@@ -6,37 +6,7 @@ from tqdm import tqdm
 import nomad.io.base as loader
 from nomad.stop_detection import utils
 from nomad.filters import to_timestamp
-
-
-def haversine_dist(lat1, lon1, lat2, lon2):
-    # remove this and use what's in utils.py 
-    """
-    Calculate haversine distance between two points in meters.
-
-    Parameters
-    ----------
-    lat1, lon1 : float or array-like
-        Latitude and longitude of first point(s)
-    lat2, lon2 : float or array-like
-        Latitude and longitude of second point(s)
-
-    Returns
-    -------
-    float or array-like
-        Distance in meters
-    """
-    R = 6371000  # Earth radius in meters
-
-    lat1_rad = np.radians(lat1)
-    lat2_rad = np.radians(lat2)
-    dlat = np.radians(lat2 - lat1)
-    dlon = np.radians(lon2 - lon1)
-
-    a = np.sin(dlat/2)**2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(dlon/2)**2
-    c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1-a))
-
-    return R * c
-
+from nomad.stop_detection.utils import _haversine_distance
 
 def detect_stop_labels(
     data,
@@ -92,10 +62,7 @@ def detect_stop_labels(
     # Validate spatial and temporal columns
     loader._has_spatial_cols(data.columns, traj_cols)
     loader._has_time_cols(data.columns, traj_cols)
-    
-    # Determine distance metric
-    metric = 'haversine' if use_lon_lat else 'euclidean'
-    
+
     # Extract coordinates and time
     coords = data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy(dtype='float64')
     time_series = to_timestamp(data[traj_cols[t_key]]) if use_datetime else data[traj_cols[t_key]]
@@ -108,12 +75,7 @@ def detect_stop_labels(
     i = 0
     while i < n:
         j = i + 1
-        
-        # Get starting point info
-        if use_lon_lat:
-            start_lat, start_lon = coords[i, 0], coords[i, 1]
-        else:
-            start_coords = coords[i]
+        anchor_coords = coords[i]
         start_time = time_series.iloc[i]
         
         # Slide window forward
@@ -122,20 +84,12 @@ def detect_stop_labels(
             time_gap = (time_series.iloc[j] - time_series.iloc[j-1]) / 60  # Convert to minutes
             if time_gap > dt_max:
                 break
-            
-            # Calculate distance from first point (anchor) or centroid
-            if method == 'sliding':
+
+            if method == "sliding" or method == "centroid":
                 if use_lon_lat:
-                    curr_lat, curr_lon = coords[j, 0], coords[j, 1]
-                    dist = haversine_dist(start_lat, start_lon, curr_lat, curr_lon)
+                    dist = _haversine_distance(anchor_coords, coords[j], radians=False)
                 else:
-                    dist = np.linalg.norm(coords[j] - coords[i])
-            elif method == 'centroid':
-                if use_lon_lat:
-                    curr_lat, curr_lon = coords[j, 0], coords[j, 1]
-                    dist = haversine_dist(start_lat, start_lon, curr_lat, curr_lon)
-                else:
-                    dist = np.linalg.norm(coords[j] - start_coords)
+                    dist = np.linalg.norm(coords[j] - anchor_coords)
             else:
                 raise ValueError(f"Unknown method: {method}")
             
@@ -145,11 +99,9 @@ def detect_stop_labels(
             
             # Update centroid if using centroid method
             if method == 'centroid':
-                if use_lon_lat:
-                    start_lat = np.mean(coords[i:j+1, 0])
-                    start_lon = np.mean(coords[i:j+1, 1])
-                else:
-                    start_coords = np.mean(coords[i:j+1], axis=0)
+                anchor_coords = ((j-i) * anchor_coords + coords[j]) / (j - i + 1)
+            else:
+                pass
             
             j += 1
         
@@ -268,7 +220,8 @@ def detect_stops(
             first = arr[0]
             if any(x != first for x in arr[1:]):
                 raise ValueError("Multi-user data? Use detect_stops_per_user instead.")
-            passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
+            if traj_cols_temp['user_id'] not in passthrough_cols:
+                passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
     else:
         uid_col = None
 
