@@ -31,6 +31,7 @@ from nomad.city_gen import City
 import nomad.data as data_folder
 from pathlib import Path
 data_dir = Path(data_folder.__file__).parent
+path = data_dir / "garden_city.gpkg"
 
 # %% [markdown]
 # ## Load city and configure destination diaries
@@ -63,7 +64,7 @@ destinations.to_csv("exp_2_stops.csv", index=False)
 
 # %%
 # option 1 (reduced for quick demo run)
-N_reps = 100
+N_reps = 250
 sparsity_samples = 1
 config = dict(
     dt = 0.20,
@@ -71,7 +72,6 @@ config = dict(
     name_count=2,
     name_seed=2025,
     city_file=str(data_dir / "garden-city.gpkg"),
-    buildings_file=str(data_dir / "garden-city-buildings-mercator.parquet"),
     destination_diary_file='exp_2_stops.csv',
     output_files = dict(
         sparse_path='./sparse_2_stops',
@@ -150,3 +150,5 @@ population.save_pop(
     ha=config["agent_params"]["ha"]
 )
 print("All output files saved successfully!")
+
+# %%
