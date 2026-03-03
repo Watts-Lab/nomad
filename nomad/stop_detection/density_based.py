@@ -157,7 +157,7 @@ def seqscan_labels(
             	if nb in temp_neighbor_dict[curr_time]:
                     is_reachable = True
                     cluster_df[curr_time] = active_cid
-                    break           
+                    break
             if curr_is_core and is_reachable:
                 core_df[curr_time] = active_cid
                 end = curr_time
@@ -165,10 +165,8 @@ def seqscan_labels(
                     prev_lab = active_cid - 1
                     for nb in core_df[core_df == prev_lab].index:
                         if curr_time in neighbor_dict[nb]:
-                            relabel_mask = (cluster_df.index <= curr_time) & (cluster_df == prev_lab)
-                            relabel_core_mask = (core_df.index <= curr_time) & (core_df == prev_lab)
-                            cluster_df.loc[relabel_mask] = active_cid
-                            core_df.loc[relabel_core_mask] = active_cid
+                            cluster_df[cluster_df == (active_cid - 1)] = active_cid
+                            core_df[core_df == (active_cid - 1)] = active_cid
                             break
             else:
                 findCluster(end + 1, curr_time)
