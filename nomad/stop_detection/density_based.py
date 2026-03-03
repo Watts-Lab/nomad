@@ -14,23 +14,20 @@ def seqscan_labels(
     t_col="timestamp",
 ):
     """
-    W = [start, end] over time-sorted points.
+    start, end = [t_0, -inf] (time context)
+    active_cluster = set()
+    
+    For t in df.timestamp:
+      - Run DBSCAN on [start, t]
+      - when DBSCAN produces 1 non-noise cluster -> end = t, and set active cluster 
+      - Once there is an active cluster, the next ping might be part of it (core) or not
+      - If t in active_cluster:
+          * end = t
+      - If t is not in active cluster
+          * run DBSCAN on [end+1, t] and see if we change to new cluster and close previous cluster
 
-    Repeat:
-      - Run DBSCAN on points in W.
-      - If DBSCAN produces <= 1 non-noise cluster -> end += 1 (grow window).
-      - Else (>= 2 clusters):
-          * take the first cluster (label 0 if present; else smallest cluster id)
-          * cut = latest (largest time index) point in that cluster that is also a core point
-            - if cluster 0 has no core points, fall back to latest point in cluster 0
-          * permanently label ALL points in that cluster strictly BEFORE the cut
-          * start = cut (keep cut point for the next window)
-          * end = start
-          * current_label += 1
-
-    Returns a copy of df (time-sorted) with:
-      - sw_label: permanent labels assigned by this algorithm (-1 = unassigned)
-      - sw_dbscan_last: last DBSCAN label seen for debugging
+    Note:
+      - Otherwise, follow conventions of dbscan.py
     """
     data = df.copy()
 
