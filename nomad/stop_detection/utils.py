@@ -149,24 +149,60 @@ def _medoid(coords, metric='euclidean'):
     medoid_index = np.argmin(sum_distances)
     return coords[medoid_index, :]
 
-def _haversine_distance(coord1, coord2):
+def _haversine_distance(coord1, coord2, radians=True):
     """
     Compute the haversine distance between two points on Earth.
 
     Parameters:
         coord1: [lat1, lon1] in radians
         coord2: [lat2, lon2] in radians
+        radians: If True, input coordinates are in radians; if False, they are in degrees.
 
     Returns:
         Distance in meters.
     """
     earth_radius_meters = 6371000  # Earth's radius in meters
-    delta_lat = coord2[0] - coord1[0]
-    delta_lon = coord2[1] - coord1[1]
+    if not radians:
+        coord1 = np.radians(coord1)
+        coord2 = np.radians(coord2)
+        delta_lat = np.radians(coord2[0] - coord1[0])
+        delta_lon = np.radians(coord2[1] - coord1[1])
+    else:
+        delta_lat = coord2[0] - coord1[0]
+        delta_lon = coord2[1] - coord1[1]
     a = np.sin(delta_lat / 2.0) ** 2 + np.cos(coord1[0]) * np.cos(
         coord2[0]) * np.sin(delta_lon / 2.0) ** 2
     c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
     return earth_radius_meters * c  # Distance in meters
+
+# def haversine_dist(lat1, lon1, lat2, lon2):
+#     # remove this and use what's in utils.py 
+#     """
+#     Calculate haversine distance between two points in meters.
+
+#     Parameters
+#     ----------
+#     lat1, lon1 : float or array-like
+#         Latitude and longitude of first point(s)
+#     lat2, lon2 : float or array-like
+#         Latitude and longitude of second point(s)
+
+#     Returns
+#     -------
+#     float or array-like
+#         Distance in meters
+#     """
+#     R = 6371000  # Earth radius in meters
+
+#     lat1_rad = np.radians(lat1)
+#     lat2_rad = np.radians(lat2)
+#     dlat = np.radians(lat2 - lat1)
+#     dlon = np.radians(lon2 - lon1)
+
+#     a = np.sin(dlat/2)**2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(dlon/2)**2
+#     c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1-a))
+
+#     return R * c
 
 
 def _pairwise_haversine(coords):
