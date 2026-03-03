@@ -43,10 +43,10 @@ city = cg.City.from_geopackage(city_file)
 start = '2024-06-01 00:00-04:00'
 
 #option 1: symmetric
-start_time = pd.date_range(start=start, periods=4, freq='60min')
+start_time = pd.date_range(start=start, periods=2, freq='90min')
 unix_timestamp = [int(t.timestamp()) for t in start_time]
-duration = [60]*4  # in minutes
-location = ['h-x14-y11'] * 1 + ['h-x14-y9'] * 1 + ['w-x17-y10'] * 1 + ['w-x17-y8'] * 1
+duration = [90]*2  # in minutes
+location = ['w-x17-y10'] + ['r-x19-y11']
 
 destinations = pd.DataFrame(
     {
@@ -56,23 +56,7 @@ destinations = pd.DataFrame(
          "location":location
     }
 )
-destinations.to_csv("exp_1_destinations_balanced.csv", index=False)
-
-#option 2: we break symmetries to produce more density heterogeneity
-start_time = pd.date_range(start=start, periods=8, freq='30min')
-unix_timestamp = [int(t.timestamp()) for t in start_time]
-duration = [30]*8 
-location = ['h-x14-y11'] * 2 + ['h-x14-y9'] * 1 + ['w-x17-y10'] * 2 + ['w-x17-y8'] * 3
-
-destinations = pd.DataFrame(
-    {
-        "datetime":start_time,
-         "timestamp":unix_timestamp,
-         "duration":duration,
-         "location":location
-    }
-)
-destinations.to_csv("exp_1_destinations_unbalanced.csv", index=False)
+destinations.to_csv("exp_2_stops.csv", index=False)
 
 # %% [markdown]
 # ## Config files for simulations
@@ -80,69 +64,41 @@ destinations.to_csv("exp_1_destinations_unbalanced.csv", index=False)
 
 # %%
 # option 1 (reduced for quick demo run)
-N_reps = 2
-sparsity_samples = 3
+N_reps = 250
+sparsity_samples = 1
 config = dict(
-    dt = 0.5,
+    dt = 0.20,
     N = N_reps*sparsity_samples,
     name_count=2,
     name_seed=2025,
     city_file=str(data_dir / "garden-city.gpkg"),
-    destination_diary_file='exp_1_destinations_balanced.csv',
+    destination_diary_file='exp_2_stops.csv',
     output_files = dict(
-        sparse_path='./sparse_traj_1',
-        diaries_path='./diaries_1',
-        homes_path='./homes_1'
+        sparse_path='./sparse_2_stops',
+        diaries_path='./diaries_2_stops',
+        homes_path='./homes_2_stops'
     ),
     agent_params = dict(
         agent_homes='h-x14-y11',
         agent_workplaces='w-x17-y8',
         seed_trajectory=list(range(N_reps*sparsity_samples)),
         seed_sparsity= list(range(N_reps*sparsity_samples)),
-        beta_ping= np.repeat(np.linspace(1, 20, sparsity_samples), N_reps).tolist(),
-        beta_durations=None,
-        beta_start=None,
-        ha=11.5/15
-    )
-)
-with open('config_low_ha.json', 'w', encoding='utf-8') as f:
-    json.dump(config, f, ensure_ascii=False, indent=4)
-
-# option 2 (reduced for quick demo run)
-N_reps = 2
-sparsity_samples = 3
-config_2 = dict(
-    dt = 0.5,
-    N = N_reps*sparsity_samples,
-    name_count=2,
-    name_seed=2025,
-    city_file=str(data_dir / "garden-city.gpkg"),
-    destination_diary_file='exp_1_destinations_unbalanced.csv',
-    output_files = dict(
-        sparse_path='./sparse_traj_2',
-        diaries_path='./diaries_2',
-        homes_path='./homes_2'
-    ),
-    agent_params = dict(
-        agent_homes='h-x14-y11',
-        agent_workplaces='w-x17-y8',
-        seed_trajectory=list(range(N_reps*sparsity_samples)),
-        seed_sparsity= list(range(N_reps*sparsity_samples)),
-        beta_ping= np.repeat(np.linspace(1, 20, sparsity_samples), N_reps).tolist(),
+        beta_ping= np.repeat(7, N_reps).tolist(),
         beta_durations=None,
         beta_start=None,
         ha=15/15
     )
 )
-with open('config_high_ha.json', 'w', encoding='utf-8') as f:
-    json.dump(config_2, f, ensure_ascii=False, indent=4)
+
+with open('config_2_stops.json', 'w', encoding='utf-8') as f:
+    json.dump(config, f, ensure_ascii=False, indent=4)
 
 # %% [markdown]
 # ## Generate trajectories
 
 # %%
 # Parameters according to the config file
-with open('config_high_ha.json', 'r', encoding='utf-8') as f:
+with open('config_2_stops.json', 'r', encoding='utf-8') as f:
     config = json.load(f)
     
 # Load city and destination diary from config
@@ -176,6 +132,7 @@ for i, agent in enumerate(tqdm(population.roster.values(), desc="Generating traj
         beta_ping=config["agent_params"]["beta_ping"][i],
         seed=config["agent_params"]["seed_sparsity"][i],
         ha=config["agent_params"]["ha"],
+        pareto_prior=False,
         replace_sparse_traj=True)
 
 # Reproject all trajectories to Web Mercator at population level
@@ -193,3 +150,5 @@ population.save_pop(
     ha=config["agent_params"]["ha"]
 )
 print("All output files saved successfully!")
+
+# %%
