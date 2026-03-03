@@ -121,15 +121,14 @@ def seqscan_labels(
         
             if not eligible.empty:
                 c = eligible.index[0]
-
-                first = spans.loc[c, "first"]
-                stub_mask = (cluster_df.index <= first)
-                prev_border = window_mask & (cluster_df == active_cid) & stub_mask
                 
                 active_cid += 1
                 keep = window_mask & (cluster_df == c)
                 drop = window_mask & ~keep
-        
+
+                first = spans.loc[c, "first"]
+                prev_border = window_mask & (cluster_df == active_cid-1) & (cluster_df.index <= first)
+                
                 cluster_df.loc[drop] = -1
                 core_df.loc[drop] = -1
                 cluster_df.loc[prev_border] = active_cid - 1
@@ -153,15 +152,16 @@ def seqscan_labels(
             temp_neighbor_dict[curr_time] = {nb for nb in neighbor_dict[curr_time] if curr_time > nb >= start}
             curr_is_core = len(temp_neighbor_dict[curr_time]) >= min_pts
             is_reachable = False
-            for nb in core_df[core_df == active_cid].index:
-            	if nb in temp_neighbor_dict[curr_time]:
+            for nb in temp_neighbor_dict[curr_time]:
+                if core_df[nb] == active_cid:
                     is_reachable = True
                     cluster_df[curr_time] = active_cid
                     break
+                    
             if curr_is_core and is_reachable:
                 core_df[curr_time] = active_cid
                 end = curr_time
-                if back_merge & active_cid > 0:
+                if back_merge and active_cid > 0:
                     prev_lab = active_cid - 1
                     for nb in core_df[core_df == prev_lab].index:
                         if curr_time in neighbor_dict[nb]:
