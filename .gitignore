@@ -20,6 +20,7 @@ docs/_build/
 
 # Exclude images from research folder only
 examples/research/**/*.png
+examples/research/**/*.svg
 
 # OSM cache and large outputs
 cache/
