@@ -72,6 +72,7 @@ config = dict(
     name_count=2,
     name_seed=2025,
     city_file=str(data_dir / "garden-city.gpkg"),
+    buildings_file=str(data_dir / "garden-city-buildings-mercator.parquet"),
     destination_diary_file='exp_2_stops.csv',
     output_files = dict(
         sparse_path='./sparse_2_stops',
@@ -150,5 +151,3 @@ population.save_pop(
     ha=config["agent_params"]["ha"]
 )
 print("All output files saved successfully!")
-
-# %%
