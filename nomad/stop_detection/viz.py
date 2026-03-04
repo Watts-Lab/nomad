@@ -9,7 +9,6 @@ import numpy as np
 import nomad.io.base as loader
 import h3
 pd.plotting.register_matplotlib_converters()
-import pdb
 
 def h3_cell_to_polygon(cell):
     """Return shapely Polygon for H3 cell (lon/lat)."""
@@ -616,6 +615,7 @@ def plot_time_barcode(data, ax, color='black', cmap=None, current_idx=None, set_
     
     ax.tick_params(axis='x', which='major', labelsize=10)
     return vlines
+
 
 def plot_stops_barcode(stops, ax, cmap='Reds', stop_color=None, set_xlim=True, stop_alpha=0.75, traj_cols=None, **kwargs):
     """
