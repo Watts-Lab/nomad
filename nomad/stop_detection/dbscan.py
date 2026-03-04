@@ -6,15 +6,16 @@ import warnings
 import geopandas as gpd
 import nomad.io.base as loader
 from nomad.stop_detection import utils
-from nomad.stop_detection.postprocessing import remove_overlaps
+# from nomad.stop_detection.postprocessing import remove_overlaps
 from nomad.filters import to_timestamp
 from nomad.stop_detection.preprocessing import _find_neighbors
+import pdb
 
 ##########################################
 ########         DBSCAN           ########
 ##########################################
 
-def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False, traj_cols=None, **kwargs):
+def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False, remove_overlaps=False, traj_cols=None, **kwargs):
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
          raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
     if data.empty:
@@ -35,6 +36,8 @@ def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False
     core_df = pd.Series(-3, index=valid_times, name='core')
     # Initialize cluster label
     cid = -1
+
+    # replace with connected components of core points?
     
     for i, cluster in cluster_df.items():
         if cluster < 0:
@@ -55,7 +58,98 @@ def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False
                             for k in neighbor_dict[j]:
                                 if cluster_df[k] < 0:
                                     S.append(k)  # Add new neighbors
-
+    
+    ### Remove overlaps (optional) reassign all border points
+    if remove_overlaps:
+        # Build core segments
+        core_segments = []
+        current_cid = None
+        start_idx = None
+        
+        for idx in core_df.index:
+            cid_val = core_df[idx]
+            if cid_val >= 0:
+                if cid_val != current_cid:
+                    if current_cid is not None:
+                        core_segments.append((start_idx, prev_idx, current_cid))
+                    current_cid = cid_val
+                    start_idx = idx
+                prev_idx = idx
+            else:
+                if current_cid is not None:
+                    core_segments.append((start_idx, prev_idx, current_cid))
+                    current_cid = None
+        
+        if current_cid is not None:
+            core_segments.append((start_idx, prev_idx, current_cid))
+        
+        # Split overlaps
+        new_label = cluster_df.max() + 1 if len(cluster_df[cluster_df >= 0]) > 0 else 0
+        segments_to_add = []
+        
+        for i in range(len(core_segments)):
+            start_i, end_i, cid_i = core_segments[i]
+            
+            # Check if this cluster reappears after other clusters
+            for j in range(len(core_segments)):
+                if i == j:
+                    continue
+                    
+                start_j, end_j, cid_j = core_segments[j]
+                
+                # If same cluster ID but j comes after i, check for intervening clusters
+                if cid_i == cid_j and start_j > end_i:
+                    # Check if any other cluster exists between segment i and j
+                    has_intervening = any(
+                        start_k > end_i and end_k < start_j and cid_k != cid_i
+                        for k, (start_k, end_k, cid_k) in enumerate(core_segments)
+                    )
+                    
+                    if has_intervening:
+                        # Relabel the later occurrence
+                        mask = (core_df.index >= start_j) & (core_df.index <= end_j) & (core_df == cid_j)
+                        cluster_df[mask] = new_label
+                        core_df[mask] = new_label
+                        
+                        segments_to_add.append((start_j, end_j, new_label))
+                        core_segments[j] = (start_j, end_j, new_label)
+                        new_label += 1
+                
+                # Original overlap check for different clusters
+                elif start_j <= end_i and cid_i != cid_j and j > i:
+                    mask = (core_df.index >= start_j) & (core_df == cid_i)
+                    cluster_df[mask] = new_label
+                    core_df[mask] = new_label
+                    
+                    segments_to_add.append((start_j, end_i, new_label))
+                    core_segments[i] = (start_i, start_j - 1, cid_i)
+                    new_label += 1
+                    break
+        
+        core_segments.extend(segments_to_add)
+        core_segments.sort(key=lambda x: x[0])
+        
+        # Reassign border points using actual timestamps
+        cluster_df.loc[core_df < 0] = -1
+        
+        for i, (start, end, cid) in enumerate(core_segments):
+            prev_end_time = core_segments[i-1][1] if i > 0 else cluster_df.index.min() - 1
+            next_start_time = core_segments[i+1][0] if i < len(core_segments) - 1 else cluster_df.index.max() + 1
+            
+            core_indices = core_df.loc[core_df == cid].index
+            if len(core_indices) == 0:
+                continue
+            
+            neighbor_set = set()
+            for core_idx in core_indices:
+                neighbor_set.update(neighbor_dict[core_idx])
+            
+            # Assign border points within temporal bounds
+            for neighbor_idx in neighbor_set:
+                if (prev_end_time < neighbor_idx < next_start_time and 
+                    cluster_df[neighbor_idx] == -1):
+                    cluster_df[neighbor_idx] = cid
+            
     output = pd.DataFrame({'cluster': cluster_df, 'core': core_df})
 
     if return_cores:
@@ -69,7 +163,8 @@ def ta_dbscan(
     dist_thresh,
     min_pts,
     time_thresh,
-    dur_min=5,
+    # dur_min=5,
+    remove_overlaps=True,
     complete_output=False,
     passthrough_cols=[],
     keep_col_names=True,
@@ -124,25 +219,26 @@ def ta_dbscan(
         min_pts=min_pts,
         time_thresh=time_thresh,
         return_cores=False,
+        remove_overlaps=remove_overlaps,
         traj_cols=traj_cols,
         **kwargs
     )
     merged = data.join(labels)
 
-    if len(merged.cluster.unique())>2:
-        # Get adjusted cluster labels (not summary table)
-        adjusted_labels = remove_overlaps(
-            merged,
-            dist_thresh=dist_thresh,
-            min_pts=min_pts,
-            time_thresh=time_thresh,
-            method="cluster",
-            traj_cols=traj_cols,
-            summarize_stops=False,  # Return cluster labels, not summary table
-            **kwargs)
+    # if len(merged.cluster.unique())>2:
+    #     # Get adjusted cluster labels (not summary table)
+    #     adjusted_labels = remove_overlaps(
+    #         merged,
+    #         dist_thresh=dist_thresh,
+    #         min_pts=min_pts,
+    #         time_thresh=time_thresh,
+    #         method="cluster",
+    #         traj_cols=traj_cols,
+    #         summarize_stops=False,  # Return cluster labels, not summary table
+    #         **kwargs)
         
-        # Update the cluster column with adjusted labels
-        merged['cluster'] = adjusted_labels
+    #     # Update the cluster column with adjusted labels
+    #     merged['cluster'] = adjusted_labels
     
     # Filter out noise points after overlap removal
     merged = merged[merged.cluster != -1]

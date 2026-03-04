@@ -40,6 +40,7 @@ import nomad.visit_attribution.visit_attribution as visits
 import nomad.filters as filters
 import nomad.city_gen as cg
 
+from nomad.map_utils import blocks_to_mercator_gdf
 from nomad.contact_estimation import compute_stop_detection_metrics
 
 
@@ -98,7 +99,8 @@ config["algos"] = {
 # ## Load sparse data and diaries
 
 # %%
-poi_table = gpd.read_file(config["city_file"]).rename(columns={"id":"location"})
+poi_table = gpd.read_file(config["city_file"], layer="buildings").rename(columns={"id":"location"})
+poi_table = blocks_to_mercator_gdf(poi_table, block_size=15, false_easting=-4265699.0, false_northing=4392976.0)
 
 sparse_path=config["output_files"]["sparse_path"]
 diaries_path=config["output_files"]["diaries_path"]
@@ -110,42 +112,7 @@ homes_df = pd.read_parquet(homes_path)
 
 mask = ~diaries_df.location.isna()
 diaries_df.loc[mask,'dwell_length'] = diaries_df.loc[mask,'duration'].apply(classify_dwell)
-diaries_df.loc[mask,'building_size'] = diaries_df.loc[mask,'size'].apply(classify_size)
-
-# %% jupyter={"source_hidden": true}
-q = filters.completeness(sparse_df,
-             periods=30,
-             freq="min").to_frame(name="q_stat").reset_index()
-
-plt.figure(figsize=(4,3))
-ax = sns.kdeplot(
-    data=q,
-    x="q_stat",
-    fill=True,
-    linewidth=1.5,
-    bw_adjust=1.3,
-    cut=0
-)
-
-# cosmetics
-ax.set_xlabel("q (Trajectory Completeness)")
-ax.set_ylabel("Density")
-ax.grid(True, alpha=0.3)
-sns.despine(top=True, right=True)
-
-# annotation (top-right corner in axes coords)
-ax.text(
-    0.99, 0.95,
-    f"N = {len(q)}",
-    transform=ax.transAxes,
-    ha="right",
-    va="top",
-    fontsize=9
-)
-
-plt.tight_layout()
-plt.show(block=False)
-plt.close()
+diaries_df = diaries_df.merge(poi_table.set_index('location')['size'].apply(classify_size), on='location', how='left')
 
 # %% [markdown]
 # ## Stop detection
@@ -159,7 +126,7 @@ for user in tqdm(diaries_df.user_id.unique(), desc='Processing users'):
     # Run both algorithms
     for algo_name, algo_config in config["algos"].items():
         # Run stop detection
-        stops = algo_config["func"](sparse, **algo_config["params"], x="x", y="y")
+        stops = algo_config["func"](sparse, **algo_config["params"], x="x", y="y", timestamp='timestamp')
         
         # Map stops to buildings
         stops["location"] = visits.point_in_polygon(
@@ -178,7 +145,8 @@ for user in tqdm(diaries_df.user_id.unique(), desc='Processing users'):
             truth=truth,
             user_id=user,
             algorithm=algo_name,
-            traj_cols={'location_id': 'location'}  
+            traj_cols={'location_id': 'location'},
+            timestamp='timestamp'
         )
         
         results_list.append(metrics)
