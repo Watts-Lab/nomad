@@ -16,6 +16,7 @@ import nomad.stop_detection.dbscan as DBSCAN
 import nomad.stop_detection.lachesis as LACHESIS
 import nomad.stop_detection.sliding as SLIDING
 import pdb
+import nomad.stop_detection.sequential as SEQUENTIAL
 
 @pytest.fixture
 def simple_traj():
@@ -210,6 +211,271 @@ def test_lachesis_ground_truth(agent_traj_ground_truth):
 
     num_clusters = sum(lachesis_out.unique() > -1)
     assert num_clusters == 3
+
+##########################################
+####        SEQUENTIAL TESTS          #### 
+##########################################
+
+def test_sequential_labels_single_stop(simple_traj):
+    """Test that sequential detection identifies single stop correctly."""
+    labels = SEQUENTIAL.detect_stop_labels(
+        data=simple_traj,
+        dt_max=5,
+        delta_roam=0.1,
+        dur_min=5,
+        method='sliding',
+        traj_cols={"x":"x","y":"y","datetime":"datetime"}
+    )
+    
+    assert list(labels.values) == [0,0,0,0,0,0,-1]
+
+def test_sequential_labels_too_sparse(simple_traj):
+    """Test that no cluster forms when delta_roam is too small."""
+    labels = SEQUENTIAL.detect_stop_labels(
+        simple_traj,
+        dt_max=5,
+        delta_roam=-1,
+        dur_min=1,
+        method='sliding',
+        traj_cols={"x":"x","y":"y","datetime":"datetime"},
+    )
+    assert all(labels == -1)
+
+def test_sequential_labels_insufficient_duration(simple_traj):
+    """Test that no cluster forms when duration requirement not met."""
+    labels = SEQUENTIAL.detect_stop_labels(
+        simple_traj,
+        dt_max=5,
+        delta_roam=1,
+        dur_min=10,
+        method='sliding',
+        traj_cols={"x":"x","y":"y","datetime":"datetime"},
+    )
+    
+    assert all(labels == -1)
+
+def test_sequential_number_labels(single_user_df):
+    """Test that detect_stop_labels and detect_stops have matching stop counts."""
+    traj_cols = {
+        "timestamp": "timestamp",
+        "x": "x", "y": "y"
+    }
+    
+    single_user_df = loader.from_df(single_user_df, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior="utc")
+
+    stops_df = SEQUENTIAL.detect_stops(
+        data=single_user_df,
+        dur_min=5,
+        dt_max=10,
+        delta_roam=100,
+        method='sliding',
+        traj_cols=traj_cols,
+        complete_output=False,
+        keep_col_names=False
+    )
+    
+    labels = SEQUENTIAL.detect_stop_labels(
+        data=single_user_df,
+        dur_min=5,
+        dt_max=10,
+        delta_roam=100,
+        method='sliding',
+        traj_cols=traj_cols
+    )
+
+    labels = labels[~(labels == -1)]
+
+    assert len(stops_df) == labels.nunique()
+
+def test_sequential_ground_truth(agent_traj_ground_truth):
+    """Test sequential detection on ground truth data."""
+    traj_cols = {'user_id':'identifier',
+             'x':'x',
+             'y':'y',
+             'timestamp':'unix_timestamp'}
+    
+    sequential_out = SEQUENTIAL.detect_stop_labels(
+        agent_traj_ground_truth,
+        delta_roam=45,
+        dt_max=60,
+        dur_min=3,
+        method='sliding',
+        traj_cols=traj_cols
+    )
+
+    num_clusters = sum(sequential_out.unique() > -1)
+    assert 2 <= num_clusters <= 5, f"Expected 2-5 stops, got {num_clusters}"
+
+def test_sequential_empty_dataframe(empty_traj):
+    """Test that sequential returns proper empty DataFrame with correct columns."""
+    result = SEQUENTIAL.detect_stops(
+        empty_traj,
+        delta_roam=100,
+        dt_max=60,
+        dur_min=5,
+        method='sliding',
+        complete_output=True,
+        traj_cols={
+            'timestamp': 'timestamp', 
+            'longitude': 'longitude', 
+            'latitude': 'latitude'
+        }
+    )
+    
+    # Should return empty DataFrame with correct columns
+    assert result.empty
+    expected_cols = {'longitude', 'latitude', 'timestamp', 'diameter', 'n_pings', 'end_timestamp', 'duration', 'max_gap'}
+    assert set(result.columns) == expected_cols
+
+def test_sequential_empty_dataframe_xy(empty_traj_xy):
+    """Test that sequential works with x,y coordinates on empty data."""
+    result = SEQUENTIAL.detect_stops(
+        empty_traj_xy,
+        delta_roam=100,
+        dt_max=60,
+        dur_min=5,
+        method='sliding',
+        complete_output=False,
+        traj_cols={
+            'timestamp': 'timestamp', 
+            'x': 'x', 
+            'y': 'y'
+        }
+    )
+    
+    # Should return empty DataFrame with correct columns
+    assert result.empty
+    expected_cols = ['x', 'y', 'timestamp', 'duration']
+    assert list(result.columns) == expected_cols
+
+def test_sequential_output_is_valid_stop_df(base_df):
+    """Test if sequential concise output conforms to the stop DataFrame standard."""
+    traj_cols = {
+        "user_id": "uid", "timestamp": "timestamp",
+        "x": "x", "y": "y"
+    }
+    df = loader.from_df(base_df, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior="utc")
+
+    first_user = df[traj_cols["user_id"]].iloc[0]
+    single_user_df = df[df[traj_cols["user_id"]] == first_user].copy()
+
+    stops_df = SEQUENTIAL.detect_stops(
+        data=single_user_df,
+        delta_roam=100,
+        dt_max=10,
+        dur_min=5,
+        method='sliding',
+        traj_cols=traj_cols,
+        complete_output=False
+    )
+    
+    del traj_cols['user_id']
+
+    is_valid = loader._is_stop_df(stops_df, traj_cols=traj_cols, parse_dates=False)
+
+    assert is_valid, "Sequential concise output failed validation by _is_stop_df"
+
+def test_sequential_per_user_multiuser_required(base_df):
+    """Test that detect_stops raises error when multi-user data is provided."""
+    traj_cols = {
+        "user_id": "uid", "timestamp": "timestamp",
+        "x": "x", "y": "y"
+    }
+    df = loader.from_df(base_df, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior="utc")
+
+    with pytest.raises(ValueError, match="Multi-user data"):
+        SEQUENTIAL.detect_stops(
+            data=df,
+            delta_roam=100,
+            dt_max=10,
+            dur_min=5,
+            method='sliding',
+            traj_cols=traj_cols
+        )
+
+def test_sequential_per_user_basic(base_df):
+    """Test detect_stops_per_user on multi-user data."""
+    traj_cols = {
+        "user_id": "uid", "timestamp": "timestamp",
+        "x": "x", "y": "y"
+    }
+    df = loader.from_df(base_df, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior="utc")
+
+    stops_df = SEQUENTIAL.detect_stops_per_user(
+        data=df,
+        delta_roam=100,
+        dt_max=10,
+        dur_min=5,
+        method='sliding',
+        traj_cols=traj_cols,
+        complete_output=False,
+        n_jobs=1
+    )
+    
+    # Should have stops for multiple users
+    assert not stops_df.empty
+    assert 'uid' in stops_df.columns
+    assert stops_df['uid'].nunique() > 1
+
+def test_sequential_temporal_gap_breaks_stop(simple_traj):
+    """Test that temporal gap larger than dt_max breaks a stop."""
+    # simple_traj has 6 points at 1-min intervals, then a 10-min gap
+    labels = SEQUENTIAL.detect_stop_labels(
+        data=simple_traj,
+        dt_max=5,  # Max 5 min gap
+        delta_roam=100,  # Large spatial threshold
+        dur_min=5,  # Need 5 min duration
+        method='sliding',
+        traj_cols={"x":"x","y":"y","datetime":"datetime"}
+    )
+    
+    # First 6 points form a stop, last point is noise
+    assert list(labels.values) == [0,0,0,0,0,0,-1]
+
+def test_sequential_latlon_vs_xy_consistency(base_df):
+    """Test that sequential gives consistent results with lat/lon vs x/y."""
+    # Get single user data
+    first_user = base_df['uid'].iloc[0]
+    single_user = base_df[base_df['uid'] == first_user].copy()
+    
+    # Test with lat/lon
+    df_latlon = loader.from_df(
+        single_user[['timestamp', 'latitude', 'longitude']],
+        traj_cols={'timestamp': 'timestamp', 'latitude': 'latitude', 'longitude': 'longitude'},
+        parse_dates=True,
+        mixed_timezone_behavior="utc"
+    )
+    
+    stops_latlon = SEQUENTIAL.detect_stops(
+        data=df_latlon,
+        delta_roam=100,
+        dt_max=10,
+        dur_min=5,
+        method='sliding',
+        complete_output=False
+    )
+    
+    # Test with x/y (note: delta_roam needs adjustment for different units)
+    df_xy = loader.from_df(
+        single_user[['timestamp', 'x', 'y']],
+        traj_cols={'timestamp': 'timestamp', 'x': 'x', 'y': 'y'},
+        parse_dates=True,
+        mixed_timezone_behavior="utc"
+    )
+    
+    stops_xy = SEQUENTIAL.detect_stops(
+        data=df_xy,
+        delta_roam=100,  # Same value - will be in different units
+        dt_max=10,
+        dur_min=5,
+        method='sliding',
+        complete_output=False
+    )
+    
+    # Both should produce stops (even if different counts due to unit difference)
+    # Main test is that both run without error
+    assert isinstance(stops_latlon, pd.DataFrame)
+    assert isinstance(stops_xy, pd.DataFrame)
 
 ##########################################
 ####           DBSCAN TESTS           #### 

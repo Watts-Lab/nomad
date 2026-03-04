@@ -616,23 +616,29 @@ def plot_stops_barcode(stops, ax, cmap='Reds', stop_color=None, set_xlim=True, t
     if not (end_col_present or duration_col_present):
         raise ValueError("Missing required (end or duration) temporal columns for true_visits dataframe.")
     elif not end_col_present:
-        # end = stops[traj_cols[t_key]] + pd.to_timedelta(stops[traj_cols['duration']] * 60, unit='s')
         start = pd.to_datetime(stops[traj_cols[t_key]], unit='s')
         end = start + pd.to_timedelta(stops[traj_cols['duration']] * 60, unit='s')
     else:
         end = stops[traj_cols[end_t_key]] if use_datetime else pd.to_datetime(stops[traj_cols[end_t_key]], unit='s')
-        
+
     clusters = np.arange(len(stops)) if 'cluster' not in stops else stops['cluster']
-    n = len(stops)
+    
     if stop_color:
         colors = [stop_color for c in clusters]
     elif cmap:
-        colors = [plt.get_cmap(cmap)((c+1)/(n+1)) for c in clusters]
+        # Match plot_stops logic: filter noise and use num_clusters
+        valid_clusters = clusters[clusters != -1]
+        n = len(np.unique(valid_clusters)) if len(valid_clusters) > 0 else 1
+        cmap_obj = plt.get_cmap(cmap)
+        colors = [cmap_obj((c+1)/(n+1)) if c != -1 else None 
+                  for c in clusters]  # None = don't draw noise bars
     else:
         raise ValueError("Specify either a color map (cmap) or a solid color (stop_color).")
-        
-    for s, e, color in zip(start, end, colors):
-        ax.fill_betweenx([0, 1], s, e, color=color, alpha=0.75)
+    
+    # Only draw bars for non-noise stops
+    for s, e, c, color in zip(start, end, clusters, colors):
+        if color is not None:  # Skip noise clusters
+            ax.fill_betweenx([0, 1], s, e, color=color, alpha=0.75)
     
     ax.set_ylim(0, 1)
     ax.set_yticks([])
