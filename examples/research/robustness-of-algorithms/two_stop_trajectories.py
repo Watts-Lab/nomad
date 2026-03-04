@@ -63,11 +63,11 @@ destinations.to_csv("exp_2_stops.csv", index=False)
 # This could be in a json or yaml and should be passable to a Population object.
 
 # %%
-# option 1 (reduced for quick demo run)
+# option 1 
 N_reps = 250
 sparsity_samples = 1
 config = dict(
-    dt = 0.20,
+    dt = 0.15,
     N = N_reps*sparsity_samples,
     name_count=2,
     name_seed=2025,
@@ -94,12 +94,204 @@ config = dict(
 with open('config_2_stops.json', 'w', encoding='utf-8') as f:
     json.dump(config, f, ensure_ascii=False, indent=4)
 
+# %%
+# option 2 (more sparse)
+N_reps = 250
+sparsity_samples = 1
+config_2 = dict(
+    dt = 0.15,
+    N = N_reps*sparsity_samples,
+    name_count=2,
+    name_seed=2025,
+    city_file=str(data_dir / "garden-city.gpkg"),
+    buildings_file=str(data_dir / "garden-city-buildings-mercator.parquet"),
+    destination_diary_file='exp_2_stops.csv',
+    output_files = dict(
+        sparse_path='./sparse_2_stops_beta_5',
+        diaries_path='./diaries_2_stops',
+        homes_path='./homes_2_stops'
+    ),
+    agent_params = dict(
+        agent_homes='h-x14-y11',
+        agent_workplaces='w-x17-y8',
+        seed_trajectory=list(range(N_reps*sparsity_samples)),
+        seed_sparsity= list(range(N_reps*sparsity_samples)),
+        beta_ping= np.repeat(5.5, N_reps).tolist(),
+        beta_durations=None,
+        beta_start=None,
+        ha=15/15
+    )
+)
+
+with open('config_2_stops_beta_5.json', 'w', encoding='utf-8') as f:
+    json.dump(config_2, f, ensure_ascii=False, indent=4)
+
+# %%
+# option 3 (less sparse)
+N_reps = 250
+sparsity_samples = 1
+config_3 = dict(
+    dt = 0.15,
+    N = N_reps*sparsity_samples,
+    name_count=2,
+    name_seed=2025,
+    city_file=str(data_dir / "garden-city.gpkg"),
+    buildings_file=str(data_dir / "garden-city-buildings-mercator.parquet"),
+    destination_diary_file='exp_2_stops.csv',
+    output_files = dict(
+        sparse_path='./sparse_2_stops_beta_8',
+        diaries_path='./diaries_2_stops',
+        homes_path='./homes_2_stops'
+    ),
+    agent_params = dict(
+        agent_homes='h-x14-y11',
+        agent_workplaces='w-x17-y8',
+        seed_trajectory=list(range(N_reps*sparsity_samples)),
+        seed_sparsity= list(range(N_reps*sparsity_samples)),
+        beta_ping= np.repeat(8.5, N_reps).tolist(),
+        beta_durations=None,
+        beta_start=None,
+        ha=15/15
+    )
+)
+
+with open('config_2_stops_beta_8.json', 'w', encoding='utf-8') as f:
+    json.dump(config_3, f, ensure_ascii=False, indent=4)
+
+# %%
+# option 4 (more noise)
+N_reps = 250
+sparsity_samples = 1
+config_4 = dict(
+    dt = 0.15,
+    N = N_reps*sparsity_samples,
+    name_count=2,
+    name_seed=2025,
+    city_file=str(data_dir / "garden-city.gpkg"),
+    buildings_file=str(data_dir / "garden-city-buildings-mercator.parquet"),
+    destination_diary_file='exp_2_stops.csv',
+    output_files = dict(
+        sparse_path='./sparse_2_stops_ha_17',
+        diaries_path='./diaries_2_stops',
+        homes_path='./homes_2_stops'
+    ),
+    agent_params = dict(
+        agent_homes='h-x14-y11',
+        agent_workplaces='w-x17-y8',
+        seed_trajectory=list(range(N_reps*sparsity_samples)),
+        seed_sparsity= list(range(N_reps*sparsity_samples)),
+        beta_ping= np.repeat(5, N_reps).tolist(),
+        beta_durations=None,
+        beta_start=None,
+        ha=17.5/15
+    )
+)
+
+with open('config_2_stops_ha_17.json', 'w', encoding='utf-8') as f:
+    json.dump(config_4, f, ensure_ascii=False, indent=4)
+
+# %%
+# option 5 (most noise)
+N_reps = 250
+sparsity_samples = 1
+config_5 = dict(
+    dt = 0.15,
+    N = N_reps*sparsity_samples,
+    name_count=2,
+    name_seed=2025,
+    city_file=str(data_dir / "garden-city.gpkg"),
+    buildings_file=str(data_dir / "garden-city-buildings-mercator.parquet"),
+    destination_diary_file='exp_2_stops.csv',
+    output_files = dict(
+        sparse_path='./sparse_2_stops_ha_19',
+        diaries_path='./diaries_2_stops',
+        homes_path='./homes_2_stops'
+    ),
+    agent_params = dict(
+        agent_homes='h-x14-y11',
+        agent_workplaces='w-x17-y8',
+        seed_trajectory=list(range(N_reps*sparsity_samples)),
+        seed_sparsity= list(range(N_reps*sparsity_samples)),
+        beta_ping= np.repeat(8.5, N_reps).tolist(),
+        beta_durations=None,
+        beta_start=None,
+        ha=19/15
+    )
+)
+
+with open('config_2_stops_ha_19.json', 'w', encoding='utf-8') as f:
+    json.dump(config_5, f, ensure_ascii=False, indent=4)
+
+# %%
+# option 6 (most noise but sparse)
+N_reps = 250
+sparsity_samples = 1
+config_6 = dict(
+    dt = 0.15,
+    N = N_reps*sparsity_samples,
+    name_count=2,
+    name_seed=2025,
+    city_file=str(data_dir / "garden-city.gpkg"),
+    buildings_file=str(data_dir / "garden-city-buildings-mercator.parquet"),
+    destination_diary_file='exp_2_stops.csv',
+    output_files = dict(
+        sparse_path='./sparse_2_stops_ha_19_sparse',
+        diaries_path='./diaries_2_stops',
+        homes_path='./homes_2_stops'
+    ),
+    agent_params = dict(
+        agent_homes='h-x14-y11',
+        agent_workplaces='w-x17-y8',
+        seed_trajectory=list(range(N_reps*sparsity_samples)),
+        seed_sparsity= list(range(N_reps*sparsity_samples)),
+        beta_ping= np.repeat(5.5, N_reps).tolist(),
+        beta_durations=None,
+        beta_start=None,
+        ha=19/15
+    )
+)
+
+with open('config_2_stops_ha_19_sparse.json', 'w', encoding='utf-8') as f:
+    json.dump(config_6, f, ensure_ascii=False, indent=4)
+
+# %%
+# option 6 (most noise but sparse)
+N_reps = 500
+sparsity_samples = 1
+config_7 = dict(
+    dt = 0.125,
+    N = N_reps*sparsity_samples,
+    name_count=2,
+    name_seed=2025,
+    city_file=str(data_dir / "garden-city.gpkg"),
+    buildings_file=str(data_dir / "garden-city-buildings-mercator.parquet"),
+    destination_diary_file='exp_2_stops.csv',
+    output_files = dict(
+        sparse_path='./sparse_2_stops_ha_17_beta_4',
+        diaries_path='./diaries_2_stops',
+        homes_path='./homes_2_stops'
+    ),
+    agent_params = dict(
+        agent_homes='h-x14-y11',
+        agent_workplaces='w-x17-y8',
+        seed_trajectory=list(range(N_reps*sparsity_samples)),
+        seed_sparsity= list(range(N_reps*sparsity_samples)),
+        beta_ping= np.repeat(4.8, N_reps).tolist(),
+        beta_durations=None,
+        beta_start=None,
+        ha=17/15
+    )
+)
+
+with open('config_2_stops_ha_17_beta_4.json', 'w', encoding='utf-8') as f:
+    json.dump(config_7, f, ensure_ascii=False, indent=4)
+
 # %% [markdown]
 # ## Generate trajectories
 
 # %%
 # Parameters according to the config file
-with open('config_2_stops.json', 'r', encoding='utf-8') as f:
+with open('config_2_stops_ha_17_beta_4.json', 'r', encoding='utf-8') as f:
     config = json.load(f)
     
 # Load city and destination diary from config
