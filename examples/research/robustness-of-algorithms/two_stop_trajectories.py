@@ -291,7 +291,7 @@ with open('config_2_stops_ha_17_beta_4.json', 'w', encoding='utf-8') as f:
 
 # %%
 # Parameters according to the config file
-with open('config_2_stops_ha_17_beta_4.json', 'r', encoding='utf-8') as f:
+with open('config_2_stops.json', 'r', encoding='utf-8') as f:
     config = json.load(f)
     
 # Load city and destination diary from config
