@@ -36,7 +36,7 @@ def detect_stop_labels(
     dur_min : float, default 5.0
         Minimum duration in minutes for a valid stop
     method : str, default 'sliding'
-        Method to use ('sliding' currently supported)
+        Method to use ('sliding' or 'centroid') for the anchor point of the active stop
     traj_cols : dict, optional
         Mapping for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'
     **kwargs

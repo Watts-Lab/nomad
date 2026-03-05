@@ -6,16 +6,14 @@ import warnings
 import geopandas as gpd
 import nomad.io.base as loader
 from nomad.stop_detection import utils
-# from nomad.stop_detection.postprocessing import remove_overlaps
 from nomad.filters import to_timestamp
 from nomad.stop_detection.preprocessing import _find_neighbors
-import pdb
 
 ##########################################
 ########         DBSCAN           ########
 ##########################################
 
-def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False, remove_overlaps=False, traj_cols=None, **kwargs):
+def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False, remove_overlaps=True, traj_cols=None, **kwargs):
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
          raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
     if data.empty:
@@ -37,8 +35,6 @@ def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False
     # Initialize cluster label
     cid = -1
 
-    # replace with connected components of core points?
-    
     for i, cluster in cluster_df.items():
         if cluster < 0:
             if len(neighbor_dict[i]) < min_pts:
@@ -58,97 +54,92 @@ def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False
                             for k in neighbor_dict[j]:
                                 if cluster_df[k] < 0:
                                     S.append(k)  # Add new neighbors
-    
+                                    
     ### Remove overlaps (optional) reassign all border points
-    if remove_overlaps:
-        # Build core segments
-        core_segments = []
-        current_cid = None
-        start_idx = None
-        
-        for idx in core_df.index:
-            cid_val = core_df[idx]
-            if cid_val >= 0:
-                if cid_val != current_cid:
-                    if current_cid is not None:
-                        core_segments.append((start_idx, prev_idx, current_cid))
-                    current_cid = cid_val
-                    start_idx = idx
-                prev_idx = idx
-            else:
-                if current_cid is not None:
-                    core_segments.append((start_idx, prev_idx, current_cid))
-                    current_cid = None
-        
-        if current_cid is not None:
-            core_segments.append((start_idx, prev_idx, current_cid))
-        
-        # Split overlaps
-        new_label = cluster_df.max() + 1 if len(cluster_df[cluster_df >= 0]) > 0 else 0
-        segments_to_add = []
-        
-        for i in range(len(core_segments)):
-            start_i, end_i, cid_i = core_segments[i]
-            
-            # Check if this cluster reappears after other clusters
-            for j in range(len(core_segments)):
-                if i == j:
-                    continue
-                    
-                start_j, end_j, cid_j = core_segments[j]
+    if remove_overlaps and (core_df >= 0).any():
+        next_label = cid + 1
+    
+        assigned_of = {}   # raw_label -> assigned_label (raw until first split, then new id)
+        seen = set()
+        active = None      # active assigned label
+    
+        for t in core_df.index[core_df >= 0]:
+            raw = int(core_df.at[t])
+    
+            if raw not in assigned_of:
+                assigned_of[raw] = raw
+    
+            assigned = assigned_of[raw]    
                 
-                # If same cluster ID but j comes after i, check for intervening clusters
-                if cid_i == cid_j and start_j > end_i:
-                    # Check if any other cluster exists between segment i and j
-                    has_intervening = any(
-                        start_k > end_i and end_k < start_j and cid_k != cid_i
-                        for k, (start_k, end_k, cid_k) in enumerate(core_segments)
-                    )
-                    
-                    if has_intervening:
-                        # Relabel the later occurrence
-                        mask = (core_df.index >= start_j) & (core_df.index <= end_j) & (core_df == cid_j)
-                        cluster_df[mask] = new_label
-                        core_df[mask] = new_label
-                        
-                        segments_to_add.append((start_j, end_j, new_label))
-                        core_segments[j] = (start_j, end_j, new_label)
-                        new_label += 1
-                
-                # Original overlap check for different clusters
-                elif start_j <= end_i and cid_i != cid_j and j > i:
-                    mask = (core_df.index >= start_j) & (core_df == cid_i)
-                    cluster_df[mask] = new_label
-                    core_df[mask] = new_label
-                    
-                    segments_to_add.append((start_j, end_i, new_label))
-                    core_segments[i] = (start_i, start_j - 1, cid_i)
-                    new_label += 1
-                    break
+            if active is not None and assigned != active:
+                if raw in seen:
+                    assigned_of[raw] = next_label
+                    next_label += 1
+                    assigned = assigned_of[raw]
+    
+            active = assigned
+            core_df.at[t] = assigned
+            cluster_df.at[t] = assigned
+            seen.add(raw)
         
-        core_segments.extend(segments_to_add)
-        core_segments.sort(key=lambda x: x[0])
+        # Border points
+        cluster_df.loc[core_df < 0] = -1  
+        prev_run_end = -np.inf                           # left bound (exclusive)
         
-        # Reassign border points using actual timestamps
-        cluster_df.loc[core_df < 0] = -1
+        run_label = None
+        run_end = None
+        run_neighbors = set()                            # union of neighbors of cores in current run
         
-        for i, (start, end, cid) in enumerate(core_segments):
-            prev_end_time = core_segments[i-1][1] if i > 0 else cluster_df.index.min() - 1
-            next_start_time = core_segments[i+1][0] if i < len(core_segments) - 1 else cluster_df.index.max() + 1
-            
-            core_indices = core_df.loc[core_df == cid].index
-            if len(core_indices) == 0:
+        for t in core_df.index[core_df >= 0]:
+            lab = core_df.at[t]
+        
+            if run_label is None:
+                run_label = lab
+                run_end = t
+                run_neighbors.clear()
+                run_neighbors.update(neighbor_dict[t])
                 continue
-            
-            neighbor_set = set()
-            for core_idx in core_indices:
-                neighbor_set.update(neighbor_dict[core_idx])
-            
-            # Assign border points within temporal bounds
-            for neighbor_idx in neighbor_set:
-                if (prev_end_time < neighbor_idx < next_start_time and 
-                    cluster_df[neighbor_idx] == -1):
-                    cluster_df[neighbor_idx] = cid
+        
+            if lab == run_label:
+                run_end = t
+                run_neighbors.update(neighbor_dict[t])
+                continue
+        
+            # label changed => t is the start of the next run, so flush current run now
+            next_run_start = t
+            max_assigned = prev_run_end
+        
+            for nb in run_neighbors:
+                if prev_run_end < nb < next_run_start and cluster_df.at[nb] == -1:
+                    cluster_df.at[nb] = run_label
+                    if nb > max_assigned:
+                        max_assigned = nb
+        
+            # advance left bound for the next run:
+            # at least to the last core of the run, and also to the latest border we just assigned
+            if run_end > max_assigned:
+                max_assigned = run_end
+            prev_run_end = max_assigned
+        
+            # start new run
+            run_label = lab
+            run_end = t
+            run_neighbors.clear()
+            run_neighbors.update(neighbor_dict[t])
+        
+        # flush last run to +inf
+        next_run_start = np.inf
+        max_assigned = prev_run_end
+        
+        for nb in run_neighbors:
+            if prev_run_end < nb < next_run_start and cluster_df.at[nb] == -1:
+                cluster_df.at[nb] = run_label
+                if nb > max_assigned:
+                    max_assigned = nb
+        
+        if run_end is not None and run_end > max_assigned:
+            max_assigned = run_end
+        prev_run_end = max_assigned
             
     output = pd.DataFrame({'cluster': cluster_df, 'core': core_df})
 
@@ -163,7 +154,7 @@ def ta_dbscan(
     dist_thresh,
     min_pts,
     time_thresh,
-    # dur_min=5,
+    dur_min=5,
     remove_overlaps=True,
     complete_output=False,
     passthrough_cols=[],
@@ -224,21 +215,6 @@ def ta_dbscan(
         **kwargs
     )
     merged = data.join(labels)
-
-    # if len(merged.cluster.unique())>2:
-    #     # Get adjusted cluster labels (not summary table)
-    #     adjusted_labels = remove_overlaps(
-    #         merged,
-    #         dist_thresh=dist_thresh,
-    #         min_pts=min_pts,
-    #         time_thresh=time_thresh,
-    #         method="cluster",
-    #         traj_cols=traj_cols,
-    #         summarize_stops=False,  # Return cluster labels, not summary table
-    #         **kwargs)
-        
-    #     # Update the cluster column with adjusted labels
-    #     merged['cluster'] = adjusted_labels
     
     # Filter out noise points after overlap removal
     merged = merged[merged.cluster != -1]
