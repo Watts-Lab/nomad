@@ -164,7 +164,7 @@ def precision_recall_f1_from_minutes(total_pred, total_truth, tp):
         f1 = 2 * precision * recall / (precision + recall)
     return {'precision': precision, 'recall': recall, 'f1': f1}
 
-def compute_stop_detection_metrics(stops, truth, user_id=None, algorithm=None, traj_cols=None, **kwargs):
+def compute_stop_detection_metrics(stops, truth, user_id=None, algorithm=None, prf_only=True, traj_cols=None, **kwargs):
     """
     Compute stop detection metrics for a single user/algorithm combination.
     
@@ -196,26 +196,25 @@ def compute_stop_detection_metrics(stops, truth, user_id=None, algorithm=None, t
         }
     
     # Prepare data - fill missing building_ids with 'Street'
-    stops_clean = stops.fillna({'building_id': 'Street'})
-    truth_clean = truth.fillna({'building_id': 'Street'})
+    stops_clean = stops.fillna({'location': 'Street'})
+    truth_clean = truth.fillna({'location': 'Street'})
     truth_buildings = truth.dropna()  # Only actual buildings for error analysis
     
     # Compute overlaps
     overlaps = overlapping_visits(
-        left=stops_clean, right=truth_clean, match_location=False,
+        left=stops_clean, right=truth_clean, match_location=True,
         traj_cols=traj_cols, **kwargs
     )
     
     # Precision/Recall: only matching locations
-    loc_key = loader._parse_traj_cols(stops_clean.columns, traj_cols, kwargs)['location_id']
-    loc_left = f"{loc_key}_left"
-    loc_right = f"{loc_key}_right"
-    correct_overlaps = overlaps[overlaps[loc_left] == overlaps[loc_right]]
     total_pred = stops_clean['duration'].sum()
     total_truth = truth_clean['duration'].sum()
-    tp = correct_overlaps['duration'].sum()
+    tp = overlaps['duration'].sum()
     prf_metrics = precision_recall_f1_from_minutes(total_pred, total_truth, tp)
     
+    if prf_only:
+        return {**prf_metrics, 'user_id': user_id, 'algorithm': algorithm}
+
     # Error metrics: compare against buildings only
     if len(truth_buildings) > 0:
         overlaps_err = overlapping_visits(
