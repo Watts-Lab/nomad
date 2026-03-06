@@ -27,6 +27,9 @@ cache/
 examples/output/
 examples/research/virtual_philadelphia/*.gpkg
 
+# vector images in research notebooks
+examples/research/*.svg
+
 # macOS system file
 .DS_Store
 
@@ -67,3 +70,5 @@ virtual-environments/
 Thumbs.db
 *.tmp
 sandbox/sandbox_data.gpkg
+**/*.svg
+**/*.eps
