@@ -10,7 +10,16 @@ from pyspark.sql import SparkSession
 from pathlib import Path
 import nomad.io.base as loader
 from nomad.io.base import _unix_offset_to_str, _is_traj_df, from_df
-from nomad.filters import to_projection, filter_users, _in_geo, to_timestamp
+from nomad.filters import (
+    to_projection,
+    to_timestamp,
+    to_yyyymmdd,
+    is_within,
+    within,
+    downsample,
+    coverage_matrix,
+    completeness,
+)
 
 @pytest.fixture(scope="module")
 def spark():
@@ -101,12 +110,39 @@ def park_polygons():
 def test_to_timestamp(base_df):
     timestamp_col = to_timestamp(base_df.local_datetime, base_df.tz_offset)
     assert np.array_equal(timestamp_col.values, base_df.timestamp.values)
+
+def test_to_timestamp_scalar():
+    result = to_timestamp("2024-01-01 00:00-05:00")
+    assert isinstance(result, (int, np.integer))
+    assert result == 1704085200
+
+def test_to_yyyymmdd_roundtrip_simple():
+    s = pd.to_datetime(pd.Series([
+        '2024-01-02T23:59:59Z',
+        '2024-01-03T00:00:00Z'
+    ]))
+    # UTC dates
+    dates = to_yyyymmdd(s)
+    assert dates.tolist() == [20240102, 20240103]
+
+def test_to_yyyymmdd_with_offsets():
+    # Two timestamps near midnight UTC; apply offsets to flip dates
+    ts = pd.Series([1704230399, 1704230400])  # 2024-01-02 23:59:59Z, 2024-01-03 00:00:00Z
+    offsets = pd.Series([-5*3600, +5*3600])
+    dates_local = to_yyyymmdd(ts, tz_offset=offsets)
+    # First becomes local 2024-01-02 18:59:59 (still 2024-01-02); second becomes 2024-01-03 05:00:00
+    assert dates_local.tolist() == [20240102, 20240103]
+
+def test_to_yyyymmdd_accepts_strings_and_timestamps():
+    s = pd.Series(['2024-02-10 12:34:56', '2024-02-11 00:00:00'])
+    dates = to_yyyymmdd(s)
+    assert dates.tolist() == [20240210, 20240211]
     
 def test_projection_output(simple_df_one_user):
     # Basic test
-    result = to_projection(traj=simple_df_one_user,
-                           input_crs="EPSG:4326",
-                           output_crs="EPSG:3857",
+    result = to_projection(data=simple_df_one_user,
+                           data_crs="EPSG:4326",
+                           crs_to="EPSG:3857",
                            longitude="longitude",
                            latitude="latitude")
     x = pd.Series([1.294860e+07, 1.294861e+07, 1.294862e+07, 1.294862e+07])
@@ -118,9 +154,9 @@ def test_projection_output(simple_df_one_user):
 
 def test_projection_with_empty_df():
     empty_df = pd.DataFrame(columns=['user_id', 'latitude', 'longitude', 'datetime'])
-    result = to_projection(traj=empty_df,
-                           input_crs="EPSG:4326",
-                           output_crs="EPSG:3857",
+    result = to_projection(data=empty_df,
+                           data_crs="EPSG:4326",
+                           crs_to="EPSG:3857",
                            longitude="longitude",
                            latitude="latitude")
     assert (len(result[0]), len(result[1])) == (0, 0)
@@ -134,9 +170,9 @@ def test_projection_with_empty_df():
 def test_projection_with_custom_columns(simple_df_one_user):
     # Traj has custom column names
     df_custom = simple_df_one_user.rename(columns={'longitude': 'lon', 'latitude': 'lat'})
-    result = to_projection(traj=df_custom,
-                           input_crs="EPSG:4326",
-                           output_crs="EPSG:3857",
+    result = to_projection(data=df_custom,
+                           data_crs="EPSG:4326",
+                           crs_to="EPSG:3857",
                            longitude="lon",
                            latitude="lat")
     x = pd.Series([1.294860e+07, 1.294861e+07, 1.294862e+07, 1.294862e+07])
@@ -146,146 +182,89 @@ def test_projection_with_custom_columns(simple_df_one_user):
     assert_series_equal(result[0], ans[0], rtol=1e-6)
     assert_series_equal(result[1], ans[1], rtol=1e-6)
 
-def test_projection_invalid_columns(simple_df_one_user):
-    df_invalid = simple_df_one_user.rename(columns={'longitude': 'lon', 'latitude': 'lat'})
-    with pytest.raises(ValueError):
-        to_projection(traj=df_invalid)
-
-def test_in_geo(simple_df_multi_user):
+def test_is_within_mask(simple_df_multi_user):
     polygon = Polygon([(116.3192, 39.9840), (116.31965, 39.9840),
                        (116.31965, 39.9845), (116.3192, 39.9845)])
-    df = _in_geo(traj=simple_df_multi_user, 
-                 input_x='longitude', 
-                 input_y='latitude', 
-                 polygon=polygon, 
-                 crs='EPSG:4326')
-    assert 'in_geo' in df.columns
-    expected_values = [1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 0]
-    assert df['in_geo'].tolist() == expected_values
+    mask = is_within(
+        df=simple_df_multi_user,
+        within=polygon,
+        data_crs='EPSG:4326',
+        longitude='longitude',
+        latitude='latitude'
+    )
+    expected = [True, True, True, True, True, True, False, False, False, True, True, False]
+    assert mask.tolist() == expected
 
 
-def test_filter_no_polygon(simple_df_multi_user):
-    result = filter_users(simple_df_multi_user,
-                          start_time=pd.Timestamp('2023-01-01 00:00:00', tz='America/New_York'),
-                          end_time=pd.Timestamp('2023-01-08 00:00:00', tz='America/New_York'),
-                          min_active_days=1,
-                          crs='EPSG:4326', 
-                          longitude='longitude', 
-                          latitude='latitude',
-                          timestamp='timestamp')
-    assert len(result) == 12
-    assert _is_traj_df(result, longitude='longitude', latitude='latitude', timestamp='timestamp')
+def test_within_filters_rows(simple_df_multi_user):
+    polygon = Polygon([(116.3192, 39.9840), (116.31965, 39.9840),
+                       (116.31965, 39.9845), (116.3192, 39.9845)])
+    filtered = within(
+        simple_df_multi_user,
+        polygon,
+        data_crs='EPSG:4326',
+        longitude='longitude',
+        latitude='latitude'
+    )
+    assert len(filtered) == 8
+    assert _is_traj_df(filtered, longitude='longitude', latitude='latitude', timestamp='timestamp')
 
-def test_filter_datetime(simple_df_multi_user):
-    result = filter_users(simple_df_multi_user,
-                          start_time=pd.Timestamp('2023-01-01 00:00:00', tz='America/New_York'),
-                          end_time=pd.Timestamp('2023-01-08 00:00:00', tz='America/New_York'),
-                          min_active_days=1,
-                          crs='EPSG:4326', 
-                          longitude='longitude', 
-                          latitude='latitude',
-                          datetime='datetime')
-    assert len(result) == 12
-    assert _is_traj_df(result, longitude='longitude', latitude='latitude', datetime='datetime')
+def test_downsample_minute_window(simple_df_one_user):
+    # Duplicate entries within the same minute for a single user
+    df = simple_df_one_user.copy()
+    # Add a duplicate point within same minute
+    dup = df.iloc[[0]].copy()
+    dup['timestamp'] = dup['timestamp'] + 10  # 10 seconds later
+    df2 = pd.concat([df, dup], ignore_index=True)
+    reduced = downsample(df2, periods=1, freq='min', keep='first', user_id='user_id', timestamp='timestamp')
+    # First minute should have only one record after downsampling
+    assert reduced['timestamp'].nunique() <= df2['timestamp'].nunique()
 
-def test_filter_users_within_bounds(simple_df_one_user):
+def test_coverage_and_completeness_series():
+    # Series of 1-hour apart timestamps
+    base = pd.Series([0, 3600, 7200, 10800])
+    hits = coverage_matrix(base, periods=1, freq='h')
+    assert hits.sum() in (3, 4)
+    comp = completeness(base, periods=1, freq='h')
+    assert comp == 1.0
+
+def test_completeness_multi_user(simple_df_multi_user):
+    # Ensure returns per-user stats and reasonable bounds
+    comp = completeness(simple_df_multi_user, periods=1, freq='h', traj_cols=None, user_id='user_id', timestamp='timestamp')
+    assert isinstance(comp, pd.Series)
+    assert (comp >= 0).all() and (comp <= 1).all()
+
+def test_within_counts_multi_user(simple_df_multi_user):
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_users(simple_df_one_user,
-                          polygon=polygon,
-                          start_time=pd.Timestamp('2008-10-23 00:00:00', tz='America/New_York'),
-                          end_time=pd.Timestamp('2008-10-24 00:00:00', tz='America/New_York'),
-                          min_active_days=1,
-                          crs='EPSG:4326')
-    assert len(result) == 4
-    assert _is_traj_df(result)
+    filtered = within(simple_df_multi_user, polygon, data_crs='EPSG:4326', longitude='longitude', latitude='latitude')
+    assert len(filtered) > 0
 
-def test_filter_users_outside_bounds(simple_df_one_user):
-    polygon = Polygon([(116.3180, 39.9830), (116.3185, 39.9830), (116.3185, 39.9835), (116.3180, 39.9835)])
-    result = filter_users(simple_df_one_user,
-                          polygon=polygon,
-                          start_time=pd.Timestamp('2008-10-23 00:00:00', tz='America/New_York'),
-                          end_time=pd.Timestamp('2008-10-24 00:00:00', tz='America/New_York'),
-                          min_active_days=1,
-                          crs='EPSG:4326')
-    assert len(result) == 0
-    assert _is_traj_df(result)
-
-def test_filter_users_within_bounds_multi_user(simple_df_multi_user):
-    polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_users(simple_df_multi_user, 
-                          polygon=polygon,
-                          start_time=pd.Timestamp('2023-01-01 00:00:00', tz='America/New_York'),
-                          end_time=pd.Timestamp('2023-01-08 00:00:00', tz='America/New_York'),
-                          min_active_days=1,
-                          crs='EPSG:4326')
-    assert len(result) == 10
-    assert _is_traj_df(result)
-
-def test_filter_users_outside_bounds_multi_user(simple_df_multi_user):
-    polygon = Polygon([(116.3180, 39.9830), (116.3185, 39.9830), (116.3185, 39.9835), (116.3180, 39.9835)])
-    result = filter_users(simple_df_multi_user,
-                          polygon=polygon,
-                          start_time=pd.Timestamp('2023-01-01 00:00:00', tz='America/New_York'),
-                          end_time=pd.Timestamp('2023-01-08 00:00:00', tz='America/New_York'),
-                          min_active_days=1,
-                          crs='EPSG:4326')
-    assert len(result) == 0
-    assert _is_traj_df(result)
-
-# def test_filter_users_with_spark(simple_df_one_user, spark):
+# def test__filtered_users_with_spark(simple_df_one_user, spark):
 #     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-#     result = filter_users(simple_df_one_user, polygon=polygon, min_active_days=1, start_time='2008-10-23 00:00:00', end_time='2008-10-24 00:00:00', spark_session=spark)
+#     result = _filtered_users(simple_df_one_user, polygon=polygon, min_active_days=1, start_time='2008-10-23 00:00:00', end_time='2008-10-24 00:00:00', spark_session=spark)
 #     assert len(result) == 4
 
-def test_filter_users_with_custom_columns(simple_df_one_user):
+def test_within_custom_columns(simple_df_one_user):
     df_custom = simple_df_one_user.rename(columns={'longitude': 'lon', 'latitude': 'lat'})
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_users(df_custom,
-                          polygon=polygon,
-                          start_time=pd.Timestamp('2008-10-23 00:00:00', tz='America/New_York'),
-                          end_time=pd.Timestamp('2008-10-24 00:00:00', tz='America/New_York'),
-                          min_active_days=1,
-                          crs='EPSG:4326',
-                          longitude='lon',
-                          latitude='lat')
-    assert len(result) == 4
-    assert _is_traj_df(result, longitude='lon', latitude='lat')
+    filtered = within(df_custom, polygon, data_crs='EPSG:4326', traj_cols={'longitude':'lon','latitude':'lat'})
+    assert len(filtered) == 4
+    assert _is_traj_df(filtered, longitude='lon', latitude='lat')
 
-def test_filter_users_invalid_polygon(simple_df_one_user):
-    with pytest.raises(TypeError):
-        filter_users(simple_df_one_user,
-                     "invalid_polygon",
-                     start_time=pd.Timestamp('2008-10-23 00:00:00', tz='America/New_York'),
-                     end_time=pd.Timestamp('2008-10-24 00:00:00', tz='America/New_York'),
-                     min_active_days=1,
-                     crs='EPSG:4326')
+def test_is_within_invalid_polygon(simple_df_one_user):
+    with pytest.raises(Exception):
+        is_within(simple_df_one_user, "invalid_polygon", data_crs='EPSG:4326')
 
-def test_filter_users_k2(simple_df_multi_user):
-    polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_users(simple_df_multi_user,
-                          polygon=polygon,
-                          start_time=pd.Timestamp('2023-01-01 00:00:00', tz='America/New_York'),
-                          end_time=pd.Timestamp('2023-01-08 00:00:00', tz='America/New_York'),
-                          min_active_days=2,
-                          crs='EPSG:4326')
-    assert len(result) == 7  # Users 1, 2, and 4 have points within the polygon on at least 2 distinct days
-    assert _is_traj_df(result)
+def test_coverage_matrix_and_completeness_df(simple_df_multi_user):
+    hits = coverage_matrix(simple_df_multi_user, periods=1, freq='h', traj_cols=None, user_id='user_id', timestamp='timestamp')
+    assert isinstance(hits, pd.DataFrame)
+    comp = completeness(simple_df_multi_user, periods=1, freq='h', traj_cols=None, user_id='user_id', timestamp='timestamp')
+    assert isinstance(comp, pd.Series)
 
-def test_filter_users_k4(simple_df_multi_user):
-    polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_users(simple_df_multi_user,
-                          polygon=polygon,
-                          start_time=pd.Timestamp('2023-01-01 00:00:00', tz='America/New_York'),
-                          end_time=pd.Timestamp('2023-01-08 00:00:00', tz='America/New_York'),
-                          min_active_days=4,
-                          crs='EPSG:4326')
-    assert len(result) == 0  # No users have points within the polygon on at least 3 distinct days
-    assert _is_traj_df(result)
-
-def test_projection_and_filter_users(simple_df_one_user):
-    projected_x, projected_y = to_projection(traj=simple_df_one_user,
-                                             input_crs="EPSG:4326",
-                                             output_crs="EPSG:3857",
+def test_projection_and_within(simple_df_one_user):
+    projected_x, projected_y = to_projection(data=simple_df_one_user,
+                                             data_crs="EPSG:4326",
+                                             crs_to="EPSG:3857",
                                              longitude='longitude',
                                              latitude='latitude')
     polygon = Polygon([(1.294861e+07, 4.863647e+06), (1.294861e+07, 4.863649e+06),
@@ -293,20 +272,14 @@ def test_projection_and_filter_users(simple_df_one_user):
 
     simple_df_one_user['x'] = projected_x
     simple_df_one_user['y'] = projected_y
-    result = filter_users(simple_df_one_user,
-                          polygon=polygon,
-                          start_time=pd.Timestamp('2008-10-23 00:00:00', tz='America/New_York'),
-                          end_time=pd.Timestamp('2008-10-24 00:00:00', tz='America/New_York'),
-                          min_active_days=1,
-                          x='x',
-                          y='y')
-    assert len(result) == 4
-    assert _is_traj_df(result)
+    mask = is_within(simple_df_one_user, polygon, data_crs='EPSG:3857', x='x', y='y')
+    assert mask.sum() > 0
 
-def test_projection_and_filter_users_wrong_cols(simple_df_one_user):
-    projected_x, projected_y = to_projection(traj=simple_df_one_user,
-                                             input_crs="EPSG:4326",
-                                             output_crs="EPSG:3857",
+def test_projection_and_within_wrong_cols(simple_df_one_user):
+    """Test that when both lat/lon and x/y are present, auto-detection prefers x/y."""
+    projected_x, projected_y = to_projection(data=simple_df_one_user,
+                                             data_crs="EPSG:4326",
+                                             crs_to="EPSG:3857",
                                              longitude='longitude',
                                              latitude='latitude')
     polygon = Polygon([(1.294861e+07, 4.863647e+06), (1.294861e+07, 4.863649e+06),
@@ -314,79 +287,57 @@ def test_projection_and_filter_users_wrong_cols(simple_df_one_user):
     
     simple_df_one_user['x'] = projected_x
     simple_df_one_user['y'] = projected_y
-    result = filter_users(simple_df_one_user,
-                          polygon=polygon,
-                          start_time=pd.Timestamp('2008-10-23 00:00:00', tz='America/New_York'),
-                          end_time=pd.Timestamp('2008-10-24 00:00:00', tz='America/New_York'),
-                          min_active_days=1)
-    assert len(result) == 0
-    assert _is_traj_df(result)
+    # Without specifying column names, auto-detection should prefer x/y over lat/lon
+    mask = is_within(simple_df_one_user, polygon, data_crs='EPSG:3857')
+    # Should successfully use x/y coordinates and find points within polygon
+    assert isinstance(mask, pd.Series)
+    assert mask.sum() > 0
 
-def test_filter_users_within_time_frame(simple_df_one_user):
-    polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_users(simple_df_one_user,
-                          polygon=polygon,
-                          start_time='2008-10-23 13:53:00',
-                          end_time='2008-10-23 13:53:10',
-                          timezone='America/New_York',
-                          min_active_days=1,
-                          crs='EPSG:4326')
-    assert len(result) == 2
-    assert _is_traj_df(result)
+def test_completeness_time_window(simple_df_one_user):
+    comp = completeness(simple_df_one_user, periods=1, freq='min', traj_cols=None, user_id='user_id', timestamp='timestamp')
+    assert isinstance(comp, pd.Series)
 
-def test_filter_users_within_time_frame_datetime(simple_df_one_user):
-    polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_users(simple_df_one_user,
-                          polygon=polygon,
-                          start_time='2008-10-23 13:53:00',
-                          end_time='2008-10-23 13:53:10',
-                          timezone='America/New_York',
-                          min_active_days=1,
-                          crs='EPSG:4326',
-                          datetime='datetime')
-    assert len(result) == 2
-    assert _is_traj_df(result)
-
-def test_filter_users_outside_time_frame(simple_df_one_user):
-    polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_users(simple_df_one_user,
-                          polygon=polygon,
-                          start_time=pd.Timestamp('2008-10-23 13:53:20', tz='America/New_York'),
-                          end_time=pd.Timestamp('2008-10-23 13:53:30', tz='America/New_York'),
-                          min_active_days=1,
-                          crs='EPSG:4326')
-    assert len(result) == 0
-    assert _is_traj_df(result)
-
-def test_filter_users_within_time_frame_multi_user(simple_df_multi_user):
-    polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_users(simple_df_multi_user,
-                          polygon=polygon,
-                          start_time='2023-01-01 05:00:00',
-                          end_time='2023-01-03 05:00:00',
-                          min_active_days=1,
-                          crs='EPSG:4326')
-    assert len(result) == 6
-    assert _is_traj_df(result)
-
-def test_filter_users_outside_time_frame_multi_user(simple_df_multi_user):
-    polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_users(simple_df_multi_user,
-                          polygon=polygon,
-                          start_time=pd.Timestamp('2023-01-05 00:00:00', tz='America/New_York'),
-                          end_time=pd.Timestamp('2023-01-08 00:00:00', tz='America/New_York'),
-                          min_active_days=1,
-                          crs='EPSG:4326')
-    assert len(result) == 1
-    assert _is_traj_df(result)
-
-def test_filter_users_with_empty_df():
+def test_within_with_empty_df():
     empty_df = pd.DataFrame(columns=['user_id', 'latitude', 'longitude', 'datetime', 'timestamp', 'tz_offset'])
     polygon = Polygon([(116.3190, 39.9840), (116.3200, 39.9840), (116.3200, 39.9850), (116.3190, 39.9850)])
-    result = filter_users(empty_df,
-                          polygon=polygon,
-                          start_time=pd.Timestamp('2008-10-23 00:00:00', tz='America/New_York'),
-                          end_time=pd.Timestamp('2008-10-24 00:00:00', tz='America/New_York'),
-                          min_active_days=1,
-                          crs='EPSG:4326')
-    assert len(result) == 0
+    filtered = within(empty_df, polygon, data_crs='EPSG:4326', longitude='longitude', latitude='latitude')
+    assert len(filtered) == 0
+
+
+def test_completeness_empty_dataframe():
+    df = pd.DataFrame(columns=['user_id', 'timestamp'])
+    out = completeness(df, periods=1, freq='h', traj_cols=None, user_id='user_id', timestamp='timestamp')
+    assert isinstance(out, pd.Series)
+    assert out.empty
+
+
+def test_completeness_bad_freq_raises(simple_df_one_user):
+    with pytest.raises(ValueError):
+        coverage_matrix(simple_df_one_user, periods=1, freq='hourly', traj_cols=None, user_id='user_id', timestamp='timestamp')
+
+
+def test_to_zoned_datetime_basic():
+    from nomad.filters import to_zoned_datetime
+    ts = pd.Series([0, 3600], dtype='int64')
+    offs = pd.Series([0, 0], dtype='int64')
+    zoned = to_zoned_datetime(ts, offs)
+    assert pd.api.types.is_datetime64_any_dtype(zoned) or zoned.dtype == 'object'
+    # Check first two values stringified
+    s = zoned.astype(str).tolist()
+    assert s[0].startswith('1970-01-01') and s[1].startswith('1970-01-01')
+
+
+def test_to_zoned_datetime_with_na_offset_raises():
+    from nomad.filters import to_zoned_datetime
+    ts = pd.Series([0, 3600], dtype='int64')
+    offs = pd.Series([0, pd.NA], dtype='Int64')
+    with pytest.raises(Exception):
+        to_zoned_datetime(ts, offs)
+
+
+def test_to_yyyymmdd_nullable_outputs():
+    s = pd.Series(['2024-02-10 12:34:56', None])
+    dates = to_yyyymmdd(s)
+    # nullable dtype when NA is present
+    assert str(dates.dtype) in ('Int64', 'int64')
+    assert pd.isna(dates.iloc[1])

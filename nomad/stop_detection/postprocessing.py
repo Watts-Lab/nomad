@@ -4,40 +4,101 @@ from functools import partial
 import nomad.stop_detection.utils as utils
 import nomad.stop_detection.grid_based as GRID_BASED 
 import nomad.io.base as loader
-from nomad.stop_detection.dbscan import _find_neighbors
+from nomad.stop_detection.preprocessing import _find_neighbors
 from nomad.filters import to_timestamp
 import nomad.stop_detection.hdbscan as HDBSCAN
 import nomad.stop_detection.lachesis as LACHESIS
-import nomad.stop_detection.dbscan as TADBSCAN
 
-def remove_overlaps(pred=None,
-                    data=None,
-                    time_thresh=None,
-                    dur_min=None,
-                    min_pts=None,
-                    dist_thresh=None,
-                    method = 'polygon',
-                    traj_cols = None,
-                    **kwargs):
-    pred = pred.copy()
+def remove_overlaps(data, time_thresh=None, min_pts=None, dist_thresh=None, dur_min=5, min_cluster_size=2, method='polygon', traj=None, summarize_stops=None, traj_cols=None, **kwargs):
+    """
+    Remove temporal overlaps in stop clusters by reassigning cluster labels.
+    
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Input data - either trajectory data with cluster labels or stop table.
+        If stop table, must have start/end time or duration columns.
+    time_thresh : int, optional
+        Maximum time gap (minutes) between consecutive pings within a stop.
+    min_pts : int, optional
+        Minimum neighbors for core points (used in recurse method).
+    dist_thresh : float, optional
+        Distance threshold for neighbors (used in recurse method).
+    dur_min : int, default 5
+        Minimum duration (minutes) for a valid stop.
+    min_cluster_size : int, default 2
+        Minimum number of points required to form a stop.
+    method : {'polygon', 'cluster', 'recurse'}, default 'polygon'
+        Method for removing overlaps:
+        - 'polygon': Use location_id for spatial grouping
+        - 'cluster': Use cluster labels for spatial grouping  
+        - 'recurse': Recursive DBSCAN-based approach
+    traj : pd.DataFrame, optional
+        Trajectory data required when input is a stop table.
+    summarize_stops : bool, optional
+        Whether to return stop summary table (True) or cluster labels (False).
+        Auto-detected based on input type if None:
+        - Trajectory input: defaults to False (return labels)
+        - Stop table input: defaults to True (return summary)
+    traj_cols : dict, optional
+        Column name mappings for trajectory attributes.
+    **kwargs
+        Additional arguments passed to internal functions.
+    
+    Returns
+    -------
+    pd.DataFrame or pd.Series
+        If summarize_stops=True: Stop summary table with columns like start_time, 
+        duration, location_id, etc.
+        If summarize_stops=False: Cluster labels as Series with same index as input.
+    """
+    # Detect if input is stop table or trajectory data
+    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs, defaults={'location_id':'location_id'}, warn=False)
+    end_col_present = loader._has_end_cols(data.columns, traj_cols_temp)
+    duration_col_present = loader._has_duration_cols(data.columns, traj_cols_temp)
+    is_stop_table = (end_col_present or duration_col_present)
+    
+    if is_stop_table:
+        # Input is stop table - require traj parameter
+        if traj is None:
+            raise ValueError("When input is a stop table, 'traj' parameter (trajectory data) is required")
+        
+        # Set summarize_stops to True unless explicitly overridden
+        if summarize_stops is None:
+            summarize_stops = True
+            
+        # Use trajectory data as the main data
+        pred = traj.copy()
+    else:
+        # Input is trajectory data - ignore traj parameter, set summarize_stops to False
+        if summarize_stops is None:
+            summarize_stops = False
+        pred = data.copy()
+    
+    # Handle empty data - return appropriate type based on summarize_stops
+    if data.empty:
+        if summarize_stops:
+            return data  # Return empty DataFrame
+        else:
+            # Return empty Series with cluster column name
+            return pd.Series([], name='cluster', dtype=data.get('cluster', pd.Series(dtype=int)).dtype)
+    
     # load kwarg and traj_col args onto lean defaults
     traj_cols = loader._parse_traj_cols(
         pred.columns,
         traj_cols,
         kwargs,
         defaults={'location_id':'location_id'},
-        warn=False) 
+        warn=False)
 
     summarize_stops_with_loc = partial(
         utils.summarize_stop,
-        x=traj_cols['x'], # to do: what if it is lat, lon?
-        y=traj_cols['y'],
         keep_col_names=False,
-        passthrough_cols = [traj_cols['location_id']])
+        passthrough_cols = [traj_cols['location_id']],
+        traj_cols=traj_cols,
+        **kwargs)
 
     if  method == 'polygon':
-        if pred is None:
-            raise ValueError("`pred` must be provided for method='polygon'")
         if traj_cols['location_id'] not in pred.columns:
             raise KeyError(
                     f"Missing required `location_id` column for method `polygon`."
@@ -52,13 +113,30 @@ def remove_overlaps(pred=None,
                                 data=pred.loc[pred.cluster!=-1],
                                 time_thresh=time_thresh,
                                 dur_min=dur_min,
-                                min_cluster_size=min_pts,
+                                min_cluster_size=min_cluster_size,
                                 traj_cols=traj_cols)
                 
         pred.loc[pred.cluster!=-1, 'cluster'] = labels
         pred = pred.drop('temp_building_id', axis=1)
         # Consider returning just cluster labels, same as the input! 
-        stops = pred.loc[pred.cluster!=-1].groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
+        filtered_pred = pred.loc[pred.cluster!=-1]
+        if filtered_pred.empty:
+            if summarize_stops:
+                # Get column names by calling summarize function on dummy data
+                cols = utils._get_empty_stop_columns(
+                    pred.columns, complete_output=False, passthrough_cols=[traj_cols['location_id']], 
+                    traj_cols=traj_cols, keep_col_names=False, is_grid_based=False, **kwargs
+                )
+                stops = pd.DataFrame(columns=cols, dtype=object)
+            else:
+                # Return cluster labels for all rows (including noise points with -1)
+                stops = pred['cluster']
+        else:
+            if summarize_stops:
+                stops = filtered_pred.groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
+            else:
+                # Return the cluster labels for all rows (including noise points)
+                stops = pred['cluster']
 
     elif method == 'cluster':
         traj_cols['location_id'] = 'cluster'
@@ -66,41 +144,47 @@ def remove_overlaps(pred=None,
                                 data=pred.loc[pred.cluster!=-1],
                                 time_thresh=time_thresh,
                                 dur_min=dur_min,
-                                min_cluster_size=min_pts,
+                                min_cluster_size=min_cluster_size,
                                 traj_cols=traj_cols)
-        
         pred.loc[pred.cluster!=-1, 'cluster'] = labels
-        stops = pred.groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
+        filtered_pred = pred.loc[pred.cluster!=-1]
+        if filtered_pred.empty:
+            if summarize_stops:
+                # Get column names by calling summarize function on dummy data
+                cols = utils._get_empty_stop_columns(
+                    pred.columns, complete_output=False, passthrough_cols=[traj_cols['location_id']], 
+                    traj_cols=traj_cols, keep_col_names=False, is_grid_based=False, **kwargs
+                )
+                stops = pd.DataFrame(columns=cols, dtype=object)
+            else:
+                # Return cluster labels for all rows (including noise points with -1)
+                stops = pred['cluster']
+        else:
+            if summarize_stops:
+                stops = filtered_pred.groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
+            else:
+                # Return the cluster labels for all rows (including noise points)
+                stops = pred['cluster']
     
     elif method == 'recurse':
-        if data is None:
-            raise ValueError("`data` must be provided for method='dbscan'")
-
-        t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)
-        times = data[traj_cols[t_key]]
+        t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(pred.columns, traj_cols, kwargs)
+        times = pred[traj_cols[t_key]]
         times = to_timestamp(times).values if use_datetime else times.values
 
-        data_temp = data.copy()
+        data_temp = pred.copy()
         data_temp.index = times
-        output = pd.Series(-1, index=times, name='cluster')
-        _process_clusters(data_temp, time_thresh, dist_thresh, min_pts, output, use_lon_lat, use_datetime, traj_cols, dur_min=dur_min)
-        output.index = data.index
-        stops = data.copy()
-        stops['cluster'] = output
-        stops = pred.loc[pred.cluster!=-1].groupby('cluster', as_index=False).apply(summarize_stops_with_loc, include_groups=False)
+        stops = pd.DataFrame({'cluster': -1, 'core': -1}, index=times)
+        _process_clusters(data_temp, time_thresh, dist_thresh, min_pts, stops, use_lon_lat, use_datetime, traj_cols, dur_min=dur_min)
+        stops.index = pred.index
+        
+        if not summarize_stops:
+            # Return just the cluster labels
+            stops = stops['cluster']
+    
     return stops
 
-def _process_clusters(data,
-                      time_thresh,
-                      dist_thresh,
-                      min_pts,
-                      output,
-                      use_lon_lat,
-                      use_datetime,
-                      traj_cols,
-                      cluster_df=None,
-                      neighbor_dict=None,
-                      dur_min=5):
+def _process_clusters(data, time_thresh, dist_thresh, min_pts, output, use_lon_lat, use_datetime, traj_cols, 
+                     cluster_df=None, neighbor_dict=None, dur_min=5):
     """
     Recursively process spatiotemporal clusters from trajectory data to identify and refine valid clusters.
     
@@ -114,8 +198,8 @@ def _process_clusters(data,
         Distance threshold for identifying neighbors.
     min_pts : int
         Minimum number of points required to form a dense region (core point).
-    output : pandas.Series
-        Output Series to store cluster labels for valid clusters.
+    output : pandas.DataFrame
+        Output DataFrame to store cluster and core labels for valid clusters.
     use_lon_lat : bool
         Whether to use longitude/latitude coordinates.
     use_datetime : bool
@@ -123,7 +207,7 @@ def _process_clusters(data,
     traj_cols : dict
         Dictionary mapping column names for trajectory attributes.
     cluster_df : pandas.DataFrame, optional
-        DataFrame containing cluster labels from DBSCAN. If not provided,
+        DataFrame containing cluster and core labels from DBSCAN. If not provided,
         it will be computed.
     neighbor_dict : dict, optional
         Precomputed dictionary of neighbors. If not provided, it will be computed.
@@ -139,6 +223,8 @@ def _process_clusters(data,
         neighbor_dict = _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, traj_cols)
     
     if cluster_df is None:
+        # Local import to avoid circular dependency
+        import nomad.stop_detection.dbscan as TADBSCAN
         cluster_df = TADBSCAN.dbscan(data, time_thresh, dist_thresh, min_pts, use_lon_lat, use_datetime, traj_cols, neighbor_dict=neighbor_dict)
     
     if len(cluster_df) < min_pts:
@@ -159,8 +245,9 @@ def _process_clusters(data,
             duration = int((y.index.max() - y.index.min()) // 60)
 
             if duration > dur_min:
-                cid = output.max() + 1  # max cluster ID + 1
-                output.loc[y.index] = cid
+                cid = max(output['cluster']) + 1 # Create new cluster id
+                output.loc[y.index, 'cluster'] = cid
+                output.loc[z.index, 'core'] = cid
             
             return True
         elif len(y) == 0: # The points in df, despite originally being part of a cluster, no longer hold their own
@@ -239,7 +326,7 @@ def invalid_stops(stop_data, traj_cols=None, print_stops=False, **kwargs):
         first offending pair.
     """
     # determine start-time key and whether it's datetime
-    t_key, use_datetime = utils._fallback_time_cols(stop_data.columns, traj_cols, kwargs)
+    t_key, use_datetime = loader._fallback_time_cols_dt(stop_data.columns, traj_cols, kwargs)
     end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
 
     # canonical column mapping
@@ -278,6 +365,11 @@ def invalid_stops(stop_data, traj_cols=None, print_stops=False, **kwargs):
     return False
 
 def fill_timestamp_gaps(first_time, last_time, stop_table):
+
+    # if stop_table is empty, return empty DataFrame with same columns
+    if stop_table.empty:
+        return pd.DataFrame(columns=stop_table.columns)
+
     new_rows = []
 
     # fill initial gap
@@ -325,3 +417,227 @@ def fill_timestamp_gaps(first_time, last_time, stop_table):
     df_full = df_full.sort_values('start_timestamp').reset_index(drop=True)
 
     return df_full
+
+
+def merge_stops(stops, max_time_gap="10min", location_col="loc_id", agg=None, traj_cols=None, **kwargs):
+    """
+    Merge consecutive stops at the same location within a time threshold.
+
+    This function aggregates stops that are:
+    - At the same location (same location_col value)
+    - Consecutive in time (gap between stops <= max_time_gap)
+    - From the same user
+
+    Parameters
+    ----------
+    stops : pd.DataFrame
+        Stop table with temporal and location columns.
+        Must contain columns for start time, end time (or duration), and location.
+
+    max_time_gap : str or pd.Timedelta, default "10min"
+        Maximum duration between consecutive stops to still be merged.
+        If str, must be parsable by pd.to_timedelta (e.g., "10min", "1h", "30s").
+        If pd.Timedelta, used directly.
+
+    location_col : str, default "loc_id"
+        Name of the column containing location identifiers.
+        Stops are only merged if they have the same value in this column.
+
+    agg : dict, optional
+        Dictionary to aggregate columns after merging stops.
+        Keys are column names, values are aggregation functions.
+        If None or empty, only required columns (user_id, start times, end times)
+        are aggregated and returned.
+        Example: {"geometry": "first", "n_pings": "sum"}
+
+    traj_cols : dict, optional
+        Column name mappings. Supported keys:
+        - 'user_id': user identifier column
+        - 'timestamp' or 'datetime': start time column
+        - 'end_timestamp' or 'end_datetime': end time column
+        - 'duration': duration column (used if end time not present)
+
+    **kwargs
+        Additional keyword arguments for column name specification.
+
+    Returns
+    -------
+    pd.DataFrame
+        Merged stops table with the same structure as input but with consecutive
+        stops at the same location merged into single rows.
+
+    Notes
+    -----
+    - The index of the returned DataFrame corresponds to the first stop in each
+      merged group.
+    - If a stop has no consecutive neighbor at the same location (within max_time_gap),
+      it remains unchanged.
+    - Aggregation for required columns:
+        - start time: first (earliest start)
+        - end time: last (latest end)
+        - location: first (same for all in group)
+        - user_id: first (same for all in group)
+
+    Examples
+    --------
+    >>> # Basic usage
+    >>> merged = merge_stops(stops, max_time_gap="15min", location_col="location_id")
+
+    >>> # With custom aggregation to preserve geometry and sum n_pings
+    >>> merged = merge_stops(
+    ...     stops,
+    ...     max_time_gap="30min",
+    ...     location_col="building_id",
+    ...     agg={"geometry": "first", "n_pings": "sum"}
+    ... )
+    """
+    if agg is None:
+        agg = {}
+
+    # Convert max_time_gap to Timedelta
+    if isinstance(max_time_gap, str):
+        max_time_gap = pd.to_timedelta(max_time_gap)
+    elif not isinstance(max_time_gap, pd.Timedelta):
+        raise TypeError("Parameter max_time_gap must be either of type str or pd.Timedelta!")
+
+    # Validate location column exists
+    if location_col not in stops.columns:
+        raise ValueError(f"Location column '{location_col}' not found in stops DataFrame")
+
+    if stops.empty:
+        return stops.copy()
+
+    # Parse column names
+    traj_cols = loader._parse_traj_cols(stops.columns, traj_cols, kwargs, warn=False)
+
+    # Determine temporal columns
+    t_key, use_datetime = loader._fallback_time_cols_dt(stops.columns, traj_cols, kwargs)
+    end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
+
+    # Check for required temporal columns
+    end_col_present = loader._has_end_cols(stops.columns, traj_cols)
+    duration_col_present = loader._has_duration_cols(stops.columns, traj_cols)
+
+    if not (end_col_present or duration_col_present):
+        raise ValueError("Stops must contain either end time or duration columns")
+
+    # Get user_id column if present
+    user_col = None
+    if 'user_id' in traj_cols and traj_cols['user_id'] in stops.columns:
+        user_col = traj_cols['user_id']
+
+    # Work with a copy
+    stops_merge = stops.copy()
+    index_name = stops.index.name if stops.index.name else 'id'
+
+    # Compute end time if not present
+    if not end_col_present:
+        dur_mins = stops_merge[traj_cols['duration']]
+        if use_datetime:
+            stops_merge[end_t_key] = stops_merge[traj_cols[t_key]] + pd.to_timedelta(dur_mins, unit='m')
+        else:
+            stops_merge[end_t_key] = stops_merge[traj_cols[t_key]] + dur_mins * 60
+    else:
+        end_t_key = traj_cols[end_t_key]
+
+    # Reset index and preserve it
+    stops_merge = stops_merge.reset_index()
+    stops_merge["index_temp"] = stops_merge[index_name]
+
+    # Sort by user and time
+    if user_col:
+        stops_merge = stops_merge.sort_values(by=[user_col, traj_cols[t_key]])
+    else:
+        stops_merge = stops_merge.sort_values(by=traj_cols[t_key])
+
+    # Get next row information
+    shift_cols = [traj_cols[t_key], location_col]
+    shift_names = ["next_started_at", "next_location"]
+
+    if user_col:
+        shift_cols.insert(0, user_col)
+        shift_names.insert(0, "next_user_id")
+
+    stops_merge[shift_names] = stops_merge[shift_cols].shift(-1)
+    stops_merge["next_id"] = stops_merge["index_temp"].shift(-1)
+
+    # Iteratively merge stops
+    cond = pd.Series(data=False, index=stops_merge.index)
+    cond_old = pd.Series(data=True, index=stops_merge.index)
+
+    while np.sum(cond != cond_old) >= 1:
+        # Build merge conditions
+        conditions = []
+
+        # Same user (if user_col exists)
+        if user_col:
+            conditions.append(stops_merge["next_user_id"] == stops_merge[user_col])
+
+        # Time gap within threshold
+        conditions.append(
+            stops_merge["next_started_at"] - stops_merge[end_t_key] <= max_time_gap
+        )
+
+        # Same location
+        conditions.append(stops_merge[location_col] == stops_merge["next_location"])
+
+        # Not already merged
+        conditions.append(stops_merge["index_temp"] != stops_merge["next_id"])
+
+        # Combine all conditions
+        cond = pd.Series(data=True, index=stops_merge.index)
+        for c in conditions:
+            cond = cond & c
+
+        # Assign merged index
+        stops_merge.loc[cond, "index_temp"] = stops_merge.loc[cond, "next_id"]
+
+        # Update for next iteration
+        cond_diff = cond != cond_old
+        cond_old = cond.copy()
+
+        if np.sum(cond_diff) == 0:
+            break
+
+    # Define aggregation dictionary
+    agg_dict = {
+        index_name: "first",
+        traj_cols[t_key]: "first",  # earliest start time
+        end_t_key: "last",           # latest end time
+        location_col: "first",       # same location for all in group
+    }
+
+    if user_col:
+        agg_dict[user_col] = "first"
+
+    # Add user-defined aggregations
+    agg_dict.update(agg)
+
+    # Group and aggregate
+    stops_merged = stops_merge.groupby(by="index_temp").agg(agg_dict)
+
+    # Recompute duration if it was in the original
+    if duration_col_present:
+        if use_datetime:
+            stops_merged[traj_cols['duration']] = (
+                (stops_merged[end_t_key] - stops_merged[traj_cols[t_key]])
+                .dt.total_seconds() / 60
+            ).astype(int)
+        else:
+            stops_merged[traj_cols['duration']] = (
+                (stops_merged[end_t_key] - stops_merged[traj_cols[t_key]]) / 60
+            ).astype(int)
+
+    # Clean up: set index and sort
+    stops_merged = stops_merged.set_index(index_name)
+
+    if user_col:
+        stops_merged = stops_merged.sort_values(by=[user_col, traj_cols[t_key]])
+    else:
+        stops_merged = stops_merged.sort_values(by=traj_cols[t_key])
+
+    # Remove the computed end_t_key if it wasn't in the original
+    if not end_col_present and end_t_key in stops_merged.columns:
+        stops_merged = stops_merged.drop(columns=[end_t_key])
+
+    return stops_merged

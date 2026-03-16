@@ -1,7 +1,6 @@
 import pandas as pd
 from scipy.spatial.distance import pdist, cdist
 import numpy as np
-import math
 import datetime as dt
 from datetime import timedelta
 import matplotlib.pyplot as plt
@@ -10,8 +9,8 @@ from collections import defaultdict
 import warnings
 import geopandas as gpd
 import nomad.io.base as loader
-import nomad.constants as constants
 from nomad.stop_detection import utils
+from nomad.stop_detection.sequential import applyParallel
 from nomad.filters import to_timestamp
 
 ##########################################
@@ -45,7 +44,7 @@ def lachesis_labels(data, dt_max, delta_roam, dur_min=5, traj_cols=None, **kwarg
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
          raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
     if data.empty:
-        return pd.DataFrame()
+        return pd.Series([], dtype=int, name='cluster')
 
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)        
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
@@ -59,8 +58,7 @@ def lachesis_labels(data, dt_max, delta_roam, dur_min=5, traj_cols=None, **kwarg
     
     # Parse if necessary
     time_series = to_timestamp(data[traj_cols[t_key]]) if use_datetime else data[traj_cols[t_key]]
-  
-    stops = []
+
     i = 0
     n = len(data)
     
@@ -143,10 +141,11 @@ def lachesis(
     if 'user_id' in traj_cols_temp and traj_cols_temp['user_id'] in data.columns:
         uid_col = data[traj_cols_temp['user_id']]
         arr = uid_col.values
-        first = arr[0]
-        if any(x != first for x in arr[1:]):
-            raise ValueError("Multi-user data? Use lachesis_per_user instead.")
-        passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
+        if len(arr) > 0:
+            first = arr[0]
+            if any(x != first for x in arr[1:]):
+                raise ValueError("Multi-user data? Use lachesis_per_user instead.")
+            passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
     else:
         uid_col = None
 
@@ -160,6 +159,14 @@ def lachesis(
     )
     merged = data.join(labels)
     merged = merged[merged.cluster != -1]
+
+    if merged.empty:
+        # Get column names by calling summarize function on dummy data
+        cols = utils._get_empty_stop_columns(
+            data.columns, complete_output, passthrough_cols, traj_cols, 
+            keep_col_names=keep_col_names, is_grid_based=False, **kwargs
+        )
+        return pd.DataFrame(columns=cols, dtype=object)
 
     stop_table = merged.groupby('cluster', as_index=False, sort=False).apply(
         lambda grp: utils.summarize_stop(
@@ -183,11 +190,44 @@ def lachesis_per_user(
     complete_output=False,
     passthrough_cols=[],
     traj_cols=None,
+    n_jobs=1,
+    print_progress=False,
     **kwargs
 ):
     """
     Run lachesis on each user separately, then concatenate results.
-    Raises if 'user_id' not in traj_cols or missing from data.
+    
+    Parameters
+    ----------
+    data : pd.DataFrame or GeoDataFrame
+        Input trajectory with spatial and temporal columns.
+    dt_max : int
+        Maximum allowed gap in minutes between consecutive pings in a stop.
+    delta_roam : float
+        Maximum spatial diameter for a stop.
+    dur_min : int
+        Minimum duration in minutes for a valid stop.
+    complete_output : bool, default False
+        If True, include additional summary statistics in output.
+    passthrough_cols : list, optional
+        Columns to retain (and summarize/propagate) per stop.
+    traj_cols : dict, optional
+        Mapping for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'.
+    n_jobs : int, default 1
+        Number of parallel jobs to use. 1 means sequential processing.
+    print_progress : bool, default False
+        Whether to show progress bar during processing.
+    **kwargs
+        Passed along to column detection helper.
+        
+    Returns
+    -------
+    pd.DataFrame
+        Concatenated stop table with stops from all users.
+        
+    Raises
+    ------
+    ValueError if 'user_id' not in traj_cols or missing from data.
     """
     traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     if 'user_id' not in traj_cols_temp or traj_cols_temp['user_id'] not in data.columns:
@@ -196,9 +236,10 @@ def lachesis_per_user(
     
     pt_cols = passthrough_cols + [uid]
     
-    results = [
-        lachesis(
-            group,
+    def process_user_group(group):
+        """Helper function to process a single user group."""
+        return lachesis(
+            group[1],
             dt_max=dt_max,
             delta_roam=delta_roam,
             dur_min=dur_min,
@@ -207,6 +248,14 @@ def lachesis_per_user(
             traj_cols=traj_cols,
             **kwargs
         )
-        for _, group in data.groupby(uid, sort=False)
-    ]
+    
+    # Use applyParallel to process groups in parallel
+    grouped = data.groupby(uid, sort=False)
+    results = applyParallel(
+        grouped,
+        process_user_group,
+        n_jobs=n_jobs,
+        print_progress=print_progress
+    )
+    
     return pd.concat(results, ignore_index=True)

@@ -1,80 +1,19 @@
 import pandas as pd
 import numpy as np
 from collections import defaultdict
-import pdb
+import nomad.io.base as loader
 import warnings
 import geopandas as gpd
 import nomad.io.base as loader
-import nomad.constants as constants
 from nomad.stop_detection import utils
 from nomad.filters import to_timestamp
+from nomad.stop_detection.preprocessing import _find_neighbors
 
 ##########################################
 ########         DBSCAN           ########
 ##########################################
-def _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, traj_cols):
-    """
-    Compute neighbors within specified time and distance thresholds for a trajectory dataset.
-    
-    Parameters
-    ----------
-    data : pandas.DataFrame
-        Trajectory data containing spatial and temporal information.
-    traj_cols : dict
-        Dictionary mapping column names for trajectory attributes.
-    time_thresh : int
-        Time threshold in minutes for considering neighboring points.
-    dist_thresh : float
-        Distance threshold for considering neighboring points.
-    use_lon_lat : bool, optional
-        Whether to use longitude/latitude coordinates.
-    use_datetime : bool, optional
-        Whether to process timestamps as datetime objects.
-    
-    Returns
-    -------
-    dict
-        A dictionary where keys are timestamps, and values are sets of neighboring
-        timestamps that satisfy both time and distance thresholds.
-    """
-    # getting coordinates based on whether they are geographic coordinates (lon, lat) or catesian (x,y)
-    if use_lon_lat:
-        coords = np.radians(data[[traj_cols['latitude'], traj_cols['longitude']]].values)
-    else:
-        coords = data[[traj_cols['x'], traj_cols['y']]].values
-    
-    # getting times based on whether they are datetime values or timestamps, changed to seconds for calculations
-    times = to_timestamp(data[traj_cols['datetime']]) if use_datetime else data[traj_cols['timestamp']]
-    times = times.values
-      
-    # Pairwise time differences
-    time_diffs = np.abs(times[:, np.newaxis] - times)
-    time_diffs = time_diffs.astype(int)
-  
-    # Filter by time threshold
-    within_time_thresh = np.triu(time_diffs <= (time_thresh * 60), k=1)
-    time_pairs = np.where(within_time_thresh)
-  
-    # Distance calculation
-    if use_lon_lat:
-        distances = np.array([utils._haversine_distance(coords[i], coords[j]) for i, j in zip(*time_pairs)])
-    else:
-        distances_sq = (coords[time_pairs[0], 0] - coords[time_pairs[1], 0])**2 + (coords[time_pairs[0], 1] - coords[time_pairs[1], 1])**2
-        distances = np.sqrt(distances_sq)
 
-    # Filter by distance threshold
-    neighbor_pairs = distances < dist_thresh
-  
-    # Building the neighbor dictionary
-    neighbor_dict = defaultdict(set)
-  
-    for i, j in zip(time_pairs[0][neighbor_pairs], time_pairs[1][neighbor_pairs]):
-        neighbor_dict[times[i]].add(times[j])
-        neighbor_dict[times[j]].add(times[i])
-
-    return neighbor_dict
-
-def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False, traj_cols=None, **kwargs):
+def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False, remove_overlaps=True, traj_cols=None, **kwargs):
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
          raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
     if data.empty:
@@ -95,7 +34,7 @@ def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False
     core_df = pd.Series(-3, index=valid_times, name='core')
     # Initialize cluster label
     cid = -1
-    
+
     for i, cluster in cluster_df.items():
         if cluster < 0:
             if len(neighbor_dict[i]) < min_pts:
@@ -115,7 +54,93 @@ def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False
                             for k in neighbor_dict[j]:
                                 if cluster_df[k] < 0:
                                     S.append(k)  # Add new neighbors
-
+                                    
+    ### Remove overlaps (optional) reassign all border points
+    if remove_overlaps and (core_df >= 0).any():
+        next_label = cid + 1
+    
+        assigned_of = {}   # raw_label -> assigned_label (raw until first split, then new id)
+        seen = set()
+        active = None      # active assigned label
+    
+        for t in core_df.index[core_df >= 0]:
+            raw = int(core_df.at[t])
+    
+            if raw not in assigned_of:
+                assigned_of[raw] = raw
+    
+            assigned = assigned_of[raw]    
+                
+            if active is not None and assigned != active:
+                if raw in seen:
+                    assigned_of[raw] = next_label
+                    next_label += 1
+                    assigned = assigned_of[raw]
+    
+            active = assigned
+            core_df.at[t] = assigned
+            cluster_df.at[t] = assigned
+            seen.add(raw)
+        
+        # Border points
+        cluster_df.loc[core_df < 0] = -1  
+        prev_run_end = -np.inf                           # left bound (exclusive)
+        
+        run_label = None
+        run_end = None
+        run_neighbors = set()                            # union of neighbors of cores in current run
+        
+        for t in core_df.index[core_df >= 0]:
+            lab = core_df.at[t]
+        
+            if run_label is None:
+                run_label = lab
+                run_end = t
+                run_neighbors.clear()
+                run_neighbors.update(neighbor_dict[t])
+                continue
+        
+            if lab == run_label:
+                run_end = t
+                run_neighbors.update(neighbor_dict[t])
+                continue
+        
+            # label changed => t is the start of the next run, so flush current run now
+            next_run_start = t
+            max_assigned = prev_run_end
+        
+            for nb in run_neighbors:
+                if prev_run_end < nb < next_run_start and cluster_df.at[nb] == -1:
+                    cluster_df.at[nb] = run_label
+                    if nb > max_assigned:
+                        max_assigned = nb
+        
+            # advance left bound for the next run:
+            # at least to the last core of the run, and also to the latest border we just assigned
+            if run_end > max_assigned:
+                max_assigned = run_end
+            prev_run_end = max_assigned
+        
+            # start new run
+            run_label = lab
+            run_end = t
+            run_neighbors.clear()
+            run_neighbors.update(neighbor_dict[t])
+        
+        # flush last run to +inf
+        next_run_start = np.inf
+        max_assigned = prev_run_end
+        
+        for nb in run_neighbors:
+            if prev_run_end < nb < next_run_start and cluster_df.at[nb] == -1:
+                cluster_df.at[nb] = run_label
+                if nb > max_assigned:
+                    max_assigned = nb
+        
+        if run_end is not None and run_end > max_assigned:
+            max_assigned = run_end
+        prev_run_end = max_assigned
+            
     output = pd.DataFrame({'cluster': cluster_df, 'core': core_df})
 
     if return_cores:
@@ -130,6 +155,7 @@ def ta_dbscan(
     min_pts,
     time_thresh,
     dur_min=5,
+    remove_overlaps=True,
     complete_output=False,
     passthrough_cols=[],
     keep_col_names=True,
@@ -184,11 +210,22 @@ def ta_dbscan(
         min_pts=min_pts,
         time_thresh=time_thresh,
         return_cores=False,
+        remove_overlaps=remove_overlaps,
         traj_cols=traj_cols,
         **kwargs
     )
     merged = data.join(labels)
+    
+    # Filter out noise points after overlap removal
     merged = merged[merged.cluster != -1]
+
+    if merged.empty:
+        # Get column names by calling summarize function on dummy data
+        cols = utils._get_empty_stop_columns(
+            data.columns, complete_output, passthrough_cols, traj_cols, 
+            keep_col_names=keep_col_names, is_grid_based=False, **kwargs
+        )
+        return pd.DataFrame(columns=cols, dtype=object)
 
     stop_table = merged.groupby('cluster', as_index=False, sort=False).apply(
         lambda grp: utils.summarize_stop(

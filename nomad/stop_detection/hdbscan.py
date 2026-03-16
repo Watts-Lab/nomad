@@ -3,12 +3,9 @@ import numpy as np
 import heapq
 from collections import defaultdict
 import warnings
-from scipy.stats import norm
 import nomad.io.base as loader
-import nomad.constants as constants
 from nomad.stop_detection import utils
 from nomad.filters import to_timestamp
-from nomad.constants import DEFAULT_SCHEMA
 import pdb
 
 def _find_temp_neighbors(times, time_thresh, use_datetime):
@@ -140,6 +137,7 @@ def _mst(mrd_graph):
         heapq.heappush(heap, (0.0, start, start))
 
     seed(next(iter(graph)))
+
     while len(visited) < len(graph):
         if not heap:                              # start next component
             seed(next(t for t in graph if t not in visited))
@@ -218,7 +216,7 @@ def _build_border_map(scale, core_distances, d_graph):
     
     return core_to_border
 
-def hdbscan(edges_sorted_df, core_distances, d_graph, min_cluster_size, dur_min=5):
+def cluster_hierarchy(edges_sorted_df, core_distances, d_graph, min_cluster_size, dur_min=5):
     """
     Builds a cluster hierarchy from a pre-computed Minimum Spanning Tree.
 
@@ -319,10 +317,10 @@ def hdbscan(edges_sorted_df, core_distances, d_graph, min_cluster_size, dur_min=
     hierarchy_df = _build_cluster_lineage(hierarchy)
     return label_history_df, hierarchy_df
 
-def compute_cluster_duration(cluster):
-    max_time = max(cluster)
-    min_time = min(cluster)
-    return (max_time - min_time) * 60
+# def compute_cluster_duration(cluster):
+#     max_time = max(cluster)
+#     min_time = min(cluster)
+#     return (max_time - min_time) * 60
 
 def _build_cluster_lineage(hierarchy):
     """
@@ -401,26 +399,26 @@ def _base_cdf(eps):
     
     return res
 
-def _piecewise_linear_cdf(eps):
-    """
-    Example of a custom, piecewise CDF for stability calculations.
-    """
-    x = np.asarray(eps)
-    y = np.zeros_like(x, dtype=float)
+# def _piecewise_linear_cdf(eps):
+#     """
+#     Example of a custom, piecewise CDF for stability calculations.
+#     """
+#     x = np.asarray(eps)
+#     y = np.zeros_like(x, dtype=float)
 
-    m = (x >= 5)  & (x <= 20)
-    y[m] = 2 * (x[m] - 5)
+#     m = (x >= 5)  & (x <= 20)
+#     y[m] = 2 * (x[m] - 5)
 
-    m = (x > 20) & (x <= 80)
-    y[m] = 30 + 1.5 * (x[m] - 20)
+#     m = (x > 20) & (x <= 80)
+#     y[m] = 30 + 1.5 * (x[m] - 20)
 
-    m = (x > 80) & (x <= 200)
-    y[m] = 120 + (x[m] - 80)
+#     m = (x > 80) & (x <= 200)
+#     y[m] = 120 + (x[m] - 80)
 
-    m = x > 200
-    y[x > 200] = 240
+#     m = x > 200
+#     y[x > 200] = 240
 
-    return y/240
+#     return y/240
 
 def compute_cluster_stability(label_history_df, cdf_function=_base_cdf):
     """
@@ -494,11 +492,15 @@ def compute_cluster_stability(label_history_df, cdf_function=_base_cdf):
     return final_stability.reset_index().rename(columns={'stability_term': 'cluster_stability'})
 
 def select_most_stable_clusters(hierarchy_df, cluster_stability_df):
+    # handles error of not finding any parent in the data: returns empty set of selected clusters
+    if 'parent' not in hierarchy_df.columns or 'child' not in hierarchy_df.columns or 'scale' not in hierarchy_df.columns:
+        return set()
+    
     hierarchy = [
         (group['scale'].iloc[0], parent, list(group['child']))
         for parent, group in hierarchy_df.groupby('parent')
     ]
-    
+
     # Build tree of clusters
     children = defaultdict(list)
     parent = {}
@@ -550,6 +552,63 @@ def select_most_stable_clusters(hierarchy_df, cluster_stability_df):
 
     return selected_clusters
 
+def select_clusters_by_epsilon(hierarchy_df, label_history_df, epsilon):
+    """
+    Select clusters by performing a flat cut at a specific scale in the dendrogram.
+    
+    Instead of using stability to choose clusters, this method returns all clusters
+    that exist at the specified scale threshold.
+    
+    Parameters
+    ----------
+    hierarchy_df : pd.DataFrame
+        Cluster hierarchy with columns ['child', 'parent', 'scale'].
+    label_history_df : pd.DataFrame
+        Full label history with columns ['time', 'cluster_id', 'dendogram_scale'].
+    cut_scale : float
+        The scale at which to cut the dendrogram. All clusters alive at this
+        scale will be selected.
+    
+    Returns
+    -------
+    set
+        Set of cluster IDs that are active at the cut_scale.
+    
+    Examples
+    --------
+    >>> # Get clusters at scale 50 meters
+    >>> selected = select_clusters_by_epsilon(hierarchy_df, label_history_df, epsilon=50.0)
+    """
+    if hierarchy_df.empty or label_history_df.empty:
+        return set()
+    
+    if 'parent' not in hierarchy_df.columns or 'child' not in hierarchy_df.columns:
+        return set()
+    
+    # Filter label history to the specified scale
+    # Find the closest scale that exists in the data
+    available_scales = label_history_df['dendogram_scale'].dropna().unique()
+    if len(available_scales) == 0:
+        return set()
+
+    # Find the next smallest scale ≤ epsilon
+    smaller_scales = available_scales[available_scales <= epsilon]
+    
+    if len(smaller_scales) == 0:
+        # No scales below epsilon
+        return set()
+    else:
+        # largest scale that is ≤ epsilon
+        closest_scale = smaller_scales.max()
+
+    # Get all clusters that exist at this scale
+    clusters_at_scale = label_history_df[
+        (label_history_df['dendogram_scale'] == closest_scale) &
+        (label_history_df['cluster_id'] > 0)
+    ]['cluster_id'].unique()
+    
+    return set(clusters_at_scale)
+
 def _build_hdbscan_graphs(coords, ts_idx, neighbors, core_dist, use_lon_lat):
     """
     Computes all graphs required for the HDBSCAN algorithm in one pass.
@@ -580,7 +639,6 @@ def _build_hdbscan_graphs(coords, ts_idx, neighbors, core_dist, use_lon_lat):
             v_list.append(v)
             d_list.append(dist)
 
-
     idx = pd.MultiIndex.from_arrays([u_list, v_list], names=["from", "to"])
     d_graph_part = pd.Series(d_list, index=idx)
     
@@ -588,11 +646,10 @@ def _build_hdbscan_graphs(coords, ts_idx, neighbors, core_dist, use_lon_lat):
     rev.index = rev.index.swaplevel(0, 1)
     d_graph = pd.concat([d_graph_part, rev])
 
-
-    # --- Build MST from MRD graph ---
+    # Build MST from MRD graph
     mst_arr = _mst(mrd_graph)
 
-    # --- Extend and sort MST with self-loops ---
+    # Extend and sort MST with self-loops
     self_loops_items = list(core_dist.items())
     if not self_loops_items:
         self_loops_full = np.empty(0, dtype=mst_arr.dtype)
@@ -621,7 +678,13 @@ def _build_hdbscan_graphs(coords, ts_idx, neighbors, core_dist, use_lon_lat):
     )
     return edges_sorted_df, d_graph
 
-def hdbscan_labels(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min=5, traj_cols=None, **kwargs):
+def hdbscan_labels(data,
+                   time_thresh,
+                   min_pts = 2,
+                   min_cluster_size = 1,
+                   dur_min=5,
+                   delta_roam=None,
+                   traj_cols=None, **kwargs):
     """
     Compute HDBSCAN cluster labels for trajectory data, with core/border assignment.
 
@@ -654,12 +717,17 @@ def hdbscan_labels(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min
     # Load default col names
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     
+    # Handle empty data
+    if data.empty:
+        return pd.Series([], dtype=int, name='cluster')
+    
     if traj_cols['user_id'] in data.columns:
-        uid_col = data[traj_cols_temp['user_id']]
+        uid_col = data[traj_cols['user_id']]
         arr = uid_col.values
-        first = arr[0]
-        if any(x != first for x in arr[1:]):
-            raise ValueError("Multi-user data? Groupby or use hdbscan_per_user instead.")
+        if len(arr) > 0:
+            first = arr[0]
+            if any(x != first for x in arr[1:]):
+                raise ValueError("Multi-user data? Groupby or use hdbscan_per_user instead.")
     
     # Tests to check for spatial and temporal columns
     loader._has_spatial_cols(data.columns, traj_cols)
@@ -677,16 +745,18 @@ def hdbscan_labels(data, time_thresh, min_pts = 2, min_cluster_size = 1, dur_min
     core_distances = pd.Series(core_distances).sort_index()
     core_distances.index.name = 'time'
 
-    label_history_df, hierarchy_df = hdbscan(
+    label_history_df, hierarchy_df = cluster_hierarchy(
         edges_sorted_df=edges_sorted,
         core_distances=core_distances,
         d_graph=d_graph,
         min_cluster_size=min_cluster_size,
         dur_min=dur_min)
-    
-    cluster_stability_df = compute_cluster_stability(label_history_df) # default old func
-    # cluster_stability_df = compute_cluster_stability(label_history_df, cdf_function=_piecewise_linear_cdf)
-    selected_clusters = select_most_stable_clusters(hierarchy_df, cluster_stability_df)
+
+    if delta_roam is None:
+        cluster_stability_df = compute_cluster_stability(label_history_df)
+        selected_clusters = select_most_stable_clusters(hierarchy_df, cluster_stability_df)
+    else:
+        selected_clusters = select_clusters_by_epsilon(hierarchy_df, label_history_df, epsilon=delta_roam)
 
     final_labels = pd.Series(-1, index=core_distances.index, name='cluster', dtype=int)
     
@@ -780,10 +850,11 @@ def st_hdbscan(
     if 'user_id' in traj_cols_temp and traj_cols_temp['user_id'] in data.columns:
         uid_col = data[traj_cols_temp['user_id']]
         arr = uid_col.values
-        first = arr[0]
-        if any(x != first for x in arr[1:]):
-            raise ValueError("Multi-user data? Use lachesis_per_user instead.")
-        passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
+        if len(arr) > 0:
+            first = arr[0]
+            if any(x != first for x in arr[1:]):
+                raise ValueError("Multi-user data? Use hdbscan_per_user instead.")
+            passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
     else:
         uid_col = None
         
@@ -799,7 +870,31 @@ def st_hdbscan(
     )
 
     merged = data.join(labels_hdbscan)
+    
+    # Remove temporal overlaps if multiple clusters exist
+    if len(merged.cluster.unique()) > 2:  # More than just -1 and one cluster
+        from nomad.stop_detection.postprocessing import remove_overlaps
+        adjusted_labels = remove_overlaps(
+            merged,
+            time_thresh=time_thresh,
+            min_pts=min_pts,
+            method="cluster",
+            traj_cols=traj_cols,
+            summarize_stops=False,  # Return cluster labels, not summary table
+            **kwargs
+        )
+        merged['cluster'] = adjusted_labels
+    
+    # Filter out noise points after overlap removal
     merged = merged[merged.cluster != -1]
+
+    if merged.empty:
+        # Get column names by calling summarize function on dummy data
+        cols = utils._get_empty_stop_columns(
+            data.columns, complete_output, passthrough_cols, traj_cols, 
+            keep_col_names=True, is_grid_based=False, **kwargs
+        )
+        return pd.DataFrame(columns=cols, dtype=object)
 
     stop_table = merged.groupby('cluster', as_index=False, sort=False).apply(
         lambda grouped_data: utils.summarize_stop(

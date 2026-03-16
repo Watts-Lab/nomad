@@ -4,9 +4,7 @@ import geopandas as gpd
 import pyproj
 from functools import partial
 import multiprocessing
-from multiprocessing import Pool
 import re
-from pyspark.sql import SparkSession
 import sys
 import os
 import pyarrow.compute as pc
@@ -44,8 +42,32 @@ def _fallback_spatial_cols(col_names, traj_cols, kwargs):
     '''
     traj_cols = _parse_traj_cols(col_names, traj_cols, kwargs, defaults={}, warn=False)
     
-    # check for sufficient spatial coords
-    _has_spatial_cols(col_names, traj_cols, exclusive=True)
+    user_specified_spatial = any(
+        k in traj_cols and traj_cols[k] in col_names 
+        for k in ['latitude', 'longitude', 'x', 'y']
+    )
+    
+    if user_specified_spatial:
+        # Filter to only spatial keys that point to real columns
+        traj_cols_filtered = {
+            k: v for k, v in traj_cols.items() 
+            if k not in ['latitude', 'longitude', 'x', 'y'] or v in col_names
+        }
+        _has_spatial_cols(col_names, traj_cols_filtered, exclusive=True)
+        traj_cols = traj_cols_filtered
+    else:
+        # Auto-detect from DataFrame, prefer x/y
+        has_x_y = 'x' in col_names and 'y' in col_names
+        has_lon_lat = 'latitude' in col_names and 'longitude' in col_names
+        
+        if has_x_y:
+            traj_cols['x'] = 'x'
+            traj_cols['y'] = 'y'
+        elif has_lon_lat:
+            traj_cols['latitude'] = 'latitude'
+            traj_cols['longitude'] = 'longitude'
+        else:
+            raise ValueError("No spatial columns found in DataFrame")
 
     use_lon_lat = ('latitude' in traj_cols and 'longitude' in traj_cols)
     if use_lon_lat:
@@ -63,11 +85,11 @@ def _fallback_time_cols_dt(col_names, traj_cols, kwargs):
     # check for explicit datetime usage
     t_keys = ['datetime', 'start_datetime', 'timestamp', 'start_timestamp']
     
-    if 'timestamp' in kwargs or 'start_timestamp' in kwargs: # prioritize timestamp 
-        t_keys = t_keys[-2:] + t_keys[:2]
+    if 'timestamp' in kwargs or 'start_timestamp' in kwargs:
+        t_keys = ['timestamp', 'start_timestamp', 'datetime', 'start_datetime']
     
-    if 'datetime' in kwargs or 'start_datetime' in kwargs: # prioritize datetime 
-        t_keys = t_keys[-2:] + t_keys[:2]
+    if 'datetime' in kwargs or 'start_datetime' in kwargs: # datetime wins
+        t_keys = ['datetime', 'start_datetime', 'timestamp', 'start_timestamp']
 
     # load defaults and check for time columns
     traj_cols = _update_schema(DEFAULT_SCHEMA, traj_cols)
@@ -137,7 +159,7 @@ def _offset_string_hrs(offset_seconds):
     return offset_seconds.map(mapping)
 
 def naive_datetime_from_unix_and_offset(utc_timestamps, timezone_offset):
-    return pd.to_datetime(utc_timestamps + timezone_offset, unit='s')
+    return pd.to_datetime(utc_timestamps + timezone_offset, unit='s').astype('datetime64[ns]')
 
 # this should change in Spark, since parsing only allows naive datetimes
 def _naive_to_localized_str(naive_dt, timezone_offset):
@@ -207,12 +229,10 @@ def _extract_naive_and_offset(dt_str):
     sign = np.where(offset_part.str[0] == '-', -1, 1)
     hours = offset_part.str[1:3].astype(int)
     minutes = offset_part.str[4:6].astype(int)
-    offset_seconds = np.where(
-        has_offset,
-        sign * (hours * 3600 + minutes * 60),
-        np.nan
+    offset_seconds = pd.array(
+        np.where(has_offset, sign * (hours * 3600 + minutes * 60), np.nan),
+        dtype="Int64"
     )
-
     return naive_str, offset_seconds
 
 def _custom_parse_date(series, parse_dates, mixed_timezone_behavior, fixed_format, check_valid_datetime_str=True):
@@ -530,6 +550,44 @@ def _has_user_cols(col_names, traj_cols):
     
     return user_exists
 
+def _sort_trajectory_dataframe(df, traj_cols, sort_times):
+    """
+    Sort trajectory DataFrame by user_id and timestamp if sort_times is True.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The DataFrame to sort.
+    traj_cols : dict
+        Mapping of logical column names to actual column names.
+    sort_times : bool
+        Whether to sort the DataFrame.
+        
+    Returns
+    -------
+    pd.DataFrame
+        Sorted DataFrame if sort_times is True, otherwise original DataFrame.
+    """
+    if not sort_times:
+        return df
+    
+    # Find the timestamp column
+    t_keys = ['timestamp', 'start_timestamp', 'datetime', 'start_datetime']
+    ts_col = next((traj_cols[k] for k in t_keys if traj_cols[k] in df.columns), None)
+    uid_col = traj_cols['user_id']
+    
+    if uid_col in df.columns:
+        # Multi-user case: always safe to sort.
+        return df.sort_values(by=[uid_col, ts_col], ignore_index=True)
+    
+    # Single user or missing user_id column
+    warnings.warn(
+        f"Sorting by timestamp only, as user ID column '{uid_col}' was not found. If this is a multi-user "
+        f"dataset, map the correct user ID column to avoid mixing trajectories.",
+        UserWarning
+    )
+    return df.sort_values(by=[ts_col], ignore_index=True)
+
 # SPARK check is traj_dataframe
     
 def _process_datetime_column(df, col, parse_dates, mixed_timezone_behavior, fixed_format, traj_cols):
@@ -549,12 +607,12 @@ def _process_datetime_column(df, col, parse_dates, mixed_timezone_behavior, fixe
         )
 
         df[col] = parsed
+
         # do not compute offset column if already exists
         has_tz = ('tz_offset' in traj_cols) and (traj_cols['tz_offset'] in df.columns)
-       
         if parse_dates and mixed_timezone_behavior == 'naive' and not has_tz:
             if offset is not None and not offset.isna().all():
-                df[traj_cols['tz_offset']] = offset.astype("Int64") #overwrite offset?
+                df[traj_cols['tz_offset']] = offset
 
         if parse_dates and is_object_dtype(df[col].dtype) and _has_mixed_timezones(df[col]):
              warnings.warn(f"The '{col}' column has mixed timezones after processing.")
@@ -586,7 +644,6 @@ def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_f
                 fixed_format,
                 traj_cols
             )
-
     for key in ['date', 'utc_date']:
         if key in traj_cols and traj_cols[key] in df:
             if parse_dates:
@@ -597,7 +654,10 @@ def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_f
         if key in traj_cols and traj_cols[key] in df:
             col = traj_cols[key]
             if df[col].dtype != "Int64":
-                df[col] = df[col].astype("Int64")
+                try:
+                    df[col] = df[col].astype("Int64")
+                except:
+                    df[col] = df[col].astype("int64")
 
             if key == 'timestamp':
                 if len(df)>0:
@@ -626,7 +686,7 @@ def _cast_traj_cols(df, traj_cols, parse_dates, mixed_timezone_behavior, fixed_f
             col = traj_cols[key]
             if not is_string_dtype(df[col].dtype):
                 df[col] = df[col].astype("str")
-                
+
     return df
 
 def _process_filters(filters, col_names, use_pyarrow_dataset, traj_cols=None, schema=None):
@@ -675,6 +735,9 @@ def _process_filters(filters, col_names, use_pyarrow_dataset, traj_cols=None, sc
                     if pat.is_timestamp(pa_type) and isinstance(val, str):
                         warnings.warn(f"Coercing filter value {val!r} to pandas.Timestamp for column {col!r}")
                         val = pd.Timestamp(val)
+                    elif pat.is_date32(pa_type) and isinstance(val,str):
+                        warnings.warn(f"Coercing filter value {val!r} to pandas.Timestamp for column {col!r}")
+                        val = pd.Timestamp(val)                  
                     elif pat.is_string(pa_type) and isinstance(val, (pd.Timestamp, np.datetime64)):
                         val = pd.Timestamp(val).isoformat()
                         warnings.warn(f"Coercing filter datetime {val!r} to ISO string {val} for column {col!r}")
@@ -753,7 +816,6 @@ def table_columns(filepath, format="csv", include_schema=False, sep=","):
         isinstance(filepath, (list, tuple)) or
         _is_directory(filepath)
     )
-
     if use_pyarrow_dataset:
         file_format_obj = "parquet"
         if format == "csv":
@@ -774,7 +836,14 @@ def table_columns(filepath, format="csv", include_schema=False, sep=","):
         header = pd.read_csv(filepath, nrows=0, sep=sep)
         return header.dtypes if include_schema else header.columns
 
-def from_df(df, traj_cols=None, parse_dates=True, mixed_timezone_behavior="naive", fixed_format=None, filters=None, **kwargs):
+def from_df(df,
+            parse_dates=True,
+            mixed_timezone_behavior="naive",
+            fixed_format=None,
+            filters=None,
+            sort_times=True,
+            traj_cols=None,
+            **kwargs):
     """
     Converts a DataFrame into a standardized trajectory format by validating and casting 
     specified spatial and temporal columns.
@@ -816,11 +885,11 @@ def from_df(df, traj_cols=None, parse_dates=True, mixed_timezone_behavior="naive
 
     _has_spatial_cols(df.columns, traj_cols)
     _has_time_cols(df.columns, traj_cols)
-    
-    return _cast_traj_cols(df.copy(), traj_cols, parse_dates=parse_dates,
+    df =  _cast_traj_cols(df.copy(), traj_cols, parse_dates=parse_dates,
                            mixed_timezone_behavior=mixed_timezone_behavior,
                            fixed_format=fixed_format)
     
+    return _sort_trajectory_dataframe(df, traj_cols, sort_times)
 
 
 def from_file(filepath,
@@ -830,7 +899,7 @@ def from_file(filepath,
               fixed_format=None,
               sep=",",
               filters=None,
-              sort_times=False,
+              sort_times=True,
               traj_cols=None,
               **kwargs):
     """
@@ -871,11 +940,6 @@ def from_file(filepath,
     assert format in ["csv", "parquet"]
 
     column_names = table_columns(filepath, format=format, sep=sep)
-    col_schema = None
-    if filters is not None:
-        col_schema = table_columns(filepath, format=format,
-                                   include_schema=True, sep=sep)
-        
     traj_cols = _parse_traj_cols(column_names, traj_cols, kwargs)
 
     _has_spatial_cols(column_names, traj_cols)
@@ -907,7 +971,7 @@ def from_file(filepath,
         arrow_flt = _process_filters(filters,
                              col_names=column_names,
                              traj_cols=traj_cols,
-                             schema=col_schema,
+                             schema=dataset_obj.schema,
                              use_pyarrow_dataset=use_pyarrow_dataset)
         df = (
             dataset_obj
@@ -923,13 +987,12 @@ def from_file(filepath,
         }
         read_csv_kwargs['parse_dates'] = False
         df = pd.read_csv(filepath, sep=sep, **read_csv_kwargs)
-                # build a boolean mask from tuple filters
         if filters is not None:
             mask_func = _process_filters(
                 filters,
                 col_names=df.columns,
                 traj_cols=traj_cols,
-                schema=schema,
+                schema=df.dtypes,
                 use_pyarrow_dataset=False
             )
             df = df[mask_func(df)]
@@ -947,7 +1010,7 @@ def from_file(filepath,
     ts_col = next((traj_cols[k] for k in t_keys if traj_cols[k] in df.columns), None)
     uid_col = traj_cols['user_id']
     
-    if uid_col in df.columns:
+    if uid_col in df.columns and sort_times:
         # Multi-user case: always safe to sort.
         return df.sort_values(by=[uid_col, ts_col], ignore_index=True)
 
@@ -1009,10 +1072,6 @@ def sample_users(
     assert format in {"csv", "parquet"}
 
     column_names = table_columns(filepath, format=format, sep=sep)
-    schema = None
-    if filters is not None:
-        schema = table_columns(filepath, format=format,
-                               include_schema=True, sep=sep)
 
     if within is not None:
         coord_key1, coord_key2, use_lat_lon = _fallback_spatial_cols(column_names, traj_cols, kwargs)
@@ -1053,8 +1112,10 @@ def sample_users(
         
         minx, miny, maxx, maxy = poly.bounds
         bbox_specs = [
-            (coord_key1, ">=", minx), (coord_key1, "<=", maxx),
-            (coord_key2, ">=", miny), (coord_key2, "<=", maxy),
+            (traj_cols[coord_key1], ">=", minx),
+            (traj_cols[coord_key1], "<=", maxx),
+            (traj_cols[coord_key2], ">=", miny),
+            (traj_cols[coord_key2], "<=", maxy),
         ]
         if filters is None:
             filters = bbox_specs
@@ -1097,12 +1158,12 @@ def sample_users(
         arrow_flt = _process_filters(filters,
                                      col_names=column_names,
                                      traj_cols=traj_cols,
-                                     schema=schema,
-                                     use_pyarrow_dataset=use_pyarrow_dataset) # What happens with timezones??
+                                     schema=dataset_obj.schema,
+                                     use_pyarrow_dataset=use_pyarrow_dataset)
         if within is not None:
-            table = dataset_obj.to_table(columns=[uid_col, coord_key1, coord_key2], filter=arrow_flt)
+            table = dataset_obj.to_table(columns=[uid_col, traj_cols[coord_key1], traj_cols[coord_key2]], filter=arrow_flt)
             df = table.to_pandas()
-            pts = gpd.GeoSeries(gpd.points_from_xy(df[coord_key1], df[coord_key2]),
+            pts = gpd.GeoSeries(gpd.points_from_xy(df[traj_cols[coord_key1]], df[traj_cols[coord_key2]]),
                                  crs=data_crs)
             user_ids = df.loc[pts.within(poly), uid_col].drop_duplicates()
         else:
@@ -1116,21 +1177,19 @@ def sample_users(
         }
         if filters is None:
             df = pd.read_csv(filepath, usecols=[uid_col], sep=sep, **read_csv_kwargs)
-        else:                                    # need all columns for filtering
+        else:
             df = pd.read_csv(filepath, sep=sep, **read_csv_kwargs)
-    
-            # build a boolean mask from tuple filters
             mask_func = _process_filters(
                 filters,
                 col_names=df.columns,
                 traj_cols=traj_cols,
-                schema=schema,
+                schema=df.dtypes,
                 use_pyarrow_dataset=False
             )
             df = df[mask_func(df)]
     
         if within is not None:
-            pts = gpd.GeoSeries(gpd.points_from_xy(df[coord_key1], df[coord_key2]),
+            pts = gpd.GeoSeries(gpd.points_from_xy(df[traj_cols[coord_key1]], df[traj_cols[coord_key2]]),
                                      crs=data_crs)
             user_ids = df.loc[pts.within(poly), uid_col].drop_duplicates()
         else:
@@ -1201,9 +1260,6 @@ def sample_from_file(
     assert format in {"csv", "parquet"}
 
     column_names = table_columns(filepath, format=format, sep=sep)
-    schema = None
-    if filters is not None:
-        schema = table_columns(filepath, format=format, include_schema=True, sep=sep)
 
     poly = None
     coord_key1 = coord_key2 = None
@@ -1247,10 +1303,10 @@ def sample_from_file(
 
         minx, miny, maxx, maxy = poly.bounds
         bbox_specs = [
-            (coord_key1, ">=", minx),
-            (coord_key1, "<=", maxx),
-            (coord_key2, ">=", miny),
-            (coord_key2, "<=", maxy),
+            (traj_cols[coord_key1], ">=", minx),
+            (traj_cols[coord_key1], "<=", maxx),
+            (traj_cols[coord_key2], ">=", miny),
+            (traj_cols[coord_key2], "<=", maxy),
         ]
         if filters is None:
             filters = bbox_specs
@@ -1291,7 +1347,7 @@ def sample_from_file(
             filters,
             col_names=column_names,
             traj_cols=traj_cols,
-            schema=schema,
+            schema=dataset_obj.schema,
             use_pyarrow_dataset=True
         )
 
@@ -1310,7 +1366,7 @@ def sample_from_file(
                 filters,
                 col_names=df.columns,
                 traj_cols=traj_cols,
-                schema=schema,
+                schema=df.dtypes,
                 use_pyarrow_dataset=False
             )(df)
             df = df[mask]
@@ -1320,7 +1376,7 @@ def sample_from_file(
 
     if poly is not None and not df.empty:
         pts = gpd.GeoSeries(
-            gpd.points_from_xy(df[coord_key1], df[coord_key2]), crs=data_crs
+            gpd.points_from_xy(df[traj_cols[coord_key1]], df[traj_cols[coord_key2]]), crs=data_crs
         )
         df = df[pts.within(poly)]
     
@@ -1350,24 +1406,7 @@ def sample_from_file(
         fixed_format=fixed_format,
     )
 
-    #sorting
-    t_keys = ['timestamp', 'start_timestamp', 'datetime', 'start_datetime']
-    ts_col = next((traj_cols[k] for k in t_keys if traj_cols[k] in df.columns), None)
-    uid_col = traj_cols['user_id']
-    
-    if uid_col in df.columns:
-        # Multi-user case: always safe to sort.
-        return df.sort_values(by=[uid_col, ts_col], ignore_index=True)
-
-    if sort_times:
-        warnings.warn(
-            f"Sorting by timestamp only, as user ID column '{uid_col}' was not found. If this is a multi-user "
-            f"dataset, map the correct user ID column to avoid mixing trajectories.",
-            UserWarning
-        )
-        return df.sort_values(by=[ts_col], ignore_index=True)
-    
-    return df
+    return _sort_trajectory_dataframe(df, traj_cols, sort_times)
 
 def to_file(df, path, format="csv",
             traj_cols=None, output_traj_cols=None,
@@ -1388,7 +1427,7 @@ def to_file(df, path, format="csv",
     if use_offset and traj_cols["tz_offset"] not in df.columns:
         raise ValueError(f"use_offset=True but tz_offset column '{traj_cols['tz_offset']}' not found in df")
 
-
+    df = df.copy()
     for k in ["datetime", "start_datetime", "end_datetime"]:
         if k in traj_cols and traj_cols[k] in df.columns:
             col = df[traj_cols[k]]
