@@ -8,7 +8,7 @@ from nomad.stop_detection import utils
 from nomad.filters import to_timestamp
 from nomad.stop_detection.utils import _haversine_distance
 
-def detect_stop_labels(
+def detect_stops_labels(
     data,
     delta_roam=100,
     dt_max=15.0,
@@ -225,7 +225,7 @@ def detect_stops(
     else:
         uid_col = None
 
-    labels = detect_stop_labels(
+    labels = detect_stops_labels(
         data=data,
         delta_roam=delta_roam,
         dt_max=dt_max,
