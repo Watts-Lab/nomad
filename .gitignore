@@ -22,13 +22,13 @@ docs/_build/
 examples/research/**/*.png
 examples/research/**/*.svg
 
+# Exclude config files from research folder
+examples/research/**/*.json
+
 # OSM cache and large outputs
 cache/
 examples/output/
 examples/research/virtual_philadelphia/*.gpkg
-
-# vector images in research notebooks
-examples/research/*.svg
 
 # macOS system file
 .DS_Store
