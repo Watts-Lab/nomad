@@ -218,7 +218,7 @@ def test_lachesis_ground_truth(agent_traj_ground_truth):
 
 def test_sequential_labels_single_stop(simple_traj):
     """Test that sequential detection identifies single stop correctly."""
-    labels = SEQUENTIAL.detect_stop_labels(
+    labels = SEQUENTIAL.detect_stops_labels(
         data=simple_traj,
         dt_max=5,
         delta_roam=0.1,
@@ -231,7 +231,7 @@ def test_sequential_labels_single_stop(simple_traj):
 
 def test_sequential_labels_too_sparse(simple_traj):
     """Test that no cluster forms when delta_roam is too small."""
-    labels = SEQUENTIAL.detect_stop_labels(
+    labels = SEQUENTIAL.detect_stops_labels(
         simple_traj,
         dt_max=5,
         delta_roam=-1,
@@ -243,7 +243,7 @@ def test_sequential_labels_too_sparse(simple_traj):
 
 def test_sequential_labels_insufficient_duration(simple_traj):
     """Test that no cluster forms when duration requirement not met."""
-    labels = SEQUENTIAL.detect_stop_labels(
+    labels = SEQUENTIAL.detect_stops_labels(
         simple_traj,
         dt_max=5,
         delta_roam=1,
@@ -255,7 +255,7 @@ def test_sequential_labels_insufficient_duration(simple_traj):
     assert all(labels == -1)
 
 def test_sequential_number_labels(single_user_df):
-    """Test that detect_stop_labels and detect_stops have matching stop counts."""
+    """Test that detect_stops_labels and detect_stops have matching stop counts."""
     traj_cols = {
         "timestamp": "timestamp",
         "x": "x", "y": "y"
@@ -274,7 +274,7 @@ def test_sequential_number_labels(single_user_df):
         keep_col_names=False
     )
     
-    labels = SEQUENTIAL.detect_stop_labels(
+    labels = SEQUENTIAL.detect_stops_labels(
         data=single_user_df,
         dur_min=5,
         dt_max=10,
@@ -294,7 +294,7 @@ def test_sequential_ground_truth(agent_traj_ground_truth):
              'y':'y',
              'timestamp':'unix_timestamp'}
     
-    sequential_out = SEQUENTIAL.detect_stop_labels(
+    sequential_out = SEQUENTIAL.detect_stops_labels(
         agent_traj_ground_truth,
         delta_roam=45,
         dt_max=60,
@@ -420,7 +420,7 @@ def test_sequential_per_user_basic(base_df):
 def test_sequential_temporal_gap_breaks_stop(simple_traj):
     """Test that temporal gap larger than dt_max breaks a stop."""
     # simple_traj has 6 points at 1-min intervals, then a 10-min gap
-    labels = SEQUENTIAL.detect_stop_labels(
+    labels = SEQUENTIAL.detect_stops_labels(
         data=simple_traj,
         dt_max=5,  # Max 5 min gap
         delta_roam=100,  # Large spatial threshold
