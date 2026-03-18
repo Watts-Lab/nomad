@@ -8,6 +8,7 @@ import nomad.io.base as loader
 from nomad.stop_detection import utils
 from nomad.filters import to_timestamp
 from nomad.stop_detection.preprocessing import _find_neighbors
+from nomad.stop_detection.utils import applyParallel
 
 ##########################################
 ########         DBSCAN           ########
@@ -245,15 +246,53 @@ def ta_dbscan_per_user(
     dist_thresh,
     min_pts,
     time_thresh,
-    dur_min=5,
     complete_output=False,
     passthrough_cols=[],
+    keep_col_names=True,
     traj_cols=None,
+    n_jobs=1,
+    print_progress=False,
     **kwargs
 ):
     """
     Run ta_dbscan on each user separately, then concatenate results.
-    Raises if 'user_id' not in traj_cols or missing from data.
+
+    Parameters
+    ----------
+    data : pd.DataFrame or GeoDataFrame
+        Input trajectory with spatial and temporal columns.
+    dist_thresh : float
+        Max spatial distance for neighbors.
+    min_pts : int
+        Minimum number of neighbors for a core point.
+    time_thresh : int
+        Max time gap (minutes) for neighbors.
+    dur_min : int, optional
+        Minimum duration (minutes) for a stop (default: 5).
+    complete_output : bool, optional
+        Include extra stats if True (default: False).
+    passthrough_cols : list, optional
+        Columns to retain per stop.
+    keep_col_names : bool, optional
+        Preserve original column names in output (default: True).
+    traj_cols : dict, optional
+        Mapping for column names.
+    n_jobs : int, default 1
+        Number of parallel jobs. 1 means sequential processing.
+    print_progress : bool, default False
+        Whether to show a progress bar during processing.
+    **kwargs
+        Passed to internal helpers.
+
+    Returns
+    -------
+    pd.DataFrame
+        Concatenated stop table with stops from all users.
+
+    Raises
+    ------
+    ValueError
+        If 'user_id' is not in traj_cols or missing from data.
     """
     traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     if 'user_id' not in traj_cols_temp or traj_cols_temp['user_id'] not in data.columns:
@@ -262,18 +301,46 @@ def ta_dbscan_per_user(
 
     pt_cols = passthrough_cols + [uid]
 
-    results = [
-        ta_dbscan(
-            data=group,
+    def process_user_group(group):
+        return ta_dbscan(
+            group[1],
             dist_thresh=dist_thresh,
             min_pts=min_pts,
             time_thresh=time_thresh,
-            dur_min=dur_min,
             complete_output=complete_output,
             passthrough_cols=pt_cols,
+            keep_col_names=keep_col_names,
             traj_cols=traj_cols,
             **kwargs
         )
-        for _, group in data.groupby(uid, sort=False)
-    ]
+
+    grouped = data.groupby(uid, sort=False)
+    results = applyParallel(
+        grouped,
+        process_user_group,
+        n_jobs=n_jobs,
+        print_progress=print_progress
+    )
+
     return pd.concat(results, ignore_index=True)
+
+def tadbscan_labels_per_user(data, dist_thresh, min_pts, time_thresh, return_cores=False, remove_overlaps=True, traj_cols=None, n_jobs=1, print_progress=False, **kwargs):
+    kwargs.pop('user_id', None)
+    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    uid = traj_cols_temp['user_id']
+    def process_group(group):
+        return ta_dbscan_labels(group[1], dist_thresh=dist_thresh, min_pts=min_pts,
+                                time_thresh=time_thresh, return_cores=return_cores, remove_overlaps=remove_overlaps,
+                                traj_cols=traj_cols, **kwargs)
+
+    results = applyParallel(data.groupby(uid, sort=False), process_group,
+                            n_jobs=n_jobs, print_progress=print_progress)
+
+    offset = 0
+    for labels in results:
+        mask = labels >= 0
+        if mask.any():
+            labels[mask] += offset
+            offset = int(labels[mask].max()) + 1
+
+    return pd.concat(results).reindex(data.index)
