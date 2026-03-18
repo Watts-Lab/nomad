@@ -1,12 +1,12 @@
 import pandas as pd
 import numpy as np
 import geopandas as gpd
-from joblib import Parallel, delayed
 from tqdm import tqdm
 import nomad.io.base as loader
 from nomad.stop_detection import utils
 from nomad.filters import to_timestamp
 from nomad.stop_detection.utils import _haversine_distance
+from nomad.stop_detection.utils import applyParallel
 
 def detect_stop_labels(
     data,
@@ -119,49 +119,6 @@ def detect_stop_labels(
             i += 1
     
     return pd.Series(labels, index=data.index, name='cluster')
-
-
-def applyParallel(groups, func, n_jobs=1, print_progress=False, **kwargs):
-    """
-    Apply function to groups in parallel.
-
-    Parameters
-    ----------
-    groups : DataFrameGroupBy
-        Grouped dataframe
-    func : callable
-        Function to apply to each group
-    n_jobs : int
-        Number of parallel jobs
-    print_progress : bool
-        Whether to show progress bar
-    **kwargs
-        Additional arguments to pass to func
-
-    Returns
-    -------
-    list
-        List of results from applying func to each group
-    """
-    if n_jobs == 1:
-        # Sequential processing
-        if print_progress:
-            results = [func(group, **kwargs) for group in tqdm(groups, desc="Processing users")]
-        else:
-            results = [func(group, **kwargs) for group in groups]
-    else:
-        # Parallel processing
-        group_list = list(groups)
-        if print_progress:
-            results = Parallel(n_jobs=n_jobs)(
-                delayed(func)(group, **kwargs) for group in tqdm(group_list, desc="Processing users")
-            )
-        else:
-            results = Parallel(n_jobs=n_jobs)(
-                delayed(func)(group, **kwargs) for group in group_list
-            )
-    return results
-
 
 def detect_stops(
     data,

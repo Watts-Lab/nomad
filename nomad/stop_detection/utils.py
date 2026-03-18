@@ -2,12 +2,9 @@ import pandas as pd
 from scipy.spatial.distance import pdist, cdist
 import numpy as np
 import datetime as dt
-import itertools
-import os
 import nomad.io.base as loader
 import nomad.constants as constants
-import h3
-#import dtoolkit.geoaccessor
+from joblib import Parallel, delayed
 import warnings
 import pdb
 from datetime import datetime, time, timedelta
@@ -626,3 +623,44 @@ def explode_stops(stops, agg_freq="d", start_col="start_datetime", end_col="end_
     ).astype(int)
 
     return stops[stops["duration"] > 0].drop(columns=["_bucket_start", "_bucket_end"])
+
+def applyParallel(groups, func, n_jobs=1, print_progress=False, **kwargs):
+    """
+    Apply function to groups in parallel.
+
+    Parameters
+    ----------
+    groups : DataFrameGroupBy
+        Grouped dataframe
+    func : callable
+        Function to apply to each group
+    n_jobs : int
+        Number of parallel jobs
+    print_progress : bool
+        Whether to show progress bar
+    **kwargs
+        Additional arguments to pass to func
+
+    Returns
+    -------
+    list
+        List of results from applying func to each group
+    """
+    if n_jobs == 1:
+        # Sequential processing
+        if print_progress:
+            results = [func(group, **kwargs) for group in tqdm(groups, desc="Processing users")]
+        else:
+            results = [func(group, **kwargs) for group in groups]
+    else:
+        # Parallel processing
+        group_list = list(groups)
+        if print_progress:
+            results = Parallel(n_jobs=n_jobs)(
+                delayed(func)(group, **kwargs) for group in tqdm(group_list, desc="Processing users")
+            )
+        else:
+            results = Parallel(n_jobs=n_jobs)(
+                delayed(func)(group, **kwargs) for group in group_list
+            )
+    return results

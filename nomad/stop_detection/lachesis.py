@@ -10,7 +10,7 @@ import warnings
 import geopandas as gpd
 import nomad.io.base as loader
 from nomad.stop_detection import utils
-from nomad.stop_detection.sequential import applyParallel
+from nomad.stop_detection.utils import applyParallel
 from nomad.filters import to_timestamp
 
 ##########################################
@@ -259,3 +259,24 @@ def lachesis_per_user(
     )
     
     return pd.concat(results, ignore_index=True)
+
+def lachesis_labels_per_user(data, dt_max, delta_roam, dur_min=5, traj_cols=None, n_jobs=1, print_progress=False, **kwargs):
+    kwargs.pop('user_id', None)
+    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    uid = traj_cols_temp['user_id']
+
+    def process_group(group):
+        return lachesis_labels(group[1], dt_max=dt_max, delta_roam=delta_roam,
+                               dur_min=dur_min, traj_cols=traj_cols, **kwargs)
+
+    results = applyParallel(data.groupby(uid, sort=False), process_group,
+                            n_jobs=n_jobs, print_progress=print_progress)
+
+    offset = 0
+    for labels in results:
+        mask = labels >= 0
+        if mask.any():
+            labels[mask] += offset
+            offset = int(labels[mask].max()) + 1
+    
+    return pd.concat(results).reindex(data.index)
