@@ -172,35 +172,6 @@ def _haversine_distance(coord1, coord2, radians=True):
     c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
     return earth_radius_meters * c  # Distance in meters
 
-# def haversine_dist(lat1, lon1, lat2, lon2):
-#     # remove this and use what's in utils.py 
-#     """
-#     Calculate haversine distance between two points in meters.
-
-#     Parameters
-#     ----------
-#     lat1, lon1 : float or array-like
-#         Latitude and longitude of first point(s)
-#     lat2, lon2 : float or array-like
-#         Latitude and longitude of second point(s)
-
-#     Returns
-#     -------
-#     float or array-like
-#         Distance in meters
-#     """
-#     R = 6371000  # Earth radius in meters
-
-#     lat1_rad = np.radians(lat1)
-#     lat2_rad = np.radians(lat2)
-#     dlat = np.radians(lat2 - lat1)
-#     dlon = np.radians(lon2 - lon1)
-
-#     a = np.sin(dlat/2)**2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(dlon/2)**2
-#     c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1-a))
-
-#     return R * c
-
 
 def _pairwise_haversine(coords):
     """
@@ -271,6 +242,28 @@ def _update_diameter(c_j, coords_prev, D_prev, metric='euclidean'):
 
     return D_i_jp1
 
+def _fallback_time_cols(col_names, traj_cols, kwargs):
+    '''
+    Helper to decide whether to use datetime vs timestamp in cases of ambiguity
+    '''
+    traj_cols = loader._parse_traj_cols(col_names, traj_cols, kwargs, defaults={}, warn=False)
+    # check for explicit datetime usage
+    t_keys = ['timestamp', 'start_timestamp', 'datetime', 'start_datetime']
+    if 'datetime' in kwargs or 'start_datetime' in kwargs: # prioritize datetime 
+        t_keys = t_keys[-2:] + t_keys[:2]
+
+    # load defaults and check for time columns
+    traj_cols = loader._update_schema(constants.DEFAULT_SCHEMA, traj_cols)
+    loader._has_time_cols(col_names, traj_cols) # error if no columns
+    
+    for t_key in t_keys:
+        if traj_cols[t_key] in col_names:
+            use_datetime = (t_key in ['datetime', 'start_datetime']) ## necessary?
+            break
+            
+    return t_key, use_datetime
+
+# should this be moved to io.utils?
 def _fallback_st_cols(col_names, traj_cols, kwargs):
     '''
     Helper function to decide whether to use latitude and longitude or x,y,

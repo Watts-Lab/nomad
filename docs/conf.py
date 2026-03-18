@@ -18,9 +18,9 @@ sys.path.insert(0, os.path.abspath('../src'))
 
 # -- Project information -----------------------------------------------------
 
-project = 'Daphme'
-copyright = '2024, Jacob Lisner'
-author = 'Jacob Lisner'
+project = 'NOMAD'
+copyright = '2025, CSSLab'
+author = 'The NOMAD Team'
 
 # The full version, including alpha/beta/rc tags
 release = '0.0.1'
@@ -32,10 +32,14 @@ release = '0.0.1'
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
+    'nbsphinx',
+    'sphinx.ext.mathjax',
+    'sphinx.ext.githubpages',
     "sphinx.ext.todo",
     "sphinx.ext.viewcode",
     "sphinx.ext.autodoc",
-    'sphinx_rtd_theme'
+    'sphinx_rtd_theme',
+    'sphinx_design'
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -46,6 +50,9 @@ templates_path = ['_templates']
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
+# Don't execute notebooks during build (use pre-executed outputs)
+nbsphinx_execute = 'never'
+
 
 # -- Options for HTML output -------------------------------------------------
 
@@ -54,7 +61,15 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 #
 html_theme = 'sphinx_rtd_theme'
 
+# Theme options to customize the appearance
+html_theme_options = {
+    'logo_only': True,  # Only show the logo, not the project name
+    'display_version': False,  # Don't display version info
+}
+
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
+
+html_logo = "_static/nomad-logo-black.png"

@@ -8,7 +8,7 @@ from nomad.filters import to_timestamp
 from nomad.stop_detection.utils import _haversine_distance
 from nomad.stop_detection.utils import applyParallel
 
-def detect_stop_labels(
+def detect_stops_labels(
     data,
     delta_roam=100,
     dt_max=15.0,
@@ -120,6 +120,49 @@ def detect_stop_labels(
     
     return pd.Series(labels, index=data.index, name='cluster')
 
+
+def applyParallel(groups, func, n_jobs=1, print_progress=False, **kwargs):
+    """
+    Apply function to groups in parallel.
+
+    Parameters
+    ----------
+    groups : DataFrameGroupBy
+        Grouped dataframe
+    func : callable
+        Function to apply to each group
+    n_jobs : int
+        Number of parallel jobs
+    print_progress : bool
+        Whether to show progress bar
+    **kwargs
+        Additional arguments to pass to func
+
+    Returns
+    -------
+    list
+        List of results from applying func to each group
+    """
+    if n_jobs == 1:
+        # Sequential processing
+        if print_progress:
+            results = [func(group, **kwargs) for group in tqdm(groups, desc="Processing users")]
+        else:
+            results = [func(group, **kwargs) for group in groups]
+    else:
+        # Parallel processing
+        group_list = list(groups)
+        if print_progress:
+            results = Parallel(n_jobs=n_jobs)(
+                delayed(func)(group, **kwargs) for group in tqdm(group_list, desc="Processing users")
+            )
+        else:
+            results = Parallel(n_jobs=n_jobs)(
+                delayed(func)(group, **kwargs) for group in group_list
+            )
+    return results
+
+
 def detect_stops(
     data,
     delta_roam=100,
@@ -182,7 +225,7 @@ def detect_stops(
     else:
         uid_col = None
 
-    labels = detect_stop_labels(
+    labels = detect_stops_labels(
         data=data,
         delta_roam=delta_roam,
         dt_max=dt_max,
@@ -303,13 +346,13 @@ def detect_stops_per_user(
     
     return pd.concat(results, ignore_index=True)
 
-def detect_stop_labels_per_user(data, dt_max, delta_roam, method='sliding', dur_min=5, traj_cols=None, n_jobs=1, print_progress=False, **kwargs):
+def detect_stops_labels_per_user(data, dt_max, delta_roam, method='sliding', dur_min=5, traj_cols=None, n_jobs=1, print_progress=False, **kwargs):
     kwargs.pop('user_id', None)
     traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     uid = traj_cols_temp['user_id']
 
     def process_group(group):
-        return detect_stop_labels(group[1], dt_max=dt_max, delta_roam=delta_roam,
+        return detect_stops_labels(group[1], dt_max=dt_max, delta_roam=delta_roam,
                                dur_min=dur_min, method=method, traj_cols=traj_cols, **kwargs)
 
     results = applyParallel(data.groupby(uid, sort=False), process_group,
