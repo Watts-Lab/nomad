@@ -22,29 +22,19 @@ def _find_temp_neighbors(times, time_thresh, use_datetime):
 
     TC: O(n^2)
     """
-    # getting times based on whether they are datetime values or timestamps, changed to seconds for calculations
     if use_datetime:
         times = to_timestamp(times).values
     else:
         times = times.values
-        
-    # Pairwise time differences
-    # times[:, np.newaxis]: from shape (n,) -> to shape (n, 1) – a column vector
-    time_diffs = np.abs(times[:, np.newaxis] - times).astype(int)
-    
-    # Filter by time threshold
-    within_time_thresh = np.triu(time_diffs <= (time_thresh * 60), k=1) # keep upper triangle
-    i_idx, j_idx = np.where(within_time_thresh)
-    
-    # Return a list of (timestamp1, timestamp2) tuples
-    time_pairs = [(times[i], times[j]) for i, j in zip(i_idx, j_idx)]
-    
+
+    t_kdtree = KDTree(times.reshape(-1, 1))
+    time_pairs = t_kdtree.query_pairs(r=time_thresh * 60)
     return time_pairs, times
 
 def _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, traj_cols):
     """
     Compute neighbors within specified time and distance thresholds for a trajectory dataset.
-    
+
     Parameters
     ----------
     data : pandas.DataFrame
@@ -59,7 +49,7 @@ def _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, t
         Whether to use longitude/latitude coordinates.
     use_datetime : bool, optional
         Whether to process timestamps as datetime objects.
-    
+
     Returns
     -------
     dict
@@ -71,13 +61,13 @@ def _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, t
         coords = np.radians(data[[traj_cols['latitude'], traj_cols['longitude']]].values)
     else:
         coords = data[[traj_cols['x'], traj_cols['y']]].values
-    
+
     # getting times based on whether they are datetime values or timestamps, changed to seconds for calculations
     if use_datetime:
         times = to_timestamp(data[traj_cols['datetime']]).values
     else:
         times = data[traj_cols['timestamp']].values
-      
+
     # Time   
     t_kdtree = KDTree(times.reshape(-1, 1))
     time_pairs = t_kdtree.query_pairs(r=time_thresh * 60)
@@ -91,8 +81,8 @@ def _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, t
     else:
         s_kdtree = KDTree(coords)
         dist_pairs = s_kdtree.query_pairs(r=dist_thresh)
-    
-	neighbor_pairs = (time_pairs & dist_pairs)
+
+    neighbor_pairs = (time_pairs & dist_pairs)
   
     # Neighbor dictionary
     neighbor_dict = defaultdict(set)
@@ -109,4 +99,3 @@ def _adj_arr_to_pairs(ind):
     col_idx = np.concatenate(ind)
     mask = row_idx < col_idx
     return set(zip(row_idx[mask].tolist(), col_idx[mask].tolist()))
-    
