@@ -332,8 +332,7 @@ def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_
     for col in passthrough_cols:
         if col in grouped_data.columns:
             stop_attr[col] = grouped_data[col].iloc[0]
-
-    return pd.Series(stop_attr)
+    return pd.Series(stop_attr, dtype="object")
 
 def summarize_stop_grid(
     grouped_data,
