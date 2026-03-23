@@ -28,7 +28,8 @@ def _find_temp_neighbors(times, time_thresh, use_datetime):
         times = times.values
 
     t_kdtree = KDTree(times.reshape(-1, 1))
-    time_pairs = t_kdtree.query_pairs(r=time_thresh * 60)
+    pairs = t_kdtree.query_pairs(r=time_thresh * 60)
+    time_pairs = np.array([(times[i], times[j]) for i, j in pairs])
     return time_pairs, times
 
 def _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, traj_cols):
