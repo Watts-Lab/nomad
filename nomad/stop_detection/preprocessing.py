@@ -5,6 +5,7 @@ from nomad.stop_detection import utils
 from nomad.filters import to_timestamp
 from scipy.spatial import KDTree
 from sklearn.neighbors import BallTree # for haverside distance case
+import pdb
 
 def _find_temp_neighbors(times, time_thresh, use_datetime):
     """
@@ -27,11 +28,12 @@ def _find_temp_neighbors(times, time_thresh, use_datetime):
     else:
         times = times.values
 
-    t_kdtree = KDTree(times.reshape(-1, 1))
-    time_pairs = t_kdtree.query_pairs(r=time_thresh * 60)
+    t_kdtree = KDTree(times[:, None])
+    time_pairs = t_kdtree.query_pairs(r=time_thresh * 60, output_type='ndarray')
+    time_pairs = times[time_pairs]
     return time_pairs, times
 
-def _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, traj_cols):
+def _find_neighbors(data, time_thresh, traj_cols, dist_thresh=None, weighted=False, use_datetime=False, use_lon_lat=False):
     """
     Compute neighbors within specified time and distance thresholds for a trajectory dataset.
 
@@ -56,7 +58,6 @@ def _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, t
         A dictionary where keys are timestamps, and values are sets of neighboring
         timestamps that satisfy both time and distance thresholds.
     """
-    # getting coordinates based on whether they are geographic coordinates (lon, lat) or catesian (x,y)
     if use_lon_lat:
         coords = np.radians(data[[traj_cols['latitude'], traj_cols['longitude']]].values)
     else:
@@ -69,18 +70,22 @@ def _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, t
         times = data[traj_cols['timestamp']].values
 
     # Time   
-    t_kdtree = KDTree(times.reshape(-1, 1))
-    time_pairs = t_kdtree.query_pairs(r=time_thresh * 60)
+    t_kdtree = KDTree(times[:, None])
+    time_pairs = t_kdtree.query_pairs(r=time_thresh * 60, output_type='ndarray')
+    time_pairs = times[time_pairs]
   
     # Distance
-    if use_lon_lat:
-        earth_radius = 6_371_000
-        s_balltree = BallTree(coords, metric = 'haversine')
-        indices = s_balltree.query_radius(coords, r=dist_thresh/earth_radius, return_distance=False)
-        dist_pairs = _adj_arr_to_pairs(indices)
+    if dist_thresh is None:
+        pass
     else:
-        s_kdtree = KDTree(coords)
-        dist_pairs = s_kdtree.query_pairs(r=dist_thresh)
+        if use_lon_lat:
+            earth_radius = 6_371_000
+            s_balltree = BallTree(coords, metric = 'haversine')
+            indices = s_balltree.query_radius(coords, r=dist_thresh/earth_radius, return_distance=False)
+            dist_pairs = _adj_arr_to_pairs(indices)
+        else:
+            s_kdtree = KDTree(coords)
+            dist_pairs = s_kdtree.query_pairs(r=dist_thresh)
 
     neighbor_pairs = (time_pairs & dist_pairs)
   
