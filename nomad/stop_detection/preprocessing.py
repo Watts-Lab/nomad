@@ -5,7 +5,6 @@ from nomad.stop_detection import utils
 from nomad.filters import to_timestamp
 from scipy.spatial import KDTree
 from sklearn.neighbors import BallTree # for haverside distance case
-import pdb
 
 def _find_temp_neighbors(times, time_thresh, use_datetime):
     """
