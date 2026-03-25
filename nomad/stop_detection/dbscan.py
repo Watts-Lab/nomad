@@ -13,7 +13,14 @@ from nomad.stop_detection.preprocessing import _find_neighbors
 ########         DBSCAN           ########
 ##########################################
 
-def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False, remove_overlaps=True, traj_cols=None, **kwargs):
+def ta_dbscan_labels(data,
+                     dist_thresh,
+                     min_pts,
+                     time_thresh,
+                     return_cores=False,
+                     remove_overlaps=True,
+                     traj_cols=None,
+                     **kwargs):
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
          raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
     if data.empty:
@@ -25,33 +32,32 @@ def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False
     # Tests to check for spatial and temporal columns
     loader._has_spatial_cols(data.columns, traj_cols)
     loader._has_time_cols(data.columns, traj_cols)
-
-    valid_times = to_timestamp(data[traj_cols[t_key]]) if use_datetime else data[traj_cols[t_key]]
     
-    neighbor_dict = _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, traj_cols)
-
-    cluster_df = pd.Series(-2, index=valid_times, name='cluster')
-    core_df = pd.Series(-3, index=valid_times, name='core')
+    G = _find_neighbors(data, time_thresh, traj_cols, dist_thresh,
+                False, use_datetime, use_lon_lat, return_trees=False, relabel_nodes=True)
+    
+    cluster_df = pd.Series(-2, index=G, name='cluster')
+    core_df = pd.Series(-3, index=G, name='core')
     # Initialize cluster label
     cid = -1
 
     for i, cluster in cluster_df.items():
         if cluster < 0:
-            if len(neighbor_dict[i]) < min_pts:
+            if len(G[i]) < min_pts:
                 # Mark as noise if below min_pts
                 cluster_df[i] = -1
             else:
                 cid += 1
                 cluster_df[i] = cid  # Assign new cluster label
                 core_df[i] = cid  # Assign new core label
-                S = list(neighbor_dict[i])  # Initialize stack with neighbors
+                S = list(G[i])  # Initialize stack with neighbors
                 while S:
                     j = S.pop()
                     if cluster_df[j] < 0:  # Process if not yet in a cluster
                         cluster_df[j] = cid
-                        if len(neighbor_dict[j]) >= min_pts:
+                        if len(G[j]) >= min_pts:
                             core_df[j] = cid  # Assign core label
-                            for k in neighbor_dict[j]:
+                            for k in G[j]:
                                 if cluster_df[k] < 0:
                                     S.append(k)  # Add new neighbors
                                     
@@ -97,12 +103,12 @@ def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False
                 run_label = lab
                 run_end = t
                 run_neighbors.clear()
-                run_neighbors.update(neighbor_dict[t])
+                run_neighbors.update(G[t])
                 continue
         
             if lab == run_label:
                 run_end = t
-                run_neighbors.update(neighbor_dict[t])
+                run_neighbors.update(G[t])
                 continue
         
             # label changed => t is the start of the next run, so flush current run now
@@ -125,7 +131,7 @@ def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False
             run_label = lab
             run_end = t
             run_neighbors.clear()
-            run_neighbors.update(neighbor_dict[t])
+            run_neighbors.update(G[t])
         
         # flush last run to +inf
         next_run_start = np.inf
@@ -148,7 +154,7 @@ def ta_dbscan_labels(data, dist_thresh, min_pts, time_thresh, return_cores=False
     else:
         labels = output.cluster
         return labels.set_axis(data.index)
-
+       
 def ta_dbscan(
     data,
     dist_thresh,

@@ -65,7 +65,7 @@ def detect_stops_labels(
 
     # Extract coordinates and time
     coords = data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy(dtype='float64')
-    time_series = to_timestamp(data[traj_cols[t_key]]) if use_datetime else data[traj_cols[t_key]]
+    times = to_timestamp(data[traj_cols[t_key]]) if use_datetime else data[traj_cols[t_key]]
     
     # Initialize all labels as noise (-1)
     n = len(data)
@@ -76,12 +76,12 @@ def detect_stops_labels(
     while i < n:
         j = i + 1
         anchor_coords = coords[i]
-        start_time = time_series.iloc[i]
+        start_time = times.iloc[i]
         
         # Slide window forward
         while j < n:
             # Check for temporal gap
-            time_gap = (time_series.iloc[j] - time_series.iloc[j-1]) / 60  # Convert to minutes
+            time_gap = (times.iloc[j] - times.iloc[j-1]) / 60  # Convert to minutes
             if time_gap > dt_max:
                 break
 
@@ -106,7 +106,7 @@ def detect_stops_labels(
             j += 1
         
         # Check if we have a valid stop (enough time spent)
-        time_spent = (time_series.iloc[j-1] - start_time) / 60  # Convert to minutes
+        time_spent = (times.iloc[j-1] - start_time) / 60  # Convert to minutes
         
         if time_spent >= dur_min:
             # Assign cluster label to all points in this stop
