@@ -7,12 +7,6 @@ from scipy.spatial import KDTree
 from sklearn.neighbors import BallTree # for haverside distance case
 import networkx as nx
 
-import networkx as nx
-import numpy as np
-from scipy.spatial import KDTree
-from sklearn.neighbors import BallTree
-
-
 def _find_temp_neighbors(times, time_thresh, return_tree=False, relabel_nodes=True):
     """Return the time-neighbor graph, and optionally its KDTree."""
     t_tree = KDTree(times[:, None])
@@ -23,7 +17,7 @@ def _find_temp_neighbors(times, time_thresh, return_tree=False, relabel_nodes=Tr
     G.add_edges_from(pairs)
 
     if relabel_nodes:
-        G = nx.relabel_nodes(G, dict(enumerate(times)))
+        G = nx.relabel_nodes(G, dict(enumerate(times._data)))
     
     return (G, t_tree) if return_tree else G
 
@@ -83,7 +77,7 @@ def _find_spatial_neighbors(coords, dist_thresh=None, weighted=False,
             G.add_edges_from(pairs)
 
     if relabel_nodes and times is not None:
-        G = nx.relabel_nodes(G, dict(enumerate(times)))
+        G = nx.relabel_nodes(G, dict(enumerate(times._data)))
         
     return (G, s_tree) if return_tree else G
 
@@ -104,7 +98,9 @@ def _find_neighbors(data, time_thresh, traj_cols, dist_thresh=None,
     else:
         times = data[traj_cols["timestamp"]].values
 
-    temp_result = _find_temp_neighbors(times, time_thresh, return_tree=return_trees)
+    temp_result = _find_temp_neighbors(
+        times, time_thresh, return_tree=return_trees, relabel_nodes=False
+    )
     time_graph, t_tree = temp_result if return_trees else (temp_result, None)
 
     spatial_graph = None
@@ -117,19 +113,36 @@ def _find_neighbors(data, time_thresh, traj_cols, dist_thresh=None,
             weighted=weighted,
             use_lon_lat=use_lon_lat,
             return_tree=return_trees,
+            relabel_nodes=False,
         )
         spatial_graph, s_tree = spatial_result if return_trees else (spatial_result, None)
 
     if spatial_graph is None:
-        G = time_graph
-    elif dist_thresh is None:
-        G = spatial_graph.edge_subgraph(time_graph.edges).copy() if weighted else time_graph
-    else:
-        G = spatial_graph.edge_subgraph(time_graph.edges).copy() if weighted else nx.intersection(time_graph, spatial_graph)
+        G = time_graph.copy()
 
-    G.add_nodes_from(time_graph.nodes)
+    elif dist_thresh is None:
+        if weighted:
+            G = nx.create_empty_copy(time_graph)
+            good_edges = time_graph.edges & spatial_graph.edges
+            G.add_weighted_edges_from(
+                (u, v, spatial_graph[u][v]["weight"])
+                for u, v in good_edges
+            )
+        else:
+            G = time_graph.copy()
+
+    else:
+        G = nx.create_empty_copy(time_graph)
+        good_edges = time_graph.edges & spatial_graph.edges
+        if weighted:
+            G.add_weighted_edges_from(
+                (u, v, spatial_graph[u][v]["weight"])
+                for u, v in good_edges
+            )
+        else:
+            G.add_edges_from(good_edges)
 
     if relabel_nodes:
-        G = nx.relabel_nodes(G, dict(enumerate(times)))
+        G = nx.relabel_nodes(G, dict(enumerate(times._data)))
 
     return (G, t_tree, s_tree) if return_trees else G
