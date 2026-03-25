@@ -6,7 +6,7 @@ import warnings
 import nomad.io.base as loader
 from nomad.stop_detection import utils
 from nomad.filters import to_timestamp
-from nomad.stop_detection.preprocessing import _find_temp_neighbors
+from nomad.stop_detection.preprocessing import _find_temp_neighbors, _find_neighbors
 
 def _build_neighbor_graph(time_pairs, times):
     # Build neighbor map from time_pairs
@@ -700,9 +700,10 @@ def hdbscan_labels(data,
     loader._has_spatial_cols(data.columns, traj_cols)
     loader._has_time_cols(data.columns, traj_cols)
 
-    time_pairs, times = _find_temp_neighbors(data[traj_cols[t_key]], time_thresh, use_datetime)
+    G = _find_neighbors(data, time_thresh, traj_cols, dist_thresh=None,
+                    weighted=False, use_datetime=use_datetime, use_lon_lat=use_lon_lat,
+                    return_trees=False, relabel_nodes=True)
 
-    neighbors = _build_neighbor_graph(time_pairs, times)
     ts_idx = {ts: i for i, ts in enumerate(times)}
 
     core_distances, coords = _compute_core_distance(data, time_pairs, times, use_lon_lat, traj_cols, min_pts)
