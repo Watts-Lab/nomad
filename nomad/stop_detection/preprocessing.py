@@ -6,12 +6,7 @@ from nomad.filters import to_timestamp
 from scipy.spatial import KDTree
 from sklearn.neighbors import BallTree # for haverside distance case
 import networkx as nx
-
-import networkx as nx
-import numpy as np
-from scipy.spatial import KDTree
-from sklearn.neighbors import BallTree
-
+import pdb
 
 def _find_temp_neighbors(times, time_thresh, return_tree=False, relabel_nodes=True):
     """Return the time-neighbor graph, and optionally its KDTree."""
@@ -23,7 +18,7 @@ def _find_temp_neighbors(times, time_thresh, return_tree=False, relabel_nodes=Tr
     G.add_edges_from(pairs)
 
     if relabel_nodes:
-        G = nx.relabel_nodes(G, dict(enumerate(times)))
+        G = nx.relabel_nodes(G, dict(enumerate(times._data)))
     
     return (G, t_tree) if return_tree else G
 
@@ -83,7 +78,7 @@ def _find_spatial_neighbors(coords, dist_thresh=None, weighted=False,
             G.add_edges_from(pairs)
 
     if relabel_nodes and times is not None:
-        G = nx.relabel_nodes(G, dict(enumerate(times)))
+        G = nx.relabel_nodes(G, dict(enumerate(times._data)))
         
     return (G, s_tree) if return_tree else G
 
@@ -104,7 +99,7 @@ def _find_neighbors(data, time_thresh, traj_cols, dist_thresh=None,
     else:
         times = data[traj_cols["timestamp"]].values
 
-    temp_result = _find_temp_neighbors(times, time_thresh, return_tree=return_trees)
+    temp_result = _find_temp_neighbors(times, time_thresh, return_tree=return_trees, relabel_nodes=False)
     time_graph, t_tree = temp_result if return_trees else (temp_result, None)
 
     spatial_graph = None
@@ -130,6 +125,6 @@ def _find_neighbors(data, time_thresh, traj_cols, dist_thresh=None,
     G.add_nodes_from(time_graph.nodes)
 
     if relabel_nodes:
-        G = nx.relabel_nodes(G, dict(enumerate(times)))
+        G = nx.relabel_nodes(G, dict(enumerate(times._data)))
 
     return (G, t_tree, s_tree) if return_trees else G
