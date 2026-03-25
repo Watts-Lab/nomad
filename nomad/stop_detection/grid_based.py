@@ -3,6 +3,7 @@ import numpy as np
 import nomad.io.base as loader
 from nomad.filters import to_timestamp
 from nomad.stop_detection import utils
+from nomad.stop_detection.utils import applyParallel
 import geopandas as gpd
 
 def grid_based_labels(data, time_thresh=np.inf, min_cluster_size=1, dur_min=0, traj_cols=None, **kwargs):
@@ -159,35 +160,99 @@ def grid_based_per_user(
     min_cluster_size=2,
     dur_min=5,
     complete_output=False,
-    passthrough_cols=[], 
+    passthrough_cols=[],
     traj_cols=None,
+    n_jobs=1,
+    print_progress=False,
     **kwargs
 ):
     """
     Run grid_based stop detection on each user separately, then concatenate results.
     Raises an error if 'user_id' is not in traj_cols or kwargs.
+
+    Parameters
+    ----------
+    n_jobs : int, default 1
+        Number of parallel jobs. 1 means sequential processing.
+    print_progress : bool, default False
+        Whether to show a progress bar during processing.
     """
-    # Parse user_id
     traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     if traj_cols_temp['user_id'] not in data.columns:
         raise ValueError(f"No 'user_id' column found in Index {data.columns} or specified in traj_cols or kwargs.")
 
     uid = traj_cols_temp['user_id']
-    passthrough_cols += [uid, traj_cols_temp['date']]
-    
-    results = []
-    for _, group in data.groupby(uid, sort=False):
+    pt_cols = passthrough_cols + [uid, traj_cols_temp['date']]
 
-        stop_table = grid_based(
-            group,
+    def process_group(group):
+        return grid_based(
+            group[1],
             time_thresh=time_thresh,
             min_cluster_size=min_cluster_size,
             dur_min=dur_min,
             complete_output=complete_output,
-            passthrough_cols=passthrough_cols,
+            passthrough_cols=pt_cols,
             traj_cols=traj_cols,
             **kwargs
         )
-        results.append(stop_table)
-        
+
+    results = applyParallel(
+        data.groupby(uid, sort=False),
+        process_group,
+        n_jobs=n_jobs,
+        print_progress=print_progress
+    )
+
     return pd.concat(results, ignore_index=True)
+
+
+def grid_based_labels_per_user(
+    data,
+    time_thresh=np.inf,
+    min_cluster_size=1,
+    dur_min=0,
+    traj_cols=None,
+    n_jobs=1,
+    print_progress=False,
+    **kwargs
+):
+    """
+    Run grid_based_labels on each user separately, then concatenate results
+    with globally unique cluster labels.
+
+    Parameters
+    ----------
+    n_jobs : int, default 1
+        Number of parallel jobs. 1 means sequential processing.
+    print_progress : bool, default False
+        Whether to show a progress bar during processing.
+    """
+    kwargs.pop('user_id', None)
+    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    uid = traj_cols_temp['user_id']
+
+    def process_group(group):
+        return grid_based_labels(
+            group[1],
+            time_thresh=time_thresh,
+            min_cluster_size=min_cluster_size,
+            dur_min=dur_min,
+            traj_cols=traj_cols,
+            **kwargs
+        )
+
+    results = applyParallel(
+        data.groupby(uid, sort=False),
+        process_group,
+        n_jobs=n_jobs,
+        print_progress=print_progress
+    )
+
+    offset = 0
+    for labels in results:
+        mask = labels >= 0
+        if mask.any():
+            labels[mask] += offset
+            offset = int(labels[mask].max()) + 1
+
+    return pd.concat(results).reindex(data.index)
