@@ -2,113 +2,21 @@ import pandas as pd
 import numpy as np
 import heapq
 from collections import defaultdict
+import networkx as nx
 import warnings
 import nomad.io.base as loader
 from nomad.stop_detection import utils
 from nomad.filters import to_timestamp
-import pdb
+from nomad.stop_detection.preprocessing import _find_neighbors
 
-def _find_temp_neighbors(times, time_thresh, use_datetime):
-    """
-    Find timestamp pairs that are within time threshold.
-
-    Parameters
-    ----------
-    times : array of timestamps.
-    time_thresh : time threshold for finding what timestamps are close in time.
-    use_datetime : Whether to process timestamps as datetime objects.
-
-    Returns
-    -------
-    time_pairs : list of tuples of timestamps [(t1, t2), ...] that are close in time given time_thresh.
-
-    TC: O(n^2)
-    """
-    # getting times based on whether they are datetime values or timestamps, changed to seconds for calculations
-    times = to_timestamp(times).values if use_datetime else times.values
-        
-    # Pairwise time differences
-    # times[:, np.newaxis]: from shape (n,) -> to shape (n, 1) – a column vector
-    time_diffs = np.abs(times[:, np.newaxis] - times)
-    time_diffs = time_diffs.astype(int)
+def _compute_core_distance(G, min_pts):
+    result = {}
     
-    # Filter by time threshold
-    within_time_thresh = np.triu(time_diffs <= (time_thresh * 60), k=1) # keep upper triangle
-    i_idx, j_idx = np.where(within_time_thresh)
+    for node in G.nodes():
+        edges = sorted(G.edges(node, data='weight'), key=lambda e: e[2])
+        result[node] = edges[min_pts - 1] if len(edges) >= min_pts else None
     
-    # Return a list of (timestamp1, timestamp2) tuples
-    time_pairs = [(times[i], times[j]) for i, j in zip(i_idx, j_idx)]
-    
-    return time_pairs, times
-
-def _build_neighbor_graph(time_pairs, times):
-    # Build neighbor map from time_pairs
-    neighbors = {ts: set() for ts in times}  # TC: O(n)
-    for t1, t2 in time_pairs:
-        neighbors[t1].add(t2)
-        neighbors[t2].add(t1)
-    
-    return neighbors
-
-def _compute_core_distance(data, time_pairs, times, use_lon_lat, traj_cols, min_pts = 2):
-    """
-    Calculate the core distance for each ping in data.
-    It gives local density estimate: small core distance → high local density.
-
-    Parameters
-    ----------
-    data : dataframe
-
-    time_pairs : tuples of timestamps that are close in time given time_thresh
-    
-    min_pts : int
-        used to calculate the core distance of a point p, where core distance of a point p 
-        is defined as the distance from p to its min_pts-th smallest nearest neighbor
-        (including itself).
-
-    Returns
-    -------
-    core_distances : dictionary of timestamps
-        {timestamp_1: core_distance_1, ..., timestamp_n: core_distance_n} distances are quantized
-    """
-    # getting coordinates based on whether they are geographic coordinates (lon, lat) or catesian (x,y)
-    if use_lon_lat:
-        coords = np.radians(data[[traj_cols['latitude'], traj_cols['longitude']]].values) # TC: O(n)
-    else:
-        coords = data[[traj_cols['x'], traj_cols['y']]].values # TC: O(n)
-    
-    n = len(coords)
-    # get the index of timestamp in the arrays (for accessing their value later)
-    ts_indices = {ts: idx for idx, ts in enumerate(times)} # TC: O(n)
-
-    # Build neighbor map from time_pairs
-    neighbors = _build_neighbor_graph(time_pairs, times)
-
-    D_INF = np.pi * 6_371_000  # max distance on earth
-    core_distances = {}
-
-    for i in range(n): # TC: O(n+m (mlogm)) 
-        u = times[i]
-        allowed_neighbors = neighbors[u]
-        dists = [0.0]  # distance to itself
-
-        for v in allowed_neighbors:
-            j = ts_indices.get(v)
-            if j is not None:
-                if use_lon_lat:
-                    dist = utils._haversine_distance(coords[i], coords[j])
-                else:
-                    dist = np.sqrt(np.sum((coords[i] - coords[j]) ** 2))
-                
-                dists.append(np.round(dist * 4) / 4)
-
-        # pad with large numbers if not enough neighbors
-        while len(dists) < min_pts:
-            dists.append(D_INF) # use a very large number e.g. infinity for edges between points not temporally close
-
-        sorted_dists = np.sort(dists) # TC: O(nlogn)
-        core_distances[u] = np.round(sorted_dists[min_pts - 1] * 4)/4
-    return core_distances, coords
+    return {node: e[2] if e else np.inf for node, e in result.items()}
 
 def _mst(mrd_graph):
     """
@@ -399,27 +307,6 @@ def _base_cdf(eps):
     
     return res
 
-# def _piecewise_linear_cdf(eps):
-#     """
-#     Example of a custom, piecewise CDF for stability calculations.
-#     """
-#     x = np.asarray(eps)
-#     y = np.zeros_like(x, dtype=float)
-
-#     m = (x >= 5)  & (x <= 20)
-#     y[m] = 2 * (x[m] - 5)
-
-#     m = (x > 20) & (x <= 80)
-#     y[m] = 30 + 1.5 * (x[m] - 20)
-
-#     m = (x > 80) & (x <= 200)
-#     y[m] = 120 + (x[m] - 80)
-
-#     m = x > 200
-#     y[x > 200] = 240
-
-#     return y/240
-
 def compute_cluster_stability(label_history_df, cdf_function=_base_cdf):
     """
     Computes cluster stability using a vectorized approach and a provided CDF.
@@ -609,47 +496,45 @@ def select_clusters_by_epsilon(hierarchy_df, label_history_df, epsilon):
     
     return set(clusters_at_scale)
 
-def _build_hdbscan_graphs(coords, ts_idx, neighbors, core_dist, use_lon_lat):
+def _build_hdbscan_graphs(G, core_dist):
     """
     Computes all graphs required for the HDBSCAN algorithm in one pass.
+    Uses precomputed edge weights from G instead of recomputing distances.
 
     Returns
     -------
-    edges_sorted : np.recarray
-        [from, to, weight] sorted descending by weight.
+    edges_sorted_df : pd.Series
+        MST + self-loops sorted descending by weight, MultiIndex (from, to).
     d_graph : pd.Series
         Symmetric graph of raw distances, MultiIndex (from, to).
     """
-    mrd_graph = {}
-    u_list, v_list, d_list = [], [], []
+    d_dict = {
+        (u, v): np.round(data['weight'] * 4) / 4
+        for u, v, data in G.edges(data=True)
+    }
 
-    for u, u_neighbors in neighbors.items():
-        i = ts_idx[u]
-        for v in u_neighbors:
-            if u >= v:
-                continue
-            
-            j = ts_idx[v]
-            dist = (utils._haversine_distance(coords[i], coords[j])
-                    if use_lon_lat else np.linalg.norm(coords[i] - coords[j]))
-            dist = np.round(dist * 4) / 4
-
-            mrd_graph[(u, v)] = max(core_dist[u], core_dist[v], dist)
-            u_list.append(u)
-            v_list.append(v)
-            d_list.append(dist)
-
-    idx = pd.MultiIndex.from_arrays([u_list, v_list], names=["from", "to"])
-    d_graph_part = pd.Series(d_list, index=idx)
-    
-    rev = d_graph_part.copy()
-    rev.index = rev.index.swaplevel(0, 1)
+    d_graph_part = pd.Series(d_dict)
+    d_graph_part.index.names = ['from', 'to']
+    rev = d_graph_part.swaplevel()
+    rev.index.names = ['from', 'to']
     d_graph = pd.concat([d_graph_part, rev])
 
-    # Build MST from MRD graph
-    mst_arr = _mst(mrd_graph)
+    H = G.copy()
+    nx.set_edge_attributes(
+        H,
+        {
+            (u, v): max(core_dist.get(u, np.inf), core_dist.get(v, np.inf), d)
+            for (u, v), d in d_dict.items()
+        },
+        name='weight'
+    )
+    mst = nx.minimum_spanning_tree(H)
 
-    # Extend and sort MST with self-loops
+    mst_arr = np.array(
+        [(u, v, data['weight']) for u, v, data in mst.edges(data=True)],
+        dtype=[('from', 'int64'), ('to', 'int64'), ('weight', 'float64')]
+    )
+
     self_loops_items = list(core_dist.items())
     if not self_loops_items:
         self_loops_full = np.empty(0, dtype=mst_arr.dtype)
@@ -662,13 +547,12 @@ def _build_hdbscan_graphs(coords, ts_idx, neighbors, core_dist, use_lon_lat):
         self_loops_full['from'] = self_loops['from']
         self_loops_full['to'] = self_loops['from']
         self_loops_full['weight'] = self_loops['weight']
-    
+
     all_edges = np.concatenate([mst_arr, self_loops_full])
-    
     order = np.argsort(all_edges["weight"])[::-1]
     sorted_edges = all_edges[order]
-    
-    edges_sorted_df = pd.Series(
+
+    edges_sorted = pd.Series(
         sorted_edges['weight'],
         index=pd.MultiIndex.from_arrays(
             [sorted_edges['from'], sorted_edges['to']],
@@ -676,7 +560,7 @@ def _build_hdbscan_graphs(coords, ts_idx, neighbors, core_dist, use_lon_lat):
         ),
         name='weight'
     )
-    return edges_sorted_df, d_graph
+    return edges_sorted, d_graph
 
 def hdbscan_labels(data,
                    time_thresh,
@@ -733,15 +617,21 @@ def hdbscan_labels(data,
     loader._has_spatial_cols(data.columns, traj_cols)
     loader._has_time_cols(data.columns, traj_cols)
 
-    time_pairs, times = _find_temp_neighbors(data[traj_cols[t_key]], time_thresh, use_datetime)
-
-    neighbors = _build_neighbor_graph(time_pairs, times)
-    ts_idx = {ts: i for i, ts in enumerate(times)}
-
-    core_distances, coords = _compute_core_distance(data, time_pairs, times, use_lon_lat, traj_cols, min_pts)
-
-    edges_sorted, d_graph = _build_hdbscan_graphs(coords, ts_idx, neighbors, core_distances, use_lon_lat)
+    G = _find_neighbors(data, time_thresh, traj_cols, dist_thresh=None,
+                    weighted=True, use_datetime=use_datetime, use_lon_lat=use_lon_lat,
+                    return_trees=False, relabel_nodes=True)
     
+    # neighbors = {node: set(G.neighbors(node)) for node in G.nodes()}
+    # time_pairs, times = _find_temp_neighbors(data[traj_cols[t_key]], time_thresh, use_datetime)
+    # neighbors = _build_neighbor_graph(time_pairs, times)
+    # ts_idx = {ts: i for i, ts in enumerate(times)}
+    # core_distances, coords = _compute_core_distance(data, time_pairs, times, use_lon_lat, traj_cols, min_pts)
+
+    core_distances = _compute_core_distance(G, min_pts)
+
+    # edges_sorted, d_graph = _build_hdbscan_graphs(coords, list(G.nodes()), neighbors, core_distances, use_lon_lat)
+    edges_sorted, d_graph = _build_hdbscan_graphs(G, core_distances)
+
     core_distances = pd.Series(core_distances).sort_index()
     core_distances.index.name = 'time'
 
