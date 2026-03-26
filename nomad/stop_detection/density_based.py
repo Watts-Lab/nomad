@@ -5,8 +5,10 @@ import nomad.io.base as loader
 from nomad.stop_detection import utils
 from nomad.stop_detection.preprocessing import _find_neighbors
 from nomad.filters import to_timestamp
-from collections import deque
-import pdb
+import networkx as nx
+
+def window_graph(G, lo, hi):
+    return nx.subgraph_view(G, filter_node=lambda n, lo=lo, hi=hi: lo <= n <= hi)
 
 def seqscan_labels(
     data,
@@ -37,94 +39,78 @@ def seqscan_labels(
     loader._has_spatial_cols(data.columns, traj_cols)
     loader._has_time_cols(data.columns, traj_cols)
 
-    valid_times = to_timestamp(data[traj_cols[t_key]]) if use_datetime else data[traj_cols[t_key]]
-    neighbor_dict = _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, traj_cols)
-    
-    cluster_df = pd.Series(-1, index=valid_times, name='cluster')
-    core_df = pd.Series(-1, index=valid_times, name='core')
+    G = _find_neighbors(data, time_thresh, traj_cols, dist_thresh,
+                False, use_datetime, use_lon_lat, return_trees=False, relabel_nodes=True)
+    cluster_df = pd.Series(-2, index=G, name='cluster')
+    core_df = pd.Series(-3, index=G, name='core')
 
     # SeqScan main loop start
-    start = valid_times.iloc[0]        # current time context start
-    end = valid_times.iloc[0] - 1        # current candidate to cut time context
+    start = next(iter(G))      # current time context start
+    end = start - 1                  # current candidate to cut time context
     #find cluster routine start
-    temp_neighbor_dict = {}
-    temp_keys = deque() # to prune temp_neighbor_dict easily
+    temp_G = nx.subgraph_view(G, filter_node=lambda n: start <= n <= end)
     
     active_cid = -1
     # thus active_cid - 1 is the preceeding cluster id
     temp_cid = 100000 # for internal dbscan until new active cluster is found
 
     def findCluster(start_time, t):
-        nonlocal temp_neighbor_dict, temp_cid, active_cid, start, end
+        nonlocal temp_G, temp_cid, active_cid, start, end
         window = slice(start_time, t)
-        
-        # temp_neighbor_dict = {idx:nbs for idx, nbs in temp_neighbor_dict.items() if idx >= start_time}
-        while temp_keys and temp_keys[0] < start_time:
-            old = temp_keys.popleft()
-            temp_neighbor_dict.pop(old) # left prune instead of reconstructing
-        
-        temp_neighbor_dict[t] = {nb for nb in neighbor_dict[t] if t > nb >= start_time}
-        temp_keys.append(t)
-        
-        curr_is_core = len(temp_neighbor_dict[t]) >= min_pts
+        temp_G = window_graph(G, start_time, t)
+
+        curr_is_core = len(temp_G[t]) >= min_pts
         if curr_is_core:
             temp_cid += 1
             core_df[t] = temp_cid
             cluster_df[t] = temp_cid
 
-        for s in temp_neighbor_dict[t]:
-            temp_neighbor_dict[s].add(t)
-            if len(temp_neighbor_dict[s]) >= min_pts:
+        for s in temp_G[t]:
+            if len(temp_G[s]) >= min_pts:
                 if core_df[s] >= 0:
-                    # already was a temporary core point
-                    # just merge "through" t
-                    # if t is core, relabel s and its neighbors (relabeling for merge)
                     if curr_is_core:
-                        core_win = core_df.loc[window]                       
-                        relabel_idxs = core_win.index[core_win.isin([core_df[s], core_df[t]])]                        
-                        merged_label = min([core_df[s], core_df[t]])  # to let active_cid win
-                        
+                        core_win = core_df.loc[window]
+                        relabel_idxs = core_win.index[core_win.isin([core_df[s], core_df[t]])]
+                        merged_label = min(core_df[s], core_df[t])
+
                         cluster_df.loc[relabel_idxs] = merged_label
                         core_df.loc[relabel_idxs] = merged_label
                     
                 elif cluster_df[s] >= 0:
                     core_df[s] = cluster_df[s]
                     if curr_is_core:
-                        core_win = core_df.loc[window]  
+                        core_win = core_df.loc[window]
                         relabel_idxs = core_win.index[core_win.isin([core_df[s], core_df[t]])]
-                        merged_label = min([core_df[s], core_df[t]])
+                        merged_label = min(core_df[s], core_df[t])
 
                         cluster_df.loc[relabel_idxs] = merged_label
                         core_df.loc[relabel_idxs] = merged_label
 
                     nb_labs = {core_df.loc[s]}
-                    
-                    for nb in temp_neighbor_dict[s]:
+
+                    for nb in temp_G[s]:
                         if core_df[nb] >= 0:
-                            # for later relabel of entire connected component
                             nb_labs.add(core_df[nb])
                         else:
-                            cluster_df[nb] = core_df[s] # (re) assign border point
-                    
-                    merged_label = min(nb_labs)                    
-                    # bulk relabel all involved labels, including s's label
+                            cluster_df[nb] = core_df[s]
+
+                    merged_label = min(nb_labs)
                     core_win = core_df.loc[window]
-                    clu_win  = cluster_df.loc[window]
-                    
+                    clu_win = cluster_df.loc[window]
+
                     core_df.loc[core_win.index[core_win.isin(nb_labs)]] = merged_label
                     cluster_df.loc[clu_win.index[clu_win.isin(nb_labs)]] = merged_label
                 
-                elif cluster_df[s] == -1: # s potentially starts a new cluster
+                elif cluster_df[s] == -1:
                     if curr_is_core:
                         core_df[s] = core_df[t]
                         cluster_df[s] = cluster_df[t]
                     else:
-                        temp_cid += 1 # increase temporary label counter
+                        temp_cid += 1
                         core_df[s] = temp_cid
                         cluster_df[s] = temp_cid
-                        # propagate label
-                        for nb in temp_neighbor_dict[s]:
-                            # there is no case in which nb is core point: otherwise cluster_df[s] would have had a label
+
+                        for nb in temp_G[s]:
                             cluster_df[nb] = core_df[s]
 
         clu_win = cluster_df.loc[window]
@@ -136,6 +122,7 @@ def seqscan_labels(
         else:
             spans = cand.index.to_series().groupby(cand, sort=False).agg(["first", "last"])
             eligible = spans[(spans["last"] - spans["first"]) >= (dur_min * 60)]
+            
             if eligible.empty:
                 return False
             else:
@@ -169,15 +156,19 @@ def seqscan_labels(
                 return True
                 # vars changed: temp_neighbors_df, core_df, cluster_df, active_cid, end, temp_cid
         ###### End of def find_cluster
-        
-    for curr_time in valid_times:
+
+    for curr_time in G:
+        # mark as visited. core relabeling happens later.
+        cluster_df.at[curr_time] = -1
+        core_df.at[curr_time] = -1
         if active_cid == -1:
             findCluster(start, curr_time)
         else:
-            temp_neighbor_dict[curr_time] = {nb for nb in neighbor_dict[curr_time] if curr_time > nb >= start}
-            curr_is_core = len(temp_neighbor_dict[curr_time]) >= min_pts
+            temp_G = window_graph(G, start, curr_time)
+            
+            curr_is_core = len(temp_G[curr_time]) >= min_pts
             is_reachable = False
-            for nb in temp_neighbor_dict[curr_time]:
+            for nb in temp_G[curr_time]:
                 if core_df[nb] == active_cid:
                     is_reachable = True
                     cluster_df[curr_time] = active_cid
@@ -189,12 +180,13 @@ def seqscan_labels(
                 if back_merge and active_cid > 0:
                     prev_lab = active_cid - 1
                     for nb in core_df[core_df == prev_lab].index:
-                        if curr_time in neighbor_dict[nb]:
+                        if curr_time in G[nb]:
                             cluster_df[cluster_df == (active_cid - 1)] = active_cid
                             core_df[core_df == (active_cid - 1)] = active_cid
                             break
             else:
                 findCluster(end + 1, curr_time)
+
     # TODO: find better way to avoid collisions
     cluster_df.loc[cluster_df > 100000] = -1
     core_df.loc[core_df > 100000] = -1
