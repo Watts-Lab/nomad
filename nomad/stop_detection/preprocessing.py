@@ -98,9 +98,7 @@ def _find_neighbors(data, time_thresh, traj_cols, dist_thresh=None,
     else:
         times = data[traj_cols["timestamp"]].values
 
-    temp_result = _find_temp_neighbors(
-        times, time_thresh, return_tree=return_trees, relabel_nodes=False
-    )
+    temp_result = _find_temp_neighbors(times, time_thresh, return_tree=return_trees, relabel_nodes=False)
     time_graph, t_tree = temp_result if return_trees else (temp_result, None)
 
     spatial_graph = None
