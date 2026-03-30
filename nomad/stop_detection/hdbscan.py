@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-import heapq
 from collections import defaultdict
 import networkx as nx
 import warnings
@@ -18,52 +17,6 @@ def _compute_core_distance(G, min_pts):
     
     return {node: e[2] if e else np.inf for node, e in result.items()}
 
-def _mst(mrd_graph):
-    """
-    Compute the MST using Prim's algorithm from mutual reachability distances.
-    Adapted to compute the MST of each connected component, since temporally 
-    unadmissible pairs can never be connected (distance is infinite).
-    
-    Parameters
-    ----------
-    mrd : dict
-        Keys are (timestamp1, timestamp2), values are mutual reachability distances.
-
-    Returns
-    -------
-    mst : list of tuples
-        (t1, t2, mrd_value) for the MST.
-    """
-    graph = defaultdict(list)
-    for (u, v), w in mrd_graph.items():
-        graph[u].append((v, w))
-        graph[v].append((u, w))
-
-    visited, mst, heap = set(), [], []
-
-    def seed(start):
-        heapq.heappush(heap, (0.0, start, start))
-
-    seed(next(iter(graph)))
-
-    while len(visited) < len(graph):
-        if not heap:                              # start next component
-            seed(next(t for t in graph if t not in visited))
-            continue
-        w, u, v = heapq.heappop(heap)
-        if v in visited:
-            continue
-        visited.add(v)
-        if u != v:
-            mst.append((u, v, w))
-        for nbr, wt in graph[v]:
-            if nbr not in visited:
-                heapq.heappush(heap, (wt, v, nbr))
-                
-    return np.array(mst,
-                    dtype=[('from', 'int64'),
-                           ('to', 'int64'),
-                           ('weight', 'float64')])
 
 def _build_border_map(scale, core_distances, d_graph):
     """
