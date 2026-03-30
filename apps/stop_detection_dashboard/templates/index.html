@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NOMAD Stop Detection Dashboard</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">CSSLab / NOMAD</div>
+    <div class="subtitle">Stop Detection Dashboard (Prototype)</div>
+  </header>
+
+  <section class="hero">
+    <h1>Robustness Playground</h1>
+    <p>Select algorithm + sparsity/noise controls, then animate ping-by-ping clustering behavior.</p>
+  </section>
+
+  <main class="layout">
+    <aside class="sidebar card">
+      <h2>Controls</h2>
+
+      <label for="userSelect">Trajectory (user)</label>
+      <select id="userSelect"></select>
+
+      <label for="algorithmSelect">Algorithm</label>
+      <select id="algorithmSelect"></select>
+
+      <h3>Signal</h3>
+      <label for="betaPingInput">beta_ping proxy (min)</label>
+      <input id="betaPingInput" type="number" min="1" max="20" step="0.5" value="7">
+
+      <label for="noiseInput">Noise (meters)</label>
+      <input id="noiseInput" type="number" min="0" max="60" step="1" value="8">
+
+      <label for="maxPingsInput">Max pings</label>
+      <input id="maxPingsInput" type="number" min="40" max="500" step="10" value="220">
+
+      <label for="seedInput">Seed</label>
+      <input id="seedInput" type="number" min="0" max="999999" step="1" value="2026">
+
+      <h3>Algorithm Params</h3>
+      <div id="algoParamsContainer"></div>
+
+      <button id="runButton" class="primary">Run</button>
+      <div id="statusText" class="status"></div>
+    </aside>
+
+    <section class="content">
+      <div class="metrics" id="metricsGrid"></div>
+
+      <div class="playback card">
+        <button id="resetBtn">Reset</button>
+        <button id="playBtn">Play</button>
+        <button id="pauseBtn">Pause</button>
+        <label for="speedInput">Speed (ms/frame)</label>
+        <input id="speedInput" type="number" min="20" max="600" step="10" value="110">
+        <label for="frameSlider">Current ping</label>
+        <input id="frameSlider" type="range" min="0" max="0" step="1" value="0">
+        <span id="frameLabel">0 / 0</span>
+      </div>
+
+      <div class="viz-grid">
+        <div class="card">
+          <h3>Map</h3>
+          <div id="map"></div>
+        </div>
+        <div class="card">
+          <h3>Barcode</h3>
+          <div id="barcode"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</body>
+</html>

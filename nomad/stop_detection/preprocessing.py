@@ -7,17 +7,24 @@ from scipy.spatial import KDTree
 from sklearn.neighbors import BallTree # for haverside distance case
 import networkx as nx
 
+def _to_time_array(times):
+    """Return times as a 1D numpy array."""
+    if isinstance(times, pd.Series):
+        return times.to_numpy()
+    return np.asarray(times)
+
 def _find_temp_neighbors(times, time_thresh, return_tree=False, relabel_nodes=True):
     """Return the time-neighbor graph, and optionally its KDTree."""
-    t_tree = KDTree(times[:, None])
+    times_arr = _to_time_array(times)
+    t_tree = KDTree(times_arr[:, None])
     pairs = t_tree.query_pairs(r=time_thresh * 60, output_type="ndarray")
 
     G = nx.Graph()
-    G.add_nodes_from(range(len(times)))
+    G.add_nodes_from(range(len(times_arr)))
     G.add_edges_from(pairs)
 
     if relabel_nodes:
-        G = nx.relabel_nodes(G, dict(enumerate(times._data)))
+        G = nx.relabel_nodes(G, dict(enumerate(times_arr)))
     
     return (G, t_tree) if return_tree else G
 
@@ -77,7 +84,7 @@ def _find_spatial_neighbors(coords, dist_thresh=None, weighted=False,
             G.add_edges_from(pairs)
 
     if relabel_nodes and times is not None:
-        G = nx.relabel_nodes(G, dict(enumerate(times._data)))
+        G = nx.relabel_nodes(G, dict(enumerate(_to_time_array(times))))
         
     return (G, s_tree) if return_tree else G
 
@@ -94,9 +101,9 @@ def _find_neighbors(data, time_thresh, traj_cols, dist_thresh=None,
         coords = data[[traj_cols["x"], traj_cols["y"]]].values
 
     if use_datetime:
-        times = to_timestamp(data[traj_cols["datetime"]]).values
+        times = to_timestamp(data[traj_cols["datetime"]]).to_numpy()
     else:
-        times = data[traj_cols["timestamp"]].values
+        times = data[traj_cols["timestamp"]].to_numpy()
 
     temp_result = _find_temp_neighbors(times, time_thresh, return_tree=return_trees, relabel_nodes=False)
     time_graph, t_tree = temp_result if return_trees else (temp_result, None)
@@ -141,6 +148,6 @@ def _find_neighbors(data, time_thresh, traj_cols, dist_thresh=None,
             G.add_edges_from(good_edges)
 
     if relabel_nodes:
-        G = nx.relabel_nodes(G, dict(enumerate(times._data)))
+        G = nx.relabel_nodes(G, dict(enumerate(times)))
 
     return (G, t_tree, s_tree) if return_trees else G

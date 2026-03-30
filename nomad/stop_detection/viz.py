@@ -556,40 +556,91 @@ def plot_stops(stops, ax,
             **kwargs
         )
 
-def plot_time_barcode(data, ax, color='black', cmap=None, current_idx=None, set_xlim=True, lw=1):
+def plot_time_barcode(
+    data,
+    ax,
+    color='black',
+    cmap=None,
+    current_idx=0,
+    upto_idx=None,
+    set_xlim=True,
+    lw=1
+):
     """
-    Plot a barcode of timestamps on ax. Optionally highlight current_idx in red.
-    If set_xlim is True, auto-sets x-axis to padded timestamp range.
+    Plot a timestamp barcode on ax and highlight the current ping.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame or pandas.Series
+        Series of unix timestamps, or a DataFrame containing 'timestamp'.
+    ax : matplotlib.axes.Axes
+        Axis to draw on.
+    color : str, default 'black'
+        Line color. Use ``color='cluster'`` with a DataFrame containing
+        a 'cluster' column and provide ``cmap``.
+    cmap : str or Colormap, optional
+        Colormap for ``color='cluster'``.
+    current_idx : int, default 0
+        Index of the timestamp to highlight in red.
+    upto_idx : int, optional
+        If provided, only draw timestamps up to this positional index
+        (inclusive), useful for progressive animation.
+    set_xlim : bool, default True
+        Whether to set x-limits from the full timestamp span.
+    lw : float, default 1
+        Line width for barcode ticks.
     """
+    if current_idx is None:
+        current_idx = 0
+
     if isinstance(data, pd.DataFrame):
+        ts_full = pd.to_datetime(data['timestamp'], unit='s')
+        if len(ts_full) == 0:
+            return ax.vlines([], 0.2, 0.8, colors='black', lw=lw)
+
+        if upto_idx is not None:
+            upto_idx = int(np.clip(upto_idx, 0, len(data) - 1))
+            view = data.iloc[:upto_idx + 1].copy()
+        else:
+            view = data.copy()
+
         # color logic
-        if color == 'cluster' and 'cluster' in data.columns:
+        if color == 'cluster' and 'cluster' in view.columns:
             if not cmap:
                 raise ValueError("cmap required when color='cluster'")
-            data, colors = _map_cluster_colors(data, cmap)
+            view, colors = _map_cluster_colors(view, cmap)
         else:
-            colors="black"
+            colors = "black"
 
-        ts_dt = pd.to_datetime(data['timestamp'], unit='s')
-                    
+        ts_dt = pd.to_datetime(view['timestamp'], unit='s')
+
     elif isinstance(data, pd.Series):
-        ts_dt = pd.to_datetime(data, unit='s')
-        colors="black"
+        ts_full = pd.to_datetime(data, unit='s')
+        if len(ts_full) == 0:
+            return ax.vlines([], 0.2, 0.8, colors='black', lw=lw)
+
+        if upto_idx is not None:
+            upto_idx = int(np.clip(upto_idx, 0, len(data) - 1))
+            ts_dt = ts_full.iloc[:upto_idx + 1]
+        else:
+            ts_dt = ts_full
+        colors = "black"
+    else:
+        raise TypeError("data must be a pandas DataFrame or pandas Series")
     
     if set_xlim:
         pad = pd.Timedelta(minutes=20)
-        ax.set_xlim(ts_dt.min() - pad, ts_dt.max() + pad)
-
+        ax.set_xlim(ts_full.min() - pad, ts_full.max() + pad)
 
     vlines = ax.vlines(ts_dt, 0.2, 0.8, colors=colors, lw=lw)
-    if current_idx is not None:
-        ax.vlines(ts_dt.iloc[current_idx], 0, 1, colors='red', lw=1.5)
+    current_idx = int(np.clip(current_idx, 0, len(ts_full) - 1))
+    ax.vlines(ts_full.iloc[current_idx], 0, 1, colors='red', lw=1.5)
     ax.set_yticks([])
     ax.set_yticklabels([])
     ax.set_ylim(0, 1)
     
     # Choose appropriate locator and formatter based on time range
-    time_range = (ts_dt.max() - ts_dt.min()).total_seconds()
+    time_range = (ts_full.max() - ts_full.min()).total_seconds()
     
     if time_range <= 3600 * 12:  # Up to 12 hours - hourly major ticks
         major_locator = mdates.HourLocator(interval=1)
