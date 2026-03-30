@@ -21,8 +21,8 @@ def _find_temp_neighbors(times, time_thresh, return_tree=False, relabel_nodes=Tr
     G.add_edges_from(pairs)
 
     if relabel_nodes:
-        G = nx.relabel_nodes(G, dict(enumerate(times._data)))
-    
+        G = nx.relabel_nodes(G, dict(enumerate(times)))
+
     return (G, t_tree) if return_tree else G
 
 
@@ -92,8 +92,8 @@ def _find_spatial_neighbors(coords, dist_thresh=None, weighted=False,
                 G.add_edges_from(np.column_stack((row[mask], col[mask])))
 
     if relabel_nodes and times is not None:
-        G = nx.relabel_nodes(G, dict(enumerate(times._data)))
-        
+        G = nx.relabel_nodes(G, dict(enumerate(times)))
+
     return (G, s_tree) if return_tree else G
 
 
@@ -156,6 +156,6 @@ def _find_neighbors(data, time_thresh, traj_cols, dist_thresh=None,
             G.add_edges_from(good_edges)
 
     if relabel_nodes:
-        G = nx.relabel_nodes(G, dict(enumerate(times._data)))
+        G = nx.relabel_nodes(G, dict(enumerate(times)))
 
     return (G, t_tree, s_tree) if return_trees else G
