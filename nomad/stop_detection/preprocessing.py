@@ -3,14 +3,18 @@ import numpy as np
 from collections import defaultdict
 from nomad.stop_detection import utils
 from nomad.filters import to_timestamp
-from scipy.spatial import KDTree
-from sklearn.neighbors import BallTree # for haverside distance case
+from sklearn.neighbors import KDTree, BallTree # BallTree for haversine distance case
 import networkx as nx
 
 def _find_temp_neighbors(times, time_thresh, return_tree=False, relabel_nodes=True):
     """Return the time-neighbor graph, and optionally its KDTree."""
     t_tree = KDTree(times[:, None])
-    pairs = t_tree.query_pairs(r=time_thresh * 60, output_type="ndarray")
+    indices = t_tree.query_radius(times[:, None], r=time_thresh * 60)
+    counts = np.array([len(x) for x in indices])
+    row = np.repeat(np.arange(len(times)), counts)
+    col = np.concatenate(indices)
+    mask = row < col
+    pairs = np.column_stack((row[mask], col[mask])) if mask.any() else np.empty((0, 2), dtype=int)
 
     G = nx.Graph()
     G.add_nodes_from(range(len(times)))
@@ -61,20 +65,31 @@ def _find_spatial_neighbors(coords, dist_thresh=None, weighted=False,
         s_tree = KDTree(coords)
 
         if weighted:
-            radius = np.inf if dist_thresh is None else dist_thresh
-            sdm = s_tree.sparse_distance_matrix(
-                s_tree,
-                max_distance=radius,
-                output_type="ndarray"
-            )
-            mask = sdm["i"] < sdm["j"]
+            if dist_thresh is None:
+                distances, indices = s_tree.query(coords, k=len(coords), return_distance=True)
+                row = np.repeat(np.arange(len(coords)), len(coords))
+                col = indices.ravel()
+                dist = distances.ravel()
+            else:
+                indices, distances = s_tree.query_radius(coords, r=dist_thresh, return_distance=True)
+                counts = np.array([len(x) for x in indices])
+                row = np.repeat(np.arange(len(coords)), counts)
+                col = np.concatenate(indices)
+                dist = np.concatenate(distances)
+
+            mask = row < col
             G.add_weighted_edges_from(
-                np.column_stack((sdm["i"][mask], sdm["j"][mask], sdm["v"][mask]))
+                np.column_stack((row[mask], col[mask], dist[mask]))
             )
 
         elif dist_thresh is not None:
-            pairs = s_tree.query_pairs(r=dist_thresh, output_type="ndarray")
-            G.add_edges_from(pairs)
+            indices = s_tree.query_radius(coords, r=dist_thresh)
+            counts = np.array([len(x) for x in indices])
+            row = np.repeat(np.arange(len(coords)), counts)
+            col = np.concatenate(indices)
+            mask = row < col
+            if mask.any():
+                G.add_edges_from(np.column_stack((row[mask], col[mask])))
 
     if relabel_nodes and times is not None:
         G = nx.relabel_nodes(G, dict(enumerate(times._data)))
