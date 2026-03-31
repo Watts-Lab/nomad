@@ -8,19 +8,20 @@ import nomad.io.base as loader
 from nomad.stop_detection import utils
 from nomad.filters import to_timestamp
 from nomad.stop_detection.preprocessing import _find_neighbors
+import pdb
 
 ##########################################
 ########         DBSTOP           ########
 ##########################################
 
-def ta_dbscan_labels(data,
-                     dist_thresh,
-                     min_pts,
-                     time_thresh,
-                     return_cores=False,
-                     remove_overlaps=True,
-                     traj_cols=None,
-                     **kwargs):
+def dbstop_labels(data,
+                 dist_thresh,
+                 min_pts,
+                 time_thresh,
+                 return_cores=False,
+                 remove_overlaps=True,
+                 traj_cols=None,
+                 **kwargs):
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
          raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
     if data.empty:
@@ -63,29 +64,34 @@ def ta_dbscan_labels(data,
                                     
     ### Remove overlaps (optional) reassign all border points
     if remove_overlaps and (core_df >= 0).any():
-        next_label = cid + 1
-    
-        relabel_dict = {}   # raw_label -> assigned_label (raw until first split, then new id)
-        active = None      # active assigned label
-    
-        for t in core_df.index[core_df >= 0]:
-            raw = int(core_df.at[t])
 
+        next_label = cid + 1
+        active = None      # active assigned label
+        
+        relabel_dict = {} 
+        l_stack = []
+        cand_left_sand = None
+        
+        for t_left in core_df.index[core_df >= 0]:
+            raw = core_df.at[t_left]
             seen = raw in relabel_dict
+            
             if not seen:
-                relabel_dict[raw] = raw
-    
-            assigned = relabel_dict[raw]    
-                
-            if active is not None and assigned != active:
-                if seen:
-                    relabel_dict[raw] = next_label
-                    next_label += 1
-                    assigned = relabel_dict[raw]
-    
-            active = assigned
-            core_df.at[t] = assigned
-            cluster_df.at[t] = assigned
+                relabel_dict[raw] = raw    # for now, the value is meaningless        
+            
+            
+            if active is not None and active != core_df.at[t_left]: # change of cluster       
+                if cand_left_sand is None:
+                    cand_left_sand = t_left # added ONLY if we encounter label active again
+
+                if seen: # we encountered a sandwich's right bread
+                    l_stack.append(cand_left_sand)
+                    cand_left_sand = t_left
+
+            active = core_df.at[t_left]
+            
+            ## end of for          
+            
         
         ### Reassign border points to non-overlapping core points
         cluster_df.loc[core_df < 0] = -1  
@@ -154,7 +160,7 @@ def ta_dbscan_labels(data,
         labels = output.cluster
         return labels.set_axis(data.index)
        
-def ta_dbscan(
+def dbstop(
     data,
     dist_thresh,
     min_pts,
@@ -198,7 +204,7 @@ def ta_dbscan(
 
     Raises
     ------
-    ValueError if multi-user data detected; use ta_dbscan_per_user instead.
+    ValueError if multi-user data detected; use dbstop_per_user instead.
     """
     traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     if 'user_id' in traj_cols_temp and traj_cols_temp['user_id'] in data.columns:
@@ -206,10 +212,10 @@ def ta_dbscan(
         arr = uid_col.values
         first = arr[0]
         if any(x != first for x in arr[1:]):
-            raise ValueError("Multi-user data? Use ta_dbscan_per_user instead.")
+            raise ValueError("Multi-user data? Use dbstop_per_user instead.")
         passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
 
-    labels = ta_dbscan_labels(
+    labels = dbstop_labels(
         data=data,
         dist_thresh=dist_thresh,
         min_pts=min_pts,
@@ -247,7 +253,7 @@ def ta_dbscan(
     
     return stop_table.loc[stop_table['duration']>=dur_min]
 
-def ta_dbscan_per_user(
+def dbstop_per_user(
     data,
     dist_thresh,
     min_pts,
@@ -259,18 +265,18 @@ def ta_dbscan_per_user(
     **kwargs
 ):
     """
-    Run ta_dbscan on each user separately, then concatenate results.
+    Run dbstop on each user separately, then concatenate results.
     Raises if 'user_id' not in traj_cols or missing from data.
     """
     traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     if 'user_id' not in traj_cols_temp or traj_cols_temp['user_id'] not in data.columns:
-        raise ValueError("ta_dbscan_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
+        raise ValueError("dbstop_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
     uid = traj_cols_temp['user_id']
 
     pt_cols = passthrough_cols + [uid]
 
     results = [
-        ta_dbscan(
+        dbstop(
             data=group,
             dist_thresh=dist_thresh,
             min_pts=min_pts,
