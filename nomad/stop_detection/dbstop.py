@@ -10,7 +10,7 @@ from nomad.filters import to_timestamp
 from nomad.stop_detection.preprocessing import _find_neighbors
 
 ##########################################
-########         DBSCAN           ########
+########         DBSTOP           ########
 ##########################################
 
 def ta_dbscan_labels(data,
