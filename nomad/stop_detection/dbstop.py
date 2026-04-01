@@ -19,7 +19,6 @@ def dbstop_labels(data,
                  min_pts,
                  time_thresh,
                  return_cores=False,
-                 remove_overlaps=True,
                  traj_cols=None,
                  **kwargs):
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
@@ -41,7 +40,8 @@ def dbstop_labels(data,
     core_df = pd.Series(-3, index=G, name='core')
     # Initialize cluster label
     cid = -1
-
+    runs = pd.DataFrame({'cid': [], 'start': [], 'end': []})
+        
     for i, cluster in cluster_df.items():
         if cluster < 0:
             if len(G[i]) < min_pts:
@@ -49,6 +49,7 @@ def dbstop_labels(data,
                 cluster_df[i] = -1
             else:
                 cid += 1
+                start = end = i
                 cluster_df[i] = cid  # Assign new cluster label
                 core_df[i] = cid  # Assign new core label
                 S = list(G[i])  # Initialize stack with neighbors
@@ -56,43 +57,58 @@ def dbstop_labels(data,
                     j = S.pop()
                     if cluster_df[j] < 0:  # Process if not yet in a cluster
                         cluster_df[j] = cid
-                        if len(G[j]) >= min_pts:
+                        if len(G[j]) >= min_pts: # Mark as core if it has enough neighbors
                             core_df[j] = cid  # Assign core label
+                            start = min(start, j)
+                            end = max(end, j)
                             for k in G[j]:
                                 if cluster_df[k] < 0:
                                     S.append(k)  # Add new neighbors
+                
+                runs = pd.concat([runs, pd.DataFrame([{
+                                        'cid': cid, 'start': start, 'end': end
+                                                          }])], ignore_index=True)
                                     
     ### Remove overlaps (optional) reassign all border points
-    if remove_overlaps and (core_df >= 0).any():
-
+    if (core_df >= 0).any():
         next_label = cid + 1
-        active = None      # active assigned label
-        
-        relabel_dict = {} 
-        l_stack = []
-        cand_left_sand = None
-        
-        for t_left in core_df.index[core_df >= 0]:
-            raw = core_df.at[t_left]
-            seen = raw in relabel_dict
-            
-            if not seen:
-                relabel_dict[raw] = raw    # for now, the value is meaningless        
-            
-            
-            if active is not None and active != core_df.at[t_left]: # change of cluster       
-                if cand_left_sand is None:
-                    cand_left_sand = t_left # added ONLY if we encounter label active again
+        runs = runs.sort_values('start')
+        while not runs.empty:
+            prev_max_e = -np.inf
+            prev_max_e_cid = 'NO_LABEL'
+            safe_runs = []
+            for i, row in runs.iterrows():
+                s, e = row['start'], row['end']
+                if s < prev_max_e:
+                    # detected sandwich                    
+                    split = True # for now
+                    if split:
+                        relabel_mask = (core_df.index > s)&(core_df==prev_max_e_cid)
+                        core_df.loc[relabel_mask] = next_label
+                        new_start = core_df.index[core_df == next_label][0]
+                        # runs is changed, gets a new row
+                        runs = pd.concat([runs, pd.DataFrame([{
+                                            'cid': next_label, 'start': new_start, 'end': prev_max_e
+                                                              }])], ignore_index=True)
+                        next_label = next_label+1
+                        # modifies container row
+                        new_end = core_df.index[core_df == prev_max_e_cid][-1] # repeated?
+                        runs.loc[runs.cid == prev_max_e_cid, "end"] = new_end
+                        #sorted again
+                        runs = runs.sort_values('start')
+                    else:
+                        print("Likelihood check with counterfactual point")                        
+                    break
 
-                if seen: # we encountered a sandwich's right bread
-                    l_stack.append(cand_left_sand)
-                    cand_left_sand = t_left
+                if e > prev_max_e:
+                    # run i is "non-overlapping" on the left
+                    prev_max_e = e
+                    prev_max_e_cid = row['cid']
+                    safe_runs += [i]
 
-            active = core_df.at[t_left]
-            
-            ## end of for          
-            
-        
+            runs = runs.drop(safe_runs)      
+            ## end of while
+        pdb.set_trace()    
         ### Reassign border points to non-overlapping core points
         cluster_df.loc[core_df < 0] = -1  
         prev_run_end = -np.inf                           # left bound (exclusive)
@@ -166,7 +182,6 @@ def dbstop(
     min_pts,
     time_thresh,
     dur_min=5,
-    remove_overlaps=True,
     complete_output=False,
     passthrough_cols=[],
     keep_col_names=True,
@@ -221,7 +236,6 @@ def dbstop(
         min_pts=min_pts,
         time_thresh=time_thresh,
         return_cores=False,
-        remove_overlaps=remove_overlaps,
         traj_cols=traj_cols,
         **kwargs
     )
