@@ -64,7 +64,7 @@ def _build_border_map(scale, core_distances, G):
     rows = [
         (b, c, G.edges[b, c]["weight"])
         for b, c in pairs
-        if G.has_edge(b, c) and G.edges[b, c]["weight"] < scale
+        if G.has_edge(b, c) and np.round(G.edges[b, c]["weight"] * 4) / 4 <= scale
     ]
 
     if not rows:
@@ -468,14 +468,15 @@ def _build_hdbscan_graphs(G, core_dist):
     """
     H = G.copy()
     for u, v, data in H.edges(data=True):
-        data["weight"] = np.round(data["weight"] * 4) / 4
+        d = np.round(data["weight"] * 4) / 4
+        data["weight"] = max(core_dist.get(u, np.inf), core_dist.get(v, np.inf), d)
 
     mst = nx.minimum_spanning_tree(H)
 
     mst_arr = np.array(
         [(u, v, data['weight']) for u, v, data in mst.edges(data=True)],
         dtype=[('from', 'int64'), ('to', 'int64'), ('weight', 'float64')]
-    )
+    ) # to use pandas dataframe instead (if even necessary)
 
     self_loops_items = list(core_dist.items())
     if not self_loops_items:
