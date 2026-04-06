@@ -13,10 +13,11 @@ def _compute_core_distance(G, min_pts):
     
     for node in G.nodes():
         edges = sorted(G.edges(node, data='weight'), key=lambda e: e[2])
-        result[node] = edges[min_pts - 1] if len(edges) >= min_pts else None
+        result[node] = edges[min_pts - 1][2] if len(edges) >= min_pts else np.inf
     
-    return {node: e[2] if e else np.inf for node, e in result.items()}
-
+    core_distances = pd.Series(result)
+    core_distances.index.name = 'time'
+    return core_distances
 
 def _build_border_map(scale, core_distances, G):
     """
@@ -84,7 +85,7 @@ def _build_border_map(scale, core_distances, G):
     
     return core_to_border # return this but instead using something with input as G
 
-def cluster_hierarchy(edges_sorted_df, core_distances, G, min_cluster_size, dur_min=5):
+def cluster_hierarchy(edges_sorted, core_distances, G, min_cluster_size, dur_min=5):
     """
     Builds a cluster hierarchy from a pre-computed Minimum Spanning Tree.
 
@@ -94,7 +95,7 @@ def cluster_hierarchy(edges_sorted_df, core_distances, G, min_cluster_size, dur_
 
     Parameters
     ----------
-    edges_sorted_df : pd.Series
+    edges_sorted : pd.Series
         The MST with self-loops, indexed by ('from', 'to') and sorted
         descending by weight (which represents distance/scale).
     core_distances : pd.Series
@@ -126,7 +127,7 @@ def cluster_hierarchy(edges_sorted_df, core_distances, G, min_cluster_size, dur_
     current_label_id = 1
 
     # Iteratively process edges grouped by weight (scale)
-    for scale, edges_to_remove in edges_sorted_df.groupby(edges_sorted_df, sort=False):
+    for scale, edges_to_remove in edges_sorted.groupby(edges_sorted, sort=False):
 
         border_map = _build_border_map(scale, core_distances, G)
         idx_from = edges_to_remove.index.get_level_values('from')
@@ -139,7 +140,10 @@ def cluster_hierarchy(edges_sorted_df, core_distances, G, min_cluster_size, dur_
             members = label_map.index[label_map == cluster_id]
             remaining_members = set(members)
 
-            adj = _build_graph_pd(members, edges_sorted_df, edges_to_remove)
+            # TODO: try to keep the original graph (mst + self loops), instead of building a new one and then getting the connected components
+            # use the networkx filter edges method (all edges <)
+            # benchmark prior to this change
+            adj = _build_graph_pd(members, edges_sorted, edges_to_remove)
             components = _connected_components(adj)
             
             non_spurious = []
@@ -469,41 +473,17 @@ def _build_hdbscan_graphs(G, core_dist):
     H = G.copy()
     for u, v, data in H.edges(data=True):
         d = np.round(data["weight"] * 4) / 4
-        data["weight"] = max(core_dist.get(u, np.inf), core_dist.get(v, np.inf), d)
+        data["weight"] = max(core_dist.at[u], core_dist.at[v], d)
 
     mst = nx.minimum_spanning_tree(H)
 
-    mst_arr = np.array(
-        [(u, v, data['weight']) for u, v, data in mst.edges(data=True)],
-        dtype=[('from', 'int64'), ('to', 'int64'), ('weight', 'float64')]
-    ) # to use pandas dataframe instead (if even necessary)
+    mst.add_edges_from((node, node, {'weight': weight}) for node, weight in core_dist.items())
 
-    self_loops_items = list(core_dist.items())
-    if not self_loops_items:
-        self_loops_full = np.empty(0, dtype=mst_arr.dtype)
-    else:
-        self_loops = np.array(
-            self_loops_items,
-            dtype=[('from', 'int64'), ('weight', 'float64')]
-        )
-        self_loops_full = np.empty(len(self_loops), dtype=mst_arr.dtype)
-        self_loops_full['from'] = self_loops['from']
-        self_loops_full['to'] = self_loops['from']
-        self_loops_full['weight'] = self_loops['weight']
+    all_edges = nx.to_pandas_edgelist(mst, source='from', target='to')
+    all_edges.sort_values('weight', ascending=False, inplace=True)
 
-    all_edges = np.concatenate([mst_arr, self_loops_full])
-    order = np.argsort(all_edges["weight"])[::-1]
-    sorted_edges = all_edges[order]
-
-    edges_sorted = pd.Series(
-        sorted_edges['weight'],
-        index=pd.MultiIndex.from_arrays(
-            [sorted_edges['from'], sorted_edges['to']],
-            names=['from', 'to']
-        ),
-        name='weight'
-    )
-    return edges_sorted
+    all_edges.set_index(['from', 'to'], inplace=True)
+    return all_edges['weight']
 
 def hdbscan_labels(data,
                    time_thresh,
@@ -574,11 +554,8 @@ def hdbscan_labels(data,
 
     edges_sorted = _build_hdbscan_graphs(G, core_distances)
 
-    core_distances = pd.Series(core_distances).sort_index()
-    core_distances.index.name = 'time'
-
     label_history_df, hierarchy_df = cluster_hierarchy(
-        edges_sorted_df=edges_sorted,
+        edges_sorted=edges_sorted,
         core_distances=core_distances,
         G=G,
         min_cluster_size=min_cluster_size,
