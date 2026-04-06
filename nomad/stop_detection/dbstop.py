@@ -40,20 +40,19 @@ def dbstop_labels(data,
     past_cutoff = next(iter(G))  # for querying and relabeling neighbors
     candidate_cutoff = past_cutoff  # useful for splitting border points when a new cluster is formed
     prev_core = -1
-
     active_cid = -1
         
     for curr_time in G:
         reachable = core_df.at[curr_time] == active_cid
         curr_is_core = (core_df.at[curr_time] != -2) or (len(G[curr_time]) >= min_pts)
         if not curr_is_core:
+            core_df.at[curr_time] = -1
             if reachable:
-                core_df.at[curr_time] = -1
                 candidate_cutoff = curr_time
             else: # previous labels not reachable, so it is noise
-                core_df.at[curr_time] = -1
                 cluster_df.at[curr_time] = -1
         else: #is core
+            new_active_cluster = False
             if reachable:
                 candidate_cutoff = curr_time
                 for nb in G[curr_time]:
@@ -86,11 +85,12 @@ def dbstop_labels(data,
                     new_active_cluster = True
             else: # not reachable, and first core point
                 new_active_cluster = True
-
+            
             if new_active_cluster:
+                #move time window for border points
                 past_cutoff = candidate_cutoff
                 candidate_cutoff = curr_time
-                active_cid = active_cid += 1
+                active_cid = active_cid + 1
                 cluster_df.at[curr_time] = active_cid
                 core_df.at[curr_time] = active_cid
                 for nb in G[curr_time]:
