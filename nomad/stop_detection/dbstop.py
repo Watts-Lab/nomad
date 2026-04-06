@@ -6,7 +6,6 @@ import warnings
 import geopandas as gpd
 import nomad.io.base as loader
 from nomad.stop_detection import utils
-from nomad.filters import to_timestamp
 from nomad.stop_detection.preprocessing import _find_neighbors
 import pdb
 
@@ -33,141 +32,76 @@ def dbstop_labels(data,
     loader._has_spatial_cols(data.columns, traj_cols)
     loader._has_time_cols(data.columns, traj_cols)
     
-    G = _find_neighbors(data, time_thresh, traj_cols, dist_thresh,
-                False, use_datetime, use_lon_lat, return_trees=False, relabel_nodes=True)
-    
+    G, t_tree, s_tree = _find_neighbors(data,  time_thresh,  traj_cols,  dist_thresh, False,  use_datetime,  use_lon_lat,  return_trees=True, relabel_nodes=True)
+    node_times = np.asarray(list(G), dtype=np.float64)
+
     cluster_df = pd.Series(-2, index=G, name='cluster')
-    core_df = pd.Series(-3, index=G, name='core')
-    # Initialize cluster label
-    cid = -1
-    runs = pd.DataFrame({'cid': [], 'start': [], 'end': []})
+    core_df = pd.Series(-2, index=G, name='core')
+    past_cutoff = next(iter(G))  # for querying and relabeling neighbors
+    candidate_cutoff = past_cutoff  # useful for splitting border points when a new cluster is formed
+    prev_core = -1
+
+    active_cid = -1
         
-    for i, cluster in cluster_df.items():
-        if cluster < 0:
-            if len(G[i]) < min_pts:
-                # Mark as noise if below min_pts
-                cluster_df[i] = -1
-            else:
-                cid += 1
-                start = end = i
-                cluster_df[i] = cid  # Assign new cluster label
-                core_df[i] = cid  # Assign new core label
-                S = list(G[i])  # Initialize stack with neighbors
-                while S:
-                    j = S.pop()
-                    if cluster_df[j] < 0:  # Process if not yet in a cluster
-                        cluster_df[j] = cid
-                        if len(G[j]) >= min_pts: # Mark as core if it has enough neighbors
-                            core_df[j] = cid  # Assign core label
-                            start = min(start, j)
-                            end = max(end, j)
-                            for k in G[j]:
-                                if cluster_df[k] < 0:
-                                    S.append(k)  # Add new neighbors
-                
-                runs = pd.concat([runs, pd.DataFrame([{
-                                        'cid': cid, 'start': start, 'end': end
-                                                          }])], ignore_index=True)
-                                    
-    ### Remove overlaps (optional) reassign all border points
-    if (core_df >= 0).any():
-        next_label = cid + 1
-        runs = runs.sort_values('start')
-        while not runs.empty:
-            prev_max_e = -np.inf
-            prev_max_e_cid = 'NO_LABEL'
-            safe_runs = []
-            for i, row in runs.iterrows():
-                s, e = row['start'], row['end']
-                if s < prev_max_e:
-                    # detected sandwich                    
-                    split = True # for now
-                    if split:
-                        relabel_mask = (core_df.index > s)&(core_df==prev_max_e_cid)
-                        core_df.loc[relabel_mask] = next_label
-                        new_start = core_df.index[core_df == next_label][0]
-                        # runs is changed, gets a new row
-                        runs = pd.concat([runs, pd.DataFrame([{
-                                            'cid': next_label, 'start': new_start, 'end': prev_max_e
-                                                              }])], ignore_index=True)
-                        next_label = next_label+1
-                        # modifies container row
-                        new_end = core_df.index[core_df == prev_max_e_cid][-1] # repeated?
-                        runs.loc[runs.cid == prev_max_e_cid, "end"] = new_end
-                        #sorted again
-                        runs = runs.sort_values('start')
+    for curr_time in G:
+        reachable = core_df.at[curr_time] == active_cid
+        curr_is_core = (core_df.at[curr_time] != -2) or (len(G[curr_time]) >= min_pts)
+        if not curr_is_core:
+            if reachable:
+                core_df.at[curr_time] = -1
+                candidate_cutoff = curr_time
+            else: # previous labels not reachable, so it is noise
+                core_df.at[curr_time] = -1
+                cluster_df.at[curr_time] = -1
+        else: #is core
+            if reachable:
+                candidate_cutoff = curr_time
+                for nb in G[curr_time]:
+                    if past_cutoff <= nb:
+                        cluster_df.at[nb] = active_cid
+                        if len(G[nb]) >= min_pts:
+                            core_df.at[nb] = active_cid
+            elif prev_core != -1:
+                future_core = core_df[(core_df.index > curr_time) & (core_df == prev_core)].index.min()
+                if pd.notna(future_core):
+                    core_time_range = sorted(abs(nb - curr_time) for nb in G[curr_time])[min_pts - 1]
+                    prev_pos, future_pos = np.searchsorted(node_times, [prev_core, future_core])
+                    prev_coords = data.iloc[prev_pos][[coord_key1, coord_key2]].to_numpy()
+                    future_coords = data.iloc[future_pos][[coord_key1, coord_key2]].to_numpy()
+                    counterfactual_coords = prev_coords + ((curr_time - prev_core) / (future_core - prev_core)) * (
+                        future_coords - prev_coords
+                    )
+
+                    if use_lon_lat:
+                        spatial_nb_idx = s_tree.query_radius(
+                            np.radians(counterfactual_coords).reshape(1, -1),
+                            r=dist_thresh / 6_371_000,
+                        )[0]
                     else:
-                        print("Likelihood check with counterfactual point")                        
-                    break
+                        spatial_nb_idx = s_tree.query_ball_point(counterfactual_coords, r=dist_thresh)
 
-                if e > prev_max_e:
-                    # run i is "non-overlapping" on the left
-                    prev_max_e = e
-                    prev_max_e_cid = row['cid']
-                    safe_runs += [i]
+                    counterfactual_time_range = np.sort(np.abs(node_times[spatial_nb_idx] - curr_time))[min_pts - 1]
+                    new_active_cluster = (core_time_range >= counterfactual_time_range)
+                else:
+                    new_active_cluster = True
+            else: # not reachable, and first core point
+                new_active_cluster = True
 
-            runs = runs.drop(safe_runs)      
-            ## end of while
-        pdb.set_trace()    
-        ### Reassign border points to non-overlapping core points
-        cluster_df.loc[core_df < 0] = -1  
-        prev_run_end = -np.inf                           # left bound (exclusive)
-        
-        run_label = None
-        run_end = None
-        run_neighbors = set()                            # union of neighbors of cores in current run
-        
-        for t in core_df.index[core_df >= 0]:
-            lab = core_df.at[t]
-        
-            if run_label is None:
-                run_label = lab
-                run_end = t
-                run_neighbors.clear()
-                run_neighbors.update(G[t])
-                continue
-        
-            if lab == run_label:
-                run_end = t
-                run_neighbors.update(G[t])
-                continue
-        
-            # label changed => t is the start of the next run, so flush current run now
-            next_run_start = t
-            max_assigned = prev_run_end
-        
-            for nb in run_neighbors:
-                if prev_run_end < nb < next_run_start and cluster_df.at[nb] == -1:
-                    cluster_df.at[nb] = run_label
-                    if nb > max_assigned:
-                        max_assigned = nb
-        
-            # advance left bound for the next run:
-            # at least to the last core of the run, and also to the latest border we just assigned
-            if run_end > max_assigned:
-                max_assigned = run_end
-            prev_run_end = max_assigned
-        
-            # start new run
-            run_label = lab
-            run_end = t
-            run_neighbors.clear()
-            run_neighbors.update(G[t])
-        
-        # flush last run to +inf
-        next_run_start = np.inf
-        max_assigned = prev_run_end
-        
-        for nb in run_neighbors:
-            if prev_run_end < nb < next_run_start and cluster_df.at[nb] == -1:
-                cluster_df.at[nb] = run_label
-                if nb > max_assigned:
-                    max_assigned = nb
-        
-        if run_end is not None and run_end > max_assigned:
-            max_assigned = run_end
-        prev_run_end = max_assigned
-            
+            if new_active_cluster:
+                past_cutoff = candidate_cutoff
+                candidate_cutoff = curr_time
+                active_cid = active_cid += 1
+                cluster_df.at[curr_time] = active_cid
+                core_df.at[curr_time] = active_cid
+                for nb in G[curr_time]:
+                    if past_cutoff <= nb:
+                        cluster_df.at[nb] = active_cid
+                        if len(G[nb]) >= min_pts:
+                            core_df.at[nb] = active_cid
+            else: # point should be ignored
+                core_df.at[curr_time] = -1
+                cluster_df.at[curr_time] = -1
+
     output = pd.DataFrame({'cluster': cluster_df, 'core': core_df})
 
     if return_cores:

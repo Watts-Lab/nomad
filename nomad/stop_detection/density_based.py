@@ -42,11 +42,11 @@ def seqscan_labels(
     G = _find_neighbors(data, time_thresh, traj_cols, dist_thresh,
                 False, use_datetime, use_lon_lat, return_trees=False, relabel_nodes=True)
     cluster_df = pd.Series(-2, index=G, name='cluster')
-    core_df = pd.Series(-3, index=G, name='core')
+    core_df = pd.Series(-2, index=G, name='core')
 
     # SeqScan main loop start
     start = next(iter(G))      # current time context start
-    end = start - 1                  # current candidate to cut time context
+    end = start                  # current candidate to cut time context
     #find cluster routine start
     temp_G = nx.subgraph_view(G, filter_node=lambda n: start <= n <= end)
     
@@ -165,7 +165,6 @@ def seqscan_labels(
             findCluster(start, curr_time)
         else:
             temp_G = window_graph(G, start, curr_time)
-            
             curr_is_core = len(temp_G[curr_time]) >= min_pts
             is_reachable = False
             for nb in temp_G[curr_time]:
