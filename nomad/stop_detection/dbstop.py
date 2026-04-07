@@ -90,7 +90,7 @@ def dbstop_labels(data,
             if new_active_cluster:
                 past_cutoff = candidate_cutoff
                 candidate_cutoff = curr_time
-                active_cid = active_cid += 1
+                active_cid = active_cid + 1
                 cluster_df.at[curr_time] = active_cid
                 core_df.at[curr_time] = active_cid
                 for nb in G[curr_time]:
