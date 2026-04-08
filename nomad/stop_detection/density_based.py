@@ -112,6 +112,11 @@ def seqscan_labels(
 
                         for nb in temp_G[s]:
                             cluster_df[nb] = core_df[s]
+            else:
+                for nb in reversed(list(temp_G[s])):
+                    if core_df[nb] >= 0:
+                        cluster_df[t] = core_df[nb]
+                        break
 
         clu_win = cluster_df.loc[window]
         cand = clu_win[clu_win >= 0]

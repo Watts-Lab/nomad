@@ -1,13 +1,9 @@
 import pandas as pd
 import numpy as np
-from collections import defaultdict
 import nomad.io.base as loader
-import warnings
 import geopandas as gpd
-import nomad.io.base as loader
 from nomad.stop_detection import utils
 from nomad.stop_detection.preprocessing import _find_neighbors
-import pdb
 
 ##########################################
 ########         DBSTOP           ########
@@ -18,6 +14,7 @@ def dbstop_labels(data,
                  min_pts,
                  time_thresh,
                  return_cores=False,
+                 back_merge=True,
                  traj_cols=None,
                  **kwargs):
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
@@ -41,32 +38,48 @@ def dbstop_labels(data,
     candidate_cutoff = past_cutoff  # useful for splitting border points when a new cluster is formed
     prev_core = -1
     active_cid = -1
-        
+
+    def _expand_active_cluster(seed_time):
+        cluster_df.at[seed_time] = active_cid
+        core_df.at[seed_time] = active_cid
+        for nb in G[seed_time]:
+            if past_cutoff <= nb:
+                cluster_df.at[nb] = active_cid
+                if len(G[nb]) >= min_pts:
+                    core_df.at[nb] = active_cid
+
     for curr_time in G:
-        reachable = core_df.at[curr_time] == active_cid
-        curr_is_core = (core_df.at[curr_time] != -2) or (len(G[curr_time]) >= min_pts)
+        curr_is_core = (core_df.at[curr_time] >= 0) or (len(G[curr_time]) >= min_pts)
         if not curr_is_core:
+            reachable = (cluster_df.at[curr_time] == active_cid)
             core_df.at[curr_time] = -1
             if reachable:
                 candidate_cutoff = curr_time
-            else: # previous labels not reachable, so it is noise
+            else:  # previous labels not reachable, so it is noise
                 cluster_df.at[curr_time] = -1
-        else: #is core
+        else:
+            # Future-labeled neighbors can keep continuity for A-C-B style orderings.
+            reachable = (active_cid >= 0 and core_df.at[curr_time] == active_cid)
+            if not reachable and active_cid >= 0:
+                for nb in G[curr_time]:
+                    if nb > curr_time and core_df.at[nb] == active_cid:
+                        reachable = True
+                        break
+
             new_active_cluster = False
             if reachable:
                 candidate_cutoff = curr_time
-                for nb in G[curr_time]:
-                    if past_cutoff <= nb:
-                        cluster_df.at[nb] = active_cid
-                        if len(G[nb]) >= min_pts:
-                            core_df.at[nb] = active_cid
-            elif prev_core != -1:
-                future_core = core_df[(core_df.index > curr_time) & (core_df == prev_core)].index.min()
+                prev_core = curr_time
+                _expand_active_cluster(curr_time)
+
+            elif active_cid > -1:
+                # compare observed core-time radius to an interpolated continuity baseline
+                future_core = core_df[(core_df.index > curr_time) & (core_df == active_cid)].index.min()
                 if pd.notna(future_core):
                     core_time_range = sorted(abs(nb - curr_time) for nb in G[curr_time])[min_pts - 1]
                     prev_pos, future_pos = np.searchsorted(node_times, [prev_core, future_core])
-                    prev_coords = data.iloc[prev_pos][[coord_key1, coord_key2]].to_numpy()
-                    future_coords = data.iloc[future_pos][[coord_key1, coord_key2]].to_numpy()
+                    prev_coords = data.iloc[prev_pos][[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
+                    future_coords = data.iloc[future_pos][[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
                     counterfactual_coords = prev_coords + ((curr_time - prev_core) / (future_core - prev_core)) * (
                         future_coords - prev_coords
                     )
@@ -79,28 +92,27 @@ def dbstop_labels(data,
                     else:
                         spatial_nb_idx = s_tree.query_ball_point(counterfactual_coords, r=dist_thresh)
 
-                    counterfactual_time_range = np.sort(np.abs(node_times[spatial_nb_idx] - curr_time))[min_pts - 1]
-                    new_active_cluster = (core_time_range >= counterfactual_time_range)
+                    if len(spatial_nb_idx) >= min_pts:
+                        counterfactual_time_range = np.sort(np.abs(node_times[spatial_nb_idx] - curr_time))[min_pts - 1]
+                        new_active_cluster = (core_time_range <= counterfactual_time_range)
+                    else:
+                        new_active_cluster = False
                 else:
                     new_active_cluster = True
-            else: # not reachable, and first core point
+            else:  # not reachable, and first core point
                 new_active_cluster = True
-            
+
             if new_active_cluster:
-                #move time window for border points
+                # new active cluster branch
                 past_cutoff = candidate_cutoff
                 candidate_cutoff = curr_time
                 active_cid = active_cid + 1
-                cluster_df.at[curr_time] = active_cid
-                core_df.at[curr_time] = active_cid
-                for nb in G[curr_time]:
-                    if past_cutoff <= nb:
-                        cluster_df.at[nb] = active_cid
-                        if len(G[nb]) >= min_pts:
-                            core_df.at[nb] = active_cid
-            else: # point should be ignored
-                core_df.at[curr_time] = -1
-                cluster_df.at[curr_time] = -1
+                prev_core = curr_time
+                _expand_active_cluster(curr_time)
+            else:
+                if not reachable:
+                    core_df.at[curr_time] = -1
+                    cluster_df.at[curr_time] = -1
 
     output = pd.DataFrame({'cluster': cluster_df, 'core': core_df})
 
@@ -117,6 +129,7 @@ def dbstop(
     time_thresh,
     dur_min=5,
     complete_output=False,
+    back_merge=False,
     passthrough_cols=[],
     keep_col_names=True,
     traj_cols=None,
@@ -139,6 +152,8 @@ def dbstop(
         Minimum duration (minutes) for a stop (default: 5).
     complete_output : bool, optional
         Include extra stats if True (default: False).
+    back_merge : bool, optional
+        Merge with previous active cluster when current core supports it.
     passthrough_cols : list, optional
         Columns to retain per stop.
     traj_cols : dict, optional
@@ -170,6 +185,7 @@ def dbstop(
         min_pts=min_pts,
         time_thresh=time_thresh,
         return_cores=False,
+        back_merge=back_merge,
         traj_cols=traj_cols,
         **kwargs
     )
@@ -208,6 +224,7 @@ def dbstop_per_user(
     time_thresh,
     dur_min=5,
     complete_output=False,
+    back_merge=False,
     passthrough_cols=[],
     traj_cols=None,
     **kwargs
@@ -231,6 +248,7 @@ def dbstop_per_user(
             time_thresh=time_thresh,
             dur_min=dur_min,
             complete_output=complete_output,
+            back_merge=back_merge,
             passthrough_cols=pt_cols,
             traj_cols=traj_cols,
             **kwargs

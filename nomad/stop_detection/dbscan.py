@@ -37,7 +37,7 @@ def ta_dbscan_labels(data,
                 False, use_datetime, use_lon_lat, return_trees=False, relabel_nodes=True)
     
     cluster_df = pd.Series(-2, index=G, name='cluster')
-    core_df = pd.Series(-3, index=G, name='core')
+    core_df = pd.Series(-2, index=G, name='core')
     # Initialize cluster label
     cid = -1
 
