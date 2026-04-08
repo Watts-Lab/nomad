@@ -3,105 +3,144 @@ import numpy as np
 from collections import defaultdict
 from nomad.stop_detection import utils
 from nomad.filters import to_timestamp
+from scipy.spatial import KDTree
+from sklearn.neighbors import BallTree # for haverside distance case
+import networkx as nx
 
-def _find_temp_neighbors(times, time_thresh, use_datetime):
-    """
-    Find timestamp pairs that are within time threshold.
+def _find_temp_neighbors(times, time_thresh, return_tree=False, relabel_nodes=True):
+    """Return the time-neighbor graph, and optionally its KDTree."""
+    t_tree = KDTree(times[:, None])
+    pairs = t_tree.query_pairs(r=time_thresh * 60, output_type="ndarray")
 
-    Parameters
-    ----------
-    times : array of timestamps.
-    time_thresh : time threshold for finding what timestamps are close in time.
-    use_datetime : Whether to process timestamps as datetime objects.
+    G = nx.Graph()
+    G.add_nodes_from(range(len(times)))
+    G.add_edges_from(pairs)
 
-    Returns
-    -------
-    time_pairs : list of tuples of timestamps [(t1, t2), ...] that are close in time given time_thresh.
+    if relabel_nodes:
+        G = nx.relabel_nodes(G, dict(enumerate(times._data)))
+    
+    return (G, t_tree) if return_tree else G
 
-    TC: O(n^2)
-    """
-    # getting times based on whether they are datetime values or timestamps, changed to seconds for calculations
-    times = to_timestamp(times).values if use_datetime else times.values
+
+def _find_spatial_neighbors(coords, dist_thresh=None, weighted=False,
+                            use_lon_lat=False, return_tree=False, times=None, relabel_nodes=False):
+    """Return the spatial neighbor graph, and optionally its KDTree or BallTree."""
+    G = nx.Graph()
+    G.add_nodes_from(range(len(coords)))
+
+    if use_lon_lat:
+        earth_radius = 6_371_000
+        s_tree = BallTree(coords, metric="haversine")
         
-    # Pairwise time differences
-    # times[:, np.newaxis]: from shape (n,) -> to shape (n, 1) – a column vector
-    time_diffs = np.abs(times[:, np.newaxis] - times)
-    time_diffs = time_diffs.astype(int)
-    
-    # Filter by time threshold
-    within_time_thresh = np.triu(time_diffs <= (time_thresh * 60), k=1) # keep upper triangle
-    i_idx, j_idx = np.where(within_time_thresh)
-    
-    # Return a list of (timestamp1, timestamp2) tuples
-    time_pairs = [(times[i], times[j]) for i, j in zip(i_idx, j_idx)]
-    
-    return time_pairs, times
+        radius = np.pi if dist_thresh is None else dist_thresh / earth_radius
+        if weighted:
+            indices, distances = s_tree.query_radius(coords, r=radius, return_distance=True)
 
-def _find_neighbors(data, time_thresh, dist_thresh, use_lon_lat, use_datetime, traj_cols):
-    """
-    Compute neighbors within specified time and distance thresholds for a trajectory dataset.
-    
-    Parameters
-    ----------
-    data : pandas.DataFrame
-        Trajectory data containing spatial and temporal information.
-    traj_cols : dict
-        Dictionary mapping column names for trajectory attributes.
-    time_thresh : int
-        Time threshold in minutes for considering neighboring points.
-    dist_thresh : float
-        Distance threshold for considering neighboring points.
-    use_lon_lat : bool, optional
-        Whether to use longitude/latitude coordinates.
-    use_datetime : bool, optional
-        Whether to process timestamps as datetime objects.
-    
-    Returns
-    -------
-    dict
-        A dictionary where keys are timestamps, and values are sets of neighboring
-        timestamps that satisfy both time and distance thresholds.
-    """
-    # getting coordinates based on whether they are geographic coordinates (lon, lat) or catesian (x,y)
-    if use_lon_lat:
-        coords = np.radians(data[[traj_cols['latitude'], traj_cols['longitude']]].values)
+            counts = np.array([len(x) for x in indices])
+            row = np.repeat(np.arange(len(coords)), counts)
+            col = np.concatenate(indices)
+            dist = np.concatenate(distances)
+            dist = dist * earth_radius
+
+            mask = row < col
+            G.add_weighted_edges_from(
+                np.column_stack((row[mask], col[mask], dist[mask]))
+            )
+
+        elif dist_thresh is not None:
+            indices = s_tree.query_radius(coords, r=radius, return_distance=False)
+
+            counts = np.array([len(x) for x in indices])
+            row = np.repeat(np.arange(len(coords)), counts)
+            col = np.concatenate(indices)
+
+            mask = row < col
+            G.add_edges_from(np.column_stack((row[mask], col[mask])))
+
     else:
-        coords = data[[traj_cols['x'], traj_cols['y']]].values
-    
-    # getting times based on whether they are datetime values or timestamps, changed to seconds for calculations
+        s_tree = KDTree(coords)
+
+        if weighted:
+            radius = np.inf if dist_thresh is None else dist_thresh
+            sdm = s_tree.sparse_distance_matrix(
+                s_tree,
+                max_distance=radius,
+                output_type="ndarray"
+            )
+            mask = sdm["i"] < sdm["j"]
+            G.add_weighted_edges_from(
+                np.column_stack((sdm["i"][mask], sdm["j"][mask], sdm["v"][mask]))
+            )
+
+        elif dist_thresh is not None:
+            pairs = s_tree.query_pairs(r=dist_thresh, output_type="ndarray")
+            G.add_edges_from(pairs)
+
+    if relabel_nodes and times is not None:
+        G = nx.relabel_nodes(G, dict(enumerate(times._data)))
+        
+    return (G, s_tree) if return_tree else G
+
+
+def _find_neighbors(data, time_thresh, traj_cols, dist_thresh=None,
+                    weighted=False, use_datetime=False, use_lon_lat=False,
+                    return_trees=False, relabel_nodes=True):
+    """Combine time and spatial neighbors into the final graph."""
+    if use_lon_lat:
+        coords = np.radians(
+            data[[traj_cols["latitude"], traj_cols["longitude"]]].values
+        )
+    else:
+        coords = data[[traj_cols["x"], traj_cols["y"]]].values
+
     if use_datetime:
-        times = to_timestamp(data[traj_cols['datetime']]).values
+        times = to_timestamp(data[traj_cols["datetime"]]).values
     else:
-        times = data[traj_cols['timestamp']].values
-        # Check if timestamps are in seconds (10 digits)
-        first_timestamp = times[0]
-        timestamp_length = len(str(int(first_timestamp)))
-        if timestamp_length != 10:
-            raise ValueError(f"Unix timestamp appears to have units other than seconds (got {timestamp_length} digits). Please convert to seconds.")
-      
-    # Pairwise time differences
-    time_diffs = np.abs(times[:, np.newaxis] - times)
-    time_diffs = time_diffs.astype(int)
-  
-    # Filter by time threshold
-    within_time_thresh = np.triu(time_diffs <= (time_thresh * 60), k=1)
-    time_pairs = np.where(within_time_thresh)
-  
-    # Distance calculation
-    if use_lon_lat:
-        distances = np.array([utils._haversine_distance(coords[i], coords[j]) for i, j in zip(*time_pairs)])
+        times = data[traj_cols["timestamp"]].values
+
+    temp_result = _find_temp_neighbors(times, time_thresh, return_tree=return_trees, relabel_nodes=False)
+    time_graph, t_tree = temp_result if return_trees else (temp_result, None)
+
+    spatial_graph = None
+    s_tree = None
+
+    if dist_thresh is not None or weighted or return_trees:
+        spatial_result = _find_spatial_neighbors(
+            coords,
+            dist_thresh=dist_thresh,
+            weighted=weighted,
+            use_lon_lat=use_lon_lat,
+            return_tree=return_trees,
+            relabel_nodes=False,
+        )
+        spatial_graph, s_tree = spatial_result if return_trees else (spatial_result, None)
+
+    if spatial_graph is None:
+        G = time_graph.copy()
+
+    elif dist_thresh is None:
+        if weighted:
+            G = nx.create_empty_copy(time_graph)
+            good_edges = time_graph.edges & spatial_graph.edges
+            G.add_weighted_edges_from(
+                (u, v, spatial_graph[u][v]["weight"])
+                for u, v in good_edges
+            )
+        else:
+            G = time_graph.copy()
+
     else:
-        distances_sq = (coords[time_pairs[0], 0] - coords[time_pairs[1], 0])**2 + (coords[time_pairs[0], 1] - coords[time_pairs[1], 1])**2
-        distances = np.sqrt(distances_sq)
+        G = nx.create_empty_copy(time_graph)
+        good_edges = time_graph.edges & spatial_graph.edges
+        if weighted:
+            G.add_weighted_edges_from(
+                (u, v, spatial_graph[u][v]["weight"])
+                for u, v in good_edges
+            )
+        else:
+            G.add_edges_from(good_edges)
 
-    # Filter by distance threshold
-    neighbor_pairs = distances < dist_thresh
-  
-    # Building the neighbor dictionary
-    neighbor_dict = defaultdict(set)
-  
-    for i, j in zip(time_pairs[0][neighbor_pairs], time_pairs[1][neighbor_pairs]):
-        neighbor_dict[times[i]].add(times[j])
-        neighbor_dict[times[j]].add(times[i])
+    if relabel_nodes:
+        G = nx.relabel_nodes(G, dict(enumerate(times._data)))
 
-    return neighbor_dict
+    return (G, t_tree, s_tree) if return_trees else G

@@ -2,9 +2,12 @@ import pandas as pd
 from scipy.spatial.distance import pdist, cdist
 import numpy as np
 import datetime as dt
+import itertools
+import os
 import nomad.io.base as loader
 import nomad.constants as constants
-from joblib import Parallel, delayed
+import h3
+#import dtoolkit.geoaccessor
 import warnings
 import pdb
 from datetime import datetime, time, timedelta
@@ -172,6 +175,35 @@ def _haversine_distance(coord1, coord2, radians=True):
     c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
     return earth_radius_meters * c  # Distance in meters
 
+# def haversine_dist(lat1, lon1, lat2, lon2):
+#     # remove this and use what's in utils.py 
+#     """
+#     Calculate haversine distance between two points in meters.
+
+#     Parameters
+#     ----------
+#     lat1, lon1 : float or array-like
+#         Latitude and longitude of first point(s)
+#     lat2, lon2 : float or array-like
+#         Latitude and longitude of second point(s)
+
+#     Returns
+#     -------
+#     float or array-like
+#         Distance in meters
+#     """
+#     R = 6371000  # Earth radius in meters
+
+#     lat1_rad = np.radians(lat1)
+#     lat2_rad = np.radians(lat2)
+#     dlat = np.radians(lat2 - lat1)
+#     dlon = np.radians(lon2 - lon1)
+
+#     a = np.sin(dlat/2)**2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(dlon/2)**2
+#     c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1-a))
+
+#     return R * c
+
 
 def _pairwise_haversine(coords):
     """
@@ -242,28 +274,6 @@ def _update_diameter(c_j, coords_prev, D_prev, metric='euclidean'):
 
     return D_i_jp1
 
-def _fallback_time_cols(col_names, traj_cols, kwargs):
-    '''
-    Helper to decide whether to use datetime vs timestamp in cases of ambiguity
-    '''
-    traj_cols = loader._parse_traj_cols(col_names, traj_cols, kwargs, defaults={}, warn=False)
-    # check for explicit datetime usage
-    t_keys = ['timestamp', 'start_timestamp', 'datetime', 'start_datetime']
-    if 'datetime' in kwargs or 'start_datetime' in kwargs: # prioritize datetime 
-        t_keys = t_keys[-2:] + t_keys[:2]
-
-    # load defaults and check for time columns
-    traj_cols = loader._update_schema(constants.DEFAULT_SCHEMA, traj_cols)
-    loader._has_time_cols(col_names, traj_cols) # error if no columns
-    
-    for t_key in t_keys:
-        if traj_cols[t_key] in col_names:
-            use_datetime = (t_key in ['datetime', 'start_datetime']) ## necessary?
-            break
-            
-    return t_key, use_datetime
-
-# should this be moved to io.utils?
 def _fallback_st_cols(col_names, traj_cols, kwargs):
     '''
     Helper function to decide whether to use latitude and longitude or x,y,
@@ -322,8 +332,7 @@ def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_
     for col in passthrough_cols:
         if col in grouped_data.columns:
             stop_attr[col] = grouped_data[col].iloc[0]
-
-    return pd.Series(stop_attr)
+    return pd.Series(stop_attr, dtype="object")
 
 def summarize_stop_grid(
     grouped_data,
@@ -616,44 +625,3 @@ def explode_stops(stops, agg_freq="d", start_col="start_datetime", end_col="end_
     ).astype(int)
 
     return stops[stops["duration"] > 0].drop(columns=["_bucket_start", "_bucket_end"])
-
-def applyParallel(groups, func, n_jobs=1, print_progress=False, **kwargs):
-    """
-    Apply function to groups in parallel.
-
-    Parameters
-    ----------
-    groups : DataFrameGroupBy
-        Grouped dataframe
-    func : callable
-        Function to apply to each group
-    n_jobs : int
-        Number of parallel jobs
-    print_progress : bool
-        Whether to show progress bar
-    **kwargs
-        Additional arguments to pass to func
-
-    Returns
-    -------
-    list
-        List of results from applying func to each group
-    """
-    if n_jobs == 1:
-        # Sequential processing
-        if print_progress:
-            results = [func(group, **kwargs) for group in tqdm(groups, desc="Processing users")]
-        else:
-            results = [func(group, **kwargs) for group in groups]
-    else:
-        # Parallel processing
-        group_list = list(groups)
-        if print_progress:
-            results = Parallel(n_jobs=n_jobs)(
-                delayed(func)(group, **kwargs) for group in tqdm(group_list, desc="Processing users")
-            )
-        else:
-            results = Parallel(n_jobs=n_jobs)(
-                delayed(func)(group, **kwargs) for group in group_list
-            )
-    return results
