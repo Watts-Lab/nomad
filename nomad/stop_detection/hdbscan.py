@@ -85,7 +85,7 @@ def _build_border_map(scale, core_distances, G):
     
     return core_to_border # return this but instead using something with input as G
 
-def cluster_hierarchy(edges_sorted, core_distances, G, min_cluster_size, dur_min=5):
+def cluster_hierarchy(edges_sorted, core_distances, G, min_cluster_size, dur_min=5, H=None):
     """
     Builds a cluster hierarchy from a pre-computed Minimum Spanning Tree.
 
@@ -102,6 +102,9 @@ def cluster_hierarchy(edges_sorted, core_distances, G, min_cluster_size, dur_min
         Sorted Series mapping each timestamp to its core distance.
     G : nx.Graph
         Weighted graph of distances between temporally-close points.
+    H : nx.Graph, optional
+        Precomputed hierarchy graph (MST plus self-loops). Included in step 1
+        setup refactor and reserved for subsequent loop optimizations.
     min_cluster_size : int
         Minimum number of core points for a cluster to be considered valid.
     dur_min : int
@@ -125,9 +128,18 @@ def cluster_hierarchy(edges_sorted, core_distances, G, min_cluster_size, dur_min
     label_history.append(df0.reset_index())
 
     current_label_id = 1
+    H_active = H.copy() if H is not None else None
 
     # Iteratively process edges grouped by weight (scale)
     for scale, edges_to_remove in edges_sorted.groupby(edges_sorted, sort=False):
+
+        if H_active is not None:
+            # Remove only true connectivity edges; self-loops are event markers.
+            removable_edges = [
+                (u, v) for u, v in edges_to_remove.index if u != v
+            ]
+            if removable_edges:
+                H_active.remove_edges_from(removable_edges)
 
         border_map = _build_border_map(scale, core_distances, G)
         idx_from = edges_to_remove.index.get_level_values('from')
@@ -140,11 +152,13 @@ def cluster_hierarchy(edges_sorted, core_distances, G, min_cluster_size, dur_min
             members = label_map.index[label_map == cluster_id]
             remaining_members = set(members)
 
-            # TODO: try to keep the original graph (mst + self loops), instead of building a new one and then getting the connected components
-            # use the networkx filter edges method (all edges <)
-            # benchmark prior to this change
-            adj = _build_graph_pd(members, edges_sorted, edges_to_remove)
-            components = _connected_components(adj)
+            if H_active is not None:
+                subgraph = H_active.subgraph(members)
+                components = [list(component) for component in nx.connected_components(subgraph)]
+            else:
+                # Compatibility path for callers that do not pass H.
+                adj = _build_graph_pd(members, edges_sorted, edges_to_remove)
+                components = _connected_components(adj)
             
             non_spurious = []
 
@@ -189,10 +203,6 @@ def cluster_hierarchy(edges_sorted, core_distances, G, min_cluster_size, dur_min
     hierarchy_df = _build_cluster_lineage(hierarchy)
     return label_history_df, hierarchy_df
 
-# def compute_cluster_duration(cluster):
-#     max_time = max(cluster)
-#     min_time = min(cluster)
-#     return (max_time - min_time) * 60
 
 def _build_cluster_lineage(hierarchy):
     """
@@ -467,23 +477,26 @@ def _build_hdbscan_graphs(G, core_dist):
 
     Returns
     -------
+    H : nx.Graph
+        Hierarchy graph with mutual-reachability MST edges and core-distance
+        self-loops.
     edges_sorted_df : pd.Series
-        MST + self-loops sorted descending by weight, MultiIndex (from, to).
+        H sorted descending by weight, MultiIndex (from, to).
     """
-    H = G.copy()
-    for u, v, data in H.edges(data=True):
+    G_copy = G.copy()
+    for u, v, data in G_copy.edges(data=True):
         d = np.round(data["weight"] * 4) / 4
         data["weight"] = max(core_dist.at[u], core_dist.at[v], d)
 
-    mst = nx.minimum_spanning_tree(H)
+    H = nx.minimum_spanning_tree(G_copy)
 
-    mst.add_edges_from((node, node, {'weight': weight}) for node, weight in core_dist.items())
+    H.add_edges_from((node, node, {'weight': weight}) for node, weight in core_dist.items())
 
-    all_edges = nx.to_pandas_edgelist(mst, source='from', target='to')
+    all_edges = nx.to_pandas_edgelist(H, source='from', target='to')
     all_edges.sort_values('weight', ascending=False, inplace=True)
 
     all_edges.set_index(['from', 'to'], inplace=True)
-    return all_edges['weight']
+    return H, all_edges['weight']
 
 def hdbscan_labels(data,
                    time_thresh,
@@ -552,7 +565,7 @@ def hdbscan_labels(data,
 
     core_distances = _compute_core_distance(G, min_pts)
 
-    edges_sorted = _build_hdbscan_graphs(G, core_distances)
+    H, edges_sorted = _build_hdbscan_graphs(G, core_distances)
 
     label_history_df, hierarchy_df = cluster_hierarchy(
         edges_sorted=edges_sorted,
@@ -560,6 +573,7 @@ def hdbscan_labels(data,
         G=G,
         min_cluster_size=min_cluster_size,
         dur_min=dur_min,
+        H=H,
     )
 
     if delta_roam is None:
