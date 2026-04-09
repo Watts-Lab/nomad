@@ -103,8 +103,9 @@ def cluster_hierarchy(edges_sorted, core_distances, G, min_cluster_size, dur_min
     G : nx.Graph
         Weighted graph of distances between temporally-close points.
     H : nx.Graph, optional
-        Precomputed hierarchy graph (MST plus self-loops). Included in step 1
-        setup refactor and reserved for subsequent loop optimizations.
+        Precomputed hierarchy graph containing the MST plus self-loops.
+        When provided, this graph is used during split component
+        computation instead of rebuilding the hierarchy graph internally.
     min_cluster_size : int
         Minimum number of core points for a cluster to be considered valid.
     dur_min : int
