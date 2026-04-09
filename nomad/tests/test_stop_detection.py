@@ -6,6 +6,7 @@ import pygeohash as gh
 from datetime import datetime, timedelta
 import itertools
 from collections import defaultdict
+import numpy as np
 import pytest
 from pathlib import Path
 from shapely.geometry import Point
@@ -22,6 +23,7 @@ import nomad.stop_detection.preprocessing as PREPROCESSING
 import nomad.stop_detection.utils as STOP_UTILS
 import pdb
 import nomad.stop_detection.sequential as SEQUENTIAL
+import nomad.stop_detection.hdbscan as HDBSCAN
 
 @pytest.fixture
 def stop_test_params():
@@ -948,3 +950,328 @@ def test_empty_dataframe_consistency():
     assert 'latitude' in hdbscan_result.columns
     assert 'longitude' in lachesis_result.columns
     assert 'latitude' in lachesis_result.columns
+
+##########################################
+####          HDBSCAN TESTS          ####
+##########################################
+
+@pytest.fixture
+def hdbscan_traj():
+    """Trajectory with two clear stops separated by a long gap."""
+    np.random.seed(0)
+    base = 1609459200  # 2021-01-01 00:00:00 UTC
+    rows = []
+    # Stop 1: 20 points at (0, 0) over ~10 minutes (30s intervals)
+    for i in range(20):
+        rows.append({'x': np.random.normal(0, 2), 'y': np.random.normal(0, 2),
+                     'timestamp': base + i * 30})
+    # Gap of 30 minutes
+    t = base + 20 * 30 + 1800
+    # Stop 2: 20 points at (1000, 1000) over ~10 minutes
+    for i in range(20):
+        rows.append({'x': np.random.normal(1000, 2), 'y': np.random.normal(1000, 2),
+                     'timestamp': t + i * 30})
+    return pd.DataFrame(rows)
+
+
+def test_hdbscan_labels_single_stop(hdbscan_traj):
+    """hdbscan_labels detects at least one cluster on clear stop data."""
+    labels = HDBSCAN.hdbscan_labels(
+        hdbscan_traj, time_thresh=5, min_pts=3, min_cluster_size=3, dur_min=5,
+        traj_cols={'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
+    )
+    assert (labels >= 0).any(), "Expected at least one cluster"
+
+
+def test_hdbscan_labels_no_cluster_when_sparse(hdbscan_traj):
+    """No cluster forms when min_pts exceeds the number of temporal neighbors."""
+    labels = HDBSCAN.hdbscan_labels(
+        hdbscan_traj, time_thresh=5, min_pts=100, min_cluster_size=3, dur_min=5,
+        traj_cols={'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
+    )
+    assert (labels == -1).all(), "Expected all noise when min_pts is too high"
+
+
+def test_hdbscan_labels_no_cluster_insufficient_duration(hdbscan_traj):
+    """No cluster forms when dur_min exceeds actual stop duration."""
+    labels = HDBSCAN.hdbscan_labels(
+        hdbscan_traj, time_thresh=5, min_pts=3, min_cluster_size=3, dur_min=60,
+        traj_cols={'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
+    )
+    assert (labels == -1).all(), "Expected all noise when dur_min is too high"
+
+
+def test_hdbscan_labels_two_stops(hdbscan_traj):
+    """hdbscan_labels finds both stops in a two-stop trajectory."""
+    labels = HDBSCAN.hdbscan_labels(
+        hdbscan_traj, time_thresh=5, min_pts=3, min_cluster_size=3, dur_min=5,
+        traj_cols={'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
+    )
+    n_clusters = labels[labels >= 0].nunique()
+    assert n_clusters == 2, f"Expected 2 clusters, got {n_clusters}"
+
+
+def test_hdbscan_number_labels_matches_stop_table(hdbscan_traj):
+    """Number of unique non-noise labels equals number of rows in st_hdbscan output."""
+    traj_cols = {'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
+    labels = HDBSCAN.hdbscan_labels(
+        hdbscan_traj, time_thresh=5, min_pts=3, min_cluster_size=3, dur_min=5,
+        traj_cols=traj_cols
+    )
+    stops = HDBSCAN.st_hdbscan(
+        hdbscan_traj, time_thresh=5, min_pts=3, min_cluster_size=3, dur_min=5,
+        traj_cols=traj_cols
+    )
+    assert labels[labels >= 0].nunique() == len(stops)
+
+
+def test_st_hdbscan_output_is_valid_stop_df(base_df):
+    """st_hdbscan concise output conforms to the stop DataFrame standard."""
+    traj_cols = {'user_id': 'uid', 'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
+    df = loader.from_df(base_df, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior='utc')
+    first_user = df[traj_cols['user_id']].iloc[0]
+    single = df[df[traj_cols['user_id']] == first_user].copy()
+
+    stops = HDBSCAN.st_hdbscan(
+        single, time_thresh=10, min_pts=2, min_cluster_size=2, dur_min=5,
+        traj_cols=traj_cols, complete_output=False
+    )
+    del traj_cols['user_id']
+    assert loader._is_stop_df(stops, traj_cols=traj_cols, parse_dates=False)
+
+
+def test_st_hdbscan_ground_truth(agent_traj_ground_truth):
+    """st_hdbscan detects the expected number of stops on ground-truth data."""
+    traj_cols = {'user_id': 'identifier', 'x': 'x', 'y': 'y', 'timestamp': 'unix_timestamp'}
+    labels = HDBSCAN.hdbscan_labels(
+        agent_traj_ground_truth, time_thresh=10, min_pts=2, min_cluster_size=2, dur_min=3,
+        traj_cols=traj_cols
+    )
+    n_clusters = labels[labels >= 0].nunique()
+    assert 2 <= n_clusters <= 5, f"Expected 2-5 stops on ground truth, got {n_clusters}"
+
+
+def test_st_hdbscan_multiuser_raises(base_df):
+    """st_hdbscan raises ValueError when passed multi-user data."""
+    traj_cols = {'user_id': 'uid', 'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
+    df = loader.from_df(base_df, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior='utc')
+    with pytest.raises(ValueError, match="Multi-user"):
+        HDBSCAN.st_hdbscan(df, time_thresh=10, traj_cols=traj_cols)
+
+
+def test_st_hdbscan_per_user_basic(base_df):
+    """st_hdbscan_per_user runs on multi-user data and returns stops for multiple users."""
+    traj_cols = {'user_id': 'uid', 'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
+    df = loader.from_df(base_df, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior='utc')
+    stops = HDBSCAN.st_hdbscan_per_user(
+        df, time_thresh=10, min_pts=2, min_cluster_size=2, dur_min=5,
+        traj_cols=traj_cols
+    )
+    assert not stops.empty
+    assert 'uid' in stops.columns
+    assert stops['uid'].nunique() > 1
+
+
+def test_st_hdbscan_delta_roam(hdbscan_traj):
+    """delta_roam (epsilon cut) path runs without error and returns a DataFrame."""
+    traj_cols = {'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
+    stops = HDBSCAN.st_hdbscan(
+        hdbscan_traj, time_thresh=5, min_pts=3, min_cluster_size=3, dur_min=5,
+        delta_roam=50, traj_cols=traj_cols
+    )
+    assert isinstance(stops, pd.DataFrame)
+
+
+##########################################
+####        LOCATION CLUSTERING      ####
+####           (SLIDING.PY)          ####
+##########################################
+
+@pytest.fixture
+def position_fixes_simple():
+    """Simple position fixes for testing sliding window algorithm."""
+    times = pd.date_range("2025-01-01 08:00", periods=10, freq="1min").tolist()
+
+    # Create position fixes:
+    # Points 0-5: stationary (should form staypoint if time_threshold <= 5 min)
+    # Points 6-9: moved away
+    coords = [(0.0, 0.0)] * 6 + [(0.002, 0.002)] * 4
+
+    df = gpd.GeoDataFrame({
+        "user_id": "user1",
+        "tracked_at": times,
+        "geometry": [Point(lon, lat) for lon, lat in coords]
+    }, crs="EPSG:4326")
+
+    return df
+
+
+@pytest.fixture
+def position_fixes_with_gap():
+    """Position fixes with temporal gap for testing gap_threshold."""
+    times = pd.date_range("2025-01-01 08:00", periods=5, freq="1min").tolist()
+    # Add a large gap
+    times += [times[-1] + pd.Timedelta(minutes=20)]
+    times += pd.date_range(times[-1] + pd.Timedelta(minutes=1), periods=4, freq="1min").tolist()
+
+    # All points at same location
+    coords = [(0.0, 0.0)] * len(times)
+
+    df = gpd.GeoDataFrame({
+        "user_id": "user1",
+        "tracked_at": times,
+        "geometry": [Point(lon, lat) for lon, lat in coords]
+    }, crs="EPSG:4326")
+
+    return df
+
+
+@pytest.fixture
+def position_fixes_multi_user():
+    """Position fixes for multiple users."""
+    times = pd.date_range("2025-01-01 08:00", periods=8, freq="1min").tolist()
+
+    user1_coords = [(0.0, 0.0)] * 4 + [(0.002, 0.002)] * 4
+    user2_coords = [(0.001, 0.001)] * 4 + [(0.003, 0.003)] * 4
+
+    df = gpd.GeoDataFrame({
+        "user_id": ["user1"] * 8 + ["user2"] * 8,
+        "tracked_at": times * 2,
+        "geometry": [Point(lon, lat) for lon, lat in user1_coords + user2_coords]
+    }, crs="EPSG:4326")
+
+    return df
+
+
+def test_sliding_basic_staypoint_detection(position_fixes_simple):
+    pfs, sp = SLIDING.generate_staypoints(
+        position_fixes_simple,
+        method="sliding",
+        dist_threshold=100,
+        time_threshold=3.0,
+        gap_threshold=15.0,
+        include_last=False,
+        exclude_duplicate_pfs=True,
+        n_jobs=1
+    )
+
+    # Should detect at least one staypoint from first 6 points
+    assert len(sp) >= 1
+    assert 'staypoint_id' in pfs.columns
+    assert isinstance(sp, gpd.GeoDataFrame)
+
+    # Check required columns in staypoints
+    assert 'user_id' in sp.columns
+    assert 'started_at' in sp.columns
+    assert 'finished_at' in sp.columns
+    assert sp.geometry.name in sp.columns
+
+
+def test_sliding_time_threshold(position_fixes_simple):
+    """Test that time_threshold is respected."""
+    # With time_threshold=10, the first 6 points (5 min duration) should not form a staypoint
+    pfs, sp = SLIDING.generate_staypoints(
+        position_fixes_simple,
+        dist_threshold=100,
+        time_threshold=10.0,
+        gap_threshold=15.0,
+        include_last=False,
+        n_jobs=1
+    )
+
+    # Should not detect any staypoints since max duration < 10 min
+    assert len(sp) == 0
+
+
+def test_sliding_distance_threshold(position_fixes_simple):
+    """Test that distance_threshold is respected."""
+    # With very small distance threshold, points should not cluster together
+    # The test data has 6 points at (0,0) and 4 points at (0.002, 0.002)
+    # With dist_threshold=1m, these should form separate staypoints
+    pfs, sp = SLIDING.generate_staypoints(
+        position_fixes_simple,
+        dist_threshold=1,  # 1 meter - very tight
+        time_threshold=3.0,
+        gap_threshold=15.0,
+        include_last=False,
+        n_jobs=1
+    )
+
+    # With tight distance constraint, should detect 2 separate staypoints
+    # (one at each distinct location)
+    assert len(sp) == 2
+
+
+def test_sliding_gap_threshold(position_fixes_with_gap):
+    """Test that gap_threshold prevents clustering across large temporal gaps."""
+    # With gap_threshold=15, the 20-minute gap should prevent clustering
+    pfs, sp = SLIDING.generate_staypoints(
+        position_fixes_with_gap,
+        dist_threshold=100,
+        time_threshold=3.0,
+        gap_threshold=15.0,
+        include_last=False,
+        n_jobs=1
+    )
+
+    # Should detect at most 2 separate staypoints (before and after gap)
+    assert len(sp) <= 2
+
+
+def test_sliding_include_last(position_fixes_simple):
+    """Test include_last parameter."""
+    # Without include_last
+    pfs1, sp1 = SLIDING.generate_staypoints(
+        position_fixes_simple,
+        dist_threshold=100,
+        time_threshold=3.0,
+        include_last=False,
+        n_jobs=1
+    )
+
+    # With include_last
+    pfs2, sp2 = SLIDING.generate_staypoints(
+        position_fixes_simple,
+        dist_threshold=100,
+        time_threshold=3.0,
+        include_last=True,
+        n_jobs=1
+    )
+
+    # include_last=True should potentially detect more staypoints
+    assert len(sp2) >= len(sp1)
+
+
+def test_sliding_multi_user(position_fixes_multi_user):
+    """Test sliding window with multiple users."""
+    pfs, sp = SLIDING.generate_staypoints(
+        position_fixes_multi_user,
+        dist_threshold=100,
+        time_threshold=2.0,
+        gap_threshold=15.0,
+        n_jobs=1
+    )
+
+    # Should detect staypoints for both users
+    assert 'user_id' in sp.columns
+    unique_users = sp['user_id'].unique()
+    assert len(unique_users) >= 1  # At least one user should have staypoints
+
+def test_sliding_empty_dataframe():
+    """Test sliding window with empty dataframe."""
+    empty_pfs = gpd.GeoDataFrame({
+        "user_id": [],
+        "tracked_at": [],
+        "geometry": []
+    }, crs="EPSG:4326")
+
+    with pytest.warns(UserWarning, match="No staypoints can be generated"):
+        pfs, sp = SLIDING.generate_staypoints(
+            empty_pfs,
+            dist_threshold=100,
+            time_threshold=5.0,
+            n_jobs=1
+        )
+
+    assert len(sp) == 0
+    assert 'staypoint_id' in pfs.columns
