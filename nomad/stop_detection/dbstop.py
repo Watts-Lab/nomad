@@ -10,7 +10,6 @@ def dbstop_labels(data,
                  min_pts,
                  time_thresh,
                  return_cores=False,
-                 back_merge=True,
                  traj_cols=None,
                  **kwargs):
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
@@ -125,7 +124,6 @@ def dbstop(
     time_thresh,
     dur_min=5,
     complete_output=False,
-    back_merge=False,
     passthrough_cols=[],
     keep_col_names=True,
     traj_cols=None,
@@ -148,8 +146,6 @@ def dbstop(
         Minimum duration (minutes) for a stop (default: 5).
     complete_output : bool, optional
         Include extra stats if True (default: False).
-    back_merge : bool, optional
-        Merge with previous active cluster when current core supports it.
     passthrough_cols : list, optional
         Columns to retain per stop.
     traj_cols : dict, optional
@@ -181,7 +177,6 @@ def dbstop(
         min_pts=min_pts,
         time_thresh=time_thresh,
         return_cores=False,
-        back_merge=back_merge,
         traj_cols=traj_cols,
         **kwargs
     )
@@ -220,7 +215,6 @@ def dbstop_per_user(
     time_thresh,
     dur_min=5,
     complete_output=False,
-    back_merge=False,
     passthrough_cols=[],
     traj_cols=None,
     **kwargs
@@ -244,7 +238,6 @@ def dbstop_per_user(
             time_thresh=time_thresh,
             dur_min=dur_min,
             complete_output=complete_output,
-            back_merge=back_merge,
             passthrough_cols=pt_cols,
             traj_cols=traj_cols,
             **kwargs
