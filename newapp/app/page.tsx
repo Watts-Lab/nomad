@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { ArrowLeft, Home, Columns2, Square, ChevronDown, X } from "lucide-react"
+import { ArrowLeft, Home, Columns2, Square, ChevronDown } from "lucide-react"
 
 // ============ CSSLab Logo ============
 function CSSLabLogo({ className = "" }: { className?: string }) {
@@ -123,9 +123,9 @@ const segmentColors = { orange: "bg-[#F5A623]", pink: "bg-[#E8B4B8]", purple: "b
 function Timeline({ segments, selectedSegment, onSegmentClick }: { segments: TimeSegment[]; selectedSegment: string | null; onSegmentClick: (id: string | null) => void }) {
   return (
     <div className="w-full">
-      <p className="text-center text-muted-foreground mb-1 text-xs">timestamps</p>
+      <p className="text-center text-muted-foreground mb-2 text-sm">Timestamps</p>
       <div className="relative">
-        <div className="relative h-8 bg-card border border-border rounded-sm overflow-hidden">
+        <div className="relative h-10 bg-card border border-border rounded-sm overflow-hidden">
           {segments.map((seg) => (
             <button
               key={seg.id}
@@ -135,7 +135,7 @@ function Timeline({ segments, selectedSegment, onSegmentClick }: { segments: Tim
             />
           ))}
         </div>
-        <div className="flex justify-between mt-1 text-xs text-muted-foreground px-1">
+        <div className="flex justify-between mt-2 text-sm text-muted-foreground px-1">
           <span>08 AM</span>
           <span>09 AM</span>
           <span>10 AM</span>
@@ -149,7 +149,7 @@ function Timeline({ segments, selectedSegment, onSegmentClick }: { segments: Tim
 function AccuracyChart({ algorithmName }: { algorithmName: string }) {
   return (
     <div className="w-full h-full bg-card border border-border rounded-lg p-4 flex flex-col">
-      <p className="text-sm font-medium text-center mb-2">{algorithmName} accuracy in 2-stop trajectory</p>
+      <p className="text-base font-semibold text-center mb-2">{algorithmName} accuracy in 2-stop trajectory</p>
       <div className="flex-1 relative">
         <svg viewBox="0 0 300 200" className="w-full h-full">
           {/* Y-axis */}
@@ -181,7 +181,7 @@ function AccuracyChart({ algorithmName }: { algorithmName: string }) {
         </svg>
       </div>
       {/* Legend */}
-      <div className="flex flex-wrap gap-3 text-xs mt-2 justify-center">
+      <div className="flex flex-wrap gap-3 text-sm mt-3 justify-center">
         <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-blue-600"></span>Mean</span>
         <span className="flex items-center gap-1"><span className="w-2 h-2 text-red-500">x</span>User maxima</span>
         <span className="flex items-center gap-1"><span className="w-3 h-0.5 border-t border-dashed border-gray-600"></span>Max mean</span>
@@ -349,43 +349,81 @@ export default function NomadDashboard() {
 
   const leftAlgo = algorithms.find((a) => a.id === leftAlgorithm)
   const rightAlgo = algorithms.find((a) => a.id === rightAlgorithm)
-
   return (
     <div className="h-screen overflow-hidden bg-background flex flex-col">
       {/* HOME VIEW */}
       {activeView === "home" && (
-        <div className="flex-1 flex flex-col p-6 overflow-hidden">
-          <div className="flex items-center justify-between mb-4">
+        <div className="flex-1 flex flex-col p-4 gap-3 overflow-hidden">
+          <div className="flex items-center justify-between">
             <CSSLabLogo />
           </div>
-          <div className="flex-1 grid lg:grid-cols-2 gap-6 overflow-hidden">
-            <div className="flex flex-col gap-4 overflow-hidden">
-              <h2 className="text-2xl font-bold text-foreground shrink-0">Stop Detection Algorithm Visualizer</h2>
-              <p className="text-muted-foreground text-sm shrink-0">
+          <div className="grid lg:grid-cols-2 gap-4 items-start overflow-hidden">
+            <div className="flex flex-col gap-3 overflow-hidden">
+              <h2 className="text-3xl font-bold text-foreground">Stop Detection Algorithm Visualizer</h2>
+              <p className="text-muted-foreground text-base">
                 Visualize and compare different stop detection algorithms to understand how they identify stops in GPS trajectory data.
               </p>
-              <Card className="bg-card shrink-0">
-                <CardContent className="pt-4 space-y-2">
-                  <h3 className="font-semibold text-foreground text-sm">What this tool does</h3>
-                  <ul className="text-xs text-muted-foreground space-y-1">
-                    <li>Visualize different stop detection algorithms</li>
-                    <li>Compare algorithm performance side-by-side</li>
-                    <li>Learn about algorithm parameters</li>
+              <Card className="bg-card">
+                <CardContent className="pt-5 space-y-3">
+                  <h3 className="font-semibold text-foreground text-xl">What this tool does</h3>
+                  <ul className="text-base text-muted-foreground space-y-1">
+                    <li>Visualize different stop detection algorithms in the same floor plan context.</li>
+                    <li>Compare algorithm performance side-by-side with synchronized time windows.</li>
+                    <li>Inspect algorithm parameters and see how they change stop clusters.</li>
                   </ul>
                 </CardContent>
               </Card>
-              <div className="flex gap-3 shrink-0">
-                <Button variant="outline" size="sm" onClick={() => navigateTo("learn")}>Learn Algorithms</Button>
-                <Button size="sm" onClick={() => navigateTo("demo")}>Demo</Button>
+              <div className="grid sm:grid-cols-3 gap-2 text-sm">
+                <Card className="bg-muted/40">
+                  <CardContent className="p-4">
+                    <p className="text-muted-foreground">Algorithms</p>
+                    <p className="text-3xl font-bold">{algorithms.length}</p>
+                  </CardContent>
+                </Card>
+                <Card className="bg-muted/40">
+                  <CardContent className="p-4">
+                    <p className="text-muted-foreground">Sample pings</p>
+                    <p className="text-3xl font-bold">{sampleDataPoints.length}</p>
+                  </CardContent>
+                </Card>
+                <Card className="bg-muted/40">
+                  <CardContent className="p-4">
+                    <p className="text-muted-foreground">Timeline blocks</p>
+                    <p className="text-3xl font-bold">{timelineSegments.length}</p>
+                  </CardContent>
+                </Card>
+              </div>
+              <div className="flex gap-3">
+                <Button variant="outline" size="lg" onClick={() => navigateTo("learn")}>Learn Algorithms</Button>
+                <Button size="lg" onClick={() => navigateTo("demo")}>Demo</Button>
               </div>
             </div>
-            <div className="flex flex-col gap-3 overflow-hidden">
-              <Card className="bg-card overflow-hidden flex-1">
-                <CardContent className="p-0 h-full">
+            <div className="flex flex-col gap-2 overflow-hidden">
+              <Card className="bg-card overflow-hidden">
+                <CardContent className="p-0">
                   <FloorPlan dataPoints={sampleDataPoints} selectedTimeRange={selectedTimeRange} />
                 </CardContent>
               </Card>
               <Timeline segments={timelineSegments} selectedSegment={selectedTimeRange} onSegmentClick={setSelectedTimeRange} />
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-lg">Cluster Legend</CardTitle>
+                </CardHeader>
+                <CardContent className="grid grid-cols-3 gap-3 text-sm">
+                  <div className="rounded-md bg-muted/40 p-3">
+                    <p className="text-muted-foreground">Morning home stop</p>
+                    <p className="font-semibold text-[#F5A623]">Orange cluster</p>
+                  </div>
+                  <div className="rounded-md bg-muted/40 p-3">
+                    <p className="text-muted-foreground">Mid-session pause</p>
+                    <p className="font-semibold text-[#E57373]">Pink cluster</p>
+                  </div>
+                  <div className="rounded-md bg-muted/40 p-3">
+                    <p className="text-muted-foreground">Late visit zone</p>
+                    <p className="font-semibold text-[#7B68EE]">Purple cluster</p>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           </div>
         </div>
@@ -393,15 +431,18 @@ export default function NomadDashboard() {
 
       {/* LEARN VIEW */}
       {activeView === "learn" && !expandedAlgorithm && (
-        <div className="flex-1 flex flex-col p-6 overflow-hidden">
-          <div className="flex items-center justify-between mb-4 shrink-0">
+        <div className="flex-1 flex flex-col p-4 gap-3 overflow-hidden">
+          <div className="flex items-center justify-between shrink-0">
             <div className="flex items-center gap-4">
               <NavButtons onHome={goHome} onBack={goBack} />
-              <h2 className="text-xl font-bold">Learn Algorithms</h2>
+              <h2 className="text-3xl font-bold">Learn Algorithms</h2>
             </div>
             <CSSLabLogo />
           </div>
-          <div className="flex-1 grid grid-cols-2 lg:grid-cols-3 gap-4 overflow-hidden">
+          <p className="text-sm text-muted-foreground">
+            Select an algorithm card to inspect assumptions, parameter behavior, and a method sketch before running the demo.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 overflow-hidden">
             {algorithms.map((algo) => (
               <Card
                 key={algo.id}
@@ -409,13 +450,13 @@ export default function NomadDashboard() {
                 onClick={() => setExpandedAlgorithm(algo.id)}
               >
                 <CardHeader className="pb-2 shrink-0">
-                  <CardTitle className="text-base">{algo.name}</CardTitle>
+                  <CardTitle className="text-lg">{algo.name}</CardTitle>
                 </CardHeader>
-                <CardContent className="flex-1 flex flex-col overflow-hidden">
-                  <p className="text-xs text-muted-foreground mb-3">{algo.shortDesc}</p>
+                <CardContent className="flex-1 flex flex-col gap-3">
+                  <p className="text-sm text-muted-foreground">{algo.shortDesc}</p>
                   {/* Placeholder diagram */}
-                  <div className="flex-1 bg-muted/50 rounded-md flex items-center justify-center min-h-[80px]">
-                    <svg viewBox="0 0 100 60" className="w-full h-full max-h-20 p-2">
+                  <div className="bg-muted/50 rounded-md flex items-center justify-center min-h-[120px]">
+                    <svg viewBox="0 0 100 60" className="w-full h-full max-h-28 p-2">
                       <circle cx="20" cy="30" r="8" fill="none" stroke="#888" strokeWidth="1.5"/>
                       <circle cx="50" cy="20" r="6" fill="none" stroke="#888" strokeWidth="1.5"/>
                       <circle cx="80" cy="35" r="10" fill="none" stroke="#888" strokeWidth="1.5"/>
@@ -425,6 +466,9 @@ export default function NomadDashboard() {
                       <path d="M 20 30 L 50 20 L 80 35" fill="none" stroke="#888" strokeWidth="1" strokeDasharray="2,2"/>
                     </svg>
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    Tap to open details, parameter definitions, and a direct path to the interactive demo.
+                  </p>
                 </CardContent>
               </Card>
             ))}
@@ -434,11 +478,11 @@ export default function NomadDashboard() {
 
       {/* EXPANDED ALGORITHM VIEW */}
       {activeView === "learn" && expandedAlgorithm && (
-        <div className="flex-1 flex flex-col p-6 overflow-hidden">
-          <div className="flex items-center justify-between mb-4 shrink-0">
+        <div className="flex-1 flex flex-col p-4 gap-3 overflow-hidden">
+          <div className="flex items-center justify-between shrink-0">
             <div className="flex items-center gap-4">
               <NavButtons onHome={goHome} onBack={() => setExpandedAlgorithm(null)} />
-              <h2 className="text-xl font-bold">{algorithms.find(a => a.id === expandedAlgorithm)?.name}</h2>
+              <h2 className="text-2xl font-bold">{algorithms.find(a => a.id === expandedAlgorithm)?.name}</h2>
             </div>
             <CSSLabLogo />
           </div>
@@ -446,20 +490,20 @@ export default function NomadDashboard() {
             const algo = algorithms.find(a => a.id === expandedAlgorithm)
             if (!algo) return null
             return (
-              <div className="flex-1 flex flex-col bg-muted/30 rounded-xl p-6 overflow-hidden">
+              <div className="flex-1 flex flex-col bg-muted/30 rounded-xl p-4 gap-3 overflow-hidden">
                 {/* Description */}
-                <Card className="mb-4 shrink-0">
+                <Card className="shrink-0">
                   <CardContent className="py-4">
                     <p className="text-sm text-muted-foreground">{algo.description}</p>
-                    <p className="text-xs text-muted-foreground mt-2">Source: {algo.source}</p>
+                    <p className="text-sm text-muted-foreground mt-2">Source: {algo.source}</p>
                   </CardContent>
                 </Card>
                 {/* Diagram and Parameters */}
-                <div className="flex-1 grid md:grid-cols-2 gap-4 overflow-hidden">
+                <div className="grid md:grid-cols-2 gap-4">
                   {/* Diagram placeholder */}
-                  <Card className="overflow-hidden">
+                  <Card>
                     <CardContent className="p-4 h-full flex items-center justify-center">
-                      <svg viewBox="0 0 200 150" className="w-full h-full max-h-48">
+                      <svg viewBox="0 0 200 150" className="w-full h-full max-h-56">
                         <circle cx="40" cy="75" r="20" fill="none" stroke="#4a90d9" strokeWidth="2"/>
                         <circle cx="100" cy="50" r="15" fill="none" stroke="#4a90d9" strokeWidth="2"/>
                         <circle cx="160" cy="80" r="25" fill="none" stroke="#4a90d9" strokeWidth="2"/>
@@ -472,9 +516,9 @@ export default function NomadDashboard() {
                     </CardContent>
                   </Card>
                   {/* Parameters table */}
-                  <Card className="overflow-auto">
+                  <Card className="overflow-hidden">
                     <CardHeader className="pb-2">
-                      <CardTitle className="text-sm">Parameters</CardTitle>
+                      <CardTitle className="text-lg">Parameters</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="rounded-md border overflow-hidden">
@@ -488,8 +532,8 @@ export default function NomadDashboard() {
                           <tbody>
                             {algo.parameters.map((param, idx) => (
                               <tr key={param.name} className={idx % 2 === 0 ? "bg-muted/30" : ""}>
-                                <td className="px-3 py-2 font-mono text-xs">{param.name}</td>
-                                <td className="px-3 py-2 text-muted-foreground text-xs">{param.description}</td>
+                                <td className="px-3 py-2 font-mono text-sm">{param.name}</td>
+                                <td className="px-3 py-2 text-muted-foreground text-sm">{param.description}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -499,7 +543,7 @@ export default function NomadDashboard() {
                   </Card>
                 </div>
                 {/* Demo button */}
-                <Button onClick={() => handleAlgorithmSelect(algo.id)} className="mt-4 shrink-0">
+                <Button onClick={() => handleAlgorithmSelect(algo.id)} size="lg" className="shrink-0">
                   Demo
                 </Button>
               </div>
@@ -510,66 +554,69 @@ export default function NomadDashboard() {
 
       {/* DEMO VIEW */}
       {activeView === "demo" && (
-        <div className="flex-1 flex flex-col p-4 overflow-hidden">
-          <div className="flex items-center justify-between mb-3 shrink-0">
+        <div className="flex-1 flex flex-col p-4 gap-3 overflow-hidden">
+          <div className="flex items-center justify-between shrink-0">
             <div className="flex items-center gap-4">
               <NavButtons onHome={goHome} onBack={goBack} />
-              <h2 className="text-lg font-bold">{compareMode ? "Compare Algorithms" : "Demo"}</h2>
+              <h2 className="text-2xl font-bold">{compareMode ? "Compare Algorithms" : "Demo"}</h2>
             </div>
             <div className="flex items-center gap-3">
-              <Button variant={compareMode ? "default" : "outline"} size="sm" onClick={() => setCompareMode(!compareMode)} className="gap-2">
+              <Button variant={compareMode ? "default" : "outline"} size="lg" onClick={() => setCompareMode(!compareMode)} className="gap-2">
                 {compareMode ? <><Square className="h-4 w-4" /> Single</> : <><Columns2 className="h-4 w-4" /> Compare</>}
               </Button>
               <CSSLabLogo />
             </div>
           </div>
+          <p className="text-sm text-muted-foreground">
+            Tune parameters and inspect how each algorithm reshapes stop clusters over the same spatial trajectory.
+          </p>
 
           {!compareMode ? (
-            <div className="flex-1 grid lg:grid-cols-[1fr_280px] gap-4 overflow-hidden">
-              <div className="flex flex-col gap-3 overflow-hidden">
-                <Card className="overflow-hidden flex-1">
+            <div className="grid lg:grid-cols-[1fr_330px] gap-3 items-start overflow-hidden">
+              <div className="flex flex-col gap-3">
+                <Card className="overflow-hidden">
                   <CardHeader className="py-2 px-3 bg-muted/30 shrink-0">
-                    <CardTitle className="text-sm font-medium">{leftAlgo?.name}</CardTitle>
+                    <CardTitle className="text-base font-semibold">{leftAlgo?.name}</CardTitle>
                   </CardHeader>
-                  <CardContent className="p-0 flex-1">
+                  <CardContent className="p-0">
                     <FloorPlan dataPoints={leftData} selectedTimeRange={selectedTimeRange} />
                   </CardContent>
                 </Card>
                 <Timeline segments={timelineSegments} selectedSegment={selectedTimeRange} onSegmentClick={setSelectedTimeRange} />
               </div>
-              <Card className="overflow-auto">
+              <Card className="overflow-hidden">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-semibold">{leftAlgo?.name || "Select Algorithm"}</CardTitle>
+                  <CardTitle className="text-lg font-semibold">{leftAlgo?.name || "Select Algorithm"}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <Select value={leftAlgorithm} onValueChange={setLeftAlgorithm}>
-                    <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="h-10 text-base"><SelectValue /></SelectTrigger>
                     <SelectContent>{algorithms.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
                   </Select>
                   <div className="space-y-2">
-                    <h4 className="text-xs font-medium text-muted-foreground">Parameters</h4>
+                    <h4 className="text-sm font-medium text-muted-foreground">Parameters</h4>
                     {leftAlgo?.parameters.map((p) => (
                       <div key={p.name} className="flex items-center gap-2">
-                        <label className="text-xs font-mono w-20 shrink-0">{p.name}:</label>
-                        <Input value={leftParams[p.name] || p.defaultValue} onChange={(e) => setLeftParams((prev) => ({ ...prev, [p.name]: e.target.value }))} className="h-7 text-xs" />
+                        <label className="text-sm font-mono w-24 shrink-0">{p.name}:</label>
+                        <Input value={leftParams[p.name] || p.defaultValue} onChange={(e) => setLeftParams((prev) => ({ ...prev, [p.name]: e.target.value }))} className="h-9 text-sm" />
                       </div>
                     ))}
                   </div>
                   <div className="space-y-2 pt-2">
-                    <Button variant="outline" onClick={handleNewTrajectory} size="sm" className="w-full">New Trajectory</Button>
-                    <Button onClick={() => handleVisualize("left")} size="sm" className="w-full">Visualize</Button>
+                    <Button variant="outline" onClick={handleNewTrajectory} size="lg" className="w-full">New Trajectory</Button>
+                    <Button onClick={() => handleVisualize("left")} size="lg" className="w-full">Visualize</Button>
                   </div>
                 </CardContent>
               </Card>
             </div>
           ) : (
-            <div className="flex-1 flex flex-col gap-3 overflow-hidden">
-              <div className="flex-1 grid lg:grid-cols-2 gap-4 overflow-hidden">
+            <div className="flex flex-col gap-2 overflow-hidden">
+              <div className="grid lg:grid-cols-2 gap-3 overflow-hidden">
                 {/* Left Algorithm */}
-                <div className="flex flex-col gap-2 overflow-hidden">
-                  <Card className="overflow-hidden flex-1">
+                <div className="flex flex-col gap-2">
+                  <Card className="overflow-hidden">
                     <CardHeader className="py-2 px-3 bg-muted/30 shrink-0">
-                      <CardTitle className="text-sm font-medium">{leftAlgo?.name}</CardTitle>
+                      <CardTitle className="text-base font-semibold">{leftAlgo?.name}</CardTitle>
                     </CardHeader>
                     <CardContent className="p-0">
                       <FloorPlan dataPoints={leftData} selectedTimeRange={selectedTimeRange} />
@@ -577,10 +624,10 @@ export default function NomadDashboard() {
                   </Card>
                   <div className="flex gap-2 items-center shrink-0">
                     <Select value={leftAlgorithm} onValueChange={setLeftAlgorithm}>
-                      <SelectTrigger className="h-8 text-sm flex-1"><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="h-10 text-base flex-1"><SelectValue /></SelectTrigger>
                       <SelectContent>{algorithms.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
                     </Select>
-                    <Card className="px-3 py-1 text-xs">
+                    <Card className="px-3 py-2 text-sm">
                       {leftAlgo?.parameters.map((p) => (
                         <div key={p.name}>{p.name} = {leftParams[p.name] || p.defaultValue}</div>
                       ))}
@@ -588,10 +635,10 @@ export default function NomadDashboard() {
                   </div>
                 </div>
                 {/* Right Algorithm */}
-                <div className="flex flex-col gap-2 overflow-hidden">
-                  <Card className="overflow-hidden flex-1">
+                <div className="flex flex-col gap-2">
+                  <Card className="overflow-hidden">
                     <CardHeader className="py-2 px-3 bg-muted/30 shrink-0">
-                      <CardTitle className="text-sm font-medium">{rightAlgo?.name}</CardTitle>
+                      <CardTitle className="text-base font-semibold">{rightAlgo?.name}</CardTitle>
                     </CardHeader>
                     <CardContent className="p-0">
                       <FloorPlan dataPoints={rightData} selectedTimeRange={selectedTimeRange} />
@@ -599,10 +646,10 @@ export default function NomadDashboard() {
                   </Card>
                   <div className="flex gap-2 items-center shrink-0">
                     <Select value={rightAlgorithm} onValueChange={setRightAlgorithm}>
-                      <SelectTrigger className="h-8 text-sm flex-1"><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="h-10 text-base flex-1"><SelectValue /></SelectTrigger>
                       <SelectContent>{algorithms.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
                     </Select>
-                    <Card className="px-3 py-1 text-xs">
+                    <Card className="px-3 py-2 text-sm">
                       {rightAlgo?.parameters.map((p) => (
                         <div key={p.name}>{p.name} = {rightParams[p.name] || p.defaultValue}</div>
                       ))}
@@ -611,8 +658,8 @@ export default function NomadDashboard() {
                 </div>
               </div>
               <div className="flex gap-3 shrink-0">
-                <Button variant="outline" onClick={handleNewTrajectory} size="sm">New Trajectory</Button>
-                <Button onClick={() => navigateTo("metrics")} size="sm" className="flex-1">Aggregated Metrics</Button>
+                <Button variant="outline" onClick={handleNewTrajectory} size="lg">New Trajectory</Button>
+                <Button onClick={() => navigateTo("metrics")} size="lg" className="flex-1">Aggregated Metrics</Button>
               </div>
             </div>
           )}
@@ -621,29 +668,32 @@ export default function NomadDashboard() {
 
       {/* AGGREGATED METRICS VIEW */}
       {activeView === "metrics" && (
-        <div className="flex-1 flex flex-col p-4 overflow-hidden">
-          <div className="flex items-center justify-between mb-3 shrink-0">
+        <div className="flex-1 flex flex-col p-4 gap-3 overflow-hidden">
+          <div className="flex items-center justify-between shrink-0">
             <div className="flex items-center gap-4">
               <NavButtons onHome={goHome} onBack={goBack} />
-              <h2 className="text-xl font-bold">Aggregated Metrics</h2>
+              <h2 className="text-2xl font-bold">Aggregated Metrics</h2>
             </div>
             <div className="flex items-center gap-3">
-              <Button variant="outline" size="sm" onClick={handleNewTrajectory}>New Trajectory</Button>
+              <Button variant="outline" size="lg" onClick={handleNewTrajectory}>New Trajectory</Button>
               <CSSLabLogo />
             </div>
           </div>
+          <p className="text-sm text-muted-foreground">
+            Compare algorithm reliability curves and inspect parameter context for each method in the same experiment run.
+          </p>
 
           {/* Algorithm selectors with params */}
-          <div className="grid lg:grid-cols-2 gap-4 mb-3 shrink-0">
+          <div className="grid lg:grid-cols-2 gap-4 shrink-0">
             <div className="flex items-center gap-3">
               <Select value={leftAlgorithm} onValueChange={setLeftAlgorithm}>
-                <SelectTrigger className="h-9 w-40">
+                <SelectTrigger className="h-10 w-48 text-base">
                   <SelectValue />
                   <ChevronDown className="h-4 w-4 ml-2" />
                 </SelectTrigger>
                 <SelectContent>{algorithms.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
               </Select>
-              <Card className="px-3 py-2 text-xs bg-muted/50">
+              <Card className="px-3 py-2 text-sm bg-muted/50">
                 {leftAlgo?.parameters.map((p) => (
                   <div key={p.name}>{p.name} = {leftParams[p.name] || p.defaultValue}</div>
                 ))}
@@ -651,13 +701,13 @@ export default function NomadDashboard() {
             </div>
             <div className="flex items-center gap-3">
               <Select value={rightAlgorithm} onValueChange={setRightAlgorithm}>
-                <SelectTrigger className="h-9 w-40">
+                <SelectTrigger className="h-10 w-48 text-base">
                   <SelectValue />
                   <ChevronDown className="h-4 w-4 ml-2" />
                 </SelectTrigger>
                 <SelectContent>{algorithms.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
               </Select>
-              <Card className="px-3 py-2 text-xs bg-muted/50">
+              <Card className="px-3 py-2 text-sm bg-muted/50">
                 {rightAlgo?.parameters.map((p) => (
                   <div key={p.name}>{p.name} = {rightParams[p.name] || p.defaultValue}</div>
                 ))}
@@ -666,13 +716,13 @@ export default function NomadDashboard() {
           </div>
 
           {/* Charts */}
-          <div className="flex-1 grid lg:grid-cols-2 gap-4 overflow-hidden">
+          <div className="grid lg:grid-cols-2 gap-3 overflow-hidden">
             <AccuracyChart algorithmName={leftAlgo?.name || "Algorithm 1"} />
             <AccuracyChart algorithmName={rightAlgo?.name || "Algorithm 2"} />
           </div>
 
           {/* Demo button */}
-          <Button onClick={() => navigateTo("demo")} className="mt-3 shrink-0">
+          <Button onClick={() => navigateTo("demo")} size="lg" className="shrink-0">
             Demo
           </Button>
         </div>
