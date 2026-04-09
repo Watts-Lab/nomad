@@ -52,7 +52,7 @@ def seqscan_labels(
     
     active_cid = -1
     # thus active_cid - 1 is the preceeding cluster id
-    temp_cid = 100000 # for internal dbscan until new active cluster is found
+    temp_cid = active_cid  # temporary labels are always > active_cid
 
     def findCluster(start_time, t):
         nonlocal temp_G, temp_cid, active_cid, start, end
@@ -147,7 +147,7 @@ def seqscan_labels(
                     active_cid += 1
                     start = start_time
 
-                # clear all temporary labels in (start_time, t); we restore the c ones
+                # cleanup of labels in (start_time, t); then restore the new active cluster labels
                 cluster_df.loc[window] = -1
                 core_df.loc[window] = -1
                 
@@ -157,7 +157,7 @@ def seqscan_labels(
                 cluster_df.loc[keep_idx] = active_cid
                 core_df.loc[keep_idx] = active_cid
 
-                temp_cid = 100000
+                temp_cid = active_cid
                 return True
                 # vars changed: temp_neighbors_df, core_df, cluster_df, active_cid, end, temp_cid
         ###### End of def find_cluster
@@ -183,7 +183,7 @@ def seqscan_labels(
                 end = curr_time
                 if back_merge and active_cid > 0:
                     prev_lab = active_cid - 1
-                    for nb in core_df[core_df == prev_lab].index:
+                    for nb in reversed(core_df[core_df == prev_lab].index):
                         if curr_time in G[nb]:
                             cluster_df[cluster_df == (active_cid - 1)] = active_cid
                             core_df[core_df == (active_cid - 1)] = active_cid
@@ -191,9 +191,9 @@ def seqscan_labels(
             else:
                 findCluster(end + 1, curr_time)
 
-    # TODO: find better way to avoid collisions
-    cluster_df.loc[cluster_df > 100000] = -1
-    core_df.loc[core_df > 100000] = -1
+    # temporary labels are above active_cid; clear them before returning
+    cluster_df.loc[cluster_df > active_cid] = -1
+    core_df.loc[core_df > active_cid] = -1
     output = pd.DataFrame({'cluster': cluster_df, 'core': core_df}).set_axis(data.index)
 
     if return_cores:

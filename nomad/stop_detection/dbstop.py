@@ -5,10 +5,6 @@ import geopandas as gpd
 from nomad.stop_detection import utils
 from nomad.stop_detection.preprocessing import _find_neighbors
 
-##########################################
-########         DBSTOP           ########
-##########################################
-
 def dbstop_labels(data,
                  dist_thresh,
                  min_pts,
@@ -39,11 +35,11 @@ def dbstop_labels(data,
     prev_core = -1
     active_cid = -1
 
-    def _expand_active_cluster(seed_time):
+    def _expand_active_cluster(seed_time, cutoff_time):
         cluster_df.at[seed_time] = active_cid
         core_df.at[seed_time] = active_cid
         for nb in G[seed_time]:
-            if past_cutoff <= nb:
+            if cutoff_time <= nb:
                 cluster_df.at[nb] = active_cid
                 if len(G[nb]) >= min_pts:
                     core_df.at[nb] = active_cid
@@ -70,7 +66,7 @@ def dbstop_labels(data,
             if reachable:
                 candidate_cutoff = curr_time
                 prev_core = curr_time
-                _expand_active_cluster(curr_time)
+                _expand_active_cluster(curr_time, past_cutoff)
 
             elif active_cid > -1:
                 # compare observed core-time radius to an interpolated continuity baseline
@@ -108,7 +104,7 @@ def dbstop_labels(data,
                 candidate_cutoff = curr_time
                 active_cid = active_cid + 1
                 prev_core = curr_time
-                _expand_active_cluster(curr_time)
+                _expand_active_cluster(curr_time, past_cutoff)
             else:
                 if not reachable:
                     core_df.at[curr_time] = -1
