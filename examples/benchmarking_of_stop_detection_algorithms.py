@@ -36,7 +36,6 @@ import nomad.stop_detection.lachesis as LACHESIS
 import nomad.stop_detection.grid_based as GRID_BASED
 import nomad.stop_detection.hdbscan as HDBSCAN
 import nomad.filters as filters 
-import nomad.stop_detection.postprocessing as post
 import time
 from tqdm import tqdm
 
@@ -70,12 +69,12 @@ start_time = time.time()
 user_data_tadb = traj.assign(cluster=DBSCAN.ta_dbscan_labels(traj, time_thresh=240, dist_thresh=15, min_pts=3, traj_cols=tc))
 clustering_time_tadbscan = time.time() - start_time
 start_time_post = time.time()
-cluster_labels_tadb = post.remove_overlaps(user_data_tadb, time_thresh=240, method='cluster', traj_cols=tc, min_pts=3, dur_min=5, min_cluster_size=3)
+cluster_labels_tadb = user_data_tadb['cluster']
 execution_time_tadbscan = time.time() - start_time
 post_time_tadbscan = time.time() - start_time_post
 print(f"TA-DBSCAN execution time: {execution_time_tadbscan} seconds")
 print(f"TA-DBSCAN clustering time: {clustering_time_tadbscan} seconds")
-print(f"TA-DBSCAN post-processing time: {post_time_tadbscan} seconds")
+print(f"TA-DBSCAN label extraction time: {post_time_tadbscan} seconds")
 
 # Grid-based
 start_time = time.time()
@@ -89,12 +88,12 @@ start_time = time.time()
 user_data_hdb = traj.assign(cluster=HDBSCAN.hdbscan_labels(traj, time_thresh=240, min_pts=3, min_cluster_size=2, traj_cols=tc))
 clustering_time_hdbscan = time.time() - start_time
 start_time_post = time.time()
-cluster_labels_hdb = post.remove_overlaps(user_data_hdb, time_thresh=240, method='cluster', traj_cols=tc, min_pts=3, dur_min=5, min_cluster_size=3)    
+cluster_labels_hdb = user_data_hdb['cluster']
 execution_time_hdbscan = time.time() - start_time
 post_time_hdbscan = time.time() - start_time_post
 print(f"HDBSCAN execution time: {execution_time_hdbscan} seconds")
 print(f"HDBSCAN clustering time: {clustering_time_hdbscan} seconds")
-print(f"HDBSCAN post-processing time: {post_time_hdbscan} seconds")
+print(f"HDBSCAN label extraction time: {post_time_hdbscan} seconds")
 
 # %% [markdown]
 # ## Summary of Single-User Performance
@@ -131,12 +130,12 @@ print("Runtime Disaggregation")
 print(f"Lachesis clustering time: {execution_time_lachesis} seconds")
 print("--------------------------------")
 print(f"TA-DBSCAN clustering time: {clustering_time_tadbscan} seconds")
-print(f"TA-DBSCAN post-processing time: {post_time_tadbscan} seconds")
+print(f"TA-DBSCAN label extraction time: {post_time_tadbscan} seconds")
 print("--------------------------------")
 print(f"Grid-Based clustering time: {execution_time_grid} seconds")
 print("--------------------------------")
 print(f"HDBSCAN clustering time: {clustering_time_hdbscan} seconds")
-print(f"HDBSCAN post-processing time: {post_time_hdbscan} seconds")
+print(f"HDBSCAN label extraction time: {post_time_hdbscan} seconds")
 
 # %% [markdown]
 # ## Pings vs Runtime
@@ -169,16 +168,14 @@ for user, n_pings in tqdm(pings_per_user.items(), total=len(pings_per_user)):
     # For TADbscan
     start_time = time.time()
     user_data_tadb = user_data.assign(cluster=DBSCAN.ta_dbscan_labels(user_data, time_thresh=240, dist_thresh=15, min_pts=3, traj_cols=tc))
-    # - post-processing
-    stops_tadb = post.remove_overlaps(user_data_tadb, time_thresh=240, method='cluster', traj_cols=tc, min_pts=3, dur_min=5, min_cluster_size=3)
+    stops_tadb = user_data_tadb[user_data_tadb.cluster != -1]
     execution_time = time.time() - start_time
     results += [pd.Series({'user':user, 'algo':'tadbscan', 'execution_time':execution_time, 'n_pings':n_pings})]
 
     # For HDBSCAN
     start_time = time.time()
     user_data_hdb = user_data.assign(cluster=HDBSCAN.hdbscan_labels(user_data, time_thresh=240, min_pts=3, min_cluster_size=2, traj_cols=tc))
-    # - post-processing
-    stops_hdb = post.remove_overlaps(user_data_hdb, time_thresh=240, method='cluster', traj_cols=tc, min_pts=3, dur_min=5, min_cluster_size=3)    
+    stops_hdb = user_data_hdb[user_data_hdb.cluster != -1]
     execution_time = time.time() - start_time
     results += [pd.Series({'user':user, 'algo':'hdbscan', 'execution_time':execution_time, 'n_pings':n_pings})]
 

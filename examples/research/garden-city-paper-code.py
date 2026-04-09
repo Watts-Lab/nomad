@@ -8,7 +8,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.17.3
 #   kernelspec:
-#     display_name: Python 3 (ipykernel)
+#     display_name: nomad_env
 #     language: python
 #     name: python3
 # ---
@@ -175,8 +175,8 @@ city.save_geopackage('../garden-city.gpkg')
 
 # %%
 city = City.from_geopackage('../garden-city.gpkg')
-# Garden City is small (~80 buildings), use exact distances
-city.compute_gravity(exponent=2.0, callable_only=True, use_proxy_hub_distance=False)
+
+city.compute_gravity(exponent=2.0, use_proxy_hub_distance=False)
 
 # %% [markdown]
 # ### Plotting the city
@@ -486,7 +486,7 @@ destination = tg.condense_destinations(destination)
 
 Charlie = Agent(identifier="Charlie",
                 home='h-x14-y11',
-                workplace='w-x16-y9',
+                workplace='w-x15-y9',
                 city=city)
 
 Charlie.generate_trajectory(destination_diary=destination, seed=75)
@@ -715,7 +715,7 @@ d_diary = tg.condense_destinations(d_diary)
 # Daniel is slow
 Daniel = Agent(identifier="Daniel",
             home='p-x13-y11',
-            workplace='w-x16-y9',
+            workplace='w-x15-y9',
             city=city,
             still_probs=SLOW_STILL_PROBS,
             speeds=SLOW_SPEEDS,
@@ -727,7 +727,7 @@ Daniel.generate_trajectory(destination_diary=destination, seed=50)
 # Elaine is fast
 Elaine = Agent(identifier="Elaine",
             home='p-x13-y11',
-            workplace='w-x16-y9',
+            workplace='w-x15-y9',
             city=city,
             still_probs=FAST_STILL_PROBS,
             speeds=FAST_SPEEDS,
@@ -841,8 +841,8 @@ fig, ax = plt.subplots(figsize=(10, 10))
 city.plot_city(ax, doors=True, address=False)
 
 # Example: Plot shortest path between two buildings
-start_building_id = 'r-x12-y2'
-end_building_id = 'r-x15-y2'
+start_building_id = 'r-x12-y3'
+end_building_id = 'r-x15-y5'
 
 # Get building door coordinates using get_building method
 start_building = city.get_building(identifier=start_building_id)

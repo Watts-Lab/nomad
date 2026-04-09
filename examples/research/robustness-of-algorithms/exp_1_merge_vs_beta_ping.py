@@ -6,9 +6,9 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.1
+#       jupytext_version: 1.17.3
 #   kernelspec:
-#     display_name: Python 3 (ipykernel)
+#     display_name: nomad_env
 #     language: python
 #     name: python3
 # ---
@@ -34,7 +34,6 @@ import nomad.stop_detection.utils as utils
 import nomad.stop_detection.lachesis as LACHESIS
 import nomad.stop_detection.dbscan as TADBSCAN
 import nomad.stop_detection.grid_based as GRID_BASED # for oracle visits
-import nomad.stop_detection.postprocessing as pp
 
 import nomad.visit_attribution.visit_attribution as visits
 import nomad.filters as filters
@@ -72,7 +71,11 @@ with open('config_low_ha.json', 'r', encoding='utf-8') as f:
 with open('config_high_ha.json', 'r', encoding='utf-8') as f:
     config2 = json.load(f)
 
-config=config2
+
+with open('config_2_stops.json', 'r', encoding='utf-8') as f:
+    config3 = json.load(f)
+
+config=config3
 
 
 # %%
@@ -233,3 +236,108 @@ plt.show(block=False)
 plt.close()
 
 # %%
+import numpy as np
+from scipy.spatial.distance import pdist
+
+def compute_building_distances(diary_df, poi_table):
+    """
+    Compute pairwise distances between all buildings visited in the diary.
+    
+    Parameters:
+    -----------
+    diary_df : pd.DataFrame
+        Diary for a single user with 'location' column
+    poi_table : gpd.GeoDataFrame
+        POI table with geometry
+    
+    Returns:
+    --------
+    np.ndarray : Array of pairwise distances (in meters)
+    """
+    # Get unique locations (excluding None/NaN)
+    unique_locations = diary_df['location'].dropna().unique()
+    
+    if len(unique_locations) < 2:
+        return np.array([])
+    
+    # Get centroids of these buildings
+    poi_subset = poi_table[poi_table['location'].isin(unique_locations)].copy()
+    poi_subset['centroid_x'] = poi_subset.geometry.centroid.x
+    poi_subset['centroid_y'] = poi_subset.geometry.centroid.y
+    
+    # Create coordinate matrix
+    coords = poi_subset[['centroid_x', 'centroid_y']].values
+    
+    # Compute pairwise distances
+    distances = pdist(coords, metric='euclidean')
+    
+    return distances
+
+
+def compute_stop_duration_fractions(diary_df):
+    """
+    Compute the fraction of each stop relative to total stop duration.
+    
+    Parameters:
+    -----------
+    diary_df : pd.DataFrame
+        Diary with 'duration' column
+    
+    Returns:
+    --------
+    pd.Series : Fraction of total duration for each stop
+    """
+    # Filter to stops with locations only
+    stops_with_locations = diary_df[diary_df['location'].notna()].copy()
+    
+    total_duration = stops_with_locations['duration'].sum()
+    
+    if total_duration == 0:
+        return pd.Series([])
+    
+    fractions = stops_with_locations['duration'] / total_duration
+    
+    return fractions
+
+
+def analyze_diary_characteristics(diaries_df, poi_table):
+    """
+    Analyze building distances and stop duration fractions for all users.
+    
+    Returns:
+    --------
+    pd.DataFrame : Summary statistics per user
+    """
+    results = []
+    
+    for user_id in tqdm(diaries_df['user_id'].unique(), desc='Analyzing diaries'):
+        user_diary = diaries_df[diaries_df['user_id'] == user_id].copy()
+        
+        # 1) Building distances
+        distances = compute_building_distances(user_diary, poi_table)
+        
+        # 2) Stop duration fractions
+        fractions = compute_stop_duration_fractions(user_diary)
+        
+        results.append({
+            'user_id': user_id,
+            # 'n_unique_locations': user_diary['location'].dropna().nunique(),
+            'n_stops': len(user_diary[user_diary['location'].notna()]),
+            'mean_building_distance': np.mean(distances) if len(distances) > 0 else np.nan,
+            # 'median_building_distance': np.median(distances) if len(distances) > 0 else np.nan,
+            # 'max_building_distance': np.max(distances) if len(distances) > 0 else np.nan,
+            # 'min_building_distance': np.min(distances) if len(distances) > 0 else np.nan,
+            'mean_stop_fraction': fractions.mean() if len(fractions) > 0 else np.nan,
+            # 'max_stop_fraction': fractions.max() if len(fractions) > 0 else np.nan,
+            # 'std_stop_fraction': fractions.std() if len(fractions) > 0 else np.nan
+        })
+    
+    return pd.DataFrame(results)
+
+
+# Run analysis
+diary_chars_df = analyze_diary_characteristics(diaries_df, poi_table)
+
+# Display results
+print("Diary Characteristics Summary:")
+print(diary_chars_df.head(10))
