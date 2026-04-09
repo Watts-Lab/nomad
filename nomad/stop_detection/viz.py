@@ -684,6 +684,8 @@ def plot_stops_barcode(stops, ax, cmap='Reds', stop_color=None, set_xlim=True, s
         
         ax.tick_params(axis='x', which='major', labelsize=10)
 
+# ANOUSHKA EDITS 
+        
 def animate_stop_dashboard(
     data,
     stops=None,
@@ -761,11 +763,20 @@ def animate_stop_dashboard(
             ax.spines[spine].set_visible(False)
         ax.tick_params(axis='y', left=False, labelleft=False)
 
+    stop_cols = {
+        "x": "x",
+        "y": "y",
+        "timestamp": "timestamp",
+        "end_timestamp": "end_timestamp"
+    }
+
     def update(frame):
         ax_map.clear()
         ax_time.clear()
 
         current_data = data.iloc[:frame + 1]
+        current_time = current_data['timestamp'].iloc[-1]
+        stops_visible = stops[stops['timestamp'] <= current_time]
 
         # Spatial layer: optionally draw observed path so far
         if show_path and len(current_data) > 1:
@@ -802,14 +813,13 @@ def animate_stop_dashboard(
         # Overlay stops if provided
         if stops is not None and len(stops) > 0:
             plot_stops(
-                stops,
+                stops_visible,
                 ax_map,
                 cmap=stop_cmap,
                 edge_only=True,
                 base_geometry=None,
                 data_crs=data_crs,
-                traj_cols=traj_cols,
-                **kwargs
+                traj_cols=stop_cols
             )
 
         # Current timestamp title
@@ -831,12 +841,11 @@ def animate_stop_dashboard(
         )
         if stops is not None and len(stops) > 0:
             plot_stops_barcode(
-                stops,
+                stops_visible,
                 ax_time,
                 cmap=stop_cmap,
                 set_xlim=False,
-                traj_cols=traj_cols,
-                **kwargs
+                traj_cols=stop_cols
             )
         _clear_time_axis(ax_time)
         return []
