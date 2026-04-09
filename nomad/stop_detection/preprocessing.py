@@ -65,15 +65,22 @@ def _find_spatial_neighbors(coords, dist_thresh=None, weighted=False,
         s_tree = KDTree(coords)
 
         if weighted:
-            radius = np.inf if dist_thresh is None else dist_thresh
-            sdm = s_tree.sparse_distance_matrix(
-                s_tree,
-                max_distance=radius,
-                output_type="ndarray"
+            if dist_thresh is None:
+                distances, indices = s_tree.query(coords, k=len(coords), return_distance=True)
+                row = np.repeat(np.arange(len(coords)), len(coords))
+                col = indices.ravel()
+                dist = distances.ravel()
+            else:
+                indices, distances = s_tree.query_radius(coords, r=dist_thresh, return_distance=True)
+                counts = np.array([len(x) for x in indices])
+                row = np.repeat(np.arange(len(coords)), counts)
+                col = np.concatenate(indices)
+                dist = np.concatenate(distances)
+
+            mask = row < col
+            G.add_weighted_edges_from(
+                np.column_stack((row[mask], col[mask], dist[mask]))
             )
-            mask = sdm["i"] < sdm["j"]
-            sdm = sdm[mask][np.lexsort((sdm["v"][mask], sdm["i"][mask]))]
-            G.add_weighted_edges_from(zip(sdm["i"], sdm["j"], sdm["v"]))
 
         elif dist_thresh is not None:
             indices = s_tree.query_radius(coords, r=dist_thresh)
