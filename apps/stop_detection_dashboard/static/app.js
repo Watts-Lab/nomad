@@ -1,7 +1,7 @@
 const state = {
   options: null,
   data: null,
-  frameIdx: 0,
+  frameIdx: -1,
   timer: null,
   map: null,
   staticLayer: null,
@@ -143,9 +143,10 @@ function populateControls(options) {
 
 function setFrame(idx) {
   if (!state.data) return;
-  state.frameIdx = Math.max(0, Math.min(idx, state.data.sparse.length - 1));
+  state.frameIdx = Math.max(-1, Math.min(idx, state.data.sparse.length - 1));
   document.getElementById("frameSlider").value = String(state.frameIdx);
-  document.getElementById("frameLabel").textContent = `${state.frameIdx + 1} / ${state.data.sparse.length}`;
+  const shown = state.frameIdx < 0 ? 0 : state.frameIdx + 1;
+  document.getElementById("frameLabel").textContent = `${shown} / ${state.data.sparse.length}`;
   renderFrame();
 }
 
@@ -173,7 +174,31 @@ function renderStaticMapLayers() {
 function renderFrameMapLayers() {
   state.frameLayer.clearLayers();
   const data = state.data;
+  if (state.frameIdx < 0) return;
+
   const visible = data.sparse.slice(0, state.frameIdx + 1);
+  const currentTs = data.sparse[state.frameIdx].timestamp;
+
+  const pathLatLng = visible.map((p) => [p.latitude, p.longitude]);
+  if (pathLatLng.length > 1) {
+    L.polyline(pathLatLng, {
+      color: "rgba(62,95,146,0.7)",
+      weight: 2,
+    }).addTo(state.frameLayer);
+  }
+
+  for (const run of data.stop_runs) {
+    if (run.start_timestamp > currentTs) continue;
+    const c = data.cluster_colors[String(run.cluster)] || [130, 138, 150];
+    L.circleMarker([run.latitude, run.longitude], {
+      radius: 7,
+      color: toRgba(c, 0.9),
+      fillColor: toRgba(c, 0.25),
+      fillOpacity: 0.6,
+      weight: 1,
+    }).addTo(state.frameLayer);
+  }
+
   for (const p of visible) {
     const c = data.cluster_colors[String(p.cluster)] || [130, 138, 150];
     L.circleMarker([p.latitude, p.longitude], {
@@ -198,31 +223,32 @@ function renderFrameMapLayers() {
 function renderBarcode() {
   const data = state.data;
   const sparse = data.sparse;
-  const visible = sparse.slice(0, state.frameIdx + 1);
-  const current = sparse[state.frameIdx];
+  const visible = state.frameIdx < 0 ? [] : sparse.slice(0, state.frameIdx + 1);
   const padMs = 20 * 60 * 1000;
   const minTs = sparse[0].timestamp * 1000 - padMs;
   const maxTs = sparse[sparse.length - 1].timestamp * 1000 + padMs;
-  const currentTs = current.timestamp;
+  const currentTs = state.frameIdx < 0 ? null : sparse[state.frameIdx].timestamp;
 
   const shapes = [];
 
-  for (const run of data.stop_runs) {
-    if (run.start_timestamp > currentTs) continue;
-    const endTs = Math.min(run.end_timestamp, currentTs);
-    const c = data.cluster_colors[String(run.cluster)] || [130, 138, 150];
-    shapes.push({
-      type: "rect",
-      xref: "x",
-      yref: "y",
-      x0: new Date(run.start_timestamp * 1000),
-      x1: new Date(endTs * 1000),
-      y0: 0,
-      y1: 1,
-      fillcolor: toRgba(c, 0.18),
-      line: { width: 0 },
-      layer: "below",
-    });
+  if (currentTs !== null) {
+    for (const run of data.stop_runs) {
+      if (run.start_timestamp > currentTs) continue;
+      const endTs = Math.min(run.end_timestamp, currentTs);
+      const c = data.cluster_colors[String(run.cluster)] || [130, 138, 150];
+      shapes.push({
+        type: "rect",
+        xref: "x",
+        yref: "y",
+        x0: new Date(run.start_timestamp * 1000),
+        x1: new Date(endTs * 1000),
+        y0: 0,
+        y1: 1,
+        fillcolor: toRgba(c, 0.18),
+        line: { width: 0 },
+        layer: "below",
+      });
+    }
   }
 
   for (const p of visible) {
@@ -252,16 +278,18 @@ function renderBarcode() {
     }
   }
 
-  shapes.push({
-    type: "line",
-    xref: "x",
-    yref: "y",
-    x0: new Date(currentTs * 1000),
-    x1: new Date(currentTs * 1000),
-    y0: 0,
-    y1: 1,
-    line: { color: "rgb(210,35,45)", width: 2 },
-  });
+  if (currentTs !== null) {
+    shapes.push({
+      type: "line",
+      xref: "x",
+      yref: "y",
+      x0: new Date(currentTs * 1000),
+      x1: new Date(currentTs * 1000),
+      y0: 0,
+      y1: 1,
+      line: { color: "rgb(210,35,45)", width: 2 },
+    });
+  }
 
   const trace = {
     x: [new Date(minTs), new Date(maxTs)],
@@ -310,9 +338,16 @@ function clearTimer() {
 function play() {
   if (!state.data) return;
   clearTimer();
+  if (state.frameIdx >= state.data.sparse.length - 1) {
+    setFrame(-1);
+  }
   const speed = Number(document.getElementById("speedInput").value || 110);
   state.timer = setInterval(() => {
-    if (!state.data || state.frameIdx >= state.data.sparse.length - 1) {
+    if (!state.data) {
+      clearTimer();
+      return;
+    }
+    if (state.frameIdx >= state.data.sparse.length - 1) {
       clearTimer();
       return;
     }
@@ -349,14 +384,15 @@ async function runDashboard() {
     state.data = data;
     renderMetricCards(data.meta);
     initMap();
-    renderStaticMapLayers();
 
     const b = data.meta.bounds;
     state.map.fitBounds([[b.min_lat, b.min_lon], [b.max_lat, b.max_lon]]);
 
     const slider = document.getElementById("frameSlider");
+    slider.min = "-1";
     slider.max = String(Math.max(0, data.sparse.length - 1));
-    setFrame(0);
+    setFrame(-1);
+    play();
     setStatus("Ready");
   } catch (err) {
     setStatus(err.message, true);
@@ -383,7 +419,7 @@ function attachEvents() {
   document.getElementById("runButton").addEventListener("click", runDashboard);
   document.getElementById("playBtn").addEventListener("click", play);
   document.getElementById("pauseBtn").addEventListener("click", clearTimer);
-  document.getElementById("resetBtn").addEventListener("click", () => setFrame(0));
+  document.getElementById("resetBtn").addEventListener("click", () => setFrame(-1));
   document.getElementById("frameSlider").addEventListener("input", (e) => {
     clearTimer();
     setFrame(Number(e.target.value));
