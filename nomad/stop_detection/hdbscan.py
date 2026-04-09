@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-import heapq
 from collections import defaultdict
 import networkx as nx
 import warnings
@@ -14,72 +13,27 @@ def _compute_core_distance(G, min_pts):
     
     for node in G.nodes():
         edges = sorted(G.edges(node, data='weight'), key=lambda e: e[2])
-        result[node] = edges[min_pts - 1] if len(edges) >= min_pts else None
+        result[node] = edges[min_pts - 1][2] if len(edges) >= min_pts else np.inf
     
-    return {node: e[2] if e else np.inf for node, e in result.items()}
+    core_distances = pd.Series(result)
+    core_distances.index.name = 'time'
+    return core_distances
 
-def _mst(mrd_graph):
-    """
-    Compute the MST using Prim's algorithm from mutual reachability distances.
-    Adapted to compute the MST of each connected component, since temporally 
-    unadmissible pairs can never be connected (distance is infinite).
-    
-    Parameters
-    ----------
-    mrd : dict
-        Keys are (timestamp1, timestamp2), values are mutual reachability distances.
-
-    Returns
-    -------
-    mst : list of tuples
-        (t1, t2, mrd_value) for the MST.
-    """
-    graph = defaultdict(list)
-    for (u, v), w in mrd_graph.items():
-        graph[u].append((v, w))
-        graph[v].append((u, w))
-
-    visited, mst, heap = set(), [], []
-
-    def seed(start):
-        heapq.heappush(heap, (0.0, start, start))
-
-    seed(next(iter(graph)))
-
-    while len(visited) < len(graph):
-        if not heap:                              # start next component
-            seed(next(t for t in graph if t not in visited))
-            continue
-        w, u, v = heapq.heappop(heap)
-        if v in visited:
-            continue
-        visited.add(v)
-        if u != v:
-            mst.append((u, v, w))
-        for nbr, wt in graph[v]:
-            if nbr not in visited:
-                heapq.heappush(heap, (wt, v, nbr))
-                
-    return np.array(mst,
-                    dtype=[('from', 'int64'),
-                           ('to', 'int64'),
-                           ('weight', 'float64')])
-
-def _build_border_map(scale, core_distances, d_graph):
+def _build_border_map(scale, core_distances, G):
     """
     For a given threshold `scale`, assign each non-core point to its nearest
     core neighbor (preceding or succeeding in time) within distance <= scale.
-    
+
     Parameters
     ----------
     scale : float
         Distance threshold at this dendogram level.
     core_distances : pd.Series
-        Indexed by timestamp; contains each point's “core distance.”
+        Indexed by timestamp; contains each point's "core distance."
         Must be sorted by index (timestamp).
-    d_graph : pd.Series
-        MultiIndex (border, core) → actual distance between points.
-    
+    G : nx.Graph
+        Weighted graph of distances between temporally-close points.
+
     Returns
     -------
     defaultdict(set)
@@ -107,14 +61,21 @@ def _build_border_map(scale, core_distances, d_graph):
     valid_succ = succ_pos < cores.size
     for b, s in zip(borders[valid_succ], cores[succ_pos[valid_succ]]):
         pairs.append((b, s))
-    
-    # Look up distances, drop ones beyond scale
-    idx = pd.MultiIndex.from_tuples(pairs, names=["border", "core"])
-    dists = d_graph.reindex(idx).dropna()
-    dists = dists[dists <= scale]
-    
-    if dists.empty:
+
+    rows = [
+        (b, c, G.edges[b, c]["weight"])
+        for b, c in pairs
+        if G.has_edge(b, c) and np.round(G.edges[b, c]["weight"] * 4) / 4 <= scale
+    ]
+
+    if not rows:
         return defaultdict(set)
+
+    dists = pd.Series(
+        [w for _, _, w in rows],
+        index=pd.MultiIndex.from_tuples([(b, c) for b, c, _ in rows], names=["border", "core"]),
+        name="weight",
+    )
     
     # For each border, pick the core with minimal distance (ties break naturally)
     best = dists.groupby(level="border").idxmin().values
@@ -122,9 +83,9 @@ def _build_border_map(scale, core_distances, d_graph):
     for border, core in best:
         core_to_border[core].add(border)
     
-    return core_to_border
+    return core_to_border # return this but instead using something with input as G
 
-def cluster_hierarchy(edges_sorted_df, core_distances, d_graph, min_cluster_size, dur_min=5):
+def cluster_hierarchy(edges_sorted, core_distances, G, min_cluster_size, dur_min=5):
     """
     Builds a cluster hierarchy from a pre-computed Minimum Spanning Tree.
 
@@ -134,13 +95,13 @@ def cluster_hierarchy(edges_sorted_df, core_distances, d_graph, min_cluster_size
 
     Parameters
     ----------
-    edges_sorted_df : pd.Series
+    edges_sorted : pd.Series
         The MST with self-loops, indexed by ('from', 'to') and sorted
         descending by weight (which represents distance/scale).
     core_distances : pd.Series
         Sorted Series mapping each timestamp to its core distance.
-    d_graph : pd.Series
-        Symmetric graph of raw distances between all temporally-close points.
+    G : nx.Graph
+        Weighted graph of distances between temporally-close points.
     min_cluster_size : int
         Minimum number of core points for a cluster to be considered valid.
     dur_min : int
@@ -166,21 +127,24 @@ def cluster_hierarchy(edges_sorted_df, core_distances, d_graph, min_cluster_size
     current_label_id = 1
 
     # Iteratively process edges grouped by weight (scale)
-    for scale, edges_to_remove in edges_sorted_df.groupby(edges_sorted_df, sort=False):
+    for scale, edges_to_remove in edges_sorted.groupby(edges_sorted, sort=False):
 
-        border_map = _build_border_map(scale, core_distances, d_graph) # can be computed without thinking of edges
+        border_map = _build_border_map(scale, core_distances, G)
         idx_from = edges_to_remove.index.get_level_values('from')
-        affected_clusters = set(label_map.loc[idx_from].unique()) 
+        affected_clusters = set(label_map.loc[idx_from].unique())
 
         for cluster_id in affected_clusters:
             if cluster_id == -1:
                 continue
- 
+
             members = label_map.index[label_map == cluster_id]
             remaining_members = set(members)
-            
-            G = _build_graph_pd(members, edges_sorted_df, edges_to_remove)
-            components = _connected_components(G)
+
+            # TODO: try to keep the original graph (mst + self loops), instead of building a new one and then getting the connected components
+            # use the networkx filter edges method (all edges <)
+            # benchmark prior to this change
+            adj = _build_graph_pd(members, edges_sorted, edges_to_remove)
+            components = _connected_components(adj)
             
             non_spurious = []
 
@@ -505,62 +469,21 @@ def _build_hdbscan_graphs(G, core_dist):
     -------
     edges_sorted_df : pd.Series
         MST + self-loops sorted descending by weight, MultiIndex (from, to).
-    d_graph : pd.Series
-        Symmetric graph of raw distances, MultiIndex (from, to).
     """
-    d_dict = {
-        (u, v): np.round(data['weight'] * 4) / 4
-        for u, v, data in G.edges(data=True)
-    }
-
-    d_graph_part = pd.Series(d_dict)
-    d_graph_part.index.names = ['from', 'to']
-    rev = d_graph_part.swaplevel()
-    rev.index.names = ['from', 'to']
-    d_graph = pd.concat([d_graph_part, rev])
-
     H = G.copy()
-    nx.set_edge_attributes(
-        H,
-        {
-            (u, v): max(core_dist.get(u, np.inf), core_dist.get(v, np.inf), d)
-            for (u, v), d in d_dict.items()
-        },
-        name='weight'
-    )
+    for u, v, data in H.edges(data=True):
+        d = np.round(data["weight"] * 4) / 4
+        data["weight"] = max(core_dist.at[u], core_dist.at[v], d)
+
     mst = nx.minimum_spanning_tree(H)
 
-    mst_arr = np.array(
-        [(u, v, data['weight']) for u, v, data in mst.edges(data=True)],
-        dtype=[('from', 'int64'), ('to', 'int64'), ('weight', 'float64')]
-    )
+    mst.add_edges_from((node, node, {'weight': weight}) for node, weight in core_dist.items())
 
-    self_loops_items = list(core_dist.items())
-    if not self_loops_items:
-        self_loops_full = np.empty(0, dtype=mst_arr.dtype)
-    else:
-        self_loops = np.array(
-            self_loops_items,
-            dtype=[('from', 'int64'), ('weight', 'float64')]
-        )
-        self_loops_full = np.empty(len(self_loops), dtype=mst_arr.dtype)
-        self_loops_full['from'] = self_loops['from']
-        self_loops_full['to'] = self_loops['from']
-        self_loops_full['weight'] = self_loops['weight']
+    all_edges = nx.to_pandas_edgelist(mst, source='from', target='to')
+    all_edges.sort_values('weight', ascending=False, inplace=True)
 
-    all_edges = np.concatenate([mst_arr, self_loops_full])
-    order = np.argsort(all_edges["weight"])[::-1]
-    sorted_edges = all_edges[order]
-
-    edges_sorted = pd.Series(
-        sorted_edges['weight'],
-        index=pd.MultiIndex.from_arrays(
-            [sorted_edges['from'], sorted_edges['to']],
-            names=['from', 'to']
-        ),
-        name='weight'
-    )
-    return edges_sorted, d_graph
+    all_edges.set_index(['from', 'to'], inplace=True)
+    return all_edges['weight']
 
 def hdbscan_labels(data,
                    time_thresh,
@@ -629,18 +552,15 @@ def hdbscan_labels(data,
 
     core_distances = _compute_core_distance(G, min_pts)
 
-    # edges_sorted, d_graph = _build_hdbscan_graphs(coords, list(G.nodes()), neighbors, core_distances, use_lon_lat)
-    edges_sorted, d_graph = _build_hdbscan_graphs(G, core_distances)
-
-    core_distances = pd.Series(core_distances).sort_index()
-    core_distances.index.name = 'time'
+    edges_sorted = _build_hdbscan_graphs(G, core_distances)
 
     label_history_df, hierarchy_df = cluster_hierarchy(
-        edges_sorted_df=edges_sorted,
+        edges_sorted=edges_sorted,
         core_distances=core_distances,
-        d_graph=d_graph,
+        G=G,
         min_cluster_size=min_cluster_size,
-        dur_min=dur_min)
+        dur_min=dur_min,
+    )
 
     if delta_roam is None:
         cluster_stability_df = compute_cluster_stability(label_history_df)
@@ -675,7 +595,7 @@ def hdbscan_labels(data,
         include_border_points = True
         if include_border_points:
             # 2. Find border points for these unclaimed cores at this scale
-            border_map = _build_border_map(scale, core_distances, d_graph)
+            border_map = _build_border_map(scale, core_distances, G)
             potential_borders = set().union(*(border_map.get(ts, set()) for ts in unclaimed_cores))
             
             # Assign only unclaimed border points
