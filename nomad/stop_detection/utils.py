@@ -513,6 +513,41 @@ def _get_empty_stop_columns(input_columns, complete_output, passthrough_cols, tr
     
     return column_list
 
+
+def has_overlapping_stops(stop_data, traj_cols=None, **kwargs):
+    """
+    Return True when any stop interval overlaps with the previous interval.
+
+    Intervals are interpreted from start/end columns when available, otherwise
+    end times are reconstructed from duration in minutes.
+    """
+    if len(stop_data) < 2:
+        return False
+
+    t_key, use_datetime = loader._fallback_time_cols_dt(stop_data.columns, traj_cols, kwargs)
+    end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
+
+    traj_cols = loader._parse_traj_cols(stop_data.columns, traj_cols, kwargs, warn=False)
+    end_col_present = loader._has_end_cols(stop_data.columns, traj_cols)
+    duration_col_present = loader._has_duration_cols(stop_data.columns, traj_cols)
+    if not (end_col_present or duration_col_present):
+        raise ValueError("Missing required (end or duration) temporal columns for stop_table dataframe.")
+
+    starts = stop_data[traj_cols[t_key]]
+    if end_col_present:
+        ends = stop_data[traj_cols[end_t_key]]
+    else:
+        dur_mins = stop_data[traj_cols['duration']]
+        if use_datetime:
+            ends = starts + pd.to_timedelta(dur_mins, unit='m')
+        else:
+            ends = starts + dur_mins * 60
+
+    intervals = pd.DataFrame({"_start": starts, "_end": ends}).sort_values("_start", kind="mergesort")
+    prev_end = intervals["_end"].shift(1)
+    overlap_mask = (intervals["_start"] < prev_end).iloc[1:]
+    return bool(overlap_mask.fillna(False).any())
+
 def pad_short_stops(stop_data, pad=5, dur_min=None, traj_cols = None, **kwargs):
     """
     Helper that pads stops shorter or equal than dur_min minutes 

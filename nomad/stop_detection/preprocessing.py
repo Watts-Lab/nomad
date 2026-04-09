@@ -38,7 +38,7 @@ def _find_spatial_neighbors(coords, dist_thresh=None, weighted=False,
         
         radius = np.pi if dist_thresh is None else dist_thresh / earth_radius
         if weighted:
-            indices, distances = s_tree.query_radius(coords, r=radius, return_distance=True)
+            indices, distances = s_tree.query_radius(coords, r=radius, return_distance=True, sort_results=True)
 
             counts = np.array([len(x) for x in indices])
             row = np.repeat(np.arange(len(coords)), counts)
@@ -102,6 +102,8 @@ def _find_neighbors(data, time_thresh, traj_cols, dist_thresh=None,
                     return_trees=False, relabel_nodes=True):
     """Combine time and spatial neighbors into the final graph."""
     if use_lon_lat:
+        # Internal haversine convention for sklearn BallTree is [latitude, longitude] in radians.
+        # Public-facing APIs may accept lon/lat columns, but tree/query inputs must follow this order.
         coords = np.radians(
             data[[traj_cols["latitude"], traj_cols["longitude"]]].values
         )

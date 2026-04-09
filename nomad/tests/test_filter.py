@@ -110,6 +110,8 @@ def park_polygons():
 def test_to_timestamp(base_df):
     timestamp_col = to_timestamp(base_df.local_datetime, base_df.tz_offset)
     assert np.array_equal(timestamp_col.values, base_df.timestamp.values)
+    assert str(timestamp_col.dtype) == "Int64"
+    assert type(timestamp_col.values) is type(base_df.timestamp.values)
 
 def test_to_timestamp_scalar():
     result = to_timestamp("2024-01-01 00:00-05:00")

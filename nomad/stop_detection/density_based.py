@@ -42,17 +42,17 @@ def seqscan_labels(
     G = _find_neighbors(data, time_thresh, traj_cols, dist_thresh,
                 False, use_datetime, use_lon_lat, return_trees=False, relabel_nodes=True)
     cluster_df = pd.Series(-2, index=G, name='cluster')
-    core_df = pd.Series(-3, index=G, name='core')
+    core_df = pd.Series(-2, index=G, name='core')
 
     # SeqScan main loop start
     start = next(iter(G))      # current time context start
-    end = start - 1                  # current candidate to cut time context
+    end = start                  # current candidate to cut time context
     #find cluster routine start
     temp_G = nx.subgraph_view(G, filter_node=lambda n: start <= n <= end)
     
     active_cid = -1
     # thus active_cid - 1 is the preceeding cluster id
-    temp_cid = 100000 # for internal dbscan until new active cluster is found
+    temp_cid = active_cid  # temporary labels are always > active_cid
 
     def findCluster(start_time, t):
         nonlocal temp_G, temp_cid, active_cid, start, end
@@ -112,6 +112,11 @@ def seqscan_labels(
 
                         for nb in temp_G[s]:
                             cluster_df[nb] = core_df[s]
+            else:
+                for nb in reversed(list(temp_G[s])):
+                    if core_df[nb] >= 0:
+                        cluster_df[t] = core_df[nb]
+                        break
 
         clu_win = cluster_df.loc[window]
         cand = clu_win[clu_win >= 0]
@@ -142,7 +147,7 @@ def seqscan_labels(
                     active_cid += 1
                     start = start_time
 
-                # clear all temporary labels in (start_time, t); we restore the c ones
+                # cleanup of labels in (start_time, t); then restore the new active cluster labels
                 cluster_df.loc[window] = -1
                 core_df.loc[window] = -1
                 
@@ -152,7 +157,7 @@ def seqscan_labels(
                 cluster_df.loc[keep_idx] = active_cid
                 core_df.loc[keep_idx] = active_cid
 
-                temp_cid = 100000
+                temp_cid = active_cid
                 return True
                 # vars changed: temp_neighbors_df, core_df, cluster_df, active_cid, end, temp_cid
         ###### End of def find_cluster
@@ -165,7 +170,6 @@ def seqscan_labels(
             findCluster(start, curr_time)
         else:
             temp_G = window_graph(G, start, curr_time)
-            
             curr_is_core = len(temp_G[curr_time]) >= min_pts
             is_reachable = False
             for nb in temp_G[curr_time]:
@@ -179,7 +183,7 @@ def seqscan_labels(
                 end = curr_time
                 if back_merge and active_cid > 0:
                     prev_lab = active_cid - 1
-                    for nb in core_df[core_df == prev_lab].index:
+                    for nb in reversed(core_df[core_df == prev_lab].index):
                         if curr_time in G[nb]:
                             cluster_df[cluster_df == (active_cid - 1)] = active_cid
                             core_df[core_df == (active_cid - 1)] = active_cid
@@ -187,9 +191,9 @@ def seqscan_labels(
             else:
                 findCluster(end + 1, curr_time)
 
-    # TODO: find better way to avoid collisions
-    cluster_df.loc[cluster_df > 100000] = -1
-    core_df.loc[core_df > 100000] = -1
+    # temporary labels are above active_cid; clear them before returning
+    cluster_df.loc[cluster_df > active_cid] = -1
+    core_df.loc[core_df > active_cid] = -1
     output = pd.DataFrame({'cluster': cluster_df, 'core': core_df}).set_axis(data.index)
 
     if return_cores:
@@ -243,6 +247,18 @@ def seqscan(
     ------
     ValueError if multi-user data detected; use ta_dbscan_per_user instead.
     """
+    if data.empty:
+        cols = utils._get_empty_stop_columns(
+            data.columns,
+            complete_output,
+            passthrough_cols,
+            traj_cols,
+            keep_col_names=keep_col_names,
+            is_grid_based=False,
+            **kwargs,
+        )
+        return pd.DataFrame(columns=cols, dtype=object)
+
     traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     if 'user_id' in traj_cols_temp and traj_cols_temp['user_id'] in data.columns:
         uid_col = data[traj_cols_temp['user_id']]
