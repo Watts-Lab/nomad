@@ -81,7 +81,8 @@ def dbstop_labels(data,
 
                     if use_lon_lat:
                         spatial_nb_idx = s_tree.query_radius(
-                            np.radians(counterfactual_coords).reshape(1, -1),
+                            # _find_neighbors builds BallTree in [lat, lon] radians.
+                            np.radians(counterfactual_coords[[1, 0]]).reshape(1, -1),
                             r=dist_thresh / 6_371_000,
                         )[0]
                     else:
@@ -162,6 +163,18 @@ def dbstop(
     ------
     ValueError if multi-user data detected; use dbstop_per_user instead.
     """
+    if data.empty:
+        cols = utils._get_empty_stop_columns(
+            data.columns,
+            complete_output,
+            passthrough_cols,
+            traj_cols,
+            keep_col_names=keep_col_names,
+            is_grid_based=False,
+            **kwargs,
+        )
+        return pd.DataFrame(columns=cols, dtype=object)
+
     traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     if 'user_id' in traj_cols_temp and traj_cols_temp['user_id'] in data.columns:
         uid_col = data[traj_cols_temp['user_id']]
@@ -182,7 +195,7 @@ def dbstop(
     )
     merged = data.join(labels)
     
-    # Filter out noise points after overlap removal
+    # Filter out noise points
     merged = merged[merged.cluster != -1]
 
     if merged.empty:

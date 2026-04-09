@@ -102,6 +102,8 @@ def _find_neighbors(data, time_thresh, traj_cols, dist_thresh=None,
                     return_trees=False, relabel_nodes=True):
     """Combine time and spatial neighbors into the final graph."""
     if use_lon_lat:
+        # Internal haversine convention for sklearn BallTree is [latitude, longitude] in radians.
+        # Public-facing APIs may accept lon/lat columns, but tree/query inputs must follow this order.
         coords = np.radians(
             data[[traj_cols["latitude"], traj_cols["longitude"]]].values
         )

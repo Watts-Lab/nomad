@@ -684,6 +684,7 @@ def empty_complete_case_registry():
                     'timestamp': 'timestamp',
                     'longitude': 'longitude',
                     'latitude': 'latitude',
+                    'user_id': 'user_id',
                     'location_id': 'location_id'
                 },
             },
@@ -700,7 +701,8 @@ def empty_complete_case_registry():
                 "traj_cols": {
                     'timestamp': 'timestamp',
                     'longitude': 'longitude',
-                    'latitude': 'latitude'
+                    'latitude': 'latitude',
+                    'user_id': 'user_id',
                 },
             },
             "expected_cols": {'longitude', 'latitude', 'timestamp', 'diameter', 'n_pings', 'end_timestamp', 'duration', 'max_gap'},
@@ -715,7 +717,59 @@ def empty_complete_case_registry():
                 "traj_cols": {
                     'timestamp': 'timestamp',
                     'longitude': 'longitude',
-                    'latitude': 'latitude'
+                    'latitude': 'latitude',
+                    'user_id': 'user_id',
+                },
+            },
+            "expected_cols": {'longitude', 'latitude', 'timestamp', 'diameter', 'n_pings', 'end_timestamp', 'duration', 'max_gap'},
+        },
+        "tadbscan": {
+            "fn": DBSCAN.ta_dbscan,
+            "kwargs": {
+                "time_thresh": 60,
+                "dist_thresh": 25,
+                "min_pts": 2,
+                "dur_min": 5,
+                "complete_output": True,
+                "traj_cols": {
+                    'timestamp': 'timestamp',
+                    'longitude': 'longitude',
+                    'latitude': 'latitude',
+                    'user_id': 'user_id',
+                },
+            },
+            "expected_cols": {'longitude', 'latitude', 'timestamp', 'diameter', 'n_pings', 'end_timestamp', 'duration', 'max_gap'},
+        },
+        "dbstop": {
+            "fn": DBSTOP.dbstop,
+            "kwargs": {
+                "time_thresh": 60,
+                "dist_thresh": 25,
+                "min_pts": 2,
+                "dur_min": 5,
+                "complete_output": True,
+                "traj_cols": {
+                    'timestamp': 'timestamp',
+                    'longitude': 'longitude',
+                    'latitude': 'latitude',
+                    'user_id': 'user_id',
+                },
+            },
+            "expected_cols": {'longitude', 'latitude', 'timestamp', 'diameter', 'n_pings', 'end_timestamp', 'duration', 'max_gap'},
+        },
+        "seqscan": {
+            "fn": DENSITY_BASED.seqscan,
+            "kwargs": {
+                "time_thresh": 60,
+                "dist_thresh": 25,
+                "min_pts": 2,
+                "dur_min": 5,
+                "complete_output": True,
+                "traj_cols": {
+                    'timestamp': 'timestamp',
+                    'longitude': 'longitude',
+                    'latitude': 'latitude',
+                    'user_id': 'user_id',
                 },
             },
             "expected_cols": {'longitude', 'latitude', 'timestamp', 'diameter', 'n_pings', 'end_timestamp', 'duration', 'max_gap'},
@@ -737,6 +791,7 @@ def empty_xy_case_registry():
                     'timestamp': 'timestamp',
                     'x': 'x',
                     'y': 'y',
+                    'user_id': 'user_id',
                     'location_id': 'location_id'
                 },
             },
@@ -753,7 +808,8 @@ def empty_xy_case_registry():
                 "traj_cols": {
                     'timestamp': 'timestamp',
                     'x': 'x',
-                    'y': 'y'
+                    'y': 'y',
+                    'user_id': 'user_id',
                 },
             },
             "expected_cols": {'x', 'y', 'timestamp', 'duration'},
@@ -768,7 +824,59 @@ def empty_xy_case_registry():
                 "traj_cols": {
                     'timestamp': 'timestamp',
                     'x': 'x',
-                    'y': 'y'
+                    'y': 'y',
+                    'user_id': 'user_id',
+                },
+            },
+            "expected_cols": {'x', 'y', 'timestamp', 'duration'},
+        },
+        "tadbscan": {
+            "fn": DBSCAN.ta_dbscan,
+            "kwargs": {
+                "time_thresh": 60,
+                "dist_thresh": 25,
+                "min_pts": 2,
+                "dur_min": 5,
+                "complete_output": False,
+                "traj_cols": {
+                    'timestamp': 'timestamp',
+                    'x': 'x',
+                    'y': 'y',
+                    'user_id': 'user_id',
+                },
+            },
+            "expected_cols": {'x', 'y', 'timestamp', 'duration'},
+        },
+        "dbstop": {
+            "fn": DBSTOP.dbstop,
+            "kwargs": {
+                "time_thresh": 60,
+                "dist_thresh": 25,
+                "min_pts": 2,
+                "dur_min": 5,
+                "complete_output": False,
+                "traj_cols": {
+                    'timestamp': 'timestamp',
+                    'x': 'x',
+                    'y': 'y',
+                    'user_id': 'user_id',
+                },
+            },
+            "expected_cols": {'x', 'y', 'timestamp', 'duration'},
+        },
+        "seqscan": {
+            "fn": DENSITY_BASED.seqscan,
+            "kwargs": {
+                "time_thresh": 60,
+                "dist_thresh": 25,
+                "min_pts": 2,
+                "dur_min": 5,
+                "complete_output": False,
+                "traj_cols": {
+                    'timestamp': 'timestamp',
+                    'x': 'x',
+                    'y': 'y',
+                    'user_id': 'user_id',
                 },
             },
             "expected_cols": {'x', 'y', 'timestamp', 'duration'},
@@ -782,6 +890,9 @@ def empty_xy_case_registry():
         pytest.param("grid-based", id="grid-based"),
         pytest.param("hdbscan", id="hdbscan"),
         pytest.param("lachesis", id="lachesis"),
+        pytest.param("tadbscan", id="tadbscan"),
+        pytest.param("dbstop", id="dbstop"),
+        pytest.param("seqscan", id="seqscan"),
     ],
 )
 def test_empty_dataframe_complete_output(empty_traj, empty_complete_case_registry, algo_name):
@@ -798,6 +909,9 @@ def test_empty_dataframe_complete_output(empty_traj, empty_complete_case_registr
         pytest.param("grid-based", id="grid-based"),
         pytest.param("hdbscan", id="hdbscan"),
         pytest.param("lachesis", id="lachesis"),
+        pytest.param("tadbscan", id="tadbscan"),
+        pytest.param("dbstop", id="dbstop"),
+        pytest.param("seqscan", id="seqscan"),
     ],
 )
 def test_empty_dataframe_xy_output(empty_traj_xy, empty_xy_case_registry, algo_name):
@@ -809,10 +923,7 @@ def test_empty_dataframe_xy_output(empty_traj_xy, empty_xy_case_registry, algo_n
 
 def test_empty_dataframe_consistency():
     """Test that all algorithms return consistent column structures for empty data."""
-    import nomad.stop_detection.grid_based as grid_based
-    import nomad.stop_detection.hdbscan as hdbscan
-    import nomad.stop_detection.lachesis as lachesis
-    
+
     empty_data = pd.DataFrame(columns=['timestamp', 'longitude', 'latitude', 'location_id'])
     traj_cols = {
         'timestamp': 'timestamp', 
@@ -822,9 +933,9 @@ def test_empty_dataframe_consistency():
     }
     
     # Test with complete_output=False for all algorithms
-    grid_result = grid_based.grid_based(empty_data, traj_cols=traj_cols, complete_output=False)
-    hdbscan_result = hdbscan.st_hdbscan(empty_data, time_thresh=60, traj_cols=traj_cols, complete_output=False)
-    lachesis_result = lachesis.lachesis(empty_data, delta_roam=100, dt_max=60, traj_cols=traj_cols, complete_output=False)
+    grid_result = GRID_BASED.grid_based(empty_data, traj_cols=traj_cols, complete_output=False)
+    hdbscan_result = HDBSCAN.st_hdbscan(empty_data, time_thresh=60, traj_cols=traj_cols, complete_output=False)
+    lachesis_result = LACHESIS.lachesis(empty_data, delta_roam=100, dt_max=60, traj_cols=traj_cols, complete_output=False)
     
     # All should be empty
     assert grid_result.empty

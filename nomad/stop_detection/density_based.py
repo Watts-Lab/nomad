@@ -247,6 +247,18 @@ def seqscan(
     ------
     ValueError if multi-user data detected; use ta_dbscan_per_user instead.
     """
+    if data.empty:
+        cols = utils._get_empty_stop_columns(
+            data.columns,
+            complete_output,
+            passthrough_cols,
+            traj_cols,
+            keep_col_names=keep_col_names,
+            is_grid_based=False,
+            **kwargs,
+        )
+        return pd.DataFrame(columns=cols, dtype=object)
+
     traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     if 'user_id' in traj_cols_temp and traj_cols_temp['user_id'] in data.columns:
         uid_col = data[traj_cols_temp['user_id']]
