@@ -200,10 +200,11 @@ const algorithms = [
     id: "lachesis", 
     name: "Lachesis", 
     shortDesc: "Roaming-distance based stop detection",
-    description: "A roaming-distance based algorithm that identifies stops by detecting when movement stays within a specified radius for a minimum duration. It processes GPS points sequentially and maintains a dynamic window to track spatial extent of recent movements.", 
+    description: "Lachesis is a greedy, sequential and threshold-based algorithm taking in three parameters: dur_min, dt_max, and delta_roam. The algorithm processes pings in time order, and builds a candidate stop by scanning trajectories and grouping consecutive pings into a cluster under the following conditions: (1) the cluster diameter is less than or equal to delta_roam, (2) has no temporal gaps larger than dt_max, and (3) the accumulated duration is equal to or greater than dur_min. Key limitations include (1) being highly sensitive to parameter choices, with a small delta_roam leading to splitting or missing stops, and a large delta_roam leading to merging stops, and (2) assuming continuous sampling, so GPS noise or sparse data can lead to fragmented stops.", 
     source: "Lachesis: A GPS-Based Human Mobility Pattern Analyzer",
     parameters: [
       { name: "dur_min", defaultValue: "60", description: "Minimum duration for a stop (seconds)" }, 
+      { name: "dt_max", defaultValue: "60", description: "Maximum allowed temporal gap between pings (seconds)" },
       { name: "delta_roam", defaultValue: "25", description: "Maximum roaming distance (meters)" }
     ] 
   },
@@ -211,7 +212,7 @@ const algorithms = [
     id: "seqscan", 
     name: "SeqScan", 
     shortDesc: "Sequential scanning with thresholds",
-    description: "Sequential scanning algorithm that processes GPS points in order, identifying stops based on consecutive points within spatial and temporal thresholds. Efficient for real-time processing.", 
+    description: "SeqScan extends DBSCAN to spatio-temporal data while guaranteeing temporal separation between detected stops. Each stop is defined as a DBSCAN cluster computed over a local time context, using the reachability graph of core points (a ping with a minimum of min_pts neighbors at a distance below dist_thresh). The algorithm scans points in chronological order, maintaining both an active cluster and an active time context for neighbor queries. For each incoming ping, neighbors are queried within the active time context; if it is connected to the active cluster, the active cluster is expanded. Otherwise, DBSCAN is applied to the tail of the trajectory, starting from the last ping of the active cluster up to the incoming ping. If a cluster with duration at least dur_min is found in the tail, it becomes the new active cluster and the active time context is shifted, continuing until reaching the end of the trajectory.", 
     source: "Sequential Scan Algorithm for GPS Stop Detection",
     parameters: [
       { name: "time_thresh", defaultValue: "300", description: "Time threshold for stop detection" }, 
@@ -222,12 +223,12 @@ const algorithms = [
     id: "dbscan", 
     name: "ST-DBSCAN", 
     shortDesc: "Density-based spatiotemporal clustering",
-    description: "Spatiotemporal density-based clustering that groups GPS points by both spatial proximity and temporal closeness to identify stop locations. Extends DBSCAN with temporal dimension.", 
+    description: "ST-DBSCAN extends classical DBSCAN by incorporating a second scale parameter to avoid long temporal gaps within detected stops, namely T_max, in addition to the spatial scale parameter eps_spatial, and minPts, the usual density threshold in DBSCAN. In this way, it incorporates both spatial and temporal proximity to define reachability. Since stops are defined as components of the reachability graph of core points, ST-DBSCAN is robust to noise points that could break up stops in sequential algorithms. Standard ST-DBSCAN does not guarantee temporal separation, so clusters can overlap in time even if they represent different stops. In this dashboard, we extend it with a simple heuristic to remove overlaps, where each core point can act as a cutoff and prevent merging non-neighbor core points.", 
     source: "ST-DBSCAN: An algorithm for clustering spatial-temporal data",
     parameters: [
-      { name: "eps_spatial", defaultValue: "50", description: "Spatial epsilon (meters)" }, 
-      { name: "eps_temporal", defaultValue: "300", description: "Temporal epsilon (seconds)" }, 
-      { name: "min_pts", defaultValue: "3", description: "Minimum points for cluster" }
+      { name: "eps_spatial", defaultValue: "50", description: "Spatial radius epsilon (meters)" }, 
+      { name: "T_max", defaultValue: "300", description: "Maximum temporal gap for neighborhood linkage (seconds)" }, 
+      { name: "minPts", defaultValue: "3", description: "Minimum neighbors required for a core point" }
     ] 
   },
   { 
