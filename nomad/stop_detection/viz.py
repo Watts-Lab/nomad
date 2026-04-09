@@ -8,6 +8,7 @@ import pandas as pd
 import numpy as np
 import nomad.io.base as loader
 import h3
+from matplotlib.animation import FuncAnimation, PillowWriter
 pd.plotting.register_matplotlib_converters()
 
 def h3_cell_to_polygon(cell):
@@ -556,91 +557,40 @@ def plot_stops(stops, ax,
             **kwargs
         )
 
-def plot_time_barcode(
-    data,
-    ax,
-    color='black',
-    cmap=None,
-    current_idx=0,
-    upto_idx=None,
-    set_xlim=True,
-    lw=1
-):
+def plot_time_barcode(data, ax, color='black', cmap=None, current_idx=None, set_xlim=True, lw=1):
     """
-    Plot a timestamp barcode on ax and highlight the current ping.
-
-    Parameters
-    ----------
-    data : pandas.DataFrame or pandas.Series
-        Series of unix timestamps, or a DataFrame containing 'timestamp'.
-    ax : matplotlib.axes.Axes
-        Axis to draw on.
-    color : str, default 'black'
-        Line color. Use ``color='cluster'`` with a DataFrame containing
-        a 'cluster' column and provide ``cmap``.
-    cmap : str or Colormap, optional
-        Colormap for ``color='cluster'``.
-    current_idx : int, default 0
-        Index of the timestamp to highlight in red.
-    upto_idx : int, optional
-        If provided, only draw timestamps up to this positional index
-        (inclusive), useful for progressive animation.
-    set_xlim : bool, default True
-        Whether to set x-limits from the full timestamp span.
-    lw : float, default 1
-        Line width for barcode ticks.
+    Plot a barcode of timestamps on ax. Optionally highlight current_idx in red.
+    If set_xlim is True, auto-sets x-axis to padded timestamp range.
     """
-    if current_idx is None:
-        current_idx = 0
-
     if isinstance(data, pd.DataFrame):
-        ts_full = pd.to_datetime(data['timestamp'], unit='s')
-        if len(ts_full) == 0:
-            return ax.vlines([], 0.2, 0.8, colors='black', lw=lw)
-
-        if upto_idx is not None:
-            upto_idx = int(np.clip(upto_idx, 0, len(data) - 1))
-            view = data.iloc[:upto_idx + 1].copy()
-        else:
-            view = data.copy()
-
         # color logic
-        if color == 'cluster' and 'cluster' in view.columns:
+        if color == 'cluster' and 'cluster' in data.columns:
             if not cmap:
                 raise ValueError("cmap required when color='cluster'")
-            view, colors = _map_cluster_colors(view, cmap)
+            data, colors = _map_cluster_colors(data, cmap)
         else:
-            colors = "black"
+            colors="black"
 
-        ts_dt = pd.to_datetime(view['timestamp'], unit='s')
-
+        ts_dt = pd.to_datetime(data['timestamp'], unit='s')
+                    
     elif isinstance(data, pd.Series):
-        ts_full = pd.to_datetime(data, unit='s')
-        if len(ts_full) == 0:
-            return ax.vlines([], 0.2, 0.8, colors='black', lw=lw)
-
-        if upto_idx is not None:
-            upto_idx = int(np.clip(upto_idx, 0, len(data) - 1))
-            ts_dt = ts_full.iloc[:upto_idx + 1]
-        else:
-            ts_dt = ts_full
-        colors = "black"
-    else:
-        raise TypeError("data must be a pandas DataFrame or pandas Series")
+        ts_dt = pd.to_datetime(data, unit='s')
+        colors="black"
     
     if set_xlim:
         pad = pd.Timedelta(minutes=20)
-        ax.set_xlim(ts_full.min() - pad, ts_full.max() + pad)
+        ax.set_xlim(ts_dt.min() - pad, ts_dt.max() + pad)
+
 
     vlines = ax.vlines(ts_dt, 0.2, 0.8, colors=colors, lw=lw)
-    current_idx = int(np.clip(current_idx, 0, len(ts_full) - 1))
-    ax.vlines(ts_full.iloc[current_idx], 0, 1, colors='red', lw=1.5)
+    if current_idx is not None:
+        ax.vlines(ts_dt.iloc[current_idx], 0, 1, colors='red', lw=1.5)
     ax.set_yticks([])
     ax.set_yticklabels([])
     ax.set_ylim(0, 1)
     
     # Choose appropriate locator and formatter based on time range
-    time_range = (ts_full.max() - ts_full.min()).total_seconds()
+    time_range = (ts_dt.max() - ts_dt.min()).total_seconds()
     
     if time_range <= 3600 * 12:  # Up to 12 hours - hourly major ticks
         major_locator = mdates.HourLocator(interval=1)
@@ -733,3 +683,182 @@ def plot_stops_barcode(stops, ax, cmap='Reds', stop_color=None, set_xlim=True, s
             ax.tick_params(axis='x', which='minor', length=3)
         
         ax.tick_params(axis='x', which='major', labelsize=10)
+
+# ANOUSHKA EDITS 
+        
+def animate_stop_dashboard(
+    data,
+    stops=None,
+    interval=100,
+    save_path=None,
+    fps=None,
+    ping_color='black',
+    ping_cmap=None,
+    stop_cmap='Reds',
+    ping_size=6,
+    base_geometry=None,
+    base_geom_color='#2c353c',
+    base_geom_background='#0e0e0e',
+    data_crs=None,
+    traj_cols=None,
+    show_path=False,
+    figsize=(10, 8),
+    **kwargs
+):
+    """
+    Animate pings over space with a synchronized time barcode below.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame or GeoDataFrame
+        Trajectory ping data with spatial columns and timestamp column.
+    stops : pandas.DataFrame or GeoDataFrame, optional
+        Stop table to overlay on the spatial and temporal plots.
+    interval : int, default 100
+        Delay between frames in milliseconds.
+    save_path : str, optional
+        If provided, save the animation to this path (e.g. .gif).
+    fps : int, optional
+        Frames per second when saving. If None, inferred from interval.
+    ping_color : color or str, default 'black'
+        Color or column name for ping plotting.
+    ping_cmap : str or Colormap, optional
+        Colormap for pings when ping_color is a numeric/categorical column.
+    stop_cmap : str or Colormap, default 'Reds'
+        Colormap for stop plotting.
+    ping_size : float, default 6
+        Marker size for pings.
+    base_geometry : GeoDataFrame, optional
+        Base layer to draw underneath the spatial plot.
+    base_geom_color : str, default '#2c353c'
+        Color for base geometry.
+    base_geom_background : str, default '#0e0e0e'
+        Background color for the spatial axis.
+    data_crs : str or CRS, optional
+        CRS for input data.
+    traj_cols : dict, optional
+        Column mappings.
+    show_path : bool, default False
+        If True, also draw a line through observed pings up to the current frame.
+    figsize : tuple, default (10, 8)
+        Figure size.
+    **kwargs : dict
+        Additional trajectory column mappings.
+
+    Returns
+    -------
+    matplotlib.animation.FuncAnimation
+    """
+    
+    if len(data) == 0:
+        raise ValueError("data must contain at least one row")
+
+    fig = plt.figure(figsize=figsize)
+    gs = fig.add_gridspec(2, 1, height_ratios=[4, 1], hspace=0.15)
+    ax_map = fig.add_subplot(gs[0])
+    ax_time = fig.add_subplot(gs[1])
+
+    def _clear_time_axis(ax):
+        for spine in ['top', 'right', 'left']:
+            ax.spines[spine].set_visible(False)
+        ax.tick_params(axis='y', left=False, labelleft=False)
+
+    stop_cols = {
+        "x": "x",
+        "y": "y",
+        "timestamp": "timestamp",
+        "end_timestamp": "end_timestamp"
+    }
+
+    def update(frame):
+        ax_map.clear()
+        ax_time.clear()
+
+        current_data = data.iloc[:frame + 1]
+        current_time = current_data['timestamp'].iloc[-1]
+        stops_visible = stops[stops['timestamp'] <= current_time]
+
+        # Spatial layer: optionally draw observed path so far
+        if show_path and len(current_data) > 1:
+            if isinstance(current_data, gpd.GeoDataFrame):
+                x = current_data.geometry.x
+                y = current_data.geometry.y
+            else:
+                coord_key1, coord_key2, _ = loader._fallback_spatial_cols(
+                    current_data.columns, traj_cols, kwargs
+                )
+                parsed_cols = loader._parse_traj_cols(
+                    current_data.columns, traj_cols, kwargs, warn=False
+                )
+                x = current_data[parsed_cols[coord_key1]]
+                y = current_data[parsed_cols[coord_key2]]
+            ax_map.plot(x, y, color='blue', alpha=0.2, linewidth=1, zorder=1)
+
+        # Plot pings seen so far
+        plot_pings(
+            current_data,
+            ax_map,
+            color=ping_color,
+            cmap=ping_cmap,
+            s=ping_size,
+            alpha=0.9,
+            base_geometry=base_geometry,
+            base_geom_color=base_geom_color,
+            base_geom_background=base_geom_background,
+            data_crs=data_crs,
+            traj_cols=traj_cols,
+            **kwargs
+        )
+
+        # Overlay stops if provided
+        if stops is not None and len(stops) > 0:
+            plot_stops(
+                stops_visible,
+                ax_map,
+                cmap=stop_cmap,
+                edge_only=True,
+                base_geometry=None,
+                data_crs=data_crs,
+                traj_cols=stop_cols
+            )
+
+        # Current timestamp title
+        if 'timestamp' in data.columns:
+            current_ts = pd.to_datetime(data.iloc[frame]['timestamp'], unit='s')
+            ax_map.set_title(current_ts.strftime('%Y-%m-%d %H:%M:%S'), fontsize=10)
+        else:
+            ax_map.set_title(f"Frame {frame}", fontsize=10)
+
+        # Time barcode
+        plot_time_barcode(
+            data,
+            ax_time,
+            color='black',
+            cmap=ping_cmap,
+            current_idx=frame,
+            set_xlim=True,
+            lw=1
+        )
+        if stops is not None and len(stops) > 0:
+            plot_stops_barcode(
+                stops_visible,
+                ax_time,
+                cmap=stop_cmap,
+                set_xlim=False,
+                traj_cols=stop_cols
+            )
+        _clear_time_axis(ax_time)
+        return []
+    anim = FuncAnimation(
+        fig,
+        update,
+        frames=len(data),
+        interval=interval,
+        blit=False,
+        repeat=False
+    )
+    if save_path is not None:
+        if fps is None:
+            fps = max(1, int(round(1000 / interval)))
+        anim.save(save_path, writer=PillowWriter(fps=fps))
+    return anim
