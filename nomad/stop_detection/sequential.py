@@ -1,8 +1,6 @@
 import pandas as pd
 import numpy as np
 import geopandas as gpd
-from joblib import Parallel, delayed
-from tqdm import tqdm
 import nomad.io.base as loader
 from nomad.stop_detection import utils
 from nomad.filters import to_timestamp
@@ -122,45 +120,13 @@ def detect_stops_labels(
 
 
 def applyParallel(groups, func, n_jobs=1, print_progress=False, **kwargs):
-    """
-    Apply function to groups in parallel.
-
-    Parameters
-    ----------
-    groups : DataFrameGroupBy
-        Grouped dataframe
-    func : callable
-        Function to apply to each group
-    n_jobs : int
-        Number of parallel jobs
-    print_progress : bool
-        Whether to show progress bar
-    **kwargs
-        Additional arguments to pass to func
-
-    Returns
-    -------
-    list
-        List of results from applying func to each group
-    """
-    if n_jobs == 1:
-        # Sequential processing
-        if print_progress:
-            results = [func(group, **kwargs) for group in tqdm(groups, desc="Processing users")]
-        else:
-            results = [func(group, **kwargs) for group in groups]
-    else:
-        # Parallel processing
-        group_list = list(groups)
-        if print_progress:
-            results = Parallel(n_jobs=n_jobs)(
-                delayed(func)(group, **kwargs) for group in tqdm(group_list, desc="Processing users")
-            )
-        else:
-            results = Parallel(n_jobs=n_jobs)(
-                delayed(func)(group, **kwargs) for group in group_list
-            )
-    return results
+    return utils.applyParallel(
+        groups,
+        func,
+        n_jobs=n_jobs,
+        print_progress=print_progress,
+        **kwargs,
+    )
 
 
 def detect_stops(
@@ -243,7 +209,16 @@ def detect_stops(
             data.columns, complete_output, passthrough_cols, traj_cols, 
             keep_col_names=keep_col_names, is_grid_based=False, **kwargs
         )
-        return pd.DataFrame(columns=cols, dtype=object)
+        col_dtypes = utils._get_empty_stop_column_dtypes(
+            data.columns,
+            complete_output,
+            passthrough_cols,
+            traj_cols,
+            keep_col_names=keep_col_names,
+            is_grid_based=False,
+            **kwargs,
+        )
+        return pd.DataFrame({col: pd.Series(dtype=col_dtypes[col]) for col in cols})
 
     stop_table = merged.groupby('cluster', as_index=False, sort=False).apply(
         lambda grp: utils.summarize_stop(
@@ -318,7 +293,7 @@ def detect_stops_per_user(
         raise ValueError("detect_stops_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
     uid = traj_cols_temp['user_id']
     
-    pt_cols = passthrough_cols + [uid]
+    pt_cols = passthrough_cols if uid in passthrough_cols else passthrough_cols + [uid]
     
     def process_user_group(group):
         """Helper function to process a single user group."""

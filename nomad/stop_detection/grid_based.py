@@ -134,7 +134,16 @@ def grid_based(
             data.columns, complete_output, passthrough_cols, traj_cols, 
             keep_col_names=True, is_grid_based=True, **kwargs
         )
-        return pd.DataFrame(columns=cols, dtype=object)
+        col_dtypes = utils._get_empty_stop_column_dtypes(
+            data.columns,
+            complete_output,
+            passthrough_cols,
+            traj_cols,
+            keep_col_names=True,
+            is_grid_based=True,
+            **kwargs,
+        )
+        return pd.DataFrame({col: pd.Series(dtype=col_dtypes[col]) for col in cols})
 
     stop_table = merged.groupby('cluster', as_index=False, sort=False).apply(
         lambda grp: utils.summarize_stop_grid(
@@ -146,7 +155,7 @@ def grid_based(
             **kwargs
         ),
         include_groups=False
-    )
+    ).reset_index(drop=True)
 
     if complete_output:
         pass #implement diameter, centroid for location_id being an h3_cell
@@ -173,7 +182,10 @@ def grid_based_per_user(
         raise ValueError(f"No 'user_id' column found in Index {data.columns} or specified in traj_cols or kwargs.")
 
     uid = traj_cols_temp['user_id']
-    passthrough_cols += [uid, traj_cols_temp['date']]
+    pt_cols = passthrough_cols.copy()
+    for col in [uid, traj_cols_temp['date']]:
+        if col not in pt_cols:
+            pt_cols.append(col)
     
     results = []
     for _, group in data.groupby(uid, sort=False):
@@ -184,7 +196,7 @@ def grid_based_per_user(
             min_cluster_size=min_cluster_size,
             dur_min=dur_min,
             complete_output=complete_output,
-            passthrough_cols=passthrough_cols,
+            passthrough_cols=pt_cols,
             traj_cols=traj_cols,
             **kwargs
         )

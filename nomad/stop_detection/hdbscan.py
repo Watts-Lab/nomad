@@ -665,7 +665,8 @@ def st_hdbscan(
             first = arr[0]
             if any(x != first for x in arr[1:]):
                 raise ValueError("Multi-user data? Use hdbscan_per_user instead.")
-            passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
+            if traj_cols_temp['user_id'] not in passthrough_cols:
+                passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
     else:
         uid_col = None
         
@@ -691,7 +692,16 @@ def st_hdbscan(
             data.columns, complete_output, passthrough_cols, traj_cols, 
             keep_col_names=True, is_grid_based=False, **kwargs
         )
-        return pd.DataFrame(columns=cols, dtype=object)
+        col_dtypes = utils._get_empty_stop_column_dtypes(
+            data.columns,
+            complete_output,
+            passthrough_cols,
+            traj_cols,
+            keep_col_names=True,
+            is_grid_based=False,
+            **kwargs,
+        )
+        return pd.DataFrame({col: pd.Series(dtype=col_dtypes[col]) for col in cols})
 
     stop_table = merged.groupby('cluster', as_index=False, sort=False).apply(
         lambda grouped_data: utils.summarize_stop(
@@ -703,7 +713,7 @@ def st_hdbscan(
             **kwargs
         ),
         include_groups=False
-    )
+    ).reset_index(drop=True)
 
     return stop_table
 
@@ -728,7 +738,7 @@ def st_hdbscan_per_user(
         raise ValueError("st_hdbscan_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
     uid = traj_cols_temp['user_id']
 
-    pt_cols = passthrough_cols + [uid]
+    pt_cols = passthrough_cols if uid in passthrough_cols else passthrough_cols + [uid]
 
     results = [
         st_hdbscan(

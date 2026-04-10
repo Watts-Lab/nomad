@@ -210,7 +210,16 @@ def ta_dbscan(
             is_grid_based=False,
             **kwargs,
         )
-        return pd.DataFrame(columns=cols, dtype=object)
+        col_dtypes = utils._get_empty_stop_column_dtypes(
+            data.columns,
+            complete_output,
+            passthrough_cols,
+            traj_cols,
+            keep_col_names=keep_col_names,
+            is_grid_based=False,
+            **kwargs,
+        )
+        return pd.DataFrame({col: pd.Series(dtype=col_dtypes[col]) for col in cols})
 
     traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     if 'user_id' in traj_cols_temp and traj_cols_temp['user_id'] in data.columns:
@@ -219,7 +228,8 @@ def ta_dbscan(
         first = arr[0]
         if any(x != first for x in arr[1:]):
             raise ValueError("Multi-user data? Use ta_dbscan_per_user instead.")
-        passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
+        if traj_cols_temp['user_id'] not in passthrough_cols:
+            passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
 
     labels = ta_dbscan_labels(
         data=data,
@@ -242,7 +252,16 @@ def ta_dbscan(
             data.columns, complete_output, passthrough_cols, traj_cols, 
             keep_col_names=keep_col_names, is_grid_based=False, **kwargs
         )
-        return pd.DataFrame(columns=cols, dtype=object)
+        col_dtypes = utils._get_empty_stop_column_dtypes(
+            data.columns,
+            complete_output,
+            passthrough_cols,
+            traj_cols,
+            keep_col_names=keep_col_names,
+            is_grid_based=False,
+            **kwargs,
+        )
+        return pd.DataFrame({col: pd.Series(dtype=col_dtypes[col]) for col in cols})
 
     stop_table = merged.groupby('cluster', as_index=False, sort=False).apply(
         lambda grp: utils.summarize_stop(
@@ -255,7 +274,7 @@ def ta_dbscan(
             **kwargs
         ),
         include_groups=False
-    )
+    ).reset_index(drop=True)
     
     return stop_table.loc[stop_table['duration']>=dur_min]
 
@@ -279,7 +298,7 @@ def ta_dbscan_per_user(
         raise ValueError("ta_dbscan_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
     uid = traj_cols_temp['user_id']
 
-    pt_cols = passthrough_cols + [uid]
+    pt_cols = passthrough_cols if uid in passthrough_cols else passthrough_cols + [uid]
 
     results = [
         ta_dbscan(

@@ -206,6 +206,18 @@ def stop_df_schema_case_registry():
 
 
 @pytest.fixture
+def per_user_wrapper_case_registry():
+    return {
+        "dbstop": {
+            "stop_fn": DBSTOP.dbstop_per_user,
+            "label_fn": DBSTOP.dbstop_labels_per_user,
+            "single_user_label_fn": DBSTOP.dbstop_labels,
+            "kwargs": {"dist_thresh": 100, "min_pts": 2, "time_thresh": 60},
+        },
+    }
+
+
+@pytest.fixture
 def stop_df_schema_input_case_registry():
     return {
         "xy-timestamp": {
@@ -274,6 +286,20 @@ def base_df():
     # col names:  ['uid', 'timestamp', 'latitude', 'longitude', 'tz_offset', 'local_datetime', 'x', 'y', 'geohash'
     # dtypes: [object, int64, float64, float64, int64, object, float64, float64, object]
     return df
+
+
+@pytest.fixture
+def per_user_test_data(base_df):
+    traj_cols = {
+        "user_id": "uid",
+        "timestamp": "timestamp",
+        "x": "x",
+        "y": "y",
+    }
+    selected_users = base_df[traj_cols["user_id"]].drop_duplicates().head(4)
+    sample_df = base_df[base_df[traj_cols["user_id"]].isin(selected_users)].copy()
+    data = loader.from_df(sample_df, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior="utc")
+    return data, traj_cols
 
 @pytest.fixture
 def single_user_df(base_df):
@@ -487,47 +513,99 @@ def test_sequential_ground_truth(agent_traj_ground_truth):
     num_clusters = sum(sequential_out.unique() > -1)
     assert 2 <= num_clusters <= 5, f"Expected 2-5 stops, got {num_clusters}"
 
-def test_sequential_per_user_multiuser_required(base_df):
-    """Test that detect_stops raises error when multi-user data is provided."""
-    traj_cols = {
-        "user_id": "uid", "timestamp": "timestamp",
-        "x": "x", "y": "y"
-    }
-    df = loader.from_df(base_df, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior="utc")
 
-    with pytest.raises(ValueError, match="Multi-user data"):
-        SEQUENTIAL.detect_stops(
-            data=df,
-            delta_roam=100,
-            dt_max=60,
-            dur_min=5,
-            method='sliding',
-            traj_cols=traj_cols
-        )
+@pytest.mark.parametrize(
+    "algo_name",
+    [
+        pytest.param("dbstop", id="dbstop"),
+    ],
+)
+@pytest.mark.parametrize(
+    "n_jobs",
+    [
+        pytest.param(1, id="n_jobs_1"),
+        pytest.param(2, id="n_jobs_2"),
+    ],
+)
+def test_per_user_wrapper_outputs_valid_stop_df(per_user_test_data, per_user_wrapper_case_registry, algo_name, n_jobs):
+    df, traj_cols = per_user_test_data
+    case = per_user_wrapper_case_registry[algo_name]
 
-def test_sequential_per_user_basic(base_df):
-    """Test detect_stops_per_user on multi-user data."""
-    traj_cols = {
-        "user_id": "uid", "timestamp": "timestamp",
-        "x": "x", "y": "y"
-    }
-    df = loader.from_df(base_df, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior="utc")
-
-    stops_df = SEQUENTIAL.detect_stops_per_user(
+    stops_df = case["stop_fn"](
         data=df,
-        delta_roam=100,
-        dt_max=60,
-        dur_min=5,
-        method='sliding',
         traj_cols=traj_cols,
-        complete_output=False,
-        n_jobs=1
+        n_jobs=n_jobs,
+        **case["kwargs"],
     )
-    
-    # Should have stops for multiple users
+
     assert not stops_df.empty
-    assert 'uid' in stops_df.columns
-    assert stops_df['uid'].nunique() > 1
+    assert loader._is_stop_df(stops_df, traj_cols=traj_cols, parse_dates=False)
+    assert traj_cols["user_id"] in stops_df.columns
+    assert stops_df[traj_cols["user_id"]].nunique() > 1
+
+
+@pytest.mark.parametrize(
+    "algo_name",
+    [
+        pytest.param("dbstop", id="dbstop"),
+    ],
+)
+@pytest.mark.parametrize(
+    "n_jobs",
+    [
+        pytest.param(1, id="n_jobs_1"),
+        pytest.param(2, id="n_jobs_2"),
+    ],
+)
+def test_per_user_label_wrapper_matches_single_user_reference(per_user_test_data, per_user_wrapper_case_registry, algo_name, n_jobs):
+    df, traj_cols = per_user_test_data
+    case = per_user_wrapper_case_registry[algo_name]
+
+    labels = case["label_fn"](
+        data=df,
+        traj_cols=traj_cols,
+        n_jobs=n_jobs,
+        **case["kwargs"],
+    )
+
+    uid = traj_cols["user_id"]
+    ts = traj_cols["timestamp"]
+
+    expected_labels = pd.Series(index=df.index, dtype=labels.dtype)
+    for _, group in df.groupby(uid, sort=False):
+        expected_labels.loc[group.index] = case["single_user_label_fn"](
+            data=group,
+            traj_cols=traj_cols,
+            **case["kwargs"],
+        ).values
+
+    computed = pd.DataFrame({
+        uid: df[uid].values,
+        ts: df[ts].values,
+        "label": labels.values,
+    })
+    expected = pd.DataFrame({
+        uid: df[uid].values,
+        ts: df[ts].values,
+        "label": expected_labels.values,
+    })
+
+    key_cols = [uid, ts]
+    assert not computed.duplicated(key_cols).any()
+    assert not expected.duplicated(key_cols).any()
+
+    merged = computed.merge(
+        expected,
+        on=key_cols,
+        how="inner",
+        validate="one_to_one",
+        suffixes=("_computed", "_expected"),
+    )
+
+    assert len(labels) == len(df)
+    assert labels.index.equals(df.index)
+    assert len(merged) == len(df)
+    assert (merged["label_computed"] == merged["label_expected"]).all()
 
 def test_sequential_temporal_gap_breaks_stop(simple_traj, stop_test_params):
     """Test that temporal gap larger than dt_max breaks a stop."""

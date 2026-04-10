@@ -12,6 +12,8 @@ import warnings
 import pdb
 from datetime import datetime, time, timedelta
 from nomad.filters import to_timestamp
+from joblib import Parallel, delayed
+from tqdm import tqdm
 
 def clip_stops_datetime(stops, start_datetime, end_datetime, traj_cols=None, **kwargs):
     """
@@ -283,6 +285,43 @@ def _fallback_st_cols(col_names, traj_cols, kwargs):
     t_key, use_datetime = loader._fallback_time_cols_dt(col_names, traj_cols, kwargs)
     return t_key, coord_key1, coord_key2, use_datetime, use_lon_lat
 
+
+def applyParallel(groups, func, n_jobs=1, print_progress=False, **kwargs):
+    """
+    Apply a callable over grouped data, optionally in parallel.
+
+    Parameters
+    ----------
+    groups : DataFrameGroupBy
+        Grouped dataframe iterator (e.g. data.groupby(user_id)).
+    func : callable
+        Function applied to each group item.
+    n_jobs : int, default 1
+        Number of parallel jobs. 1 executes sequentially.
+    print_progress : bool, default False
+        Whether to show a progress bar.
+    **kwargs
+        Extra keyword args passed to func.
+
+    Returns
+    -------
+    list
+        List with one result per group.
+    """
+    if n_jobs == 1:
+        if print_progress:
+            return [func(group, **kwargs) for group in tqdm(groups, desc="Processing users")]
+        return [func(group, **kwargs) for group in groups]
+
+    group_list = list(groups)
+    if print_progress:
+        return Parallel(n_jobs=n_jobs)(
+            delayed(func)(group, **kwargs) for group in tqdm(group_list, desc="Processing users")
+        )
+    return Parallel(n_jobs=n_jobs)(
+        delayed(func)(group, **kwargs) for group in group_list
+    )
+
 def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_col_names = True, passthrough_cols= [], traj_cols=None, **kwargs):
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = _fallback_st_cols(grouped_data.columns, traj_cols, kwargs)
     traj_cols = loader._parse_traj_cols(grouped_data.columns, traj_cols, kwargs, warn=False)
@@ -512,6 +551,70 @@ def _get_empty_stop_columns(input_columns, complete_output, passthrough_cols, tr
         column_list.extend(passthrough_cols)
     
     return column_list
+
+
+def _get_empty_stop_column_dtypes(input_columns, complete_output, passthrough_cols, traj_cols, keep_col_names, is_grid_based=False, **kwargs):
+    """
+    Get appropriate dtypes for empty stop DataFrame columns to avoid groupby failures.
+    Returns
+    -------
+    dict
+        Mapping from output column name to dtype.
+    """
+    column_list = _get_empty_stop_columns(
+        input_columns,
+        complete_output,
+        passthrough_cols,
+        traj_cols,
+        keep_col_names,
+        is_grid_based=is_grid_based,
+        **kwargs,
+    )
+
+    cols = loader._parse_traj_cols(input_columns, traj_cols, kwargs, warn=False)
+    dtype_map = {}
+
+    # Datetime-like stop-table fields are emitted as UTC-aware datetimes.
+    datetime_keys = ['datetime', 'start_datetime', 'end_datetime']
+    for key in datetime_keys:
+        col = cols.get(key)
+        if col in column_list:
+            dtype_map[col] = 'datetime64[ns, UTC]'
+
+    integer_keys = ['timestamp', 'start_timestamp', 'end_timestamp', 'tz_offset', 'duration']
+    for key in integer_keys:
+        col = cols.get(key)
+        if col in column_list:
+            dtype_map[col] = 'Int64'
+
+    float_keys = ['latitude', 'longitude', 'x', 'y']
+    for key in float_keys:
+        col = cols.get(key)
+        if col in column_list:
+            dtype_map[col] = 'Float64'
+
+    string_keys = ['user_id', 'geohash', 'location_id', 'date', 'utc_date', 'h3_cell']
+    for key in string_keys:
+        col = cols.get(key)
+        if col in column_list:
+            dtype_map[col] = 'string'
+
+    if 'duration' in column_list:
+        dtype_map['duration'] = 'Int64'
+    if 'n_pings' in column_list:
+        dtype_map['n_pings'] = 'Int64'
+    if 'max_gap' in column_list:
+        dtype_map['max_gap'] = 'Int64'
+    if 'diameter' in column_list:
+        dtype_map['diameter'] = 'Float64'
+
+    if 'geometry' in column_list:
+        dtype_map['geometry'] = 'object'
+
+    for col in column_list:
+        dtype_map.setdefault(col, 'object')
+
+    return dtype_map
 
 
 def has_overlapping_stops(stop_data, traj_cols=None, **kwargs):
