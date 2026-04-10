@@ -44,7 +44,7 @@ def lachesis_labels(data, dt_max, delta_roam, dur_min=5, traj_cols=None, **kwarg
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
          raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
     if data.empty:
-        return pd.Series([], dtype=int, name='cluster')
+        return pd.Series(dtype='int64', name='cluster')
 
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)        
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
@@ -263,3 +263,44 @@ def lachesis_per_user(
     )
     
     return pd.concat(results, ignore_index=True)
+
+
+def lachesis_labels_per_user(
+    data,
+    dt_max,
+    delta_roam,
+    dur_min=5,
+    traj_cols=None,
+    n_jobs=1,
+    print_progress=False,
+    **kwargs
+):
+    """
+    Run lachesis_labels on each user separately and concatenate labels.
+
+    Raises if 'user_id' not in traj_cols or missing from data.
+    """
+    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    if 'user_id' not in traj_cols_temp or traj_cols_temp['user_id'] not in data.columns:
+        raise ValueError("lachesis_labels_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
+    uid = traj_cols_temp['user_id']
+
+    def process_user_group(group):
+        return lachesis_labels(
+            data=group[1],
+            dt_max=dt_max,
+            delta_roam=delta_roam,
+            dur_min=dur_min,
+            traj_cols=traj_cols,
+            **kwargs,
+        )
+
+    grouped = data.groupby(uid, sort=False)
+    results = applyParallel(
+        grouped,
+        process_user_group,
+        n_jobs=n_jobs,
+        print_progress=print_progress,
+    )
+
+    return pd.concat(results).reindex(data.index)

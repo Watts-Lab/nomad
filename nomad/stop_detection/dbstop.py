@@ -15,7 +15,9 @@ def dbstop_labels(data,
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
          raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
     if data.empty:
-        return pd.DataFrame()
+        if return_cores:
+            return pd.DataFrame({name: pd.Series(dtype='int64') for name in ('cluster', 'core')})
+        return pd.Series(dtype='int64', name='cluster')
 
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)        
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)

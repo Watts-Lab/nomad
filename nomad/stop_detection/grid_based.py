@@ -31,7 +31,7 @@ def grid_based_labels(data, time_thresh=np.inf, min_cluster_size=1, dur_min=0, t
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
         raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
     if data.empty:
-        return pd.Series([], dtype=int, name='cluster')
+        return pd.Series(dtype='int64', name='cluster')
     # Decide on temporal column to use
     t_key, use_datetime = loader._fallback_time_cols_dt(data.columns, traj_cols, kwargs)
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs) # load defaults
@@ -163,6 +163,8 @@ def grid_based_per_user(
     complete_output=False,
     passthrough_cols=[], 
     traj_cols=None,
+    n_jobs=1,
+    print_progress=False,
     **kwargs
 ):
     """
@@ -180,11 +182,9 @@ def grid_based_per_user(
         if col not in pt_cols:
             pt_cols.append(col)
     
-    results = []
-    for _, group in data.groupby(uid, sort=False):
-
-        stop_table = grid_based(
-            group,
+    def process_user_group(group):
+        return grid_based(
+            data=group[1].reset_index(drop=True),
             time_thresh=time_thresh,
             min_cluster_size=min_cluster_size,
             dur_min=dur_min,
@@ -193,6 +193,54 @@ def grid_based_per_user(
             traj_cols=traj_cols,
             **kwargs
         )
-        results.append(stop_table)
+
+    grouped = data.groupby(uid, sort=False, as_index=False)
+    results = utils.applyParallel(
+        grouped,
+        process_user_group,
+        n_jobs=n_jobs,
+        print_progress=print_progress,
+    )
         
     return pd.concat(results, ignore_index=True)
+
+
+def grid_based_labels_per_user(
+    data,
+    time_thresh=np.inf,
+    min_cluster_size=1,
+    dur_min=0,
+    traj_cols=None,
+    n_jobs=1,
+    print_progress=False,
+    **kwargs
+):
+    """
+    Run grid_based_labels on each user separately and concatenate labels.
+
+    Raises if 'user_id' not in traj_cols or missing from data.
+    """
+    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    if 'user_id' not in traj_cols_temp or traj_cols_temp['user_id'] not in data.columns:
+        raise ValueError("grid_based_labels_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
+    uid = traj_cols_temp['user_id']
+
+    def process_user_group(group):
+        return grid_based_labels(
+            data=group[1],
+            time_thresh=time_thresh,
+            min_cluster_size=min_cluster_size,
+            dur_min=dur_min,
+            traj_cols=traj_cols,
+            **kwargs,
+        )
+
+    grouped = data.groupby(uid, sort=False)
+    results = utils.applyParallel(
+        grouped,
+        process_user_group,
+        n_jobs=n_jobs,
+        print_progress=print_progress,
+    )
+
+    return pd.concat(results).reindex(data.index)

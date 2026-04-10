@@ -526,7 +526,7 @@ def hdbscan_labels(data,
     
     # Handle empty data
     if data.empty:
-        return pd.Series([], dtype=int, name='cluster')
+        return pd.Series(dtype='int64', name='cluster')
     
     if traj_cols['user_id'] in data.columns:
         uid_col = data[traj_cols['user_id']]
@@ -720,6 +720,8 @@ def st_hdbscan_per_user(
     complete_output=False,
     passthrough_cols=[],
     traj_cols=None,
+    n_jobs=1,
+    print_progress=False,
     **kwargs
 ):
     """
@@ -734,9 +736,9 @@ def st_hdbscan_per_user(
 
     pt_cols = passthrough_cols if uid in passthrough_cols else passthrough_cols + [uid]
 
-    results = [
-        st_hdbscan(
-            data=group,
+    def process_user_group(group):
+        return st_hdbscan(
+            data=group[1].reset_index(drop=True),
             time_thresh=time_thresh,
             min_pts=min_pts,
             min_cluster_size=min_cluster_size,
@@ -746,6 +748,57 @@ def st_hdbscan_per_user(
             traj_cols=traj_cols,
             **kwargs
         )
-        for _, group in data.groupby(uid, sort=False)
-    ]
+
+    grouped = data.groupby(uid, sort=False, as_index=False)
+    results = utils.applyParallel(
+        grouped,
+        process_user_group,
+        n_jobs=n_jobs,
+        print_progress=print_progress,
+    )
     return pd.concat(results, ignore_index=True)
+
+
+def hdbscan_labels_per_user(
+    data,
+    time_thresh,
+    min_pts=2,
+    min_cluster_size=1,
+    dur_min=5,
+    delta_roam=None,
+    traj_cols=None,
+    n_jobs=1,
+    print_progress=False,
+    **kwargs
+):
+    """
+    Run hdbscan_labels on each user separately and concatenate labels.
+
+    Raises if 'user_id' not in traj_cols or missing from data.
+    """
+    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    if 'user_id' not in traj_cols_temp or traj_cols_temp['user_id'] not in data.columns:
+        raise ValueError("hdbscan_labels_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
+    uid = traj_cols_temp['user_id']
+
+    def process_user_group(group):
+        return hdbscan_labels(
+            data=group[1],
+            time_thresh=time_thresh,
+            min_pts=min_pts,
+            min_cluster_size=min_cluster_size,
+            dur_min=dur_min,
+            delta_roam=delta_roam,
+            traj_cols=traj_cols,
+            **kwargs,
+        )
+
+    grouped = data.groupby(uid, sort=False)
+    results = utils.applyParallel(
+        grouped,
+        process_user_group,
+        n_jobs=n_jobs,
+        print_progress=print_progress,
+    )
+
+    return pd.concat(results).reindex(data.index)

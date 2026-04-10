@@ -24,7 +24,9 @@ def ta_dbscan_labels(data,
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
          raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
     if data.empty:
-        return pd.DataFrame()
+        if return_cores:
+            return pd.DataFrame({name: pd.Series(dtype='int64') for name in ('cluster', 'core')})
+        return pd.Series(dtype='int64', name='cluster')
 
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)        
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
@@ -271,6 +273,8 @@ def ta_dbscan_per_user(
     complete_output=False,
     passthrough_cols=[],
     traj_cols=None,
+    n_jobs=1,
+    print_progress=False,
     **kwargs
 ):
     """
@@ -284,9 +288,9 @@ def ta_dbscan_per_user(
 
     pt_cols = passthrough_cols if uid in passthrough_cols else passthrough_cols + [uid]
 
-    results = [
-        ta_dbscan(
-            data=group,
+    def process_user_group(group):
+        return ta_dbscan(
+            data=group[1].reset_index(drop=True),
             dist_thresh=dist_thresh,
             min_pts=min_pts,
             time_thresh=time_thresh,
@@ -296,6 +300,57 @@ def ta_dbscan_per_user(
             traj_cols=traj_cols,
             **kwargs
         )
-        for _, group in data.groupby(uid, sort=False)
-    ]
+
+    grouped = data.groupby(uid, sort=False, as_index=False)
+    results = utils.applyParallel(
+        grouped,
+        process_user_group,
+        n_jobs=n_jobs,
+        print_progress=print_progress,
+    )
     return pd.concat(results, ignore_index=True)
+
+
+def ta_dbscan_labels_per_user(
+    data,
+    dist_thresh,
+    min_pts,
+    time_thresh,
+    return_cores=False,
+    remove_overlaps=True,
+    traj_cols=None,
+    n_jobs=1,
+    print_progress=False,
+    **kwargs
+):
+    """
+    Run ta_dbscan_labels on each user separately and concatenate labels.
+
+    Raises if 'user_id' not in traj_cols or missing from data.
+    """
+    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    if 'user_id' not in traj_cols_temp or traj_cols_temp['user_id'] not in data.columns:
+        raise ValueError("ta_dbscan_labels_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
+    uid = traj_cols_temp['user_id']
+
+    def process_user_group(group):
+        return ta_dbscan_labels(
+            data=group[1],
+            dist_thresh=dist_thresh,
+            min_pts=min_pts,
+            time_thresh=time_thresh,
+            return_cores=return_cores,
+            remove_overlaps=remove_overlaps,
+            traj_cols=traj_cols,
+            **kwargs,
+        )
+
+    grouped = data.groupby(uid, sort=False)
+    results = utils.applyParallel(
+        grouped,
+        process_user_group,
+        n_jobs=n_jobs,
+        print_progress=print_progress,
+    )
+
+    return pd.concat(results).reindex(data.index)

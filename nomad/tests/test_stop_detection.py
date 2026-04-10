@@ -22,6 +22,7 @@ import nomad.stop_detection.preprocessing as PREPROCESSING
 import nomad.stop_detection.utils as STOP_UTILS
 import pdb
 import nomad.stop_detection.sequential as SEQUENTIAL
+from pandas.api.types import is_integer_dtype
 
 @pytest.fixture
 def stop_test_params():
@@ -176,6 +177,57 @@ def latlon_xy_label_consistency_case_registry():
 
 
 @pytest.fixture
+def label_concat_case_registry(stop_test_params):
+    dt_max = stop_test_params["dt_max"]
+    dist_thresh = stop_test_params["dist_thresh"]
+    min_pts = stop_test_params["min_pts"]
+    return {
+        "dbstop": {
+            "fn": DBSTOP.dbstop_labels,
+            "kwargs": {"dist_thresh": dist_thresh, "min_pts": min_pts, "time_thresh": dt_max},
+            "traj_cols": {"timestamp": "timestamp", "x": "x", "y": "y"},
+            "supports_return_cores": True,
+        },
+        "tadbscan": {
+            "fn": DBSCAN.ta_dbscan_labels,
+            "kwargs": {"dist_thresh": dist_thresh, "min_pts": min_pts, "time_thresh": dt_max},
+            "traj_cols": {"timestamp": "timestamp", "x": "x", "y": "y"},
+            "supports_return_cores": True,
+        },
+        "seqscan": {
+            "fn": DENSITY_BASED.seqscan_labels,
+            "kwargs": {"dist_thresh": dist_thresh, "min_pts": min_pts, "time_thresh": dt_max},
+            "traj_cols": {"timestamp": "timestamp", "x": "x", "y": "y"},
+            "supports_return_cores": True,
+        },
+        "lachesis": {
+            "fn": LACHESIS.lachesis_labels,
+            "kwargs": {"delta_roam": dist_thresh, "dt_max": dt_max, "dur_min": 5},
+            "traj_cols": {"timestamp": "timestamp", "x": "x", "y": "y"},
+            "supports_return_cores": False,
+        },
+        "sequential": {
+            "fn": SEQUENTIAL.detect_stops_labels,
+            "kwargs": {"delta_roam": dist_thresh, "dt_max": dt_max, "dur_min": 5, "method": "sliding"},
+            "traj_cols": {"timestamp": "timestamp", "x": "x", "y": "y"},
+            "supports_return_cores": False,
+        },
+        "hdbscan": {
+            "fn": HDBSCAN.hdbscan_labels,
+            "kwargs": {"time_thresh": dt_max, "min_pts": min_pts, "min_cluster_size": 2, "dur_min": 5},
+            "traj_cols": {"timestamp": "timestamp", "x": "x", "y": "y"},
+            "supports_return_cores": False,
+        },
+        "grid-based": {
+            "fn": GRID_BASED.grid_based_labels,
+            "kwargs": {"time_thresh": dt_max, "min_cluster_size": 2, "dur_min": 5},
+            "traj_cols": {"timestamp": "timestamp", "location_id": "location_id"},
+            "supports_return_cores": False,
+        },
+    }
+
+
+@pytest.fixture
 def stop_df_schema_case_registry():
     return {
         "sequential": {
@@ -213,6 +265,36 @@ def per_user_wrapper_case_registry():
             "label_fn": DBSTOP.dbstop_labels_per_user,
             "single_user_label_fn": DBSTOP.dbstop_labels,
             "kwargs": {"dist_thresh": 100, "min_pts": 2, "time_thresh": 60},
+        },
+        "tadbscan": {
+            "stop_fn": DBSCAN.ta_dbscan_per_user,
+            "label_fn": DBSCAN.ta_dbscan_labels_per_user,
+            "single_user_label_fn": DBSCAN.ta_dbscan_labels,
+            "kwargs": {"dist_thresh": 100, "min_pts": 2, "time_thresh": 60},
+        },
+        "seqscan": {
+            "stop_fn": DENSITY_BASED.seqscan_per_user,
+            "label_fn": DENSITY_BASED.seqscan_labels_per_user,
+            "single_user_label_fn": DENSITY_BASED.seqscan_labels,
+            "kwargs": {"dist_thresh": 100, "min_pts": 2, "time_thresh": 60},
+        },
+        "hdbscan": {
+            "stop_fn": HDBSCAN.st_hdbscan_per_user,
+            "label_fn": HDBSCAN.hdbscan_labels_per_user,
+            "single_user_label_fn": HDBSCAN.hdbscan_labels,
+            "kwargs": {"time_thresh": 60, "min_pts": 2, "min_cluster_size": 2, "dur_min": 5},
+        },
+        "lachesis": {
+            "stop_fn": LACHESIS.lachesis_per_user,
+            "label_fn": LACHESIS.lachesis_labels_per_user,
+            "single_user_label_fn": LACHESIS.lachesis_labels,
+            "kwargs": {"dt_max": 60, "delta_roam": 100, "dur_min": 5},
+        },
+        "sequential": {
+            "stop_fn": SEQUENTIAL.detect_stops_per_user,
+            "label_fn": SEQUENTIAL.detect_stops_labels_per_user,
+            "single_user_label_fn": SEQUENTIAL.detect_stops_labels,
+            "kwargs": {"dt_max": 60, "delta_roam": 100, "dur_min": 5, "method": "sliding"},
         },
     }
 
@@ -518,6 +600,11 @@ def test_sequential_ground_truth(agent_traj_ground_truth):
     "algo_name",
     [
         pytest.param("dbstop", id="dbstop"),
+        pytest.param("tadbscan", id="tadbscan"),
+        pytest.param("seqscan", id="seqscan"),
+        pytest.param("hdbscan", id="hdbscan"),
+        pytest.param("lachesis", id="lachesis"),
+        pytest.param("sequential", id="sequential"),
     ],
 )
 @pytest.mark.parametrize(
@@ -548,6 +635,11 @@ def test_per_user_wrapper_outputs_valid_stop_df(per_user_test_data, per_user_wra
     "algo_name",
     [
         pytest.param("dbstop", id="dbstop"),
+        pytest.param("tadbscan", id="tadbscan"),
+        pytest.param("seqscan", id="seqscan"),
+        pytest.param("hdbscan", id="hdbscan"),
+        pytest.param("lachesis", id="lachesis"),
+        pytest.param("sequential", id="sequential"),
     ],
 )
 @pytest.mark.parametrize(
@@ -700,6 +792,61 @@ def test_density_label_algorithms_latlon_vs_xy_consistency(base_df, latlon_xy_la
 
     assert len(labels_latlon) == len(single_user)
     assert len(labels_xy) == len(single_user)
+
+
+@pytest.mark.parametrize(
+    "algo_name,return_cores",
+    [
+        pytest.param("dbstop", False, id="dbstop-series"),
+        pytest.param("dbstop", True, id="dbstop-cores"),
+        pytest.param("tadbscan", False, id="tadbscan-series"),
+        pytest.param("tadbscan", True, id="tadbscan-cores"),
+        pytest.param("seqscan", False, id="seqscan-series"),
+        pytest.param("seqscan", True, id="seqscan-cores"),
+        pytest.param("lachesis", False, id="lachesis-series"),
+        pytest.param("sequential", False, id="sequential-series"),
+        pytest.param("hdbscan", False, id="hdbscan-series"),
+        pytest.param("grid-based", False, id="grid-based-series"),
+    ],
+)
+def test_label_concat_with_empty_input_preserves_integer_schema(
+    simple_traj_ts,
+    label_concat_case_registry,
+    algo_name,
+    return_cores,
+):
+    case = label_concat_case_registry[algo_name]
+    if return_cores and not case["supports_return_cores"]:
+        pytest.skip("Algorithm does not expose return_cores.")
+
+    non_empty = simple_traj_ts.copy()
+    empty = non_empty.iloc[:0].copy()
+
+    kwargs = dict(case["kwargs"])
+    if case["supports_return_cores"]:
+        kwargs["return_cores"] = return_cores
+
+    labels_non_empty = case["fn"](non_empty, traj_cols=case["traj_cols"], **kwargs)
+    labels_empty = case["fn"](empty, traj_cols=case["traj_cols"], **kwargs)
+
+    concatenated = pd.concat([labels_empty, labels_non_empty])
+
+    assert len(concatenated) == len(labels_non_empty)
+    assert concatenated.index.equals(labels_non_empty.index)
+
+    if return_cores:
+        assert isinstance(labels_empty, pd.DataFrame)
+        assert list(labels_empty.columns) == ["cluster", "core"]
+        assert isinstance(concatenated, pd.DataFrame)
+        assert list(concatenated.columns) == ["cluster", "core"]
+        assert is_integer_dtype(concatenated["cluster"].dtype)
+        assert is_integer_dtype(concatenated["core"].dtype)
+    else:
+        assert isinstance(labels_empty, pd.Series)
+        assert labels_empty.name == "cluster"
+        assert isinstance(concatenated, pd.Series)
+        assert concatenated.name == "cluster"
+        assert is_integer_dtype(concatenated.dtype)
 
 
 @pytest.mark.parametrize(
