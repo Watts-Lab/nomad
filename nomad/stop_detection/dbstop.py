@@ -86,7 +86,10 @@ def dbstop_labels(data,
                             r=dist_thresh / 6_371_000,
                         )[0]
                     else:
-                        spatial_nb_idx = s_tree.query_ball_point(counterfactual_coords, r=dist_thresh)
+                        spatial_nb_idx = s_tree.query_radius(
+                            np.asarray(counterfactual_coords).reshape(1, -1),
+                            r=dist_thresh,
+                        )[0]
 
                     if len(spatial_nb_idx) >= min_pts:
                         counterfactual_time_range = np.sort(np.abs(node_times[spatial_nb_idx] - curr_time))[min_pts - 1]
