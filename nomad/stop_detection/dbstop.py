@@ -167,7 +167,7 @@ def dbstop(
     ValueError if multi-user data detected; use dbstop_per_user instead.
     """
     if data.empty:
-        cols = utils._get_empty_stop_columns(
+        return utils._get_empty_stop_df(
             data.columns,
             complete_output,
             passthrough_cols,
@@ -176,16 +176,6 @@ def dbstop(
             is_grid_based=False,
             **kwargs,
         )
-        col_dtypes = utils._get_empty_stop_column_dtypes(
-            data.columns,
-            complete_output,
-            passthrough_cols,
-            traj_cols,
-            keep_col_names=keep_col_names,
-            is_grid_based=False,
-            **kwargs,
-        )
-        return pd.DataFrame({col: pd.Series(dtype=col_dtypes[col]) for col in cols})
 
     traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     if 'user_id' in traj_cols_temp and traj_cols_temp['user_id'] in data.columns:
@@ -212,12 +202,7 @@ def dbstop(
     merged = merged[merged.cluster != -1]
 
     if merged.empty:
-        # Get column names by calling summarize function on dummy data
-        cols = utils._get_empty_stop_columns(
-            data.columns, complete_output, passthrough_cols, traj_cols, 
-            keep_col_names=keep_col_names, is_grid_based=False, **kwargs
-        )
-        col_dtypes = utils._get_empty_stop_column_dtypes(
+        return utils._get_empty_stop_df(
             data.columns,
             complete_output,
             passthrough_cols,
@@ -226,7 +211,6 @@ def dbstop(
             is_grid_based=False,
             **kwargs,
         )
-        return pd.DataFrame({col: pd.Series(dtype=col_dtypes[col]) for col in cols})
 
     stop_table = merged.groupby('cluster', as_index=False, sort=False).apply(
         lambda grp: utils.summarize_stop(

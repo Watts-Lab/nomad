@@ -162,12 +162,7 @@ def lachesis(
     merged = merged[merged.cluster != -1]
 
     if merged.empty:
-        # Get column names by calling summarize function on dummy data
-        cols = utils._get_empty_stop_columns(
-            data.columns, complete_output, passthrough_cols, traj_cols, 
-            keep_col_names=keep_col_names, is_grid_based=False, **kwargs
-        )
-        col_dtypes = utils._get_empty_stop_column_dtypes(
+        return utils._get_empty_stop_df(
             data.columns,
             complete_output,
             passthrough_cols,
@@ -176,7 +171,6 @@ def lachesis(
             is_grid_based=False,
             **kwargs,
         )
-        return pd.DataFrame({col: pd.Series(dtype=col_dtypes[col]) for col in cols})
 
     stop_table = merged.groupby('cluster', as_index=False, sort=False).apply(
         lambda grp: utils.summarize_stop(

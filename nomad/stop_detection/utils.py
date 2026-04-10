@@ -467,114 +467,79 @@ def summarize_stop_grid(
 
     return pd.Series(out, dtype='object')
 
-def _get_empty_stop_columns(input_columns, complete_output, passthrough_cols, traj_cols, keep_col_names, is_grid_based=False, **kwargs):
+def _get_empty_stop_df(input_columns, complete_output, passthrough_cols, traj_cols, keep_col_names, is_grid_based=False, **kwargs):
     """
-    Get the column names for an empty stop DataFrame by calling the actual helper functions.
-    This avoids the need for dummy data which can cause coordinate system mismatches.
-    
+    Build an empty stop DataFrame with the exact expected columns and dtypes.
+
     Parameters
     ----------
     input_columns : pd.Index or list
-        Column names from the original input data (even if empty)
+        Column names from the source trajectory data.
     complete_output : bool
-        Whether complete output columns should be included
+        Whether complete output columns should be included.
     passthrough_cols : list
-        Additional columns to passthrough
+        Additional columns to passthrough.
     traj_cols : dict
-        Column mapping dictionary
+        Column mapping dictionary.
     keep_col_names : bool
-        Whether to keep original column names
-    is_grid_based : bool
-        Whether this is for grid-based summarization
+        Whether to keep original column names.
+    is_grid_based : bool, optional
+        Whether this is for grid-based summarization.
     **kwargs
-        Additional arguments passed to summarize function
-    
+        Additional arguments passed through trajectory-column parsing helpers.
+
     Returns
     -------
-    list
-        List of column names for empty DataFrame
+    pd.DataFrame
+        Empty stop table with schema-aligned dtypes.
     """
     if passthrough_cols is None:
         passthrough_cols = []
-    
+
     if is_grid_based:
-        # Call the actual helper functions with the input columns
         t_key, use_datetime = loader._fallback_time_cols_dt(input_columns, traj_cols, kwargs)
-        # Parse traj_cols to get the column mappings
         cols = loader._parse_traj_cols(input_columns, traj_cols, kwargs, warn=False)
-        
-        # Decide output key names
+
         start_key = 'start_datetime' if use_datetime else 'start_timestamp'
         end_key = 'end_datetime' if use_datetime else 'end_timestamp'
-        
+
         if keep_col_names:
             cols[start_key] = cols[t_key]
             cols[end_key] = cols.get(end_key, end_key)
         else:
             cols[start_key] = start_key
             cols[end_key] = end_key
-        
-        # Build column list
+
         column_list = [cols[start_key], 'duration']
-        
         if complete_output:
             column_list.extend([cols[end_key], 'n_pings', 'max_gap'])
-        
-        # Add location_id and geometry
+
         column_list.append(cols['location_id'])
         if 'geometry' in input_columns:
             column_list.append('geometry')
-        
-        # Add passthrough columns
+
         column_list.extend(passthrough_cols)
-        
     else:
-        t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = _fallback_st_cols(input_columns, traj_cols, kwargs)
+        t_key, coord_key1, coord_key2, use_datetime, _ = _fallback_st_cols(input_columns, traj_cols, kwargs)
         cols = loader._parse_traj_cols(input_columns, traj_cols, kwargs, warn=False)
-        
+
         start_t_key = 'start_datetime' if use_datetime else 'start_timestamp'
         end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
-        
+
         if not keep_col_names:
             cols[coord_key1] = constants.DEFAULT_SCHEMA[coord_key1]
             cols[coord_key2] = constants.DEFAULT_SCHEMA[coord_key2]
         else:
             cols[start_t_key] = cols[t_key]
-        
-        # Build column list
+
         column_list = [cols[coord_key1], cols[coord_key2], cols[start_t_key], 'duration']
-        
         if complete_output:
             column_list.extend([cols[end_t_key], 'diameter', 'n_pings', 'max_gap'])
-        
-        # Add passthrough columns
+
         column_list.extend(passthrough_cols)
-    
-    return column_list
 
-
-def _get_empty_stop_column_dtypes(input_columns, complete_output, passthrough_cols, traj_cols, keep_col_names, is_grid_based=False, **kwargs):
-    """
-    Get appropriate dtypes for empty stop DataFrame columns to avoid groupby failures.
-    Returns
-    -------
-    dict
-        Mapping from output column name to dtype.
-    """
-    column_list = _get_empty_stop_columns(
-        input_columns,
-        complete_output,
-        passthrough_cols,
-        traj_cols,
-        keep_col_names,
-        is_grid_based=is_grid_based,
-        **kwargs,
-    )
-
-    cols = loader._parse_traj_cols(input_columns, traj_cols, kwargs, warn=False)
     dtype_map = {}
 
-    # Datetime-like stop-table fields are emitted as UTC-aware datetimes.
     datetime_keys = ['datetime', 'start_datetime', 'end_datetime']
     for key in datetime_keys:
         col = cols.get(key)
@@ -607,14 +572,13 @@ def _get_empty_stop_column_dtypes(input_columns, complete_output, passthrough_co
         dtype_map['max_gap'] = 'Int64'
     if 'diameter' in column_list:
         dtype_map['diameter'] = 'Float64'
-
     if 'geometry' in column_list:
         dtype_map['geometry'] = 'object'
 
     for col in column_list:
         dtype_map.setdefault(col, 'object')
 
-    return dtype_map
+    return pd.DataFrame({col: pd.Series(dtype=dtype_map[col]) for col in column_list})
 
 
 def has_overlapping_stops(stop_data, traj_cols=None, **kwargs):
