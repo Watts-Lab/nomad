@@ -85,7 +85,7 @@ def _build_border_map(scale, core_distances, G):
     
     return core_to_border # return this but instead using something with input as G
 
-def cluster_hierarchy(edges_sorted, core_distances, G, min_cluster_size, dur_min=5):
+def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size, dur_min=5):
     """
     Builds a cluster hierarchy from a pre-computed Minimum Spanning Tree.
 
@@ -102,6 +102,8 @@ def cluster_hierarchy(edges_sorted, core_distances, G, min_cluster_size, dur_min
         Sorted Series mapping each timestamp to its core distance.
     G : nx.Graph
         Weighted graph of distances between temporally-close points.
+    H : nx.Graph
+        Precomputed hierarchy graph (MST plus self-loops).
     min_cluster_size : int
         Minimum number of core points for a cluster to be considered valid.
     dur_min : int
@@ -114,85 +116,121 @@ def cluster_hierarchy(edges_sorted, core_distances, G, min_cluster_size, dur_min
     """
     hierarchy = []
     label_history = []
-    
-    # All pings are taken from the core_distances index
-    all_pings = core_distances.index
-    label_map = pd.Series(0, index=all_pings, name='cluster_id', dtype=int)
 
-    # Log initial labels
-    df0 = label_map.to_frame()
-    df0['dendogram_scale'] = np.nan
-    label_history.append(df0.reset_index())
+    # Build full ping index once and reuse it for label snapshots.
+    all_pings = pd.Index(G.nodes(), name='time')
+    nx.set_node_attributes(H, 0, 'cluster_id')
+    nx.set_node_attributes(H, -1, 'temp_cluster_id')
+
+    # Initial state is known: all nodes belong to cluster 0.
+    label_history.append(pd.DataFrame({
+        'time': all_pings,
+        'cluster_id': 0,
+        'dendogram_scale': np.nan,
+    }))
 
     current_label_id = 1
 
-    # Iteratively process edges grouped by weight (scale)
+    # Iteratively process pruning events grouped by weight (scale)
     for scale, edges_to_remove in edges_sorted.groupby(edges_sorted, sort=False):
-
-        border_map = _build_border_map(scale, core_distances, G)
+        edges_batch = list(edges_to_remove.index)
         idx_from = edges_to_remove.index.get_level_values('from')
-        affected_clusters = set(label_map.loc[idx_from].unique())
+        idx_to = edges_to_remove.index.get_level_values('to')
+        event_nodes = idx_from.union(idx_to)
 
-        for cluster_id in affected_clusters:
-            if cluster_id == -1:
+        # Remove both regular edges and self-loops at this scale.
+        H.remove_edges_from(edges_batch)
+        nx.set_node_attributes(H, -1, 'temp_cluster_id')
+
+        components_by_parent = defaultdict(list)
+
+        for seed in event_nodes:
+            if not H.has_node(seed):
                 continue
 
-            members = label_map.index[label_map == cluster_id]
-            remaining_members = set(members)
+            if H.nodes[seed]['temp_cluster_id'] != -1:
+                continue
 
-            # TODO: try to keep the original graph (mst + self loops), instead of building a new one and then getting the connected components
-            # use the networkx filter edges method (all edges <)
-            # benchmark prior to this change
-            adj = _build_graph_pd(members, edges_sorted, edges_to_remove)
-            components = _connected_components(adj)
+            parent_id = H.nodes[seed]['cluster_id']
+            component_nodes = nx.node_connected_component(H, seed)
             
+            if len(component_nodes) == 1:
+                node = next(iter(component_nodes))
+                if not H.has_edge(node, node):
+                    H.remove_node(node)
+                    continue
+
+            temp_id = len(components_by_parent[parent_id])
+            for node in component_nodes:
+                H.nodes[node]['temp_cluster_id'] = temp_id
+
+            components_by_parent[parent_id].append(component_nodes)
+
+        border_map = _build_border_map(scale, core_distances, G)
+
+        for parent_id, components in components_by_parent.items():
+            if len(components) >= 2:
+                # This is where removal of temporal overlaps will happen.
+                # Future pass will process this parent's children together with
+                # the parent's non-core neighbors from border_map.
+                pass
+
             non_spurious = []
+            nodes_to_drop = set()
 
-            for comp in components:
-                # Look up this component's borders in the global map
-                comp_borders = set().union(*(border_map.get(ts, set()) for ts in comp))
-                full_cluster = set(comp).union(comp_borders)
-                if ((max(full_cluster) - min(full_cluster)) >= dur_min * 60) and (len(comp) >= min_cluster_size):
-                    non_spurious.append(comp)
-                    
-            if not non_spurious:
-                pass # cluster has disappeared
+            for component_nodes in components:
+                border_nodes = set()
+                for ts in component_nodes:
+                    border_nodes.update(border_map.get(ts, ()))
 
-            # cluster has just shrunk
-            elif len(non_spurious) == 1:
-                component = non_spurious[0]
-                label_map.loc[list(component)] = cluster_id
-                remaining_members = remaining_members.difference(component)
+                comp_min = min(component_nodes)
+                comp_max = max(component_nodes)
+                if border_nodes:
+                    comp_min = min(comp_min, min(border_nodes))
+                    comp_max = max(comp_max, max(border_nodes))
 
-            # true cluster split: multiple valid subclusters
-            else:
-                new_ids = []
-                for component in non_spurious:
-                    label_map.loc[list(component)] = current_label_id
-                    remaining_members = remaining_members.difference(component)
-                        
-                    new_ids.append(current_label_id)
-                    current_label_id += 1
+                if ((comp_max - comp_min) >= dur_min * 60) and (len(component_nodes) >= min_cluster_size):
+                    non_spurious.append(component_nodes)
+                else:
+                    nodes_to_drop.update(component_nodes)
 
-                hierarchy.append((scale, cluster_id, new_ids))
+            if nodes_to_drop:
+                H.remove_nodes_from(nodes_to_drop)
 
-            label_map.loc[list(remaining_members)] = -1
+            if len(non_spurious) == 0:
+                continue
 
-        # log label map after this scale
-        df = label_map.to_frame()
-        df['dendogram_scale'] = scale
-        label_history.append(df.reset_index())
-        
+            if len(non_spurious) == 1:
+                # Remaining child already has parent_id.
+                continue
+
+            new_ids = []
+            for component in non_spurious:
+                for node in component:
+                    if H.has_node(node):
+                        H.nodes[node]['cluster_id'] = current_label_id
+
+                new_ids.append(current_label_id)
+                current_label_id += 1
+
+            hierarchy.append((scale, parent_id, new_ids))
+
+        # O(N) per scale: get_node_attributes returns {node: cluster_id}.
+        cluster_ids = pd.Series(nx.get_node_attributes(H, 'cluster_id'))
+        cluster_ids = cluster_ids.reindex(all_pings, fill_value=-1)
+
+        label_history.append(pd.DataFrame({
+            'time': cluster_ids.index,
+            'cluster_id': cluster_ids.values,
+            'dendogram_scale': scale,
+        }))
+
     # combine label history into one DataFrame
     label_history_df = pd.concat(label_history, ignore_index=True)
     # build cluster lineage for all clusters
     hierarchy_df = _build_cluster_lineage(hierarchy)
     return label_history_df, hierarchy_df
 
-# def compute_cluster_duration(cluster):
-#     max_time = max(cluster)
-#     min_time = min(cluster)
-#     return (max_time - min_time) * 60
 
 def _build_cluster_lineage(hierarchy):
     """
@@ -208,47 +246,6 @@ def _build_cluster_lineage(hierarchy):
             })
     return pd.DataFrame(lineage)
 
-def _build_graph_pd(nodes, edges_sorted_df, removed_edges):
-    graph = defaultdict(set)
-    
-    mask1 = edges_sorted_df.index.get_level_values('from').isin(nodes) & edges_sorted_df.index.get_level_values('to').isin(nodes)
-    sub = edges_sorted_df.loc[mask1]
-    
-    mask2 = sub.index.get_level_values('from') != sub.index.get_level_values('to')
-    mask3 = ~sub.index.isin(removed_edges.index)
-
-    for u, v in sub[mask2&mask3].index:
-        graph[u].add(v)
-        graph[v].add(u)
-        
-    return graph
-
-def _connected_components(graph):
-    '''
-    Finds the connected components for a graph with removed edges.
-    
-    Parameters
-    ----------
-    graph : graph derived from MST after removing edges.
-    '''
-    seen = set()
-    components = []
-
-    for node in graph:
-        if node in seen:
-            continue
-        stack = [node]
-        comp = []
-        while stack:
-            n = stack.pop()
-            if n not in seen:
-                seen.add(n)
-                comp.append(int(n))
-                stack.extend(graph[n] - seen)
-        components.append(comp)
-
-    return components
-
 
 def _base_cdf(eps):
     """
@@ -258,17 +255,17 @@ def _base_cdf(eps):
     eps = np.asarray(eps)
     # Create a result array of floats
     res = np.zeros_like(eps, dtype=float)
-    
+
     # Where eps is not infinite and greater than 0
     valid_mask = (eps != np.inf) & (eps > 0)
     res[valid_mask] = 1.0 - (1.0 / eps[valid_mask])
-    
+
     # Where eps is infinite, the CDF is 1
     res[eps == np.inf] = 1.0
-    
+
     # Where eps is 0 or invalid, the CDF is 0
     # This is already handled by np.zeros_like initialization
-    
+
     return res
 
 def compute_cluster_stability(label_history_df, cdf_function=_base_cdf):
@@ -467,23 +464,26 @@ def _build_hdbscan_graphs(G, core_dist):
 
     Returns
     -------
+    H : nx.Graph
+        Hierarchy graph with mutual-reachability MST edges and core-distance
+        self-loops.
     edges_sorted_df : pd.Series
-        MST + self-loops sorted descending by weight, MultiIndex (from, to).
+        H sorted descending by weight, MultiIndex (from, to).
     """
-    H = G.copy()
-    for u, v, data in H.edges(data=True):
+    G_copy = G.copy()
+    for u, v, data in G_copy.edges(data=True):
         d = np.round(data["weight"] * 4) / 4
         data["weight"] = max(core_dist.at[u], core_dist.at[v], d)
 
-    mst = nx.minimum_spanning_tree(H)
+    H = nx.minimum_spanning_tree(G_copy)
 
-    mst.add_edges_from((node, node, {'weight': weight}) for node, weight in core_dist.items())
+    H.add_edges_from((node, node, {'weight': weight}) for node, weight in core_dist.items())
 
-    all_edges = nx.to_pandas_edgelist(mst, source='from', target='to')
+    all_edges = nx.to_pandas_edgelist(H, source='from', target='to')
     all_edges.sort_values('weight', ascending=False, inplace=True)
 
     all_edges.set_index(['from', 'to'], inplace=True)
-    return all_edges['weight']
+    return H, all_edges['weight']
 
 def hdbscan_labels(data,
                    time_thresh,
@@ -552,12 +552,13 @@ def hdbscan_labels(data,
 
     core_distances = _compute_core_distance(G, min_pts)
 
-    edges_sorted = _build_hdbscan_graphs(G, core_distances)
+    H, edges_sorted = _build_hdbscan_graphs(G, core_distances)
 
     label_history_df, hierarchy_df = cluster_hierarchy(
         edges_sorted=edges_sorted,
         core_distances=core_distances,
         G=G,
+        H=H,
         min_cluster_size=min_cluster_size,
         dur_min=dur_min,
     )
@@ -681,21 +682,7 @@ def st_hdbscan(
 
     merged = data.join(labels_hdbscan)
     
-    # Remove temporal overlaps if multiple clusters exist
-    if len(merged.cluster.unique()) > 2:  # More than just -1 and one cluster
-        from nomad.stop_detection.postprocessing import remove_overlaps
-        adjusted_labels = remove_overlaps(
-            merged,
-            time_thresh=time_thresh,
-            min_pts=min_pts,
-            method="cluster",
-            traj_cols=traj_cols,
-            summarize_stops=False,  # Return cluster labels, not summary table
-            **kwargs
-        )
-        merged['cluster'] = adjusted_labels
-    
-    # Filter out noise points after overlap removal
+    # Filter out noise points
     merged = merged[merged.cluster != -1]
 
     if merged.empty:

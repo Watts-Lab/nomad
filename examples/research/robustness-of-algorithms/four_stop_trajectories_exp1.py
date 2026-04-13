@@ -6,9 +6,9 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.1
+#       jupytext_version: 1.17.3
 #   kernelspec:
-#     display_name: Python 3 (ipykernel)
+#     display_name: Python 3
 #     language: python
 #     name: python3
 # ---
@@ -80,10 +80,10 @@ destinations.to_csv("exp_1_destinations_unbalanced.csv", index=False)
 
 # %%
 # option 1 (reduced for quick demo run)
-N_reps = 2
-sparsity_samples = 3
+N_reps = 5
+sparsity_samples = 10
 config = dict(
-    dt = 0.5,
+    dt = 0.25,
     N = N_reps*sparsity_samples,
     name_count=2,
     name_seed=2025,
@@ -99,7 +99,7 @@ config = dict(
         agent_workplaces='w-x17-y8',
         seed_trajectory=list(range(N_reps*sparsity_samples)),
         seed_sparsity= list(range(N_reps*sparsity_samples)),
-        beta_ping= np.repeat(np.linspace(1, 20, sparsity_samples), N_reps).tolist(),
+        beta_ping= np.repeat(np.linspace(4, 9, sparsity_samples), N_reps).tolist(),
         beta_durations=None,
         beta_start=None,
         ha=11.5/15
@@ -109,8 +109,8 @@ with open('config_low_ha.json', 'w', encoding='utf-8') as f:
     json.dump(config, f, ensure_ascii=False, indent=4)
 
 # option 2 (reduced for quick demo run)
-N_reps = 2
-sparsity_samples = 3
+N_reps = 5
+sparsity_samples = 10
 config_2 = dict(
     dt = 0.5,
     N = N_reps*sparsity_samples,
@@ -128,7 +128,7 @@ config_2 = dict(
         agent_workplaces='w-x17-y8',
         seed_trajectory=list(range(N_reps*sparsity_samples)),
         seed_sparsity= list(range(N_reps*sparsity_samples)),
-        beta_ping= np.repeat(np.linspace(1, 20, sparsity_samples), N_reps).tolist(),
+        beta_ping= np.repeat(np.linspace(4, 9, sparsity_samples), N_reps).tolist(),
         beta_durations=None,
         beta_start=None,
         ha=15/15
@@ -142,7 +142,7 @@ with open('config_high_ha.json', 'w', encoding='utf-8') as f:
 
 # %%
 # Parameters according to the config file
-with open('config_high_ha.json', 'r', encoding='utf-8') as f:
+with open('config_low_ha.json', 'r', encoding='utf-8') as f:
     config = json.load(f)
     
 # Load city and destination diary from config

@@ -37,7 +37,7 @@ def ta_dbscan_labels(data,
                 False, use_datetime, use_lon_lat, return_trees=False, relabel_nodes=True)
     
     cluster_df = pd.Series(-2, index=G, name='cluster')
-    core_df = pd.Series(-3, index=G, name='core')
+    core_df = pd.Series(-2, index=G, name='core')
     # Initialize cluster label
     cid = -1
 
@@ -65,30 +65,29 @@ def ta_dbscan_labels(data,
     if remove_overlaps and (core_df >= 0).any():
         next_label = cid + 1
     
-        assigned_of = {}   # raw_label -> assigned_label (raw until first split, then new id)
-        seen = set()
+        relabel_dict = {}   # raw_label -> assigned_label (raw until first split, then new id)
         active = None      # active assigned label
     
         for t in core_df.index[core_df >= 0]:
             raw = int(core_df.at[t])
+
+            seen = raw in relabel_dict
+            if not seen:
+                relabel_dict[raw] = raw
     
-            if raw not in assigned_of:
-                assigned_of[raw] = raw
-    
-            assigned = assigned_of[raw]    
+            assigned = relabel_dict[raw]    
                 
             if active is not None and assigned != active:
-                if raw in seen:
-                    assigned_of[raw] = next_label
+                if seen:
+                    relabel_dict[raw] = next_label
                     next_label += 1
-                    assigned = assigned_of[raw]
+                    assigned = relabel_dict[raw]
     
             active = assigned
             core_df.at[t] = assigned
             cluster_df.at[t] = assigned
-            seen.add(raw)
         
-        # Border points
+        ### Reassign border points to non-overlapping core points
         cluster_df.loc[core_df < 0] = -1  
         prev_run_end = -np.inf                           # left bound (exclusive)
         
@@ -201,6 +200,18 @@ def ta_dbscan(
     ------
     ValueError if multi-user data detected; use ta_dbscan_per_user instead.
     """
+    if data.empty:
+        cols = utils._get_empty_stop_columns(
+            data.columns,
+            complete_output,
+            passthrough_cols,
+            traj_cols,
+            keep_col_names=keep_col_names,
+            is_grid_based=False,
+            **kwargs,
+        )
+        return pd.DataFrame(columns=cols, dtype=object)
+
     traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     if 'user_id' in traj_cols_temp and traj_cols_temp['user_id'] in data.columns:
         uid_col = data[traj_cols_temp['user_id']]
@@ -238,13 +249,15 @@ def ta_dbscan(
             grp,
             complete_output=complete_output,
             traj_cols=traj_cols,
+            dur_min=dur_min,
             keep_col_names=keep_col_names,
             passthrough_cols=passthrough_cols,
             **kwargs
         ),
         include_groups=False
     )
-    return stop_table
+    
+    return stop_table.loc[stop_table['duration']>=dur_min]
 
 def ta_dbscan_per_user(
     data,
