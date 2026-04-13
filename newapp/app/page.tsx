@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -145,46 +145,74 @@ function Timeline({ segments, selectedSegment, onSegmentClick }: { segments: Tim
   )
 }
 
-// ============ Placeholder Chart ============
-function AccuracyChart({ algorithmName }: { algorithmName: string }) {
+const NOTEBOOK_FIGURES: Record<string, { learn: string; metrics: string; source: string }> = {
+  dbstop: {
+    learn: "/notebook-figures/db_dist_thresh_acc.svg",
+    metrics: "/notebook-figures/db_dist_thresh_acc.svg",
+    source: "ta_seqscan_examples.ipynb (compare panel)",
+  },
+  lachesis: {
+    learn: "/notebook-figures/seq_delta_roam_acc.svg",
+    metrics: "/notebook-figures/lachesis_delta_roam_all_metrics_grid.svg",
+    source: "delta_roam_vs_acc_exp.ipynb",
+  },
+  seqscan: {
+    learn: "/notebook-figures/db_dist_thresh_acc.svg",
+    metrics: "/notebook-figures/db_dist_thresh_acc.svg",
+    source: "dist_thresh_vs_acc_exp.ipynb",
+  },
+  dbscan: {
+    learn: "/notebook-figures/db_dist_thresh_acc.svg",
+    metrics: "/notebook-figures/dbscan_dist_thresh_all_metrics_grid.svg",
+    source: "dist_thresh_vs_acc_exp.ipynb",
+  },
+  gridbased: {
+    learn: "/notebook-figures/exp1_all_metrics_grid.svg",
+    metrics: "/notebook-figures/exp1_all_metrics_grid.svg",
+    source: "exp_1_merge_vs_beta_ping.ipynb",
+  },
+  medoid: {
+    learn: "/notebook-figures/exp1_all_metrics_grid.svg",
+    metrics: "/notebook-figures/exp1_all_metrics_grid.svg",
+    source: "exp_1_merge_vs_beta_ping.ipynb",
+  },
+}
+
+function NotebookFigure({
+  algorithmId,
+  mode,
+  alt,
+  className = "",
+}: {
+  algorithmId: string
+  mode: "learn" | "metrics"
+  alt: string
+  className?: string
+}) {
+  const fig = NOTEBOOK_FIGURES[algorithmId]
+  if (!fig) {
+    return <p className="text-sm text-muted-foreground">No notebook visualization available.</p>
+  }
+
+  return (
+    <img
+      src={mode === "learn" ? fig.learn : fig.metrics}
+      alt={alt}
+      className={`w-full h-full object-contain ${className}`}
+    />
+  )
+}
+
+function AccuracyChart({ algorithmId, algorithmName }: { algorithmId: string; algorithmName: string }) {
+  const source = NOTEBOOK_FIGURES[algorithmId]?.source
   return (
     <div className="w-full h-full bg-card border border-border rounded-lg p-4 flex flex-col">
-      <p className="text-base font-semibold text-center mb-2">{algorithmName} accuracy in 2-stop trajectory</p>
-      <div className="flex-1 relative">
-        <svg viewBox="0 0 300 200" className="w-full h-full">
-          {/* Y-axis */}
-          <line x1="40" y1="20" x2="40" y2="170" stroke="#888" strokeWidth="1"/>
-          {/* X-axis */}
-          <line x1="40" y1="170" x2="280" y2="170" stroke="#888" strokeWidth="1"/>
-          {/* Y-axis labels */}
-          <text x="35" y="25" fontSize="8" textAnchor="end" fill="#666">1.0</text>
-          <text x="35" y="65" fontSize="8" textAnchor="end" fill="#666">0.8</text>
-          <text x="35" y="105" fontSize="8" textAnchor="end" fill="#666">0.6</text>
-          <text x="35" y="145" fontSize="8" textAnchor="end" fill="#666">0.4</text>
-          <text x="35" y="175" fontSize="8" textAnchor="end" fill="#666">0.2</text>
-          {/* X-axis labels */}
-          <text x="60" y="185" fontSize="8" textAnchor="middle" fill="#666">20</text>
-          <text x="120" y="185" fontSize="8" textAnchor="middle" fill="#666">60</text>
-          <text x="180" y="185" fontSize="8" textAnchor="middle" fill="#666">100</text>
-          <text x="240" y="185" fontSize="8" textAnchor="middle" fill="#666">140</text>
-          {/* Axis labels */}
-          <text x="10" y="100" fontSize="8" fill="#666" transform="rotate(-90, 10, 100)">Accuracy</text>
-          <text x="160" y="198" fontSize="8" textAnchor="middle" fill="#666">Roaming Distance (m)</text>
-          {/* Scatter points */}
-          {[...Array(50)].map((_, i) => (
-            <circle key={i} cx={50 + Math.random() * 220} cy={30 + Math.random() * 120} r="2" fill="#6b9fd4" opacity="0.5"/>
-          ))}
-          {/* Mean line */}
-          <path d="M 50 40 Q 100 35 150 50 T 250 80" fill="none" stroke="#2563eb" strokeWidth="2"/>
-          {/* Dashed reference line */}
-          <line x1="50" y1="45" x2="270" y2="45" stroke="#666" strokeWidth="1" strokeDasharray="4,2"/>
-        </svg>
+      <p className="text-base font-semibold text-center mb-2">{algorithmName} notebook metrics</p>
+      <div className="flex-1 min-h-0">
+        <NotebookFigure algorithmId={algorithmId} mode="metrics" alt={`${algorithmName} metrics from notebook`} />
       </div>
-      {/* Legend */}
-      <div className="flex flex-wrap gap-3 text-sm mt-3 justify-center">
-        <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-blue-600"></span>Mean</span>
-        <span className="flex items-center gap-1"><span className="w-2 h-2 text-red-500">x</span>User maxima</span>
-        <span className="flex items-center gap-1"><span className="w-3 h-0.5 border-t border-dashed border-gray-600"></span>Max mean</span>
+      <div className="text-xs text-muted-foreground mt-2 text-center">
+        Source: {source ?? "notebook figure mapping"}
       </div>
     </div>
   )
@@ -194,8 +222,57 @@ function AccuracyChart({ algorithmName }: { algorithmName: string }) {
 
 type DataPoint = { id: string; x: number; y: number; time: string; color: "orange" | "pink" | "purple" }
 type TimeSegment = { id: string; startPercent: number; widthPercent: number; color: "orange" | "pink" | "purple" }
+type CompareApiResponse = {
+  seed: number
+  mode?: "single" | "compare"
+  image_data_url: string
+  resolved_algorithms?: Record<string, string>
+}
+
+function CompareNotebookFigure({
+  imageDataUrl,
+  mode = "compare",
+}: {
+  imageDataUrl: string | null
+  mode?: "single" | "compare"
+}) {
+  const maxHeightClass =
+    mode === "single" ? "max-h-[calc(100vh-300px)]" : "max-h-[calc(100vh-240px)]"
+
+  return (
+    <Card className="overflow-hidden">
+      <CardContent className="p-2">
+        {imageDataUrl ? (
+          <div className={`w-full ${maxHeightClass} flex justify-center`}>
+            <img
+              src={imageDataUrl}
+              alt="Notebook-style compare output"
+              className={`mx-auto w-auto max-w-full ${maxHeightClass} h-auto object-contain rounded-md border border-border`}
+            />
+          </div>
+        ) : (
+          <p className="p-4 text-sm text-muted-foreground">Run visualize to render notebook output.</p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
 
 const algorithms = [
+  {
+    id: "dbstop",
+    name: "DBSTOP",
+    shortDesc: "Density-based stop detection (notebook compare panel)",
+    description:
+      "DBSTOP compare mode using the same map-plus-barcode plotting workflow as the notebook compare panel.",
+    source: "ta_seqscan_examples.ipynb compare section",
+    parameters: [
+      { name: "time_thresh", defaultValue: "60", description: "Temporal threshold (minutes)" },
+      { name: "dist_thresh", defaultValue: "10", description: "Distance threshold (meters)" },
+      { name: "min_pts", defaultValue: "3", description: "Minimum points for cluster core" },
+      { name: "dur_min", defaultValue: "5", description: "Minimum stop duration (minutes)" },
+    ],
+  },
   { 
     id: "lachesis", 
     name: "Lachesis", 
@@ -215,8 +292,10 @@ const algorithms = [
     description: "SeqScan extends DBSCAN to spatio-temporal data while guaranteeing temporal separation between detected stops. Each stop is defined as a DBSCAN cluster computed over a local time context, using the reachability graph of core points (a ping with a minimum of min_pts neighbors at a distance below dist_thresh). The algorithm scans points in chronological order, maintaining both an active cluster and an active time context for neighbor queries. For each incoming ping, neighbors are queried within the active time context; if it is connected to the active cluster, the active cluster is expanded. Otherwise, DBSCAN is applied to the tail of the trajectory, starting from the last ping of the active cluster up to the incoming ping. If a cluster with duration at least dur_min is found in the tail, it becomes the new active cluster and the active time context is shifted, continuing until reaching the end of the trajectory.", 
     source: "Sequential Scan Algorithm for GPS Stop Detection",
     parameters: [
-      { name: "time_thresh", defaultValue: "300", description: "Time threshold for stop detection" }, 
-      { name: "dist_thresh", defaultValue: "50", description: "Distance threshold (meters)" }
+      { name: "time_thresh", defaultValue: "60", description: "Time threshold for stop detection (minutes)" }, 
+      { name: "dist_thresh", defaultValue: "10", description: "Distance threshold (meters)" },
+      { name: "min_pts", defaultValue: "3", description: "Minimum points for cluster core" },
+      { name: "dur_min", defaultValue: "5", description: "Minimum stop duration (minutes)" }
     ] 
   },
   { 
@@ -306,22 +385,88 @@ export default function NomadDashboard() {
   const [selectedTimeRange, setSelectedTimeRange] = useState<string | null>(null)
   const [expandedAlgorithm, setExpandedAlgorithm] = useState<string | null>(null)
   const [compareMode, setCompareMode] = useState(false)
-  const [leftAlgorithm, setLeftAlgorithm] = useState("lachesis")
-  const [rightAlgorithm, setRightAlgorithm] = useState("dbscan")
+  const [leftAlgorithm, setLeftAlgorithm] = useState("dbstop")
+  const [rightAlgorithm, setRightAlgorithm] = useState("seqscan")
   const [leftParams, setLeftParams] = useState<Record<string, string>>({})
   const [rightParams, setRightParams] = useState<Record<string, string>>({})
-  const [leftData, setLeftData] = useState(generateDataPoints)
-  const [rightData, setRightData] = useState(generateDataPoints)
+  const [compareApiData, setCompareApiData] = useState<CompareApiResponse | null>(null)
+  const [compareLoading, setCompareLoading] = useState(false)
+  const [compareError, setCompareError] = useState<string | null>(null)
+  const [compareSeed, setCompareSeed] = useState(1)
 
-  const handleVisualize = useCallback((side: "left" | "right") => {
-    if (side === "left") setLeftData(generateDataPoints())
-    else setRightData(generateDataPoints())
-  }, [])
+  const runCompareVisualization = useCallback(async (seed: number) => {
+    const leftAlgo = algorithms.find((a) => a.id === leftAlgorithm)
+    const rightAlgo = algorithms.find((a) => a.id === rightAlgorithm)
+    if (!leftAlgo || !rightAlgo) return
+
+    const parseParams = (algoId: string, algoParams: Record<string, string>) => {
+      const algoDef = algorithms.find((a) => a.id === algoId)
+      const out: Record<string, number> = {}
+      if (!algoDef) return out
+      for (const p of algoDef.parameters) {
+        const raw = algoParams[p.name] ?? p.defaultValue
+        const numeric = Number(raw)
+        out[p.name] = Number.isFinite(numeric) ? numeric : Number(p.defaultValue)
+      }
+      if (algoId === "dbscan") {
+        out.dist_thresh = out.eps_spatial ?? 10
+        out.time_thresh = out.T_max ?? 60
+        out.min_pts = out.minPts ?? 3
+      }
+      if (algoId === "seqscan") {
+        out.min_pts = out.min_pts ?? 3
+      }
+      if (algoId === "lachesis") {
+        out.dt_max = out.dt_max ?? 60
+        out.delta_roam = out.delta_roam ?? 20
+        out.dur_min = out.dur_min ?? 5
+      }
+      return out
+    }
+
+    setCompareLoading(true)
+    setCompareError(null)
+    try {
+      const res = await fetch("/api/algorithm-compare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          seed,
+          mode: compareMode ? "compare" : "single",
+          left: {
+            algo: leftAlgorithm === "dbscan" ? "tadbscan" : leftAlgorithm,
+            params: parseParams(leftAlgorithm, leftParams),
+            cmap: "inferno_r",
+          },
+          right: {
+            algo: rightAlgorithm === "dbscan" ? "tadbscan" : rightAlgorithm,
+            params: parseParams(rightAlgorithm, rightParams),
+            cmap: "inferno_r",
+          },
+        }),
+      })
+      if (!res.ok) {
+        const msg = await res.text()
+        throw new Error(msg || "Algorithm compare request failed")
+      }
+      const data = (await res.json()) as CompareApiResponse
+      setCompareApiData(data)
+    } catch (err) {
+      setCompareError(err instanceof Error ? err.message : "Unexpected compare error")
+    } finally {
+      setCompareLoading(false)
+    }
+  }, [leftAlgorithm, rightAlgorithm, leftParams, rightParams, compareMode])
+
+  const handleVisualize = useCallback((_side: "left" | "right") => {
+    void runCompareVisualization(compareSeed)
+  }, [runCompareVisualization, compareSeed])
 
   const handleNewTrajectory = useCallback(() => {
-    setLeftData(generateDataPoints())
-    setRightData(generateDataPoints())
-  }, [])
+    const nextSeed = compareSeed + 1
+    setCompareSeed(nextSeed)
+    void runCompareVisualization(nextSeed)
+  }, [compareSeed, runCompareVisualization])
 
   const handleAlgorithmSelect = (algorithmId: string) => {
     setLeftAlgorithm(algorithmId)
@@ -350,6 +495,13 @@ export default function NomadDashboard() {
 
   const leftAlgo = algorithms.find((a) => a.id === leftAlgorithm)
   const rightAlgo = algorithms.find((a) => a.id === rightAlgorithm)
+
+  useEffect(() => {
+    if (activeView === "demo") {
+      void runCompareVisualization(compareSeed)
+    }
+  }, [activeView, compareSeed, runCompareVisualization])
+
   return (
     <div className="h-screen overflow-hidden bg-background flex flex-col">
       {/* HOME VIEW */}
@@ -455,17 +607,8 @@ export default function NomadDashboard() {
                 </CardHeader>
                 <CardContent className="flex-1 flex flex-col gap-3">
                   <p className="text-sm text-muted-foreground">{algo.shortDesc}</p>
-                  {/* Placeholder diagram */}
-                  <div className="bg-muted/50 rounded-md flex items-center justify-center min-h-[120px]">
-                    <svg viewBox="0 0 100 60" className="w-full h-full max-h-28 p-2">
-                      <circle cx="20" cy="30" r="8" fill="none" stroke="#888" strokeWidth="1.5"/>
-                      <circle cx="50" cy="20" r="6" fill="none" stroke="#888" strokeWidth="1.5"/>
-                      <circle cx="80" cy="35" r="10" fill="none" stroke="#888" strokeWidth="1.5"/>
-                      <circle cx="20" cy="30" r="2" fill="#888"/>
-                      <circle cx="50" cy="20" r="2" fill="#888"/>
-                      <circle cx="80" cy="35" r="2" fill="#888"/>
-                      <path d="M 20 30 L 50 20 L 80 35" fill="none" stroke="#888" strokeWidth="1" strokeDasharray="2,2"/>
-                    </svg>
+                  <div className="bg-muted/50 rounded-md min-h-[120px] p-2">
+                    <NotebookFigure algorithmId={algo.id} mode="learn" alt={`${algo.name} notebook visualization`} />
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Tap to open details, parameter definitions, and a direct path to the interactive demo.
@@ -501,19 +644,9 @@ export default function NomadDashboard() {
                 </Card>
                 {/* Diagram and Parameters */}
                 <div className="grid md:grid-cols-2 gap-4">
-                  {/* Diagram placeholder */}
                   <Card>
                     <CardContent className="p-4 h-full flex items-center justify-center">
-                      <svg viewBox="0 0 200 150" className="w-full h-full max-h-56">
-                        <circle cx="40" cy="75" r="20" fill="none" stroke="#4a90d9" strokeWidth="2"/>
-                        <circle cx="100" cy="50" r="15" fill="none" stroke="#4a90d9" strokeWidth="2"/>
-                        <circle cx="160" cy="80" r="25" fill="none" stroke="#4a90d9" strokeWidth="2"/>
-                        <circle cx="40" cy="75" r="4" fill="#4a90d9"/>
-                        <circle cx="100" cy="50" r="4" fill="#4a90d9"/>
-                        <circle cx="160" cy="80" r="4" fill="#4a90d9"/>
-                        <path d="M 40 75 L 100 50 L 160 80" fill="none" stroke="#6bb3f0" strokeWidth="2" strokeDasharray="4,2"/>
-                        <text x="100" y="130" textAnchor="middle" fontSize="10" fill="#666">Algorithm Diagram</text>
-                      </svg>
+                      <NotebookFigure algorithmId={algo.id} mode="learn" alt={`${algo.name} detailed notebook visualization`} />
                     </CardContent>
                   </Card>
                   {/* Parameters table */}
@@ -569,21 +702,15 @@ export default function NomadDashboard() {
             </div>
           </div>
           <p className="text-sm text-muted-foreground">
-            Tune parameters and inspect how each algorithm reshapes stop clusters over the same spatial trajectory.
+            Dashboard-style preview: choose two algorithms and their own parameters, run, and inspect side-by-side map and barcode outputs.
           </p>
 
           {!compareMode ? (
             <div className="grid lg:grid-cols-[1fr_330px] gap-3 items-start overflow-hidden">
               <div className="flex flex-col gap-3">
-                <Card className="overflow-hidden">
-                  <CardHeader className="py-2 px-3 bg-muted/30 shrink-0">
-                    <CardTitle className="text-base font-semibold">{leftAlgo?.name}</CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-0">
-                    <FloorPlan dataPoints={leftData} selectedTimeRange={selectedTimeRange} />
-                  </CardContent>
-                </Card>
-                <Timeline segments={timelineSegments} selectedSegment={selectedTimeRange} onSegmentClick={setSelectedTimeRange} />
+                <CompareNotebookFigure imageDataUrl={compareApiData?.image_data_url ?? null} mode="single" />
+                {compareLoading && <p className="text-xs text-muted-foreground">Running notebook algorithm code...</p>}
+                {compareError && <p className="text-xs text-red-500">{compareError}</p>}
               </div>
               <Card className="overflow-hidden">
                 <CardHeader className="pb-2">
@@ -611,57 +738,50 @@ export default function NomadDashboard() {
               </Card>
             </div>
           ) : (
-            <div className="flex flex-col gap-2 overflow-hidden">
-              <div className="grid lg:grid-cols-2 gap-3 overflow-hidden">
-                {/* Left Algorithm */}
-                <div className="flex flex-col gap-2">
-                  <Card className="overflow-hidden">
-                    <CardHeader className="py-2 px-3 bg-muted/30 shrink-0">
-                      <CardTitle className="text-base font-semibold">{leftAlgo?.name}</CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-0">
-                      <FloorPlan dataPoints={leftData} selectedTimeRange={selectedTimeRange} />
-                    </CardContent>
-                  </Card>
-                  <div className="flex gap-2 items-center shrink-0">
+            <div className="grid lg:grid-cols-[1fr_330px] gap-3 items-start overflow-hidden">
+              <div className="flex flex-col gap-3">
+                <CompareNotebookFigure imageDataUrl={compareApiData?.image_data_url ?? null} mode="compare" />
+                {compareLoading && <p className="text-xs text-muted-foreground">Running notebook algorithm code...</p>}
+                {compareError && <p className="text-xs text-red-500">{compareError}</p>}
+              </div>
+              <Card className="overflow-hidden">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-lg font-semibold">Compare Parameters</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-medium">{leftAlgo?.name ?? "Left algorithm"}</h4>
                     <Select value={leftAlgorithm} onValueChange={setLeftAlgorithm}>
-                      <SelectTrigger className="h-10 text-base flex-1"><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="h-10 text-base"><SelectValue /></SelectTrigger>
                       <SelectContent>{algorithms.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
                     </Select>
-                    <Card className="px-3 py-2 text-sm">
-                      {leftAlgo?.parameters.map((p) => (
-                        <div key={p.name}>{p.name} = {leftParams[p.name] || p.defaultValue}</div>
-                      ))}
-                    </Card>
+                    {leftAlgo?.parameters.map((p) => (
+                      <div key={p.name} className="flex items-center gap-2">
+                        <label className="text-sm font-mono w-24 shrink-0">{p.name}:</label>
+                        <Input value={leftParams[p.name] || p.defaultValue} onChange={(e) => setLeftParams((prev) => ({ ...prev, [p.name]: e.target.value }))} className="h-9 text-sm" />
+                      </div>
+                    ))}
                   </div>
-                </div>
-                {/* Right Algorithm */}
-                <div className="flex flex-col gap-2">
-                  <Card className="overflow-hidden">
-                    <CardHeader className="py-2 px-3 bg-muted/30 shrink-0">
-                      <CardTitle className="text-base font-semibold">{rightAlgo?.name}</CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-0">
-                      <FloorPlan dataPoints={rightData} selectedTimeRange={selectedTimeRange} />
-                    </CardContent>
-                  </Card>
-                  <div className="flex gap-2 items-center shrink-0">
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-medium">{rightAlgo?.name ?? "Right algorithm"}</h4>
                     <Select value={rightAlgorithm} onValueChange={setRightAlgorithm}>
-                      <SelectTrigger className="h-10 text-base flex-1"><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="h-10 text-base"><SelectValue /></SelectTrigger>
                       <SelectContent>{algorithms.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
                     </Select>
-                    <Card className="px-3 py-2 text-sm">
-                      {rightAlgo?.parameters.map((p) => (
-                        <div key={p.name}>{p.name} = {rightParams[p.name] || p.defaultValue}</div>
-                      ))}
-                    </Card>
+                    {rightAlgo?.parameters.map((p) => (
+                      <div key={p.name} className="flex items-center gap-2">
+                        <label className="text-sm font-mono w-24 shrink-0">{p.name}:</label>
+                        <Input value={rightParams[p.name] || p.defaultValue} onChange={(e) => setRightParams((prev) => ({ ...prev, [p.name]: e.target.value }))} className="h-9 text-sm" />
+                      </div>
+                    ))}
                   </div>
-                </div>
-              </div>
-              <div className="flex gap-3 shrink-0">
-                <Button variant="outline" onClick={handleNewTrajectory} size="lg">New Trajectory</Button>
-                <Button onClick={() => navigateTo("metrics")} size="lg" className="flex-1">Aggregated Metrics</Button>
-              </div>
+                  <div className="space-y-2 pt-2">
+                    <Button variant="outline" onClick={handleNewTrajectory} size="lg" className="w-full">New Trajectory</Button>
+                    <Button onClick={() => handleVisualize("left")} size="lg" className="w-full">Visualize</Button>
+                    <Button onClick={() => navigateTo("metrics")} size="lg" className="w-full">Aggregated Metrics</Button>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           )}
         </div>
@@ -718,8 +838,8 @@ export default function NomadDashboard() {
 
           {/* Charts */}
           <div className="grid lg:grid-cols-2 gap-3 overflow-hidden">
-            <AccuracyChart algorithmName={leftAlgo?.name || "Algorithm 1"} />
-            <AccuracyChart algorithmName={rightAlgo?.name || "Algorithm 2"} />
+            <AccuracyChart algorithmId={leftAlgo?.id || "lachesis"} algorithmName={leftAlgo?.name || "Algorithm 1"} />
+            <AccuracyChart algorithmId={rightAlgo?.id || "dbscan"} algorithmName={rightAlgo?.name || "Algorithm 2"} />
           </div>
 
           {/* Demo button */}

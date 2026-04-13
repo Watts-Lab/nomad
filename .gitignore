@@ -71,4 +71,5 @@ Thumbs.db
 *.tmp
 sandbox/sandbox_data.gpkg
 **/*.svg
+!newapp/public/notebook-figures/*.svg
 **/*.eps
