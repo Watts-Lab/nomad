@@ -2,16 +2,16 @@
 from __future__ import annotations
 
 import base64
-import io
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 import matplotlib
 
 matplotlib.use("Agg")
 
-import matplotlib.pyplot as plt
 import numpy as np
 import geopandas as gpd
 
@@ -24,15 +24,12 @@ import nomad.io.base as loader
 import nomad.data as data_folder
 
 from nomad.stop_detection.viz import (
-    plot_circles,
-    plot_stops_barcode,
-    plot_time_barcode,
-    plot_pings,
+    animate_stop_dashboard,
 )
 
-import nomad.stop_detection.dbstop as DBSTOP
 import nomad.stop_detection.dbscan as TADBSCAN
 import nomad.stop_detection.density_based as SEQSCAN
+import nomad.stop_detection.grid_based as GRIDBASED
 import nomad.stop_detection.lachesis as LACHESIS
 
 
@@ -52,6 +49,8 @@ def _resolve_algo(algo: str) -> str:
     norm = (algo or "").strip().lower()
     if norm in {"dbscan", "st-dbscan"}:
         return "tadbscan"
+    if norm in {"grid_based", "grid-based"}:
+        return "gridbased"
     return norm or "seqscan"
 
 
@@ -109,13 +108,26 @@ def _load_notebook_data(seed: int):
     return city, sparse_df, random_user, tc
 
 
+def _assign_grid_locations(traj, tc: dict, cell_size: float):
+    if cell_size <= 0:
+        cell_size = 100.0
+    xcol, ycol = tc["x"], tc["y"]
+    work = traj.copy()
+    x0 = float(work[xcol].min())
+    y0 = float(work[ycol].min())
+    gx = np.floor((work[xcol].to_numpy(dtype=float) - x0) / cell_size).astype(int)
+    gy = np.floor((work[ycol].to_numpy(dtype=float) - y0) / cell_size).astype(int)
+    work["location_id"] = [f"g-{ix}-{iy}" for ix, iy in zip(gx, gy)]
+    return work
+
+
 def _run_algo(traj, algo: str, params: dict, tc: dict):
     algo_key = _resolve_algo(algo)
     algo_registry = {
-        "dbstop": (DBSTOP.dbstop, DBSTOP.dbstop_labels),
         "tadbscan": (TADBSCAN.ta_dbscan, TADBSCAN.ta_dbscan_labels),
         "seqscan": (SEQSCAN.seqscan, SEQSCAN.seqscan_labels),
         "lachesis": (LACHESIS.lachesis, LACHESIS.lachesis_labels),
+        "gridbased": (GRIDBASED.grid_based, GRIDBASED.grid_based_labels),
     }
     if algo_key not in algo_registry:
         return algo_key, None, None, None
@@ -128,14 +140,19 @@ def _run_algo(traj, algo: str, params: dict, tc: dict):
         "dur_min": 5,
         "dt_max": 60,
         "delta_roam": 20,
+        "cell_size": 100,
+        "min_time": 300,
     }
     normalized_params = {k: _to_num(params, k, v) for k, v in defaults.items()}
 
     if algo_key == "lachesis":
+        # UI provides dt_max and dur_min in seconds; lachesis expects minutes.
+        dt_max_min = max(0.01, float(normalized_params["dt_max"]) / 60.0)
+        dur_min_min = max(0.01, float(normalized_params["dur_min"]) / 60.0)
         run_args = {
-            "dt_max": int(normalized_params["dt_max"]),
+            "dt_max": dt_max_min,
             "delta_roam": float(normalized_params["delta_roam"]),
-            "dur_min": int(normalized_params["dur_min"]),
+            "dur_min": dur_min_min,
         }
     else:
         run_args = {
@@ -144,6 +161,30 @@ def _run_algo(traj, algo: str, params: dict, tc: dict):
             "min_pts": int(normalized_params["min_pts"]),
             "dur_min": int(normalized_params["dur_min"]),
         }
+    if algo_key == "tadbscan":
+        # UI exposes T_max in seconds for ST-DBSCAN; backend expects minutes.
+        run_args["time_thresh"] = max(1, int(round(float(normalized_params["time_thresh"]) / 60.0)))
+    if algo_key == "gridbased":
+        traj = _assign_grid_locations(traj, tc=tc, cell_size=float(normalized_params["cell_size"]))
+        grid_cols = {"user_id": tc["user_id"], "timestamp": tc["timestamp"], "location_id": "location_id"}
+        min_time_min = max(1, int(round(float(normalized_params["min_time"]) / 60.0)))
+        run_args = {
+            "time_thresh": min_time_min,
+            "min_cluster_size": 1,
+            "dur_min": min_time_min,
+        }
+        stops = run_fn(
+            traj,
+            complete_output=True,
+            traj_cols=grid_cols,
+            **run_args,
+        )
+        labels = label_fn(
+            traj,
+            traj_cols=grid_cols,
+            **run_args,
+        )
+        return algo_key, normalized_params, stops, labels
 
     stops = run_fn(
         traj,
@@ -161,196 +202,181 @@ def _run_algo(traj, algo: str, params: dict, tc: dict):
     return algo_key, normalized_params, stops, labels
 
 
-def _plot_unavailable_panel(*, ax_map, ax_barcode, algo_key: str):
-    ax_map.set_facecolor("#d3d3d3")
-    ax_map.set_xticks([])
-    ax_map.set_yticks([])
-    for spine in ax_map.spines.values():
-        spine.set_visible(False)
-    ax_map.set_title(f"{algo_key.upper()} | no notebook visualization available")
-    ax_map.text(
-        0.5,
-        0.5,
-        "No plot available",
-        transform=ax_map.transAxes,
-        ha="center",
-        va="center",
-        fontsize=12,
-        color="#4b5563",
+def _panel_title(algo_key: str, normalized_params: dict) -> str:
+    if algo_key == "lachesis":
+        dt_max_min = max(0.01, float(normalized_params["dt_max"]) / 60.0)
+        dur_min_min = max(0.01, float(normalized_params["dur_min"]) / 60.0)
+        return (
+            f"LACHESIS | dt_max={dt_max_min:g} min, delta_roam={normalized_params['delta_roam']:g} m, dur_min={dur_min_min:g} min"
+        )
+    if algo_key == "gridbased":
+        min_time_min = max(1, int(round(float(normalized_params["min_time"]) / 60.0)))
+        return (
+            f"GRID-BASED | cell_size={normalized_params['cell_size']:g} m, min_time={min_time_min} min"
+        )
+    if algo_key == "tadbscan":
+        t_min = max(1, int(round(float(normalized_params["time_thresh"]) / 60.0)))
+        return (
+            f"TADBSCAN | t={t_min} min, d={normalized_params['dist_thresh']:g} m, min_pts={int(normalized_params['min_pts'])}, dur_min={int(normalized_params['dur_min'])}"
+        )
+    return (
+        f"{algo_key.upper()} | t={int(normalized_params['time_thresh'])} min, d={normalized_params['dist_thresh']:g} m, min_pts={int(normalized_params['min_pts'])}, dur_min={int(normalized_params['dur_min'])}"
     )
 
-    ax_barcode.set_facecolor("#d3d3d3")
-    ax_barcode.set_xticks([])
-    ax_barcode.set_yticks([])
-    for spine in ax_barcode.spines.values():
-        spine.set_visible(False)
-    ax_barcode.set_title("timestamps")
+
+def _downsample_traj(traj, tc: dict, max_frames: int = 80):
+    ts_col = tc["timestamp"]
+    data = traj.sort_values(ts_col).copy()
+    if len(data) <= max_frames:
+        return data
+    idx = np.linspace(0, len(data) - 1, num=max_frames, dtype=int)
+    idx = np.unique(idx)
+    return data.iloc[idx].copy().reset_index(drop=True)
 
 
-def _plot_notebook_panel(
+def _gif_data_url_from_file(path: str) -> str:
+    gif_bytes = Path(path).read_bytes()
+    return "data:image/gif;base64," + base64.b64encode(gif_bytes).decode("ascii")
+
+
+def _render_panel_animation(
     *,
-    ax_map,
-    ax_barcode,
     traj,
     stops,
-    algo_key: str,
-    normalized_params: dict,
+    title: str,
     cmap: str,
     city,
     tc: dict,
+    mode: str,
+) -> str:
+    panel_traj = _downsample_traj(traj, tc=tc, max_frames=80)
+    panel_stops = None if stops is None or getattr(stops, "empty", True) else stops
+    figsize = (8.2, 5.0) if mode == "single" else (6.0, 4.0)
+
+    with tempfile.NamedTemporaryFile(suffix=".gif", delete=False) as tmp:
+        gif_path = tmp.name
+
+    try:
+        animate_stop_dashboard(
+            panel_traj,
+            stops=panel_stops,
+            interval=140,
+            save_path=gif_path,
+            fps=8,
+            ping_color="cluster",
+            ping_cmap=cmap,
+            stop_cmap=cmap,
+            ping_size=6,
+            base_geometry=city,
+            base_geom_color="#8c8c8c",
+            base_geom_background="#d3d3d3",
+            data_crs=None,
+            traj_cols=tc,
+            show_path=False,
+            figsize=figsize,
+        )
+        return _gif_data_url_from_file(gif_path)
+    finally:
+        if os.path.exists(gif_path):
+            os.remove(gif_path)
+
+
+def _panel_output(
+    *,
+    sparse_df,
+    random_user,
+    cfg: dict,
+    city,
+    tc: dict,
+    mode: str,
 ):
-    plot_circles(
-        traj,
-        ax=ax_map,
-        radius=1.5,
-        color="cluster",
-        cmap=cmap,
-        base_geometry=city,
-        base_geom_color="#8c8c8c",
-        base_geom_background="#d3d3d3",
-        traj_cols=tc,
+    traj = sparse_df.query("user_id == @random_user").copy()
+    algo_key, normalized_params, stops, labels = _run_algo(
+        traj, cfg.get("algo", "seqscan"), dict(cfg.get("params", {})), tc
     )
-    plot_pings(traj, ax=ax_map, s=6, color="black", traj_cols=tc)
 
-    if algo_key == "lachesis":
-        ax_map.set_title(
-            f"LACHESIS | dt_max={int(normalized_params['dt_max'])} min, delta_roam={normalized_params['delta_roam']:g} m, dur_min={int(normalized_params['dur_min'])}"
+    if stops is None or labels is None or normalized_params is None:
+        return {
+            "algo": algo_key,
+            "title": f"{algo_key.upper()} | no notebook visualization available",
+            "available": False,
+            "animation_data_url": None,
+        }
+
+    traj = traj.copy()
+    traj["cluster"] = labels.to_numpy()
+    title = _panel_title(algo_key, normalized_params)
+
+    try:
+        animation_data_url = _render_panel_animation(
+            traj=traj,
+            stops=stops,
+            title=title,
+            cmap=str(cfg.get("cmap", "inferno_r")),
+            city=city,
+            tc=tc,
+            mode=mode,
         )
-    else:
-        ax_map.set_title(
-            f"{algo_key.upper()} | t={int(normalized_params['time_thresh'])} min, d={normalized_params['dist_thresh']:g} m, min_pts={int(normalized_params['min_pts'])}, dur_min={int(normalized_params['dur_min'])}"
-        )
+    except Exception:
+        return {
+            "algo": algo_key,
+            "title": title,
+            "available": False,
+            "animation_data_url": None,
+        }
 
-    plot_time_barcode(traj[tc["timestamp"]], ax=ax_barcode, set_xlim=True)
-    plot_stops_barcode(
-        stops,
-        ax=ax_barcode,
-        stop_alpha=0.4,
-        cmap=cmap,
-        set_xlim=False,
-        timestamp=tc["timestamp"],
-    )
-    traj_barcode = traj[[tc["timestamp"], "cluster"]].rename(
-        columns={tc["timestamp"]: "timestamp"}
-    )
-    plot_time_barcode(
-        traj_barcode,
-        color="cluster",
-        ax=ax_barcode,
-        cmap=cmap,
-        set_xlim=False,
-        lw=1,
-    )
-    ax_barcode.set_title("timestamps")
+    return {
+        "algo": algo_key,
+        "title": title,
+        "available": True,
+        "animation_data_url": animation_data_url,
+    }
 
 
-def _render_compare_figure(payload: dict) -> dict:
+def _render_compare_payload(payload: dict) -> dict:
     seed = int(payload.get("seed", 1))
     mode = str(payload.get("mode", "compare")).strip().lower()
     left_cfg = payload.get("left", {}) or {}
     right_cfg = payload.get("right", {}) or {}
 
     city, sparse_df, random_user, tc = _load_notebook_data(seed=seed)
-    resolved_algorithms = {}
+    left_panel = _panel_output(
+        sparse_df=sparse_df,
+        random_user=random_user,
+        cfg={
+            "algo": left_cfg.get("algo", "dbstop"),
+            "params": left_cfg.get("params", {}),
+            "cmap": left_cfg.get("cmap", "inferno_r"),
+        },
+        city=city,
+        tc=tc,
+        mode=mode,
+    )
 
-    if mode == "single":
-        fig, (ax_map, ax_barcode) = plt.subplots(
-            2,
-            1,
-            figsize=(8.0, 4.8),
-            gridspec_kw={"height_ratios": [10, 1]},
-        )
-        traj = sparse_df.query("user_id == @random_user").copy()
-        algo_key, normalized_params, stops, labels = _run_algo(
-            traj,
-            left_cfg.get("algo", "dbstop"),
-            dict(left_cfg.get("params", {})),
-            tc,
-        )
-        resolved_algorithms["left"] = algo_key
-        if stops is None or labels is None or normalized_params is None:
-            _plot_unavailable_panel(ax_map=ax_map, ax_barcode=ax_barcode, algo_key=algo_key)
-        else:
-            traj["cluster"] = labels.to_numpy()
-            _plot_notebook_panel(
-                ax_map=ax_map,
-                ax_barcode=ax_barcode,
-                traj=traj,
-                stops=stops,
-                algo_key=algo_key,
-                normalized_params=normalized_params,
-                cmap=str(left_cfg.get("cmap", "inferno_r")),
-                city=city,
-                tc=tc,
-            )
-    else:
-        panel_cfg = [
-            {
-                "panel": "left",
-                "algo": left_cfg.get("algo", "dbstop"),
-                "params": left_cfg.get("params", {}),
-                "cmap": left_cfg.get("cmap", "inferno_r"),
-            },
-            {
-                "panel": "right",
+    response = {
+        "seed": seed,
+        "mode": mode,
+        "left": left_panel,
+    }
+    if mode == "compare":
+        response["right"] = _panel_output(
+            sparse_df=sparse_df,
+            random_user=random_user,
+            cfg={
                 "algo": right_cfg.get("algo", "seqscan"),
                 "params": right_cfg.get("params", {}),
                 "cmap": right_cfg.get("cmap", "inferno_r"),
             },
-        ]
-
-        fig, axes = plt.subplots(
-            2,
-            2,
-            figsize=(12, 6.5),
-            gridspec_kw={"height_ratios": [10, 1]},
+            city=city,
+            tc=tc,
+            mode=mode,
         )
-
-        panel_axes = {
-            "left": (axes[0, 0], axes[1, 0]),
-            "right": (axes[0, 1], axes[1, 1]),
-        }
-
-        for cfg in panel_cfg:
-            ax_map, ax_barcode = panel_axes[cfg["panel"]]
-            traj = sparse_df.query("user_id == @random_user").copy()
-            algo_key, normalized_params, stops, labels = _run_algo(
-                traj, cfg["algo"], dict(cfg["params"]), tc
-            )
-            resolved_algorithms[cfg["panel"]] = algo_key
-            if stops is None or labels is None or normalized_params is None:
-                _plot_unavailable_panel(ax_map=ax_map, ax_barcode=ax_barcode, algo_key=algo_key)
-            else:
-                traj["cluster"] = labels.to_numpy()
-                _plot_notebook_panel(
-                    ax_map=ax_map,
-                    ax_barcode=ax_barcode,
-                    traj=traj,
-                    stops=stops,
-                    algo_key=algo_key,
-                    normalized_params=normalized_params,
-                    cmap=str(cfg["cmap"]),
-                    city=city,
-                    tc=tc,
-                )
-
-    plt.tight_layout(pad=1)
-    png_buffer = io.BytesIO()
-    fig.savefig(png_buffer, format="png", dpi=170, facecolor=fig.get_facecolor())
-    plt.close(fig)
-
-    image_b64 = base64.b64encode(png_buffer.getvalue()).decode("ascii")
-    return {
-        "seed": seed,
-        "mode": mode,
-        "image_data_url": f"data:image/png;base64,{image_b64}",
-        "resolved_algorithms": resolved_algorithms,
-    }
+    return response
 
 
 def main() -> None:
     payload = _load_input()
-    result = _render_compare_figure(payload)
+    result = _render_compare_payload(payload)
     sys.stdout.write(json.dumps(result))
 
 

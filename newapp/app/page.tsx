@@ -222,36 +222,45 @@ function AccuracyChart({ algorithmId, algorithmName }: { algorithmId: string; al
 
 type DataPoint = { id: string; x: number; y: number; time: string; color: "orange" | "pink" | "purple" }
 type TimeSegment = { id: string; startPercent: number; widthPercent: number; color: "orange" | "pink" | "purple" }
+type ComparePanelResponse = {
+  algo: string
+  title: string
+  available: boolean
+  animation_data_url: string | null
+}
 type CompareApiResponse = {
   seed: number
   mode?: "single" | "compare"
-  image_data_url: string
-  resolved_algorithms?: Record<string, string>
+  left: ComparePanelResponse
+  right?: ComparePanelResponse
 }
 
-function CompareNotebookFigure({
-  imageDataUrl,
+function CompareAnimationPanel({
+  panel,
   mode = "compare",
 }: {
-  imageDataUrl: string | null
+  panel: ComparePanelResponse | null | undefined
   mode?: "single" | "compare"
 }) {
-  const maxHeightClass =
-    mode === "single" ? "max-h-[calc(100vh-300px)]" : "max-h-[calc(100vh-240px)]"
+  const maxHeightClass = mode === "single" ? "max-h-[calc(100vh-300px)]" : "max-h-[calc(100vh-420px)]"
+  const hasAnimation = Boolean(panel?.available && panel?.animation_data_url)
 
   return (
     <Card className="overflow-hidden">
+      <CardHeader className="py-2 px-3 bg-muted/30 shrink-0">
+        <CardTitle className="text-sm font-semibold">{panel?.title ?? "No visualization"}</CardTitle>
+      </CardHeader>
       <CardContent className="p-2">
-        {imageDataUrl ? (
+        {hasAnimation ? (
           <div className={`w-full ${maxHeightClass} flex justify-center`}>
             <img
-              src={imageDataUrl}
-              alt="Notebook-style compare output"
+              src={panel?.animation_data_url ?? ""}
+              alt={panel?.title ?? "Algorithm animation"}
               className={`mx-auto w-auto max-w-full ${maxHeightClass} h-auto object-contain rounded-md border border-border`}
             />
           </div>
         ) : (
-          <p className="p-4 text-sm text-muted-foreground">Run visualize to render notebook output.</p>
+          <div className={`w-full ${maxHeightClass} rounded-md border border-dashed border-border bg-muted/40`} />
         )}
       </CardContent>
     </Card>
@@ -264,7 +273,7 @@ const algorithms = [
     name: "DBSTOP",
     shortDesc: "Density-based stop detection (notebook compare panel)",
     description:
-      "DBSTOP compare mode using the same map-plus-barcode plotting workflow as the notebook compare panel.",
+      "DBSTOP is a density-based stop detection configuration used in this dashboard’s compare workflow. It is parameterized by time_thresh, dist_thresh, min_pts, and dur_min, and is visualized with the same map-and-barcode layout as the notebook compare panel so behavior can be inspected side-by-side against other methods.",
     source: "ta_seqscan_examples.ipynb compare section",
     parameters: [
       { name: "time_thresh", defaultValue: "60", description: "Temporal threshold (minutes)" },
@@ -302,7 +311,7 @@ const algorithms = [
     id: "dbscan", 
     name: "ST-DBSCAN", 
     shortDesc: "Density-based spatiotemporal clustering",
-    description: "ST-DBSCAN extends classical DBSCAN by incorporating a second scale parameter to avoid long temporal gaps within detected stops, namely T_max, in addition to the spatial scale parameter eps_spatial, and minPts, the usual density threshold in DBSCAN. In this way, it incorporates both spatial and temporal proximity to define reachability. Since stops are defined as components of the reachability graph of core points, ST-DBSCAN is robust to noise points that could break up stops in sequential algorithms. Standard ST-DBSCAN does not guarantee temporal separation, so clusters can overlap in time even if they represent different stops. In this dashboard, we extend it with a simple heuristic to remove overlaps, where each core point can act as a cutoff and prevent merging non-neighbor core points.", 
+    description: "ST-DBSCAN extends classical DBSCAN by incorporating a second scale parameter to avoid long temporal gaps within detected stops, namely T_max, in addition to the spatial scale parameter eps_spatial and minPts, the usual density threshold in DBSCAN. In this way, it incorporates both spatial and temporal proximity to define reachability. Since stops are defined as components of the reachability graph of core points, ST-DBSCAN is robust to noise points that could break up stops in sequential algorithms. Standard ST-DBSCAN does not guarantee temporal separation, so clusters can overlap in time even if they represent different stops. In this dashboard, we extend it with a simple heuristic to remove overlaps in which every core point acts as a cutoff and prevents the merging of core points that are not neighbors of said point.", 
     source: "ST-DBSCAN: An algorithm for clustering spatial-temporal data",
     parameters: [
       { name: "eps_spatial", defaultValue: "50", description: "Spatial radius epsilon (meters)" }, 
@@ -708,7 +717,7 @@ export default function NomadDashboard() {
           {!compareMode ? (
             <div className="grid lg:grid-cols-[1fr_330px] gap-3 items-start overflow-hidden">
               <div className="flex flex-col gap-3">
-                <CompareNotebookFigure imageDataUrl={compareApiData?.image_data_url ?? null} mode="single" />
+                <CompareAnimationPanel panel={compareApiData?.left} mode="single" />
                 {compareLoading && <p className="text-xs text-muted-foreground">Running notebook algorithm code...</p>}
                 {compareError && <p className="text-xs text-red-500">{compareError}</p>}
               </div>
@@ -740,7 +749,10 @@ export default function NomadDashboard() {
           ) : (
             <div className="grid lg:grid-cols-[1fr_330px] gap-3 items-start overflow-hidden">
               <div className="flex flex-col gap-3">
-                <CompareNotebookFigure imageDataUrl={compareApiData?.image_data_url ?? null} mode="compare" />
+                <div className="grid lg:grid-cols-2 gap-3">
+                  <CompareAnimationPanel panel={compareApiData?.left} mode="compare" />
+                  <CompareAnimationPanel panel={compareApiData?.right} mode="compare" />
+                </div>
                 {compareLoading && <p className="text-xs text-muted-foreground">Running notebook algorithm code...</p>}
                 {compareError && <p className="text-xs text-red-500">{compareError}</p>}
               </div>

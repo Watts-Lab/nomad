@@ -767,8 +767,23 @@ def animate_stop_dashboard(
         "x": "x",
         "y": "y",
         "timestamp": "timestamp",
-        "end_timestamp": "end_timestamp"
+        "datetime": "datetime",
+        "end_timestamp": "end_timestamp",
+        "end_datetime": "end_datetime",
+        "duration": "duration",
+        "location_id": "location_id",
     }
+
+    stop_time_col = None
+    stop_time_is_datetime = False
+    if stops is not None and len(stops) > 0:
+        t_key, stop_time_is_datetime = loader._fallback_time_cols_dt(
+            stops.columns, stop_cols, {}
+        )
+        parsed_stops_cols = loader._parse_traj_cols(
+            stops.columns, stop_cols, {}, warn=False
+        )
+        stop_time_col = parsed_stops_cols[t_key]
 
     def update(frame):
         ax_map.clear()
@@ -776,7 +791,15 @@ def animate_stop_dashboard(
 
         current_data = data.iloc[:frame + 1]
         current_time = current_data['timestamp'].iloc[-1]
-        stops_visible = stops[stops['timestamp'] <= current_time]
+        stops_visible = None
+        if stops is not None and len(stops) > 0 and stop_time_col is not None:
+            if stop_time_is_datetime:
+                current_dt = pd.to_datetime(current_time, unit='s')
+                stop_times = pd.to_datetime(stops[stop_time_col])
+                stops_visible = stops[stop_times <= current_dt]
+            else:
+                stop_times = pd.to_numeric(stops[stop_time_col], errors='coerce')
+                stops_visible = stops[stop_times <= current_time]
 
         # Spatial layer: optionally draw observed path so far
         if show_path and len(current_data) > 1:
@@ -811,7 +834,7 @@ def animate_stop_dashboard(
         )
 
         # Overlay stops if provided
-        if stops is not None and len(stops) > 0:
+        if stops_visible is not None and len(stops_visible) > 0:
             plot_stops(
                 stops_visible,
                 ax_map,
@@ -839,7 +862,7 @@ def animate_stop_dashboard(
             set_xlim=True,
             lw=1
         )
-        if stops is not None and len(stops) > 0:
+        if stops_visible is not None and len(stops_visible) > 0:
             plot_stops_barcode(
                 stops_visible,
                 ax_time,
