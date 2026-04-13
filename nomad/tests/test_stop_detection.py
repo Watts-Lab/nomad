@@ -3,14 +3,9 @@ import geopandas as gpd
 from pandas.testing import assert_frame_equal
 from scipy.spatial.distance import pdist, cdist
 import pygeohash as gh
-from datetime import datetime, timedelta
-import itertools
-from collections import defaultdict
 import pytest
 from pathlib import Path
-from shapely.geometry import Point
 import nomad.io.base as loader
-from nomad import constants
 from nomad import filters
 import nomad.stop_detection.dbscan as DBSCAN
 import nomad.stop_detection.lachesis as LACHESIS
@@ -20,7 +15,6 @@ import nomad.stop_detection.hdbscan as HDBSCAN
 import nomad.stop_detection.grid_based as GRID_BASED
 import nomad.stop_detection.preprocessing as PREPROCESSING
 import nomad.stop_detection.utils as STOP_UTILS
-import pdb
 import nomad.stop_detection.sequential as SEQUENTIAL
 from pandas.api.types import is_integer_dtype
 
