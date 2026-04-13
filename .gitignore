@@ -74,3 +74,5 @@ sandbox/sandbox_data.gpkg
 **/*.eps
 node_modules/
 newapp/node_modules/
+examples/research/robustness-of-algorithms/figures/*.svg
+
