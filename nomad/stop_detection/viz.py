@@ -776,7 +776,10 @@ def animate_stop_dashboard(
 
         current_data = data.iloc[:frame + 1]
         current_time = current_data['timestamp'].iloc[-1]
-        stops_visible = stops[stops['timestamp'] <= current_time]
+
+        stops_visible = None
+        if stops is not None and len(stops) > 0:
+            stops_visible = stops[stops['timestamp'] <= current_time]
 
         # Spatial layer: optionally draw observed path so far
         if show_path and len(current_data) > 1:
@@ -811,7 +814,7 @@ def animate_stop_dashboard(
         )
 
         # Overlay stops if provided
-        if stops is not None and len(stops) > 0:
+        if stops is not None and len(stops_visible) > 0:
             plot_stops(
                 stops_visible,
                 ax_map,
@@ -839,7 +842,7 @@ def animate_stop_dashboard(
             set_xlim=True,
             lw=1
         )
-        if stops is not None and len(stops) > 0:
+        if stops is not None and len(stops_visible) > 0:
             plot_stops_barcode(
                 stops_visible,
                 ax_time,
