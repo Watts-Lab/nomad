@@ -802,21 +802,47 @@ def animate_stop_dashboard(
                 y = current_data[parsed_cols[coord_key2]]
             ax_map.plot(x, y, color='blue', alpha=0.2, linewidth=1, zorder=1)
 
-        # Plot pings seen so far
-        plot_pings(
-            current_data,
-            ax_map,
-            color=ping_color,
-            cmap=ping_cmap,
-            s=ping_size,
-            alpha=0.9,
-            base_geometry=base_geometry,
-            base_geom_color=base_geom_color,
-            base_geom_background=base_geom_background,
-            data_crs=data_crs,
-            traj_cols=traj_cols,
-            **kwargs
-        )
+        # Plot pings seen so far with recency-based fading
+        n_visible = len(current_data)
+        ages = np.arange(n_visible - 1, -1, -1)   # newest gets age 0
+        max_age = max(1, n_visible - 1)
+
+        # Tune these
+        min_alpha = 0.12
+        max_alpha = 0.95
+        min_size_mult = 0.6
+        max_size_mult = 1.8
+
+        # draw oldest first, newest last
+        for i in range(n_visible):
+            row = current_data.iloc[[i]].copy()
+            age = ages[i]
+            freshness = 1 - (age / max_age)   # 1=newest, 0=oldest
+
+            alpha_i = min_alpha + freshness * (max_alpha - min_alpha)
+            size_i = ping_size * (min_size_mult + freshness * (max_size_mult - min_size_mult))
+
+            # newest ping can be emphasized further
+            marker_i = 'o'
+            if i == n_visible - 1:
+                size_i = ping_size * 2.2
+                alpha_i = 1.0
+
+            plot_pings(
+                row,
+                ax_map,
+                color=ping_color,
+                cmap=ping_cmap,
+                s=size_i,
+                alpha=alpha_i,
+                marker=marker_i,
+                base_geometry=base_geometry if i == 0 else None,
+                base_geom_color=base_geom_color,
+                base_geom_background=base_geom_background,
+                data_crs=data_crs,
+                traj_cols=traj_cols,
+                **kwargs
+            )
 
         # Overlay stops if provided
         if stops is not None and len(stops_visible) > 0:

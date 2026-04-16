@@ -78,3 +78,4 @@ examples/research/robustness-of-algorithms/figures/*.svg
 
 newapp/node_modules/
 
+*.gif
