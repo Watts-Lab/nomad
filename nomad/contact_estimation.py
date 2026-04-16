@@ -165,64 +165,15 @@ def precision_recall_f1_from_minutes(total_pred, total_truth, tp):
     return {'precision': precision, 'recall': recall, 'f1': f1}
 
 def compute_stop_detection_metrics(stops, truth, user_id=None, algorithm=None, prf_only=True, traj_cols=None, **kwargs):
-    """
-    Compute stop detection metrics for a single user/algorithm combination.
-    
-    Parameters
-    ----------
-    stops : pd.DataFrame
-        Predicted stops with columns: building_id, duration, start_timestamp, etc.
-    truth : pd.DataFrame  
-        Ground truth stops with columns: building_id, duration, timestamp, etc.
-    user_id : str, optional
-        User identifier for the results
-    algorithm : str, optional
-        Algorithm name for the results
-    traj_cols : dict, optional
-        Column name mappings
-        
-    Returns
-    -------
-    dict
-        Dictionary with metrics: precision, recall, f1, missed_fraction, 
-        merged_fraction, split_fraction, user_id, algorithm
-    """
-    # Handle empty stops case
-    if len(stops) == 0:
-        return {
-            'precision': 0.0, 'recall': 0.0, 'f1': 0.0,
-            'missed_fraction': 1.0, 'merged_fraction': 0.0, 'split_fraction': 0.0,
-            'user_id': user_id, 'algorithm': algorithm
-        }
-    
-    # Prepare data - fill missing building_ids with 'Street'
-    stops_clean = stops.fillna({'location': 'Street'})
-    truth_clean = truth.fillna({'location': 'Street'})
-    truth_buildings = truth.dropna()  # Only actual buildings for error analysis
-    
-    # Compute overlaps
-    overlaps = overlapping_visits(
-        left=stops_clean, right=truth_clean, match_location=True,
-        traj_cols=traj_cols, **kwargs
-    )
-    
-    # Precision/Recall: only matching locations
-    total_pred = stops_clean['duration'].sum()
-    total_truth = truth_clean['duration'].sum()
-    tp = overlaps['duration'].sum()
-    prf_metrics = precision_recall_f1_from_minutes(total_pred, total_truth, tp)
-    
-    if prf_only:
-        return {**prf_metrics, 'user_id': user_id, 'algorithm': algorithm}
+    """Backward-compatible forwarder to nomad.stop_detection.validation."""
+    from nomad.stop_detection.validation import compute_stop_detection_metrics as _compute
 
-    # Error metrics: compare against buildings only
-    if len(truth_buildings) > 0:
-        overlaps_err = overlapping_visits(
-            left=stops_clean, right=truth_buildings, match_location=False,
-            traj_cols=traj_cols, **kwargs
-        )
-        error_metrics = compute_visitation_errors(overlaps_err, truth_buildings, traj_cols, **kwargs)
-    else:
-        error_metrics = {'missed_fraction': 0.0, 'merged_fraction': 0.0, 'split_fraction': 0.0}
-    
-    return {**prf_metrics, **error_metrics, 'user_id': user_id, 'algorithm': algorithm}
+    return _compute(
+        stops=stops,
+        truth=truth,
+        user_id=user_id,
+        algorithm=algorithm,
+        prf_only=prf_only,
+        traj_cols=traj_cols,
+        **kwargs,
+    )

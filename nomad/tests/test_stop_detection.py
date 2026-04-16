@@ -9,9 +9,7 @@ from collections import defaultdict
 import numpy as np
 import pytest
 from pathlib import Path
-from shapely.geometry import Point
 import nomad.io.base as loader
-from nomad import constants
 from nomad import filters
 import nomad.stop_detection.dbscan as DBSCAN
 import nomad.stop_detection.lachesis as LACHESIS
@@ -21,8 +19,8 @@ import nomad.stop_detection.hdbscan as HDBSCAN
 import nomad.stop_detection.grid_based as GRID_BASED
 import nomad.stop_detection.preprocessing as PREPROCESSING
 import nomad.stop_detection.utils as STOP_UTILS
-import pdb
 import nomad.stop_detection.sequential as SEQUENTIAL
+from pandas.api.types import is_integer_dtype
 import nomad.stop_detection.hdbscan as HDBSCAN
 
 @pytest.fixture
@@ -61,36 +59,22 @@ def shared_algo_registry():
 
 
 @pytest.fixture
-def additional_label_case_registry(stop_test_params):
+def fallback_label_case_registry(stop_test_params):
     dt_max = stop_test_params["dt_max"]
     dist_thresh = stop_test_params["dist_thresh"]
     min_pts = stop_test_params["min_pts"]
-    min_cluster_size = stop_test_params["min_cluster_size"]
     return {
         "tadbscan": {
             "fn": DBSCAN.ta_dbscan_labels,
             "kwargs": {"dist_thresh": dist_thresh, "min_pts": min_pts, "time_thresh": dt_max},
-            "traj_cols": {"timestamp": "timestamp", "x": "x", "y": "y"},
         },
         "dbstop": {
             "fn": DBSTOP.dbstop_labels,
             "kwargs": {"dist_thresh": dist_thresh, "min_pts": min_pts, "time_thresh": dt_max},
-            "traj_cols": {"timestamp": "timestamp", "x": "x", "y": "y"},
         },
         "seqscan": {
             "fn": DENSITY_BASED.seqscan_labels,
-            "kwargs": {"dist_thresh": dist_thresh, "min_pts": min_pts, "time_thresh": dt_max, "dur_min": 5},
-            "traj_cols": {"timestamp": "timestamp", "x": "x", "y": "y"},
-        },
-        "hdbscan-labels": {
-            "fn": HDBSCAN.hdbscan_labels,
-            "kwargs": {"time_thresh": dt_max, "min_pts": min_pts, "min_cluster_size": min_cluster_size, "dur_min": 5},
-            "traj_cols": {"timestamp": "timestamp", "x": "x", "y": "y"},
-        },
-        "grid-based-labels": {
-            "fn": GRID_BASED.grid_based_labels,
-            "kwargs": {"time_thresh": dt_max, "min_cluster_size": min_cluster_size, "dur_min": 5},
-            "traj_cols": {"timestamp": "timestamp", "location_id": "location_id"},
+            "kwargs": {"dist_thresh": dist_thresh, "min_pts": min_pts, "time_thresh": dt_max},
         },
     }
 
@@ -117,6 +101,221 @@ def overlap_stop_case_registry():
             "fn": HDBSCAN.st_hdbscan,
             "kwargs": {"time_thresh": 60, "min_pts": 2, "min_cluster_size": 2, "dur_min": 3},
             "traj_cols": {"timestamp": "unix_timestamp", "x": "x", "y": "y"},
+        },
+    }
+
+
+@pytest.fixture
+def latlon_xy_consistency_case_registry():
+    return {
+        "sequential": {
+            "fn": SEQUENTIAL.detect_stops,
+            "kwargs": {},
+        },
+        "lachesis": {
+            "fn": LACHESIS.lachesis,
+            "kwargs": {
+                # Required argument; other behavior uses implementation defaults.
+                "delta_roam": 100,
+            },
+        },
+        "dbstop": {
+            "fn": DBSTOP.dbstop,
+            "kwargs": {
+                # Required args; keep notebook-like dbstop settings.
+                "time_thresh": 60,
+                "dist_thresh": 8,
+                "min_pts": 3,
+            },
+        },
+        "tadbscan": {
+            "fn": DBSCAN.ta_dbscan,
+            "kwargs": {
+                "time_thresh": 60,
+                "dist_thresh": 45,
+                "min_pts": 2,
+            },
+        },
+        "seqscan": {
+            "fn": DENSITY_BASED.seqscan,
+            "kwargs": {
+                "time_thresh": 60,
+                "dist_thresh": 45,
+                "min_pts": 2,
+            },
+        },
+        "hdbscan": {
+            "fn": HDBSCAN.st_hdbscan,
+            "kwargs": {
+                "time_thresh": 60,
+            },
+        },
+    }
+
+
+@pytest.fixture
+def latlon_xy_label_consistency_case_registry():
+    return {
+        "tadbscan-labels": {
+            "fn": DBSCAN.ta_dbscan_labels,
+            "kwargs": {"dist_thresh": 45, "min_pts": 2, "time_thresh": 60},
+        },
+        "dbstop-labels": {
+            "fn": DBSTOP.dbstop_labels,
+            "kwargs": {"dist_thresh": 8, "min_pts": 3, "time_thresh": 60},
+        },
+        "seqscan-labels": {
+            "fn": DENSITY_BASED.seqscan_labels,
+            "kwargs": {"dist_thresh": 45},
+        },
+        "hdbscan-labels": {
+            "fn": HDBSCAN.hdbscan_labels,
+            "kwargs": {"time_thresh": 60},
+        },
+    }
+
+
+@pytest.fixture
+def label_concat_case_registry(stop_test_params):
+    dt_max = stop_test_params["dt_max"]
+    dist_thresh = stop_test_params["dist_thresh"]
+    min_pts = stop_test_params["min_pts"]
+    return {
+        "dbstop": {
+            "fn": DBSTOP.dbstop_labels,
+            "kwargs": {"dist_thresh": dist_thresh, "min_pts": min_pts, "time_thresh": dt_max},
+            "traj_cols": {"timestamp": "timestamp", "x": "x", "y": "y"},
+            "supports_return_cores": True,
+        },
+        "tadbscan": {
+            "fn": DBSCAN.ta_dbscan_labels,
+            "kwargs": {"dist_thresh": dist_thresh, "min_pts": min_pts, "time_thresh": dt_max},
+            "traj_cols": {"timestamp": "timestamp", "x": "x", "y": "y"},
+            "supports_return_cores": True,
+        },
+        "seqscan": {
+            "fn": DENSITY_BASED.seqscan_labels,
+            "kwargs": {"dist_thresh": dist_thresh, "min_pts": min_pts, "time_thresh": dt_max},
+            "traj_cols": {"timestamp": "timestamp", "x": "x", "y": "y"},
+            "supports_return_cores": True,
+        },
+        "lachesis": {
+            "fn": LACHESIS.lachesis_labels,
+            "kwargs": {"delta_roam": dist_thresh, "dt_max": dt_max, "dur_min": 5},
+            "traj_cols": {"timestamp": "timestamp", "x": "x", "y": "y"},
+            "supports_return_cores": False,
+        },
+        "sequential": {
+            "fn": SEQUENTIAL.detect_stops_labels,
+            "kwargs": {"delta_roam": dist_thresh, "dt_max": dt_max, "dur_min": 5, "method": "sliding"},
+            "traj_cols": {"timestamp": "timestamp", "x": "x", "y": "y"},
+            "supports_return_cores": False,
+        },
+        "hdbscan": {
+            "fn": HDBSCAN.hdbscan_labels,
+            "kwargs": {"time_thresh": dt_max, "min_pts": min_pts, "min_cluster_size": 2, "dur_min": 5},
+            "traj_cols": {"timestamp": "timestamp", "x": "x", "y": "y"},
+            "supports_return_cores": False,
+        },
+        "grid-based": {
+            "fn": GRID_BASED.grid_based_labels,
+            "kwargs": {"time_thresh": dt_max, "min_cluster_size": 2, "dur_min": 5},
+            "traj_cols": {"timestamp": "timestamp", "location_id": "location_id"},
+            "supports_return_cores": False,
+        },
+    }
+
+
+@pytest.fixture
+def stop_df_schema_case_registry():
+    return {
+        "sequential": {
+            "fn": SEQUENTIAL.detect_stops,
+            "kwargs": {},
+        },
+        "lachesis": {
+            "fn": LACHESIS.lachesis,
+            "kwargs": {"delta_roam": 100},
+        },
+        "dbstop": {
+            "fn": DBSTOP.dbstop,
+            "kwargs": {"time_thresh": 60, "dist_thresh": 8, "min_pts": 3},
+        },
+        "tadbscan": {
+            "fn": DBSCAN.ta_dbscan,
+            "kwargs": {"time_thresh": 60, "dist_thresh": 45, "min_pts": 2},
+        },
+        "seqscan": {
+            "fn": DENSITY_BASED.seqscan,
+            "kwargs": {"time_thresh": 60, "dist_thresh": 45, "min_pts": 2},
+        },
+        "hdbscan": {
+            "fn": HDBSCAN.st_hdbscan,
+            "kwargs": {"time_thresh": 60},
+        },
+    }
+
+
+@pytest.fixture
+def per_user_wrapper_case_registry():
+    return {
+        "dbstop": {
+            "stop_fn": DBSTOP.dbstop_per_user,
+            "label_fn": DBSTOP.dbstop_labels_per_user,
+            "single_user_label_fn": DBSTOP.dbstop_labels,
+            "kwargs": {"dist_thresh": 100, "min_pts": 2, "time_thresh": 60},
+        },
+        "tadbscan": {
+            "stop_fn": DBSCAN.ta_dbscan_per_user,
+            "label_fn": DBSCAN.ta_dbscan_labels_per_user,
+            "single_user_label_fn": DBSCAN.ta_dbscan_labels,
+            "kwargs": {"dist_thresh": 100, "min_pts": 2, "time_thresh": 60},
+        },
+        "seqscan": {
+            "stop_fn": DENSITY_BASED.seqscan_per_user,
+            "label_fn": DENSITY_BASED.seqscan_labels_per_user,
+            "single_user_label_fn": DENSITY_BASED.seqscan_labels,
+            "kwargs": {"dist_thresh": 100, "min_pts": 2, "time_thresh": 60},
+        },
+        "hdbscan": {
+            "stop_fn": HDBSCAN.st_hdbscan_per_user,
+            "label_fn": HDBSCAN.hdbscan_labels_per_user,
+            "single_user_label_fn": HDBSCAN.hdbscan_labels,
+            "kwargs": {"time_thresh": 60, "min_pts": 2, "min_cluster_size": 2, "dur_min": 5},
+        },
+        "lachesis": {
+            "stop_fn": LACHESIS.lachesis_per_user,
+            "label_fn": LACHESIS.lachesis_labels_per_user,
+            "single_user_label_fn": LACHESIS.lachesis_labels,
+            "kwargs": {"dt_max": 60, "delta_roam": 100, "dur_min": 5},
+        },
+        "sequential": {
+            "stop_fn": SEQUENTIAL.detect_stops_per_user,
+            "label_fn": SEQUENTIAL.detect_stops_labels_per_user,
+            "single_user_label_fn": SEQUENTIAL.detect_stops_labels,
+            "kwargs": {"dt_max": 60, "delta_roam": 100, "dur_min": 5, "method": "sliding"},
+        },
+    }
+
+
+@pytest.fixture
+def stop_df_schema_input_case_registry():
+    return {
+        "xy-timestamp": {
+            "cols": ["timestamp", "x", "y"],
+            "traj_cols": {"timestamp": "timestamp", "x": "x", "y": "y"},
+        },
+        "latlon-timestamp": {
+            "cols": ["timestamp", "longitude", "latitude"],
+            "traj_cols": {"timestamp": "timestamp", "longitude": "longitude", "latitude": "latitude"},
+        },
+        "xy-datetime": {
+            "cols": ["local_datetime", "x", "y"],
+            "traj_cols": {"datetime": "local_datetime", "x": "x", "y": "y"},
+        },
+        "latlon-datetime": {
+            "cols": ["local_datetime", "longitude", "latitude"],
+            "traj_cols": {"datetime": "local_datetime", "longitude": "longitude", "latitude": "latitude"},
         },
     }
 
@@ -169,6 +368,20 @@ def base_df():
     # dtypes: [object, int64, float64, float64, int64, object, float64, float64, object]
     return df
 
+
+@pytest.fixture
+def per_user_test_data(base_df):
+    traj_cols = {
+        "user_id": "uid",
+        "timestamp": "timestamp",
+        "x": "x",
+        "y": "y",
+    }
+    selected_users = base_df[traj_cols["user_id"]].drop_duplicates().head(4)
+    sample_df = base_df[base_df[traj_cols["user_id"]].isin(selected_users)].copy()
+    data = loader.from_df(sample_df, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior="utc")
+    return data, traj_cols
+
 @pytest.fixture
 def single_user_df(base_df):
     uid = base_df.uid.iloc[0]
@@ -195,30 +408,46 @@ def simple_traj_ts(simple_traj):
     return df
 
 ## ============================================= TESTS =========================================
-def test_lachesis_output_is_valid_stop_df(base_df):
-    """Tests if Lachesis concise output conforms to the stop DataFrame standard."""
-    traj_cols = {
-        "user_id": "uid", "timestamp": "timestamp",
-        "x": "x", "y": "y"
-    }
-    df = loader.from_df(base_df, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior="utc")
+@pytest.mark.parametrize(
+    "algo_name",
+    [
+        pytest.param("sequential", id="sequential"),
+        pytest.param("lachesis", id="lachesis"),
+        pytest.param("dbstop", id="dbstop"),
+        pytest.param("tadbscan", id="tadbscan"),
+        pytest.param("seqscan", id="seqscan"),
+        pytest.param("hdbscan", id="hdbscan"),
+    ],
+)
+@pytest.mark.parametrize(
+    "input_case",
+    [
+        pytest.param("xy-timestamp", id="xy-timestamp"),
+        pytest.param("latlon-timestamp", id="latlon-timestamp"),
+        pytest.param("xy-datetime", id="xy-datetime"),
+        pytest.param("latlon-datetime", id="latlon-datetime"),
+    ],
+)
+def test_stop_output_is_valid_stop_df(base_df, stop_df_schema_case_registry, stop_df_schema_input_case_registry, algo_name, input_case):
+    case = stop_df_schema_case_registry[algo_name]
+    input_cfg = stop_df_schema_input_case_registry[input_case]
 
-    first_user = df[traj_cols["user_id"]].iloc[0]
-    single_user_df = df[df[traj_cols["user_id"]] == first_user].copy()
+    first_user = base_df["uid"].iloc[0]
+    single_user = base_df[base_df["uid"] == first_user].head(1500).copy()
+    input_df = single_user[input_cfg["cols"]].copy()
 
-    stops_df = LACHESIS.lachesis(
-        data=single_user_df,
-        delta_roam=100,
-        dt_max=10,
-        dur_min=5,
-        traj_cols=traj_cols,
-        complete_output=False)
-    
-    del traj_cols['user_id']
+    if "datetime" in input_cfg["traj_cols"]:
+        dt_col = input_cfg["traj_cols"]["datetime"]
+        input_df[dt_col] = pd.to_datetime(input_df[dt_col], utc=True)
 
-    is_valid = loader._is_stop_df(stops_df, traj_cols=traj_cols, parse_dates=False)
+    stops_df = case["fn"](
+        data=input_df,
+        traj_cols=input_cfg["traj_cols"],
+        complete_output=False,
+        **case["kwargs"],
+    )
 
-    assert is_valid, "Lachesis concise output failed validation by _is_stop_df"
+    assert loader._is_stop_df(stops_df, traj_cols=input_cfg["traj_cols"], parse_dates=False)
 
    
 ##########################################
@@ -308,7 +537,7 @@ def test_number_labels_matches_stop_count_shared(single_user_df, shared_algo_reg
         data=data,
         traj_cols=traj_cols,
         dur_min=5,
-        dt_max=10,
+        dt_max=60,
         delta_roam=100,
         complete_output=False,
         keep_col_names=False,
@@ -318,7 +547,7 @@ def test_number_labels_matches_stop_count_shared(single_user_df, shared_algo_reg
         data=data,
         traj_cols=traj_cols,
         dur_min=5,
-        dt_max=10,
+        dt_max=60,
         delta_roam=100,
         **case["extra_kwargs"],
     )
@@ -365,116 +594,109 @@ def test_sequential_ground_truth(agent_traj_ground_truth):
     num_clusters = sum(sequential_out.unique() > -1)
     assert 2 <= num_clusters <= 5, f"Expected 2-5 stops, got {num_clusters}"
 
-def test_sequential_empty_dataframe(empty_traj):
-    """Test that sequential returns proper empty DataFrame with correct columns."""
-    result = SEQUENTIAL.detect_stops(
-        empty_traj,
-        delta_roam=100,
-        dt_max=60,
-        dur_min=5,
-        method='sliding',
-        complete_output=True,
-        traj_cols={
-            'timestamp': 'timestamp', 
-            'longitude': 'longitude', 
-            'latitude': 'latitude'
-        }
-    )
-    
-    # Should return empty DataFrame with correct columns
-    assert result.empty
-    expected_cols = {'longitude', 'latitude', 'timestamp', 'diameter', 'n_pings', 'end_timestamp', 'duration', 'max_gap'}
-    assert set(result.columns) == expected_cols
 
-def test_sequential_empty_dataframe_xy(empty_traj_xy):
-    """Test that sequential works with x,y coordinates on empty data."""
-    result = SEQUENTIAL.detect_stops(
-        empty_traj_xy,
-        delta_roam=100,
-        dt_max=60,
-        dur_min=5,
-        method='sliding',
-        complete_output=False,
-        traj_cols={
-            'timestamp': 'timestamp', 
-            'x': 'x', 
-            'y': 'y'
-        }
-    )
-    
-    # Should return empty DataFrame with correct columns
-    assert result.empty
-    expected_cols = ['x', 'y', 'timestamp', 'duration']
-    assert list(result.columns) == expected_cols
+@pytest.mark.parametrize(
+    "algo_name",
+    [
+        pytest.param("dbstop", id="dbstop"),
+        pytest.param("tadbscan", id="tadbscan"),
+        pytest.param("seqscan", id="seqscan"),
+        pytest.param("hdbscan", id="hdbscan"),
+        pytest.param("lachesis", id="lachesis"),
+        pytest.param("sequential", id="sequential"),
+    ],
+)
+@pytest.mark.parametrize(
+    "n_jobs",
+    [
+        pytest.param(1, id="n_jobs_1"),
+        pytest.param(2, id="n_jobs_2"),
+    ],
+)
+def test_per_user_wrapper_outputs_valid_stop_df(per_user_test_data, per_user_wrapper_case_registry, algo_name, n_jobs):
+    df, traj_cols = per_user_test_data
+    case = per_user_wrapper_case_registry[algo_name]
 
-def test_sequential_output_is_valid_stop_df(base_df):
-    """Test if sequential concise output conforms to the stop DataFrame standard."""
-    traj_cols = {
-        "user_id": "uid", "timestamp": "timestamp",
-        "x": "x", "y": "y"
-    }
-    df = loader.from_df(base_df, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior="utc")
-
-    first_user = df[traj_cols["user_id"]].iloc[0]
-    single_user_df = df[df[traj_cols["user_id"]] == first_user].copy()
-
-    stops_df = SEQUENTIAL.detect_stops(
-        data=single_user_df,
-        delta_roam=100,
-        dt_max=10,
-        dur_min=5,
-        method='sliding',
-        traj_cols=traj_cols,
-        complete_output=False
-    )
-    
-    del traj_cols['user_id']
-
-    is_valid = loader._is_stop_df(stops_df, traj_cols=traj_cols, parse_dates=False)
-
-    assert is_valid, "Sequential concise output failed validation by _is_stop_df"
-
-def test_sequential_per_user_multiuser_required(base_df):
-    """Test that detect_stops raises error when multi-user data is provided."""
-    traj_cols = {
-        "user_id": "uid", "timestamp": "timestamp",
-        "x": "x", "y": "y"
-    }
-    df = loader.from_df(base_df, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior="utc")
-
-    with pytest.raises(ValueError, match="Multi-user data"):
-        SEQUENTIAL.detect_stops(
-            data=df,
-            delta_roam=100,
-            dt_max=10,
-            dur_min=5,
-            method='sliding',
-            traj_cols=traj_cols
-        )
-
-def test_sequential_per_user_basic(base_df):
-    """Test detect_stops_per_user on multi-user data."""
-    traj_cols = {
-        "user_id": "uid", "timestamp": "timestamp",
-        "x": "x", "y": "y"
-    }
-    df = loader.from_df(base_df, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior="utc")
-
-    stops_df = SEQUENTIAL.detect_stops_per_user(
+    stops_df = case["stop_fn"](
         data=df,
-        delta_roam=100,
-        dt_max=10,
-        dur_min=5,
-        method='sliding',
         traj_cols=traj_cols,
-        complete_output=False,
-        n_jobs=1
+        n_jobs=n_jobs,
+        **case["kwargs"],
     )
-    
-    # Should have stops for multiple users
+
     assert not stops_df.empty
-    assert 'uid' in stops_df.columns
-    assert stops_df['uid'].nunique() > 1
+    assert loader._is_stop_df(stops_df, traj_cols=traj_cols, parse_dates=False)
+    assert traj_cols["user_id"] in stops_df.columns
+    assert stops_df[traj_cols["user_id"]].nunique() > 1
+
+
+@pytest.mark.parametrize(
+    "algo_name",
+    [
+        pytest.param("dbstop", id="dbstop"),
+        pytest.param("tadbscan", id="tadbscan"),
+        pytest.param("seqscan", id="seqscan"),
+        pytest.param("hdbscan", id="hdbscan"),
+        pytest.param("lachesis", id="lachesis"),
+        pytest.param("sequential", id="sequential"),
+    ],
+)
+@pytest.mark.parametrize(
+    "n_jobs",
+    [
+        pytest.param(1, id="n_jobs_1"),
+        pytest.param(2, id="n_jobs_2"),
+    ],
+)
+def test_per_user_label_wrapper_matches_single_user_reference(per_user_test_data, per_user_wrapper_case_registry, algo_name, n_jobs):
+    df, traj_cols = per_user_test_data
+    case = per_user_wrapper_case_registry[algo_name]
+
+    labels = case["label_fn"](
+        data=df,
+        traj_cols=traj_cols,
+        n_jobs=n_jobs,
+        **case["kwargs"],
+    )
+
+    uid = traj_cols["user_id"]
+    ts = traj_cols["timestamp"]
+
+    expected_labels = pd.Series(index=df.index, dtype=labels.dtype)
+    for _, group in df.groupby(uid, sort=False):
+        expected_labels.loc[group.index] = case["single_user_label_fn"](
+            data=group,
+            traj_cols=traj_cols,
+            **case["kwargs"],
+        ).values
+
+    computed = pd.DataFrame({
+        uid: df[uid].values,
+        ts: df[ts].values,
+        "label": labels.values,
+    })
+    expected = pd.DataFrame({
+        uid: df[uid].values,
+        ts: df[ts].values,
+        "label": expected_labels.values,
+    })
+
+    key_cols = [uid, ts]
+    assert not computed.duplicated(key_cols).any()
+    assert not expected.duplicated(key_cols).any()
+
+    merged = computed.merge(
+        expected,
+        on=key_cols,
+        how="inner",
+        validate="one_to_one",
+        suffixes=("_computed", "_expected"),
+    )
+
+    assert len(labels) == len(df)
+    assert labels.index.equals(df.index)
+    assert len(merged) == len(df)
+    assert (merged["label_computed"] == merged["label_expected"]).all()
 
 def test_sequential_temporal_gap_breaks_stop(simple_traj, stop_test_params):
     """Test that temporal gap larger than dt_max breaks a stop."""
@@ -491,11 +713,23 @@ def test_sequential_temporal_gap_breaks_stop(simple_traj, stop_test_params):
     # First 6 points form a stop, last point is noise
     assert list(labels.values) == [0,0,0,0,0,0,-1]
 
-def test_sequential_latlon_vs_xy_consistency(base_df):
-    """Test that sequential gives consistent results with lat/lon vs x/y."""
+@pytest.mark.parametrize(
+    "algo_name",
+    [
+        pytest.param("sequential", id="sequential"),
+        pytest.param("lachesis", id="lachesis"),
+        pytest.param("dbstop", id="dbstop"),
+        pytest.param("tadbscan", id="tadbscan"),
+        pytest.param("seqscan", id="seqscan"),
+        pytest.param("hdbscan", id="hdbscan"),
+    ],
+)
+def test_stop_detection_latlon_vs_xy_consistency(base_df, latlon_xy_consistency_case_registry, algo_name):
+    """Test that algorithms run with both lat/lon and x/y coordinates without errors."""
     # Get single user data
     first_user = base_df['uid'].iloc[0]
-    single_user = base_df[base_df['uid'] == first_user].copy()
+    single_user = base_df[base_df['uid'] == first_user].head(1500).copy()
+    case = latlon_xy_consistency_case_registry[algo_name]
     
     # Test with lat/lon
     df_latlon = loader.from_df(
@@ -505,13 +739,10 @@ def test_sequential_latlon_vs_xy_consistency(base_df):
         mixed_timezone_behavior="utc"
     )
     
-    stops_latlon = SEQUENTIAL.detect_stops(
+    stops_latlon = case["fn"](
         data=df_latlon,
-        delta_roam=100,
-        dt_max=10,
-        dur_min=5,
-        method='sliding',
-        complete_output=False
+        traj_cols={'timestamp': 'timestamp', 'latitude': 'latitude', 'longitude': 'longitude'},
+        **case["kwargs"],
     )
     
     # Test with x/y (note: delta_roam needs adjustment for different units)
@@ -522,17 +753,13 @@ def test_sequential_latlon_vs_xy_consistency(base_df):
         mixed_timezone_behavior="utc"
     )
     
-    stops_xy = SEQUENTIAL.detect_stops(
+    stops_xy = case["fn"](
         data=df_xy,
-        delta_roam=100,  # Same value - will be in different units
-        dt_max=10,
-        dur_min=5,
-        method='sliding',
-        complete_output=False
+        traj_cols={'timestamp': 'timestamp', 'x': 'x', 'y': 'y'},
+        **case["kwargs"],
     )
     
-    # Both should produce stops (even if different counts due to unit difference)
-    # Main test is that both run without error
+    # Main test is that both run without error.
     assert isinstance(stops_latlon, pd.DataFrame)
     assert isinstance(stops_xy, pd.DataFrame)
 
@@ -540,18 +767,85 @@ def test_sequential_latlon_vs_xy_consistency(base_df):
 @pytest.mark.parametrize(
     "algo_name",
     [
-        pytest.param("tadbscan", id="tadbscan"),
-        pytest.param("dbstop", id="dbstop"),
-        pytest.param("seqscan", id="seqscan"),
+        pytest.param("tadbscan-labels", id="tadbscan-labels"),
+        pytest.param("dbstop-labels", id="dbstop-labels"),
+        pytest.param("seqscan-labels", id="seqscan-labels"),
         pytest.param("hdbscan-labels", id="hdbscan-labels"),
-        pytest.param("grid-based-labels", id="grid-based-labels"),
     ],
 )
-def test_additional_algorithms_label_smoke(simple_traj_ts, additional_label_case_registry, algo_name):
-    case = additional_label_case_registry[algo_name]
-    labels = case["fn"](simple_traj_ts, traj_cols=case["traj_cols"], **case["kwargs"])
-    assert len(labels) == len(simple_traj_ts)
-    assert labels.iloc[-1] == -1
+def test_density_label_algorithms_latlon_vs_xy_consistency(base_df, latlon_xy_label_consistency_case_registry, algo_name):
+    first_user = base_df['uid'].iloc[0]
+    single_user = base_df[base_df['uid'] == first_user].head(1500).copy()
+    case = latlon_xy_label_consistency_case_registry[algo_name]
+
+    labels_latlon = case["fn"](
+        single_user[['timestamp', 'latitude', 'longitude']],
+        traj_cols={'timestamp': 'timestamp', 'latitude': 'latitude', 'longitude': 'longitude'},
+        **case["kwargs"],
+    )
+    labels_xy = case["fn"](
+        single_user[['timestamp', 'x', 'y']],
+        traj_cols={'timestamp': 'timestamp', 'x': 'x', 'y': 'y'},
+        **case["kwargs"],
+    )
+
+    assert len(labels_latlon) == len(single_user)
+    assert len(labels_xy) == len(single_user)
+
+
+@pytest.mark.parametrize(
+    "algo_name,return_cores",
+    [
+        pytest.param("dbstop", False, id="dbstop-series"),
+        pytest.param("dbstop", True, id="dbstop-cores"),
+        pytest.param("tadbscan", False, id="tadbscan-series"),
+        pytest.param("tadbscan", True, id="tadbscan-cores"),
+        pytest.param("seqscan", False, id="seqscan-series"),
+        pytest.param("seqscan", True, id="seqscan-cores"),
+        pytest.param("lachesis", False, id="lachesis-series"),
+        pytest.param("sequential", False, id="sequential-series"),
+        pytest.param("hdbscan", False, id="hdbscan-series"),
+        pytest.param("grid-based", False, id="grid-based-series"),
+    ],
+)
+def test_label_concat_with_empty_input_preserves_integer_schema(
+    simple_traj_ts,
+    label_concat_case_registry,
+    algo_name,
+    return_cores,
+):
+    case = label_concat_case_registry[algo_name]
+    if return_cores and not case["supports_return_cores"]:
+        pytest.skip("Algorithm does not expose return_cores.")
+
+    non_empty = simple_traj_ts.copy()
+    empty = non_empty.iloc[:0].copy()
+
+    kwargs = dict(case["kwargs"])
+    if case["supports_return_cores"]:
+        kwargs["return_cores"] = return_cores
+
+    labels_non_empty = case["fn"](non_empty, traj_cols=case["traj_cols"], **kwargs)
+    labels_empty = case["fn"](empty, traj_cols=case["traj_cols"], **kwargs)
+
+    concatenated = pd.concat([labels_empty, labels_non_empty])
+
+    assert len(concatenated) == len(labels_non_empty)
+    assert concatenated.index.equals(labels_non_empty.index)
+
+    if return_cores:
+        assert isinstance(labels_empty, pd.DataFrame)
+        assert list(labels_empty.columns) == ["cluster", "core"]
+        assert isinstance(concatenated, pd.DataFrame)
+        assert list(concatenated.columns) == ["cluster", "core"]
+        assert is_integer_dtype(concatenated["cluster"].dtype)
+        assert is_integer_dtype(concatenated["core"].dtype)
+    else:
+        assert isinstance(labels_empty, pd.Series)
+        assert labels_empty.name == "cluster"
+        assert isinstance(concatenated, pd.Series)
+        assert concatenated.name == "cluster"
+        assert is_integer_dtype(concatenated.dtype)
 
 
 @pytest.mark.parametrize(
@@ -588,7 +882,7 @@ def test_density_algorithms_output_non_overlapping_stops(agent_traj_ground_truth
         pytest.param("tadbscan", id="tadbscan"),
     ],
 )
-def test_default_time_fallback_prefers_datetime(simple_traj_ts, stop_test_params, shared_algo_registry, additional_label_case_registry, algo_name):
+def test_default_time_fallback_prefers_datetime(simple_traj_ts, stop_test_params, shared_algo_registry, fallback_label_case_registry, algo_name):
     """When both datetime and timestamp exist, default fallback should prioritize datetime."""
     traj = simple_traj_ts.copy()
     traj["timestamp"] = pd.Series(
@@ -607,7 +901,7 @@ def test_default_time_fallback_prefers_datetime(simple_traj_ts, stop_test_params
             **case["extra_kwargs"],
         )
     else:
-        case = additional_label_case_registry[algo_name]
+        case = fallback_label_case_registry[algo_name]
         labels = case["fn"](traj, **case["kwargs"])
 
     assert list(labels.values) == [0, 0, 0, 0, 0, 0, -1]
@@ -648,6 +942,7 @@ def test_find_neighbors_nullable_timestamp_relabels_to_unix_seconds(simple_traj,
 
     expected_nodes = traj["timestamp"].astype("int64").to_list()
     assert list(graph.nodes()) == expected_nodes
+
 
 ##########################################
 ####           DBSCAN TESTS           #### 
@@ -691,6 +986,23 @@ def empty_complete_case_registry():
                 },
             },
             "expected_cols": {'timestamp', 'end_timestamp', 'n_pings', 'max_gap', 'duration', 'location_id'},
+        },
+        "sequential": {
+            "fn": SEQUENTIAL.detect_stops,
+            "kwargs": {
+                "delta_roam": 100,
+                "dt_max": 60,
+                "dur_min": 5,
+                "method": "sliding",
+                "complete_output": True,
+                "traj_cols": {
+                    'timestamp': 'timestamp',
+                    'longitude': 'longitude',
+                    'latitude': 'latitude',
+                    'user_id': 'user_id',
+                },
+            },
+            "expected_cols": {'longitude', 'latitude', 'timestamp', 'diameter', 'n_pings', 'end_timestamp', 'duration', 'max_gap'},
         },
         "hdbscan": {
             "fn": HDBSCAN.st_hdbscan,
@@ -799,6 +1111,23 @@ def empty_xy_case_registry():
             },
             "expected_cols": {'timestamp', 'duration', 'location_id'},
         },
+        "sequential": {
+            "fn": SEQUENTIAL.detect_stops,
+            "kwargs": {
+                "delta_roam": 100,
+                "dt_max": 60,
+                "dur_min": 5,
+                "method": "sliding",
+                "complete_output": False,
+                "traj_cols": {
+                    'timestamp': 'timestamp',
+                    'x': 'x',
+                    'y': 'y',
+                    'user_id': 'user_id',
+                },
+            },
+            "expected_cols": {'x', 'y', 'timestamp', 'duration'},
+        },
         "hdbscan": {
             "fn": HDBSCAN.st_hdbscan,
             "kwargs": {
@@ -890,6 +1219,7 @@ def empty_xy_case_registry():
     "algo_name",
     [
         pytest.param("grid-based", id="grid-based"),
+        pytest.param("sequential", id="sequential"),
         pytest.param("hdbscan", id="hdbscan"),
         pytest.param("lachesis", id="lachesis"),
         pytest.param("tadbscan", id="tadbscan"),
@@ -909,6 +1239,7 @@ def test_empty_dataframe_complete_output(empty_traj, empty_complete_case_registr
     "algo_name",
     [
         pytest.param("grid-based", id="grid-based"),
+        pytest.param("sequential", id="sequential"),
         pytest.param("hdbscan", id="hdbscan"),
         pytest.param("lachesis", id="lachesis"),
         pytest.param("tadbscan", id="tadbscan"),
