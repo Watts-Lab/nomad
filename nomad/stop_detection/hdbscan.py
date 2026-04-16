@@ -3,6 +3,7 @@ import numpy as np
 from collections import defaultdict
 import networkx as nx
 import warnings
+from nomad import data
 import nomad.io.base as loader
 from nomad.stop_detection import utils
 from nomad.filters import to_timestamp
@@ -85,7 +86,7 @@ def _build_border_map(scale, core_distances, G):
     
     return core_to_border # return this but instead using something with input as G
 
-def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size, dur_min=5):
+def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size, dur_min=5, min_pts=2):
     """
     Builds a cluster hierarchy from a pre-computed Minimum Spanning Tree.
 
@@ -173,7 +174,49 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size, dur_
                 # This is where removal of temporal overlaps will happen.
                 # Future pass will process this parent's children together with
                 # the parent's non-core neighbors from border_map.
-                pass
+                future_core = core_df[(core_df.index > curr_time) & (core_df == active_cid)].index.min()
+                if pd.notna(future_core):
+                    core_time_range = sorted(abs(nb - curr_time) for nb in G[curr_time])[min_pts - 1]
+                    prev_pos, future_pos = np.searchsorted(node_times, [prev_core, future_core])
+                    prev_coords = data.iloc[prev_pos][[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
+                    future_coords = data.iloc[future_pos][[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
+                    counterfactual_coords = prev_coords + ((curr_time - prev_core) / (future_core - prev_core)) * (
+                        future_coords - prev_coords
+                    )
+
+                    if use_lon_lat:
+                        spatial_nb_idx = s_tree.query_radius(
+                            # _find_neighbors builds BallTree in [lat, lon] radians.
+                            np.radians(counterfactual_coords[[1, 0]]).reshape(1, -1),
+                            r=dist_thresh / 6_371_000,
+                        )[0]
+                    else:
+                        spatial_nb_idx = s_tree.query_radius(
+                            np.asarray(counterfactual_coords).reshape(1, -1),
+                            r=dist_thresh,
+                        )[0]
+
+                    if len(spatial_nb_idx) >= min_pts:
+                        counterfactual_time_range = np.sort(np.abs(node_times[spatial_nb_idx] - curr_time))[min_pts - 1]
+                        new_active_cluster = (core_time_range <= counterfactual_time_range)
+                    else:
+                        new_active_cluster = False
+                else:
+                    new_active_cluster = True
+            else:  # not reachable, and first core point
+                new_active_cluster = True
+
+            if new_active_cluster:
+                # new active cluster branch
+                past_cutoff = candidate_cutoff
+                candidate_cutoff = curr_time
+                active_cid = active_cid + 1
+                prev_core = curr_time
+                _expand_active_cluster(curr_time, past_cutoff)
+            else:
+                if not reachable:
+                    core_df.at[curr_time] = -1
+                    cluster_df.at[curr_time] = -1
 
             non_spurious = []
             nodes_to_drop = set()
