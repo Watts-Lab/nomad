@@ -1,4 +1,6 @@
+import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 import matplotlib.dates as mdates
 import matplotlib.cm as cm
 import geopandas as gpd
@@ -684,8 +686,9 @@ def plot_stops_barcode(stops, ax, cmap='Reds', stop_color=None, set_xlim=True, s
         
         ax.tick_params(axis='x', which='major', labelsize=10)
 
-# ANOUSHKA EDITS 
-        
+
+# ANOUSHKA EDITS
+      
 def animate_stop_dashboard(
     data,
     stops=None,
@@ -698,60 +701,22 @@ def animate_stop_dashboard(
     ping_size=6,
     base_geometry=None,
     base_geom_color='#2c353c',
-    base_geom_background='#0e0e0e',
+    base_geom_background='#0e0e0e', # background should be lighter grey
     data_crs=None,
     traj_cols=None,
     show_path=False,
+    show_stop_overlays=False,
     figsize=(10, 8),
     **kwargs
 ):
     """
     Animate pings over space with a synchronized time barcode below.
-
-    Parameters
-    ----------
-    data : pandas.DataFrame or GeoDataFrame
-        Trajectory ping data with spatial columns and timestamp column.
-    stops : pandas.DataFrame or GeoDataFrame, optional
-        Stop table to overlay on the spatial and temporal plots.
-    interval : int, default 100
-        Delay between frames in milliseconds.
-    save_path : str, optional
-        If provided, save the animation to this path (e.g. .gif).
-    fps : int, optional
-        Frames per second when saving. If None, inferred from interval.
-    ping_color : color or str, default 'black'
-        Color or column name for ping plotting.
-    ping_cmap : str or Colormap, optional
-        Colormap for pings when ping_color is a numeric/categorical column.
-    stop_cmap : str or Colormap, default 'Reds'
-        Colormap for stop plotting.
-    ping_size : float, default 6
-        Marker size for pings.
-    base_geometry : GeoDataFrame, optional
-        Base layer to draw underneath the spatial plot.
-    base_geom_color : str, default '#2c353c'
-        Color for base geometry.
-    base_geom_background : str, default '#0e0e0e'
-        Background color for the spatial axis.
-    data_crs : str or CRS, optional
-        CRS for input data.
-    traj_cols : dict, optional
-        Column mappings.
-    show_path : bool, default False
-        If True, also draw a line through observed pings up to the current frame.
-    figsize : tuple, default (10, 8)
-        Figure size.
-    **kwargs : dict
-        Additional trajectory column mappings.
-
-    Returns
-    -------
-    matplotlib.animation.FuncAnimation
     """
-    
+
     if len(data) == 0:
         raise ValueError("data must contain at least one row")
+
+    data = data.copy()
 
     fig = plt.figure(figsize=figsize)
     gs = fig.add_gridspec(2, 1, height_ratios=[4, 1], hspace=0.15)
@@ -764,8 +729,8 @@ def animate_stop_dashboard(
         ax.tick_params(axis='y', left=False, labelleft=False)
 
     stop_cols = {
-    "timestamp": "timestamp",
-    "end_timestamp": "end_timestamp"
+        "timestamp": "timestamp",
+        "end_timestamp": "end_timestamp"
     }
 
     if stops is not None and len(stops) > 0:
@@ -774,6 +739,28 @@ def animate_stop_dashboard(
             stop_cols["y"] = "y"
         if "h3_cell" in stops.columns:
             stop_cols["location_id"] = "h3_cell"
+
+    # stable cluster -> color mapping
+    cluster_color_map = None
+    if ping_color == "cluster" and "cluster" in data.columns:
+        unique_clusters = sorted(pd.Series(data["cluster"]).dropna().unique())
+
+        cmap_name = ping_cmap if ping_cmap is not None else "tab10"
+        cmap = plt.get_cmap(cmap_name)
+
+        non_noise_clusters = [c for c in unique_clusters if c != -1]
+
+        cluster_color_map = {}
+        for idx, cluster_id in enumerate(non_noise_clusters):
+            cluster_color_map[cluster_id] = mcolors.to_hex(cmap(idx % cmap.N))
+
+        if -1 in unique_clusters:
+            cluster_color_map[-1] = "#bdbdbd"
+
+        # add explicit color column so barcode matches map
+        data["cluster_color"] = data["cluster"].map(cluster_color_map)
+    else:
+        data["cluster_color"] = ping_color
 
     def update(frame):
         ax_map.clear()
@@ -786,7 +773,7 @@ def animate_stop_dashboard(
         if stops is not None and len(stops) > 0:
             stops_visible = stops[stops['timestamp'] <= current_time]
 
-        # Spatial layer: optionally draw observed path so far
+        # optional path
         if show_path and len(current_data) > 1:
             if isinstance(current_data, gpd.GeoDataFrame):
                 x = current_data.geometry.x
@@ -800,42 +787,40 @@ def animate_stop_dashboard(
                 )
                 x = current_data[parsed_cols[coord_key1]]
                 y = current_data[parsed_cols[coord_key2]]
-            ax_map.plot(x, y, color='blue', alpha=0.2, linewidth=1, zorder=1)
+            ax_map.plot(x, y, color='blue', alpha=0.15, linewidth=1, zorder=1)
 
-        # Plot pings seen so far with recency-based fading
-        n_visible = len(current_data)
-        ages = np.arange(n_visible - 1, -1, -1)   # newest gets age 0
-        max_age = max(1, n_visible - 1)
-
-        # Tune these
-        min_alpha = 0.12
-        max_alpha = 0.95
-        min_size_mult = 0.6
-        max_size_mult = 1.8
-
-        # draw oldest first, newest last
-        for i in range(n_visible):
+        for i in range(len(current_data)):
             row = current_data.iloc[[i]].copy()
-            age = ages[i]
-            freshness = 1 - (age / max_age)   # 1=newest, 0=oldest
 
-            alpha_i = min_alpha + freshness * (max_alpha - min_alpha)
-            size_i = ping_size * (min_size_mult + freshness * (max_size_mult - min_size_mult))
+            if ping_color == "cluster" and cluster_color_map is not None:
+                cluster_val = row["cluster"].iloc[0]
+                color_i = row["cluster_color"].iloc[0]
+            else:
+                cluster_val = None
+                color_i = ping_color
 
-            # newest ping can be emphasized further
-            marker_i = 'o'
-            if i == n_visible - 1:
-                size_i = ping_size * 2.2
+            # noise points stay smaller/fainter
+            if cluster_val == -1:
+                alpha_i = 0.35
+                size_i = ping_size * 0.9
+            else:
+                # clustered points stay visible and stable
+                alpha_i = 0.95
+                size_i = ping_size * 1.8
+
+            # newest ping pops slightly more
+            if i == len(current_data) - 1:
                 alpha_i = 1.0
+                size_i = size_i * 1.35
 
             plot_pings(
                 row,
                 ax_map,
-                color=ping_color,
-                cmap=ping_cmap,
+                color=color_i,
+                cmap=None,
                 s=size_i,
                 alpha=alpha_i,
-                marker=marker_i,
+                marker='o',
                 base_geometry=base_geometry if i == 0 else None,
                 base_geom_color=base_geom_color,
                 base_geom_background=base_geom_background,
@@ -844,8 +829,7 @@ def animate_stop_dashboard(
                 **kwargs
             )
 
-        # Overlay stops if provided
-        if stops is not None and len(stops_visible) > 0:
+        if show_stop_overlays and stops is not None and len(stops_visible) > 0:
             if "h3_cell" in stops_visible.columns:
                 plot_hexagons(
                     stops_visible,
@@ -866,33 +850,34 @@ def animate_stop_dashboard(
                     traj_cols=stop_cols
                 )
 
-        # Current timestamp title
         if 'timestamp' in data.columns:
             current_ts = pd.to_datetime(data.iloc[frame]['timestamp'], unit='s')
             ax_map.set_title(current_ts.strftime('%Y-%m-%d %H:%M:%S'), fontsize=10)
         else:
             ax_map.set_title(f"Frame {frame}", fontsize=10)
 
-        # Time barcode
         plot_time_barcode(
             data,
             ax_time,
-            color='black',
-            cmap=ping_cmap,
+            color='cluster_color',
+            cmap=None,
             current_idx=frame,
             set_xlim=True,
             lw=1
         )
+
         if stops is not None and len(stops_visible) > 0:
-            plot_stops_barcode( # make sure that it plots a filled circle 
+            plot_stops_barcode(
                 stops_visible,
                 ax_time,
                 cmap=stop_cmap,
                 set_xlim=False,
                 traj_cols=stop_cols
             )
+
         _clear_time_axis(ax_time)
         return []
+
     anim = FuncAnimation(
         fig,
         update,
@@ -901,6 +886,7 @@ def animate_stop_dashboard(
         blit=False,
         repeat=False
     )
+
     if save_path is not None:
         if fps is None:
             fps = max(1, int(round(1000 / interval)))
