@@ -764,11 +764,16 @@ def animate_stop_dashboard(
         ax.tick_params(axis='y', left=False, labelleft=False)
 
     stop_cols = {
-        "x": "x",
-        "y": "y",
-        "timestamp": "timestamp",
-        "end_timestamp": "end_timestamp"
+    "timestamp": "timestamp",
+    "end_timestamp": "end_timestamp"
     }
+
+    if stops is not None and len(stops) > 0:
+        if "x" in stops.columns and "y" in stops.columns:
+            stop_cols["x"] = "x"
+            stop_cols["y"] = "y"
+        if "h3_cell" in stops.columns:
+            stop_cols["location_id"] = "h3_cell"
 
     def update(frame):
         ax_map.clear()
@@ -815,15 +820,25 @@ def animate_stop_dashboard(
 
         # Overlay stops if provided
         if stops is not None and len(stops_visible) > 0:
-            plot_stops(
-                stops_visible,
-                ax_map,
-                cmap=stop_cmap,
-                edge_only=True,
-                base_geometry=None,
-                data_crs=data_crs,
-                traj_cols=stop_cols
-            )
+            if "h3_cell" in stops_visible.columns:
+                plot_hexagons(
+                    stops_visible,
+                    ax=ax_map,
+                    color='cluster',
+                    cmap=stop_cmap,
+                    data_crs=data_crs,
+                    traj_cols={"location_id": "h3_cell"}
+                )
+            else:
+                plot_stops(
+                    stops_visible,
+                    ax_map,
+                    cmap=stop_cmap,
+                    edge_only=True,
+                    base_geometry=None,
+                    data_crs=data_crs,
+                    traj_cols=stop_cols
+                )
 
         # Current timestamp title
         if 'timestamp' in data.columns:
@@ -843,7 +858,7 @@ def animate_stop_dashboard(
             lw=1
         )
         if stops is not None and len(stops_visible) > 0:
-            plot_stops_barcode(
+            plot_stops_barcode( # make sure that it plots a filled circle 
                 stops_visible,
                 ax_time,
                 cmap=stop_cmap,
@@ -864,4 +879,6 @@ def animate_stop_dashboard(
         if fps is None:
             fps = max(1, int(round(1000 / interval)))
         anim.save(save_path, writer=PillowWriter(fps=fps))
+
+    plt.close(fig)
     return anim
