@@ -167,13 +167,17 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size, dur_
 
             components_by_parent[parent_id].append(component_nodes)
 
-        border_map = _build_border_map(scale, core_distances, G)
+        border_map = _build_border_map(scale, core_distances, G) # replace by something that can access / cache the border points of a given cluster in a hierarchy
 
         for parent_id, components in components_by_parent.items():
             if len(components) >= 2:
                 # This is where removal of temporal overlaps will happen.
                 # Future pass will process this parent's children together with
                 # the parent's non-core neighbors from border_map.
+
+                # core_df ~ values of components by parents, mapping id:list of sets
+                # cluster_df has no analog because border points aren't in graph H. 
+                # data is needed to query coords
                 future_core = core_df[(core_df.index > curr_time) & (core_df == active_cid)].index.min()
                 if pd.notna(future_core):
                     core_time_range = sorted(abs(nb - curr_time) for nb in G[curr_time])[min_pts - 1]
