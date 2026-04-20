@@ -89,6 +89,8 @@ def plot_pings(data, ax,
                base_geom_background='#0e0e0e',
                data_crs=None,
                traj_cols=None,
+               edgecolor=None, 
+               linewidth=0.0,
                **kwargs):
     """
     Plot trajectory points.
@@ -151,14 +153,17 @@ def plot_pings(data, ax,
     if isinstance(color, str) and color in data.columns:
         if cmap:
             return gdf.plot(ax=ax, column=color, cmap=cmap, markersize=s,
-                           marker=marker, alpha=alpha, zorder=2).collections[-1]
+                           marker=marker, alpha=alpha, edgecolor=edgecolor,
+                            linewidth=linewidth,zorder=2).collections[-1]
         else:
             # Column contains actual colors
             return gdf.plot(ax=ax, color=data[color], markersize=s,
-                           marker=marker, alpha=alpha, zorder=2).collections[-1]
+                           marker=marker, alpha=alpha, edgecolor=edgecolor,
+                            linewidth=linewidth,zorder=2).collections[-1]
     
     return gdf.plot(ax=ax, color=color, markersize=s,
-                   marker=marker, alpha=alpha, zorder=2).collections[-1]
+                   marker=marker, alpha=alpha, edgecolor=edgecolor,
+                    linewidth=linewidth,zorder=2).collections[-1]
 
 
 def plot_circles(data, ax,
@@ -640,14 +645,46 @@ def plot_stops_barcode(stops, ax, cmap='Reds', stop_color=None, set_xlim=True, s
         end = start + pd.to_timedelta(stops[traj_cols['duration']] * 60, unit='s')
     else:
         end = stops[traj_cols[end_t_key]] if use_datetime else pd.to_datetime(stops[traj_cols[end_t_key]], unit='s')
-    clusters = np.arange(len(stops)) if 'cluster' not in stops else stops['cluster']
+    
+    """clusters = np.arange(len(stops)) if 'cluster' not in stops else stops['cluster']
     n = len(stops)
     if stop_color:
         colors = [stop_color for c in clusters]
     elif cmap:
         colors = [plt.get_cmap(cmap)((c+1)/(n+1)) for c in clusters]
     else:
+        raise ValueError("Specify either a color map (cmap) or a solid color (stop_color).")"""
+    
+    # ---- ANOUSHKA EDITS ----
+    clusters = np.arange(len(stops)) if 'cluster' not in stops.columns else stops['cluster']
+    n = len(stops)
+
+    if stop_color is not None:
+        if isinstance(stop_color, str) and stop_color in stops.columns:
+            colors = stops[stop_color]
+        else:
+            colors = [stop_color for _ in clusters]
+    elif cmap:
+        if 'cluster' in stops.columns:
+            unique_clusters = sorted(pd.Series(stops['cluster']).dropna().unique())
+            non_noise = [c for c in unique_clusters if c != -1]
+
+            cluster_color_map = {}
+            cmap_obj = plt.get_cmap(cmap)
+
+            for idx, cluster_id in enumerate(non_noise):
+                cluster_color_map[cluster_id] = cmap_obj(idx % cmap_obj.N)
+
+            if -1 in unique_clusters:
+                cluster_color_map[-1] = '#bdbdbd'
+
+            colors = stops['cluster'].map(cluster_color_map)
+        else:
+            colors = [plt.get_cmap(cmap)((i + 1) / (n + 1)) for i in range(n)]
+    else:
         raise ValueError("Specify either a color map (cmap) or a solid color (stop_color).")
+    
+    # -----------------------
         
     for s, e, color in zip(start, end, colors):
         ax.fill_betweenx([0, 1], s, e, color=color, alpha=stop_alpha)
@@ -701,7 +738,7 @@ def animate_stop_dashboard(
     ping_size=6,
     base_geometry=None,
     base_geom_color='#2c353c',
-    base_geom_background='#0e0e0e', # background should be lighter grey
+    base_geom_background='#0e0e0e',
     data_crs=None,
     traj_cols=None,
     show_path=False,
@@ -719,7 +756,7 @@ def animate_stop_dashboard(
     data = data.copy()
 
     fig = plt.figure(figsize=figsize)
-    gs = fig.add_gridspec(2, 1, height_ratios=[4, 1], hspace=0.15)
+    gs = fig.add_gridspec(2, 1, height_ratios=[4, 1], hspace=0.1)
     ax_map = fig.add_subplot(gs[0])
     ax_time = fig.add_subplot(gs[1])
 
@@ -728,20 +765,28 @@ def animate_stop_dashboard(
             ax.spines[spine].set_visible(False)
         ax.tick_params(axis='y', left=False, labelleft=False)
 
+    # ----------------------------
+    # STOP COLS
+    # ----------------------------
     stop_cols = {
         "timestamp": "timestamp",
         "end_timestamp": "end_timestamp"
     }
 
     if stops is not None and len(stops) > 0:
+        stops = stops.copy()
+
         if "x" in stops.columns and "y" in stops.columns:
             stop_cols["x"] = "x"
             stop_cols["y"] = "y"
         if "h3_cell" in stops.columns:
             stop_cols["location_id"] = "h3_cell"
 
-    # stable cluster -> color mapping
+    # ----------------------------
+    # CLUSTER COLOR MAP (GLOBAL)
+    # ----------------------------
     cluster_color_map = None
+
     if ping_color == "cluster" and "cluster" in data.columns:
         unique_clusters = sorted(pd.Series(data["cluster"]).dropna().unique())
 
@@ -757,11 +802,56 @@ def animate_stop_dashboard(
         if -1 in unique_clusters:
             cluster_color_map[-1] = "#bdbdbd"
 
-        # add explicit color column so barcode matches map
         data["cluster_color"] = data["cluster"].map(cluster_color_map)
+
+        if stops is not None and "cluster" in stops.columns:
+            stops["cluster_color"] = stops["cluster"].map(cluster_color_map)
+
     else:
         data["cluster_color"] = ping_color
 
+    # ----------------------------
+    # FIXED VIEW (NO ZOOM JUMP)
+    # ----------------------------
+    if isinstance(data, gpd.GeoDataFrame):
+        all_x = data.geometry.x
+        all_y = data.geometry.y
+    else:
+        coord_key1, coord_key2, _ = loader._fallback_spatial_cols(
+            data.columns, traj_cols, kwargs
+        )
+        parsed_cols = loader._parse_traj_cols(
+            data.columns, traj_cols, kwargs, warn=False
+        )
+        all_x = data[parsed_cols[coord_key1]]
+        all_y = data[parsed_cols[coord_key2]]
+
+    x_pad = max((all_x.max() - all_x.min()) * 0.05, 1)
+    y_pad = max((all_y.max() - all_y.min()) * 0.05, 1)
+
+    fixed_xlim = (all_x.min() - x_pad, all_x.max() + x_pad)
+    fixed_ylim = (all_y.min() - y_pad, all_y.max() + y_pad)
+
+    # ----------------------------
+    # TIME GAP → FRAME REPEATS
+    # ----------------------------
+    ts_dt = pd.to_datetime(data["timestamp"], unit="s")
+    diffs = ts_dt.diff().dt.total_seconds().fillna(0)
+
+    positive_diffs = diffs[diffs > 0]
+    typical_gap = positive_diffs.median() if len(positive_diffs) > 0 else 1
+
+    frame_sequence = []
+    for i, gap in enumerate(diffs):
+        hold = int(np.clip(round(gap / typical_gap), 1, 10))
+        frame_sequence.extend([i] * hold)
+
+    if len(frame_sequence) == 0:
+        frame_sequence = list(range(len(data)))
+
+    # ----------------------------
+    # UPDATE FUNCTION
+    # ----------------------------
     def update(frame):
         ax_map.clear()
         ax_time.clear()
@@ -773,7 +863,9 @@ def animate_stop_dashboard(
         if stops is not None and len(stops) > 0:
             stops_visible = stops[stops['timestamp'] <= current_time]
 
-        # optional path
+        # ----------------------------
+        # OPTIONAL PATH
+        # ----------------------------
         if show_path and len(current_data) > 1:
             if isinstance(current_data, gpd.GeoDataFrame):
                 x = current_data.geometry.x
@@ -787,9 +879,15 @@ def animate_stop_dashboard(
                 )
                 x = current_data[parsed_cols[coord_key1]]
                 y = current_data[parsed_cols[coord_key2]]
-            ax_map.plot(x, y, color='blue', alpha=0.15, linewidth=1, zorder=1)
 
-        for i in range(len(current_data)):
+            ax_map.plot(x, y, color='black', alpha=0.08, linewidth=0.8, zorder=1)
+
+        # ----------------------------
+        # SIZE DECAY (NOT COLOR FADE)
+        # ----------------------------
+        n = len(current_data)
+
+        for i in range(n):
             row = current_data.iloc[[i]].copy()
 
             if ping_color == "cluster" and cluster_color_map is not None:
@@ -799,19 +897,19 @@ def animate_stop_dashboard(
                 cluster_val = None
                 color_i = ping_color
 
-            # noise points stay smaller/fainter
-            if cluster_val == -1:
-                alpha_i = 0.35
-                size_i = ping_size * 0.9
-            else:
-                # clustered points stay visible and stable
-                alpha_i = 0.95
-                size_i = ping_size * 1.8
+            age_frac = i / max(n - 1, 1)
 
-            # newest ping pops slightly more
-            if i == len(current_data) - 1:
+            size_i = ping_size * (0.8 + 1.5 * age_frac)
+
+            if cluster_val == -1:
+                alpha_i = 0.45
+                size_i *= 0.8
+            else:
+                alpha_i = 0.9
+
+            if i == n - 1:
+                size_i *= 1.25
                 alpha_i = 1.0
-                size_i = size_i * 1.35
 
             plot_pings(
                 row,
@@ -821,6 +919,8 @@ def animate_stop_dashboard(
                 s=size_i,
                 alpha=alpha_i,
                 marker='o',
+                edgecolor="black",
+                linewidth=0.3,
                 base_geometry=base_geometry if i == 0 else None,
                 base_geom_color=base_geom_color,
                 base_geom_background=base_geom_background,
@@ -829,7 +929,10 @@ def animate_stop_dashboard(
                 **kwargs
             )
 
-        if show_stop_overlays and stops is not None and len(stops_visible) > 0:
+        # ----------------------------
+        # OPTIONAL STOP OVERLAYS
+        # ----------------------------
+        if show_stop_overlays and stops_visible is not None and len(stops_visible) > 0:
             if "h3_cell" in stops_visible.columns:
                 plot_hexagons(
                     stops_visible,
@@ -850,12 +953,17 @@ def animate_stop_dashboard(
                     traj_cols=stop_cols
                 )
 
-        if 'timestamp' in data.columns:
-            current_ts = pd.to_datetime(data.iloc[frame]['timestamp'], unit='s')
-            ax_map.set_title(current_ts.strftime('%Y-%m-%d %H:%M:%S'), fontsize=10)
-        else:
-            ax_map.set_title(f"Frame {frame}", fontsize=10)
+        # ----------------------------
+        # FIX VIEW
+        # ----------------------------
+        ax_map.set_xlim(fixed_xlim)
+        ax_map.set_ylim(fixed_ylim)
+        ax_map.set_aspect('equal', adjustable='box')
+        ax_map.set_title("")  # REMOVE TIMER
 
+        # ----------------------------
+        # BARCODE (SYNCED COLORS)
+        # ----------------------------
         plot_time_barcode(
             data,
             ax_time,
@@ -863,14 +971,15 @@ def animate_stop_dashboard(
             cmap=None,
             current_idx=frame,
             set_xlim=True,
-            lw=1
+            lw=1.2
         )
 
-        if stops is not None and len(stops_visible) > 0:
+        if stops_visible is not None and len(stops_visible) > 0:
             plot_stops_barcode(
                 stops_visible,
                 ax_time,
-                cmap=stop_cmap,
+                stop_color="cluster_color",   # attempt sync
+                cmap=None,
                 set_xlim=False,
                 traj_cols=stop_cols
             )
@@ -878,10 +987,13 @@ def animate_stop_dashboard(
         _clear_time_axis(ax_time)
         return []
 
+    # ----------------------------
+    # ANIMATION
+    # ----------------------------
     anim = FuncAnimation(
         fig,
         update,
-        frames=len(data),
+        frames=frame_sequence,
         interval=interval,
         blit=False,
         repeat=False
