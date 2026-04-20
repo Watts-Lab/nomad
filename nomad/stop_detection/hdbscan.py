@@ -132,6 +132,38 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size, dur_
 
     current_label_id = 1
 
+    # Per-cluster border state. Three plain dicts replace the old flat border_map:
+    #   _cluster_border_map   : cluster_id -> {core_ts: set(border_ts)}  (computed lazily, cached here)
+    #   _cluster_border_pool  : cluster_id -> set(border_ts)             (inherited pool; None = unrestricted)
+    #   _cluster_birth_scale  : cluster_id -> float                      (scale at which cluster was born)
+    #
+    # Invariant: a cluster's border pool is always a subset of its parent's border pool.
+    # When a cluster splits, each child inherits only the borders whose assigned core
+    # fell inside that child's component.
+    _cluster_border_map   = {}           # populated lazily via _get_border_map()
+    _cluster_border_pool  = {0: None}    # root is unrestricted
+    _cluster_birth_scale  = {0: np.inf}  # root has no meaningful birth scale
+ 
+    def _get_border_map(cluster_id):
+        """Return (and cache) the border map for *cluster_id*, restricted to its pool."""
+        if cluster_id not in _cluster_border_map:
+            birth_scale = _cluster_birth_scale.get(cluster_id, np.inf)
+            if birth_scale == np.inf:
+                _cluster_border_map[cluster_id] = defaultdict(set)
+            else:
+                raw = _build_border_map(birth_scale, core_distances, G)
+                pool = _cluster_border_pool.get(cluster_id)
+                if pool is None:
+                    _cluster_border_map[cluster_id] = raw
+                else:
+                    restricted = defaultdict(set)
+                    for core_ts, borders in raw.items():
+                        kept = borders & pool
+                        if kept:
+                            restricted[core_ts] = kept
+                    _cluster_border_map[cluster_id] = restricted
+        return _cluster_border_map[cluster_id]
+
     # Iteratively process pruning events grouped by weight (scale)
     for scale, edges_to_remove in edges_sorted.groupby(edges_sorted, sort=False):
         edges_batch = list(edges_to_remove.index)
@@ -167,7 +199,14 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size, dur_
 
             components_by_parent[parent_id].append(component_nodes)
 
-        border_map = _build_border_map(scale, core_distances, G) # replace by something that can access / cache the border points of a given cluster in a hierarchy
+        # border_map = _build_border_map(scale, core_distances, G) # replace by something that can access / cache the border points of a given cluster in a hierarchy
+
+        # border_map is now cluster-scoped and cached.
+        # Each parent_id gets its own restricted border map; the flat call is gone.
+        border_map_by_parent = {
+            parent_id: _get_border_map(parent_id)
+            for parent_id in components_by_parent
+        }
 
         for parent_id, components in components_by_parent.items():
             if len(components) >= 2:
@@ -259,6 +298,26 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size, dur_
 
                 new_ids.append(current_label_id)
                 current_label_id += 1
+            
+            # Partition the parent's border pool among the newly minted children.
+            # Each child inherits only the borders whose assigned core fell in its component.
+            parent_map = _get_border_map(parent_id)
+            raw_at_scale = _build_border_map(scale, core_distances, G)
+            for component, child_id in zip(non_spurious, new_ids):
+                core_set = set(component)
+                child_pool = set()
+                for core_ts, borders in parent_map.items():
+                    if core_ts in core_set:
+                        child_pool.update(borders)
+                _cluster_birth_scale[child_id] = scale
+                _cluster_border_pool[child_id] = child_pool
+                child_map = defaultdict(set)
+                for core_ts, borders in raw_at_scale.items():
+                    if core_ts in core_set:
+                        kept = borders & child_pool if child_pool else borders
+                        if kept:
+                            child_map[core_ts] = kept
+                _cluster_border_map[child_id] = child_map
 
             hierarchy.append((scale, parent_id, new_ids))
 
