@@ -863,6 +863,8 @@ def animate_stop_dashboard(
         if stops is not None and len(stops) > 0:
             stops_visible = stops[stops['timestamp'] <= current_time]
 
+            # look for col end_timestamp, if not use complete output TRUE
+
         # ----------------------------
         # OPTIONAL PATH
         # ----------------------------
@@ -928,6 +930,8 @@ def animate_stop_dashboard(
                 traj_cols=traj_cols,
                 **kwargs
             )
+
+            
 
         # ----------------------------
         # OPTIONAL STOP OVERLAYS
