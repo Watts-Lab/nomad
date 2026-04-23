@@ -526,7 +526,7 @@ def hdbscan_labels(data,
     
     # Handle empty data
     if data.empty:
-        return pd.Series([], dtype=int, name='cluster')
+        return pd.Series(dtype='int64', name='cluster')
     
     if traj_cols['user_id'] in data.columns:
         uid_col = data[traj_cols['user_id']]
@@ -665,7 +665,8 @@ def st_hdbscan(
             first = arr[0]
             if any(x != first for x in arr[1:]):
                 raise ValueError("Multi-user data? Use hdbscan_per_user instead.")
-            passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
+            if traj_cols_temp['user_id'] not in passthrough_cols:
+                passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
     else:
         uid_col = None
         
@@ -686,12 +687,15 @@ def st_hdbscan(
     merged = merged[merged.cluster != -1]
 
     if merged.empty:
-        # Get column names by calling summarize function on dummy data
-        cols = utils._get_empty_stop_columns(
-            data.columns, complete_output, passthrough_cols, traj_cols, 
-            keep_col_names=True, is_grid_based=False, **kwargs
+        return utils._get_empty_stop_df(
+            data.columns,
+            complete_output,
+            passthrough_cols,
+            traj_cols,
+            keep_col_names=True,
+            is_grid_based=False,
+            **kwargs,
         )
-        return pd.DataFrame(columns=cols, dtype=object)
 
     stop_table = merged.groupby('cluster', as_index=False, sort=False).apply(
         lambda grouped_data: utils.summarize_stop(
@@ -703,7 +707,7 @@ def st_hdbscan(
             **kwargs
         ),
         include_groups=False
-    )
+    ).reset_index(drop=True)
 
     return stop_table
 
@@ -716,6 +720,8 @@ def st_hdbscan_per_user(
     complete_output=False,
     passthrough_cols=[],
     traj_cols=None,
+    n_jobs=1,
+    print_progress=False,
     **kwargs
 ):
     """
@@ -728,11 +734,11 @@ def st_hdbscan_per_user(
         raise ValueError("st_hdbscan_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
     uid = traj_cols_temp['user_id']
 
-    pt_cols = passthrough_cols + [uid]
+    pt_cols = passthrough_cols if uid in passthrough_cols else passthrough_cols + [uid]
 
-    results = [
-        st_hdbscan(
-            data=group,
+    def process_user_group(group):
+        return st_hdbscan(
+            data=group[1].reset_index(drop=True),
             time_thresh=time_thresh,
             min_pts=min_pts,
             min_cluster_size=min_cluster_size,
@@ -742,6 +748,57 @@ def st_hdbscan_per_user(
             traj_cols=traj_cols,
             **kwargs
         )
-        for _, group in data.groupby(uid, sort=False)
-    ]
+
+    grouped = data.groupby(uid, sort=False, as_index=False)
+    results = utils.applyParallel(
+        grouped,
+        process_user_group,
+        n_jobs=n_jobs,
+        print_progress=print_progress,
+    )
     return pd.concat(results, ignore_index=True)
+
+
+def hdbscan_labels_per_user(
+    data,
+    time_thresh,
+    min_pts=2,
+    min_cluster_size=1,
+    dur_min=5,
+    delta_roam=None,
+    traj_cols=None,
+    n_jobs=1,
+    print_progress=False,
+    **kwargs
+):
+    """
+    Run hdbscan_labels on each user separately and concatenate labels.
+
+    Raises if 'user_id' not in traj_cols or missing from data.
+    """
+    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    if 'user_id' not in traj_cols_temp or traj_cols_temp['user_id'] not in data.columns:
+        raise ValueError("hdbscan_labels_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
+    uid = traj_cols_temp['user_id']
+
+    def process_user_group(group):
+        return hdbscan_labels(
+            data=group[1],
+            time_thresh=time_thresh,
+            min_pts=min_pts,
+            min_cluster_size=min_cluster_size,
+            dur_min=dur_min,
+            delta_roam=delta_roam,
+            traj_cols=traj_cols,
+            **kwargs,
+        )
+
+    grouped = data.groupby(uid, sort=False)
+    results = utils.applyParallel(
+        grouped,
+        process_user_group,
+        n_jobs=n_jobs,
+        print_progress=print_progress,
+    )
+
+    return pd.concat(results).reindex(data.index)
