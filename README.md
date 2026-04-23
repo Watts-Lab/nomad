@@ -7,16 +7,16 @@ NOMAD builds on previous software resources—like *scikit‑mobility*, *mobilki
 
 | Module | Description |
 |-------|---------|
-| Data ingestion | Read CSV, Parquet, GeoJSON, and partitioned datasets; validation of data types; return Pandas or Spark DataFrames |
-| Filtering & completeness | Quantify hourly/daily/weekly coverage, filtering according to completeness, geography, and time window; handles spatial projections and timezones|
+| Data ingestion | Ingestion and persistence of data in multiple spatio-temporal formats, including partitioned datasets and S3, through Pandas, PyArrow, and PySpark APIs. |
+| Filtering & completeness | Completeness metrics, filtering, and format standardization for GPS data in Pandas, PyArrow, and PySpark, with shared schemas for in-memory and distributed workflows. |
 | Tessellation | Map pings to H3, S2, or custom grids for grid-based algorithms |
-| Stop / trip detection | Density-based algorithms and sequential algorithm (_Project Lachesis_) |
-| Home / workplace inference | Frequency‑ and time‑window heuristics to assign residential and workplace locations |
-| Mobility metrics | Radius of gyration, travel distance, time at home, entropy, and related indicators |
-| Co‑location & contact networks | Build proximity graphs from POI visits or spatial–temporal proximity |
-| POI attribution & generation | Match stops to existing POIs or cluster frequent stops to obtain unsupervised POI datasets|
+| Stop detection | Methods that group pings into stops with 4 sequential and 4 density-based algorithms, support multiple spatio-temporal input formats, and return a unified stop-table schema using shared summarization helpers. |
+| Visit, home, and workplace attribution | Attribution of stops to polygon layers using shapely spatial indices, plus daytime/nighttime multi-week filters for home and workplace inference. |
+| Mobility metrics | Periodic mobility indicators from stop tables, including weighted radius of gyration, time at home, and self-containment metrics. |
+| Co‑location estimates | Temporal joins across visit tables to estimate user co-location, also used by evaluation tooling for stop-detection methods against ground truth. |
+| Mapping utilities | OpenStreetMap-based utilities for downloading and processing real city layers (boundaries, buildings, streets), plus synthetic city generation utilities. |
 | Aggregation & debiasing | differential‑privacy preserving aggregated metrics, and weights for debiasing and post‑stratification |
-| Trajectory simulation | Exploration and Preferential Return models; Point process samplers to generate sparse signals |
+| Mobility models and trajectory generation | Agent-based mobility models (including Exploration and Preferential Return) for city-scale trajectory simulation, with optional sparse burst/gap temporal sampling and horizontal-noise spatial models. |
 
 Unit tests currently cover data ingestion, filtering, stop detection, and trajectory simulation.
 

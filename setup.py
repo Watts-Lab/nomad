@@ -30,6 +30,7 @@ setup(
         'libgeohash',
         'funkybob',
         'scipy',
+        'scikit-learn',
         'pyarrow',
         's3fs',
         'h3',
