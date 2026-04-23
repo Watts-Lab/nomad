@@ -3,10 +3,6 @@ import geopandas as gpd
 from pandas.testing import assert_frame_equal
 from scipy.spatial.distance import pdist, cdist
 import pygeohash as gh
-from datetime import datetime, timedelta
-import itertools
-from collections import defaultdict
-import numpy as np
 import pytest
 from pathlib import Path
 import nomad.io.base as loader
@@ -21,7 +17,6 @@ import nomad.stop_detection.preprocessing as PREPROCESSING
 import nomad.stop_detection.utils as STOP_UTILS
 import nomad.stop_detection.sequential as SEQUENTIAL
 from pandas.api.types import is_integer_dtype
-import nomad.stop_detection.hdbscan as HDBSCAN
 
 @pytest.fixture
 def stop_test_params():

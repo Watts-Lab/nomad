@@ -532,9 +532,16 @@ def _get_empty_stop_df(input_columns, complete_output, passthrough_cols, traj_co
         else:
             cols[start_t_key] = cols[t_key]
 
-        column_list = [cols[coord_key1], cols[coord_key2], cols[start_t_key], 'duration']
+        column_list = [cols[coord_key1], cols[coord_key2], cols[start_t_key]]
         if complete_output:
-            column_list.extend([cols[end_t_key], 'diameter', 'n_pings', 'max_gap'])
+            if cols['ha'] in input_columns:
+                column_list.append(cols['ha'])
+            column_list.extend(['diameter', 'n_pings', cols[end_t_key]])
+
+        column_list.append('duration')
+
+        if complete_output:
+            column_list.append('max_gap')
 
         column_list.extend(passthrough_cols)
 
@@ -552,7 +559,7 @@ def _get_empty_stop_df(input_columns, complete_output, passthrough_cols, traj_co
         if col in column_list:
             dtype_map[col] = 'Int64'
 
-    float_keys = ['latitude', 'longitude', 'x', 'y']
+    float_keys = ['latitude', 'longitude', 'x', 'y', 'ha']
     for key in float_keys:
         col = cols.get(key)
         if col in column_list:
