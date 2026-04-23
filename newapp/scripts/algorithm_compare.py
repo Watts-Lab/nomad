@@ -29,6 +29,7 @@ from nomad.stop_detection.viz import (
 
 import nomad.stop_detection.dbscan as TADBSCAN
 import nomad.stop_detection.density_based as SEQSCAN
+import nomad.stop_detection.dbstop as DBSTOP
 import nomad.stop_detection.grid_based as GRIDBASED
 import nomad.stop_detection.lachesis as LACHESIS
 
@@ -49,6 +50,8 @@ def _resolve_algo(algo: str) -> str:
     norm = (algo or "").strip().lower()
     if norm in {"dbscan", "st-dbscan"}:
         return "tadbscan"
+    if norm in {"dbstop"}:
+        return "dbstop"
     if norm in {"grid_based", "grid-based"}:
         return "gridbased"
     return norm or "seqscan"
@@ -125,6 +128,7 @@ def _run_algo(traj, algo: str, params: dict, tc: dict):
     algo_key = _resolve_algo(algo)
     algo_registry = {
         "tadbscan": (TADBSCAN.ta_dbscan, TADBSCAN.ta_dbscan_labels),
+        "dbstop": (DBSTOP.dbstop, DBSTOP.dbstop_labels),
         "seqscan": (SEQSCAN.seqscan, SEQSCAN.seqscan_labels),
         "lachesis": (LACHESIS.lachesis, LACHESIS.lachesis_labels),
         "gridbased": (GRIDBASED.grid_based, GRIDBASED.grid_based_labels),

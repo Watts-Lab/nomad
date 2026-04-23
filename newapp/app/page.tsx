@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { ArrowLeft, Home, Columns2, Square, ChevronDown } from "lucide-react"
+import { ArrowLeft, Home, Columns2, Square } from "lucide-react"
 
 // ============ CSSLab Logo ============
 function CSSLabLogo({ className = "" }: { className?: string }) {
@@ -203,21 +203,6 @@ function NotebookFigure({
   )
 }
 
-function AccuracyChart({ algorithmId, algorithmName }: { algorithmId: string; algorithmName: string }) {
-  const source = NOTEBOOK_FIGURES[algorithmId]?.source
-  return (
-    <div className="w-full h-full bg-card border border-border rounded-lg p-4 flex flex-col">
-      <p className="text-base font-semibold text-center mb-2">{algorithmName} notebook metrics</p>
-      <div className="flex-1 min-h-0">
-        <NotebookFigure algorithmId={algorithmId} mode="metrics" alt={`${algorithmName} metrics from notebook`} />
-      </div>
-      <div className="text-xs text-muted-foreground mt-2 text-center">
-        Source: {source ?? "notebook figure mapping"}
-      </div>
-    </div>
-  )
-}
-
 // ============ TYPES & DATA ============
 
 type DataPoint = { id: string; x: number; y: number; time: string; color: "orange" | "pink" | "purple" }
@@ -233,6 +218,49 @@ type CompareApiResponse = {
   mode?: "single" | "compare"
   left: ComparePanelResponse
   right?: ComparePanelResponse
+}
+
+type MetricsPanelResponse = {
+  algorithm: string
+  title: string
+  image_data_url: string | null
+  max_mean: number
+  points: number
+}
+
+type MetricsTrajectoryPreview = {
+  user_id: string
+  image_data_url: string | null
+  timeline_data_url: string | null
+}
+
+type MetricsApiResponse = {
+  mode: "single" | "compare"
+  meta: {
+    cache_hit: boolean
+    iterations: number
+    sweep_points: number
+    elapsed_sec: number
+  }
+  left: MetricsPanelResponse
+  right?: MetricsPanelResponse | null
+  trajectory_preview: MetricsTrajectoryPreview
+}
+
+type MetricsOptionsResponse = {
+  algorithms: string[]
+  trajectories: Array<{ user_id: string; label: string }>
+  defaults: {
+    mode: "single" | "compare"
+    left_algorithm: string
+    right_algorithm: string
+    iterations: number
+    sweep_min: number
+    sweep_max: number
+    sweep_points: number
+    seed: number
+  }
+  max_iterations: number
 }
 
 function CompareAnimationPanel({
@@ -402,6 +430,19 @@ export default function NomadDashboard() {
   const [compareLoading, setCompareLoading] = useState(false)
   const [compareError, setCompareError] = useState<string | null>(null)
   const [compareSeed, setCompareSeed] = useState(1)
+  const [metricsOptions, setMetricsOptions] = useState<MetricsOptionsResponse | null>(null)
+  const metricsMode: "compare" = "compare"
+  const [metricsLeftAlgorithm, setMetricsLeftAlgorithm] = useState("Lachesis")
+  const [metricsRightAlgorithm, setMetricsRightAlgorithm] = useState("Sequential")
+  const [metricsTrajectoryUser, setMetricsTrajectoryUser] = useState("")
+  const [metricsIterations, setMetricsIterations] = useState(100)
+  const [metricsSweepMin, setMetricsSweepMin] = useState(5)
+  const [metricsSweepMax, setMetricsSweepMax] = useState(60)
+  const [metricsSweepPoints, setMetricsSweepPoints] = useState(100)
+  const [metricsSeed, setMetricsSeed] = useState(2026)
+  const [metricsApiData, setMetricsApiData] = useState<MetricsApiResponse | null>(null)
+  const [metricsLoading, setMetricsLoading] = useState(false)
+  const [metricsError, setMetricsError] = useState<string | null>(null)
 
   const runCompareVisualization = useCallback(async (seed: number) => {
     const leftAlgo = algorithms.find((a) => a.id === leftAlgorithm)
@@ -477,6 +518,81 @@ export default function NomadDashboard() {
     void runCompareVisualization(nextSeed)
   }, [compareSeed, runCompareVisualization])
 
+  const loadMetricsOptions = useCallback(async () => {
+    try {
+      const res = await fetch("/api/algorithm-metrics", { method: "GET" })
+      if (!res.ok) {
+        const msg = await res.text()
+        throw new Error(msg || "Failed to load aggregated metrics options")
+      }
+      const data = (await res.json()) as MetricsOptionsResponse
+      setMetricsOptions(data)
+      setMetricsLeftAlgorithm(data.defaults.left_algorithm ?? "Lachesis")
+      setMetricsRightAlgorithm(data.defaults.right_algorithm ?? "Sequential")
+      setMetricsIterations(data.defaults.iterations ?? 100)
+      setMetricsSweepMin(data.defaults.sweep_min ?? 5)
+      setMetricsSweepMax(data.defaults.sweep_max ?? 60)
+      setMetricsSweepPoints(data.defaults.sweep_points ?? 100)
+      setMetricsSeed(data.defaults.seed ?? 2026)
+      const firstUser = data.trajectories?.[0]?.user_id ?? ""
+      setMetricsTrajectoryUser(firstUser)
+    } catch (err) {
+      setMetricsError(err instanceof Error ? err.message : "Failed to load metrics options")
+    }
+  }, [])
+
+  const runMetricsVisualization = useCallback(async () => {
+    if (!metricsOptions) return
+    setMetricsLoading(true)
+    setMetricsError(null)
+    try {
+      const res = await fetch("/api/algorithm-metrics", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: metricsMode,
+          left_algorithm: metricsLeftAlgorithm,
+          right_algorithm: metricsRightAlgorithm,
+          trajectory_user_id: metricsTrajectoryUser,
+          iterations: metricsIterations,
+          sweep_min: metricsSweepMin,
+          sweep_max: metricsSweepMax,
+          sweep_points: metricsSweepPoints,
+          seed: metricsSeed,
+        }),
+      })
+      const data = (await res.json()) as MetricsApiResponse | { error?: string }
+      if (!res.ok) {
+        throw new Error("error" in data && data.error ? data.error : "Aggregated metrics run failed")
+      }
+      setMetricsApiData(data as MetricsApiResponse)
+    } catch (err) {
+      setMetricsError(err instanceof Error ? err.message : "Aggregated metrics run failed")
+    } finally {
+      setMetricsLoading(false)
+    }
+  }, [
+    metricsIterations,
+    metricsLeftAlgorithm,
+    metricsMode,
+    metricsOptions,
+    metricsRightAlgorithm,
+    metricsSeed,
+    metricsSweepMax,
+    metricsSweepMin,
+    metricsSweepPoints,
+    metricsTrajectoryUser,
+  ])
+
+  const handleNewMetricsTrajectory = useCallback(() => {
+    if (!metricsOptions || metricsOptions.trajectories.length === 0) return
+    const ids = metricsOptions.trajectories.map((t) => t.user_id)
+    const curr = Math.max(0, ids.indexOf(metricsTrajectoryUser))
+    const next = ids[(curr + 1) % ids.length]
+    setMetricsTrajectoryUser(next)
+    setMetricsSeed((s) => s + 1)
+  }, [metricsOptions, metricsTrajectoryUser])
+
   const handleAlgorithmSelect = (algorithmId: string) => {
     setLeftAlgorithm(algorithmId)
     setExpandedAlgorithm(null)
@@ -504,12 +620,24 @@ export default function NomadDashboard() {
 
   const leftAlgo = algorithms.find((a) => a.id === leftAlgorithm)
   const rightAlgo = algorithms.find((a) => a.id === rightAlgorithm)
+  const metricsAlgorithms = metricsOptions?.algorithms ?? ["Lachesis", "Sequential"]
+  const metricsTrajectories = metricsOptions?.trajectories ?? []
 
   useEffect(() => {
     if (activeView === "demo") {
       void runCompareVisualization(compareSeed)
     }
   }, [activeView, compareSeed, runCompareVisualization])
+
+  useEffect(() => {
+    void loadMetricsOptions()
+  }, [loadMetricsOptions])
+
+  useEffect(() => {
+    if (activeView === "metrics" && metricsOptions && !metricsApiData && !metricsLoading) {
+      void runMetricsVisualization()
+    }
+  }, [activeView, metricsApiData, metricsLoading, metricsOptions, runMetricsVisualization])
 
   return (
     <div className="h-screen overflow-hidden bg-background flex flex-col">
@@ -801,61 +929,170 @@ export default function NomadDashboard() {
 
       {/* AGGREGATED METRICS VIEW */}
       {activeView === "metrics" && (
-        <div className="flex-1 flex flex-col p-4 gap-3 overflow-hidden">
+        <div className="flex-1 flex flex-col p-4 pb-8 gap-3 min-h-0 overflow-y-auto overflow-x-hidden">
           <div className="flex items-center justify-between shrink-0">
             <div className="flex items-center gap-4">
               <NavButtons onHome={goHome} onBack={goBack} />
               <h2 className="text-2xl font-bold">Aggregated Metrics</h2>
             </div>
             <div className="flex items-center gap-3">
-              <Button variant="outline" size="lg" onClick={handleNewTrajectory}>New Trajectory</Button>
+              <Button variant="outline" size="lg" onClick={handleNewMetricsTrajectory}>New Trajectory</Button>
+              <Button size="lg" onClick={() => void runMetricsVisualization()}>Run</Button>
               <CSSLabLogo />
             </div>
           </div>
           <p className="text-sm text-muted-foreground">
-            Compare algorithm reliability curves and inspect parameter context for each method in the same experiment run.
+            Notebook-style scale-parameter versus accuracy charts with a trajectory preview.
           </p>
 
-          {/* Algorithm selectors with params */}
-          <div className="grid lg:grid-cols-2 gap-4 shrink-0">
-            <div className="flex items-center gap-3">
-              <Select value={leftAlgorithm} onValueChange={setLeftAlgorithm}>
-                <SelectTrigger className="h-10 w-48 text-base">
-                  <SelectValue />
-                  <ChevronDown className="h-4 w-4 ml-2" />
-                </SelectTrigger>
-                <SelectContent>{algorithms.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
-              </Select>
-              <Card className="px-3 py-2 text-sm bg-muted/50">
-                {leftAlgo?.parameters.map((p) => (
-                  <div key={p.name}>{p.name} = {leftParams[p.name] || p.defaultValue}</div>
-                ))}
-              </Card>
-            </div>
-            <div className="flex items-center gap-3">
-              <Select value={rightAlgorithm} onValueChange={setRightAlgorithm}>
-                <SelectTrigger className="h-10 w-48 text-base">
-                  <SelectValue />
-                  <ChevronDown className="h-4 w-4 ml-2" />
-                </SelectTrigger>
-                <SelectContent>{algorithms.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}</SelectContent>
-              </Select>
-              <Card className="px-3 py-2 text-sm bg-muted/50">
-                {rightAlgo?.parameters.map((p) => (
-                  <div key={p.name}>{p.name} = {rightParams[p.name] || p.defaultValue}</div>
-                ))}
-              </Card>
-            </div>
-          </div>
+          <div className="grid lg:grid-cols-[340px_1fr] gap-3 items-start">
+            <Card className="overflow-hidden">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-lg font-semibold">Experiment Controls</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-muted-foreground">Algorithm A</label>
+                  <Select value={metricsLeftAlgorithm} onValueChange={setMetricsLeftAlgorithm}>
+                    <SelectTrigger className="h-10 text-base"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {metricsAlgorithms.map((algo) => <SelectItem key={algo} value={algo}>{algo}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-          {/* Charts */}
-          <div className="grid lg:grid-cols-2 gap-3 overflow-hidden">
-            <AccuracyChart algorithmId={leftAlgo?.id || "lachesis"} algorithmName={leftAlgo?.name || "Algorithm 1"} />
-            <AccuracyChart algorithmId={rightAlgo?.id || "dbscan"} algorithmName={rightAlgo?.name || "Algorithm 2"} />
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-muted-foreground">Algorithm B</label>
+                  <Select value={metricsRightAlgorithm} onValueChange={setMetricsRightAlgorithm}>
+                    <SelectTrigger className="h-10 text-base"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {metricsAlgorithms.map((algo) => <SelectItem key={algo} value={algo}>{algo}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-muted-foreground">Trajectory Preview</label>
+                  <Select value={metricsTrajectoryUser} onValueChange={setMetricsTrajectoryUser}>
+                    <SelectTrigger className="h-10 text-base"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {metricsTrajectories.map((t) => (
+                        <SelectItem key={t.user_id} value={t.user_id}>{t.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">Iterations</label>
+                    <Input type="number" value={String(metricsIterations)} onChange={(e) => setMetricsIterations(Number(e.target.value))} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">Sweep points</label>
+                    <Input type="number" value={String(metricsSweepPoints)} onChange={(e) => setMetricsSweepPoints(Number(e.target.value))} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">Min</label>
+                    <Input type="number" value={String(metricsSweepMin)} onChange={(e) => setMetricsSweepMin(Number(e.target.value))} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">Max</label>
+                    <Input type="number" value={String(metricsSweepMax)} onChange={(e) => setMetricsSweepMax(Number(e.target.value))} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">Seed</label>
+                    <Input type="number" value={String(metricsSeed)} onChange={(e) => setMetricsSeed(Number(e.target.value))} />
+                  </div>
+                </div>
+
+                <Button size="lg" className="w-full" onClick={() => void runMetricsVisualization()}>Run Aggregated</Button>
+                {metricsLoading && <p className="text-xs text-muted-foreground">Running notebook metric experiment...</p>}
+                {metricsError && <p className="text-xs text-red-500">{metricsError}</p>}
+                {metricsApiData?.meta && (
+                  <p className="text-xs text-muted-foreground">
+                    {metricsApiData.meta.cache_hit ? "Cache hit" : "Fresh run"} · {metricsApiData.meta.elapsed_sec.toFixed(2)}s
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
+            <div className="flex flex-col gap-3">
+              <Card className="overflow-hidden">
+                <CardHeader className="py-2 px-3 bg-muted/30">
+                  <CardTitle className="text-sm font-semibold">Trajectory Preview</CardTitle>
+                </CardHeader>
+                <CardContent className="p-2">
+                  <div className="grid md:grid-cols-2 gap-2">
+                    <div className="rounded-md border border-border bg-muted/30 min-h-[150px] flex items-center justify-center">
+                      {metricsApiData?.trajectory_preview?.image_data_url ? (
+                        <img
+                          src={metricsApiData.trajectory_preview.image_data_url}
+                          alt="Trajectory preview"
+                          className="w-full h-auto object-contain rounded-md"
+                        />
+                      ) : (
+                        <p className="text-xs text-muted-foreground">No trajectory preview</p>
+                      )}
+                    </div>
+                    <div className="rounded-md border border-border bg-muted/30 min-h-[150px] flex items-center justify-center">
+                      {metricsApiData?.trajectory_preview?.timeline_data_url ? (
+                        <img
+                          src={metricsApiData.trajectory_preview.timeline_data_url}
+                          alt="Trajectory timeline preview"
+                          className="w-full h-auto object-contain rounded-md"
+                        />
+                      ) : (
+                        <p className="text-xs text-muted-foreground">No timeline preview</p>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <div className="grid gap-3 lg:grid-cols-2">
+                <Card className="overflow-hidden">
+                  <CardHeader className="py-2 px-3 bg-muted/30">
+                    <CardTitle className="text-sm font-semibold">{metricsApiData?.left?.title ?? "Algorithm A"}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-2">
+                    {metricsApiData?.left?.image_data_url ? (
+                      <img
+                        src={metricsApiData.left.image_data_url}
+                        alt={metricsApiData.left.title}
+                        className="w-full h-auto object-contain rounded-md border border-border"
+                      />
+                    ) : (
+                      <div className="h-[260px] rounded-md border border-dashed border-border bg-muted/40" />
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card className="overflow-hidden">
+                  <CardHeader className="py-2 px-3 bg-muted/30">
+                    <CardTitle className="text-sm font-semibold">{metricsApiData?.right?.title ?? "Algorithm B"}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-2">
+                    {metricsApiData?.right?.image_data_url ? (
+                      <img
+                        src={metricsApiData.right.image_data_url}
+                        alt={metricsApiData.right.title}
+                        className="w-full h-auto object-contain rounded-md border border-border"
+                      />
+                    ) : (
+                      <div className="h-[260px] rounded-md border border-dashed border-border bg-muted/40" />
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
           </div>
 
           {/* Demo button */}
-          <Button onClick={() => navigateTo("demo")} size="lg" className="shrink-0">
+          <Button onClick={() => navigateTo("demo")} size="lg" className="shrink-0 self-start">
             Demo
           </Button>
         </div>
