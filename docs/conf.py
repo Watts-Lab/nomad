@@ -38,6 +38,7 @@ extensions = [
     "sphinx.ext.todo",
     "sphinx.ext.viewcode",
     "sphinx.ext.autodoc",
+    "sphinx.ext.napoleon",
     'sphinx_rtd_theme',
     'sphinx_design'
 ]
@@ -64,7 +65,6 @@ html_theme = 'sphinx_rtd_theme'
 # Theme options to customize the appearance
 html_theme_options = {
     'logo_only': True,  # Only show the logo, not the project name
-    'display_version': False,  # Don't display version info
 }
 
 # Add any paths that contain custom static files (such as style sheets) here,
