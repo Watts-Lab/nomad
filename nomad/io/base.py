@@ -91,10 +91,15 @@ def _fallback_time_cols_dt(col_names, traj_cols, kwargs):
     if 'datetime' in kwargs or 'start_datetime' in kwargs: # datetime wins
         t_keys = ['datetime', 'start_datetime', 'timestamp', 'start_timestamp']
 
+    explicit_t_keys = [t_key for t_key in t_keys if t_key in traj_cols and traj_cols[t_key] in col_names]
+
     # load defaults and check for time columns
     traj_cols = _update_schema(DEFAULT_SCHEMA, traj_cols)
     _has_time_cols(col_names, traj_cols) # error if no columns
-    
+
+    if explicit_t_keys:
+        t_keys = explicit_t_keys
+
     for t_key in t_keys:
         if traj_cols[t_key] in col_names:
             use_datetime = (t_key in ['datetime', 'start_datetime']) ## necessary?
