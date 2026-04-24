@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import nomad.contact_estimation as contact
+import nomad.filters as filters
+import nomad.io.base as loader
 
 
 class AlgorithmRegistry:
@@ -126,7 +128,98 @@ class AlgorithmRegistry:
         )
 
 
-def compute_stop_detection_metrics(stops, truth, user_id=None, algorithm=None, prf_only=True, traj_cols=None, **kwargs):
+def compute_visitation_errors(overlaps, true_visits, traj_cols=None, right_traj_cols=None, **kwargs):
+    if right_traj_cols is None:
+        right_schema_input = traj_cols
+        right_kwargs = kwargs
+    else:
+        right_schema_input = right_traj_cols
+        right_kwargs = {}
+
+    temp_traj_cols = loader._parse_traj_cols(true_visits.columns, right_schema_input, right_kwargs, warn=False)
+    true_visits = true_visits.dropna()
+
+    t_name, _ = loader._fallback_time_cols_dt(true_visits.columns, right_schema_input, right_kwargs)
+    t_key = temp_traj_cols[t_name]
+
+    if true_visits[t_key].duplicated().any():
+        dup_ts = true_visits.loc[true_visits[t_key].duplicated(), t_key].unique()
+        raise ValueError(
+            "Ground-truth stops share the same start time(s), which violates the "
+            "per-stop key assumption. Duplicated timestamps: " + repr(dup_ts)
+        )
+    n_truth = len(true_visits)
+
+    temp_cols = loader._parse_traj_cols([], traj_cols, kwargs, warn=False)
+    loc_left = f"{temp_cols['location_id']}_left"
+    loc_right = f"{temp_traj_cols['location_id']}_right"
+
+    time_keys = ["datetime", "start_datetime", "timestamp", "start_timestamp"]
+    if "timestamp" in kwargs or "start_timestamp" in kwargs:
+        time_keys = ["timestamp", "start_timestamp", "datetime", "start_datetime"]
+    if "datetime" in kwargs or "start_datetime" in kwargs:
+        time_keys = ["datetime", "start_datetime", "timestamp", "start_timestamp"]
+
+    t_left = None
+    for key in time_keys:
+        col = f"{temp_cols[key]}_left"
+        if col in overlaps.columns:
+            t_left = col
+            break
+
+    time_keys = ["datetime", "start_datetime", "timestamp", "start_timestamp"]
+    if "timestamp" in right_kwargs or "start_timestamp" in right_kwargs:
+        time_keys = ["timestamp", "start_timestamp", "datetime", "start_datetime"]
+    if "datetime" in right_kwargs or "start_datetime" in right_kwargs:
+        time_keys = ["datetime", "start_datetime", "timestamp", "start_timestamp"]
+
+    t_right = None
+    for key in time_keys:
+        col = f"{temp_traj_cols[key]}_right"
+        if col in overlaps.columns:
+            t_right = col
+            break
+
+    if t_left is None or t_right is None:
+        raise ValueError("compute_visitation_errors: could not resolve the overlap start-time columns.")
+    for col in (loc_left, loc_right):
+        if col not in overlaps.columns:
+            raise ValueError(f"compute_visitation_errors: expected column '{col}' in overlaps but not found.")
+
+    overlaps = overlaps.fillna({loc_left: "Street"})
+
+    bad_ts = set(overlaps[t_right]) - set(true_visits[t_key])
+    if bad_ts:
+        raise ValueError(
+            "compute_visitation_errors: overlap rows reference start times that "
+            "do not exist in ground truth: " + repr(sorted(bad_ts)[:10])
+        )
+
+    diff_loc = overlaps[loc_left] != overlaps[loc_right]
+    same_loc = ~diff_loc
+
+    num_overlapped = overlaps[t_right].nunique()
+    missed_fraction = 1 - num_overlapped / n_truth
+    merged_fraction = diff_loc.groupby(overlaps[t_right]).any().mean()
+    split_fraction = overlaps[same_loc].groupby(t_right)[t_left].nunique().gt(1).mean()
+
+    return {
+        "missed_fraction": missed_fraction,
+        "merged_fraction": merged_fraction,
+        "split_fraction": split_fraction,
+    }
+
+
+def compute_stop_detection_metrics(
+    stops,
+    truth,
+    user_id=None,
+    algorithm=None,
+    prf_only=True,
+    traj_cols=None,
+    right_traj_cols=None,
+    **kwargs,
+):
     if len(stops) == 0:
         return {
             "precision": 0.0,
@@ -139,21 +232,99 @@ def compute_stop_detection_metrics(stops, truth, user_id=None, algorithm=None, p
             "algorithm": algorithm,
         }
 
-    stops_clean = stops.fillna({"location": "Street"})
-    truth_clean = truth.fillna({"location": "Street"})
-    truth_buildings = truth.dropna()
+    input_traj_cols = traj_cols
+    left_kwargs = dict(kwargs)
+    if right_traj_cols is None:
+        right_schema_input = traj_cols
+        right_kwargs = left_kwargs
+    else:
+        right_schema_input = right_traj_cols
+        right_kwargs = {}
+    right_schema_hint = ""
+    if right_traj_cols is None:
+        right_schema_hint = (
+            " The shared traj_cols/kwargs mapping appears not to fit the truth table. "
+            "Pass right_traj_cols for the truth table, or make both tables use the same relevant "
+            "column names for time, duration, and location."
+        )
+
+    traj_cols = loader._parse_traj_cols(stops.columns, traj_cols, left_kwargs, warn=False)
+    temp_traj_cols = loader._parse_traj_cols(truth.columns, right_schema_input, right_kwargs, warn=False)
+
+    left_loc = traj_cols["location_id"]
+    right_loc = temp_traj_cols["location_id"]
+    if left_loc not in stops.columns:
+        raise ValueError(
+            "Could not find the mapped location column in predicted stops. "
+            f"Expected '{left_loc}' in columns {list(stops.columns)}."
+        )
+    if right_loc not in truth.columns:
+        raise ValueError(
+            "Could not find the mapped location column in ground-truth stops. "
+            f"Expected '{right_loc}' in columns {list(truth.columns)}."
+            + right_schema_hint
+        )
+
+    stops_clean = stops.copy()
+    truth_clean = truth.copy()
+    stops_clean[left_loc] = stops_clean[left_loc].fillna("Street")
+    truth_clean[right_loc] = truth_clean[right_loc].fillna("Street")
+    truth_buildings = truth[truth[right_loc].notna()].copy()
 
     overlaps = contact.overlapping_visits(
         left=stops_clean,
         right=truth_clean,
         match_location=True,
-        traj_cols=traj_cols,
+        traj_cols=input_traj_cols,
+        right_traj_cols=right_traj_cols,
         **kwargs,
     )
 
-    total_pred = stops_clean["duration"].sum()
-    total_truth = truth_clean["duration"].sum()
-    tp = overlaps["duration"].sum()
+    left_t_name, left_use_datetime = loader._fallback_time_cols_dt(stops_clean.columns, input_traj_cols, left_kwargs)
+    left_t_key = traj_cols[left_t_name]
+    left_e_t_key = traj_cols["end_datetime" if left_use_datetime else "end_timestamp"]
+    left_end_col_present = loader._has_end_cols(stops_clean.columns, traj_cols)
+    left_duration_col_present = loader._has_duration_cols(stops_clean.columns, traj_cols)
+    if not (left_end_col_present or left_duration_col_present):
+        raise ValueError("Predicted stops must provide either an end time or a duration.")
+    if not left_end_col_present:
+        if left_use_datetime:
+            stops_clean[left_e_t_key] = stops_clean[left_t_key] + pd.to_timedelta(stops_clean[traj_cols["duration"]], unit="m")
+        else:
+            stops_clean[left_e_t_key] = stops_clean[left_t_key] + stops_clean[traj_cols["duration"]] * 60
+
+    right_t_name, right_use_datetime = loader._fallback_time_cols_dt(truth_clean.columns, right_schema_input, right_kwargs)
+    right_t_key = temp_traj_cols[right_t_name]
+    right_e_t_key = temp_traj_cols["end_datetime" if right_use_datetime else "end_timestamp"]
+    right_end_col_present = loader._has_end_cols(truth_clean.columns, temp_traj_cols)
+    right_duration_col_present = loader._has_duration_cols(truth_clean.columns, temp_traj_cols)
+    if not (right_end_col_present or right_duration_col_present):
+        raise ValueError("Ground-truth stops must provide either an end time or a duration." + right_schema_hint)
+    if not right_end_col_present:
+        if right_use_datetime:
+            truth_clean[right_e_t_key] = truth_clean[right_t_key] + pd.to_timedelta(truth_clean[temp_traj_cols["duration"]], unit="m")
+        else:
+            truth_clean[right_e_t_key] = truth_clean[right_t_key] + truth_clean[temp_traj_cols["duration"]] * 60
+
+    left_duration = traj_cols["duration"]
+    if left_duration in stops_clean.columns:
+        total_pred = stops_clean[left_duration].sum()
+    else:
+        if left_use_datetime:
+            total_pred = (filters.to_timestamp(stops_clean[left_e_t_key]) - filters.to_timestamp(stops_clean[left_t_key])).floordiv(60).sum()
+        else:
+            total_pred = ((stops_clean[left_e_t_key] - stops_clean[left_t_key]) // 60).sum()
+
+    right_duration = temp_traj_cols["duration"]
+    if right_duration in truth_clean.columns:
+        total_truth = truth_clean[right_duration].sum()
+    else:
+        if right_use_datetime:
+            total_truth = (filters.to_timestamp(truth_clean[right_e_t_key]) - filters.to_timestamp(truth_clean[right_t_key])).floordiv(60).sum()
+        else:
+            total_truth = ((truth_clean[right_e_t_key] - truth_clean[right_t_key]) // 60).sum()
+
+    tp = overlaps[left_duration].sum()
     prf_metrics = contact.precision_recall_f1_from_minutes(total_pred, total_truth, tp)
 
     if prf_only:
@@ -164,10 +335,17 @@ def compute_stop_detection_metrics(stops, truth, user_id=None, algorithm=None, p
             left=stops_clean,
             right=truth_buildings,
             match_location=False,
-            traj_cols=traj_cols,
+            traj_cols=input_traj_cols,
+            right_traj_cols=right_traj_cols,
             **kwargs,
         )
-        error_metrics = contact.compute_visitation_errors(overlaps_err, truth_buildings, traj_cols, **kwargs)
+        error_metrics = compute_visitation_errors(
+            overlaps_err,
+            truth_buildings,
+            traj_cols=input_traj_cols,
+            right_traj_cols=right_traj_cols,
+            **kwargs,
+        )
     else:
         error_metrics = {"missed_fraction": 0.0, "merged_fraction": 0.0, "split_fraction": 0.0}
 
@@ -278,6 +456,7 @@ def plot_family_timing(summary_df, ax=None, title="Mean Time Per Parameterizatio
 
 __all__ = [
     "AlgorithmRegistry",
+    "compute_visitation_errors",
     "compute_stop_detection_metrics",
     "plot_metric_vs_param",
     "plot_family_timing",
