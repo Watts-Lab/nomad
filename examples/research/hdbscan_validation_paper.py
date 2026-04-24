@@ -335,49 +335,44 @@ print(f"Registry: {len(registry)} algorithm configurations")
 
 # %%
 # ── METRICS FUNCTION ──────────────────────────────────────────────────────────
-_VALIDATION_TRAJ_COLS = {
-    'user_id':         'user_id',
-    'location_id':     'location',
+_STOPS_TRAJ_COLS = {
+    'location_id':     'id',
     'start_timestamp': 'start_timestamp',
     'end_timestamp':   'end_timestamp',
     'duration':        'duration',
 }
 
-def _prep_stops(stops):
-    return stops.rename(columns={
-        'start_datetime': 'start_timestamp',
-        'end_datetime':   'end_timestamp',
-        'id':             'location',
-    })
-
-def _prep_truth(truth):
-    t = truth.copy()
-    # drop 'datetime' so _fallback_time_cols_dt resolves to 'start_timestamp'
-    t = t.drop(columns=['datetime'], errors='ignore')
-    if 'end_timestamp' not in t.columns:
-        # timestamp is unix seconds, duration is minutes — keep as integers
-        t['end_timestamp'] = (t['timestamp'].astype('int64')
-                              + (t['duration'].astype(float) * 60).astype('int64'))
-    return t.rename(columns={'timestamp': 'start_timestamp', 'id': 'location'})
+_TRUTH_TRAJ_COLS = {
+    'location_id':     'id',
+    'timestamp':       'timestamp',
+    'duration':        'duration',
+}
 
 def compute_all_metrics(stops, truth, user, algo):
-    stops_v = _prep_stops(stops)
-    truth_v = _prep_truth(truth)
+    truth_with_location = truth.dropna(subset=['id'])
 
     gen = compute_stop_detection_metrics(
-        stops_v, truth_v.dropna(subset=['location']),
-        algorithm=algo, prf_only=False, traj_cols=_VALIDATION_TRAJ_COLS,
+        stops,
+        truth_with_location,
+        algorithm=algo,
+        prf_only=False,
+        traj_cols=_STOPS_TRAJ_COLS,
+        right_traj_cols=_TRUTH_TRAJ_COLS,
     )
     gen.update({'user': user, 'metric_category': 'general', 'category_value': 'all'})
     gen.pop('user_id', None)
     results = [gen]
 
     for category in ['building_size', 'building_type', 'dwell_length']:
-        for val in truth_v[category].dropna().unique():
-            truth_sub = truth_v[(truth_v[category] == val) & (truth_v['location'].notna())]
+        for val in truth_with_location[category].dropna().unique():
+            truth_sub = truth_with_location[truth_with_location[category] == val]
             cat = compute_stop_detection_metrics(
-                stops_v, truth_sub,
-                algorithm=algo, prf_only=False, traj_cols=_VALIDATION_TRAJ_COLS,
+                stops,
+                truth_sub,
+                algorithm=algo,
+                prf_only=False,
+                traj_cols=_STOPS_TRAJ_COLS,
+                right_traj_cols=_TRUTH_TRAJ_COLS,
             )
             cat.update({'user': user, 'metric_category': category, 'category_value': val})
             cat.pop('user_id', None)

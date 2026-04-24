@@ -117,6 +117,10 @@ def test_compute_stop_detection_metrics_supports_distinct_schemas():
             "truth_loc": ["home", "work"],
             "truth_user": ["u1", "u1"],
             "truth_minutes": [10, 10],
+            "truth_datetime": [
+                pd.Timestamp("2024-01-01 00:00:00", tz="UTC"),
+                pd.Timestamp("2024-01-01 00:20:00", tz="UTC"),
+            ],
         }
     )
 
