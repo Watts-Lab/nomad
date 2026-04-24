@@ -1,5 +1,6 @@
 from functools import partial
 import itertools
+from pathlib import Path
 import time
 
 import matplotlib.pyplot as plt
@@ -358,6 +359,97 @@ def _desaturate_toward_white(color, amount=0.4):
     return tuple(rgb + (white - rgb) * amount)
 
 
+def _blend_toward_white(color, amount=0.3):
+    rgb = np.array(color[:3])
+    white = np.array([1.0, 1.0, 1.0])
+    return tuple(rgb + (white - rgb) * amount)
+
+
+def _group_palette(group_order, group_families=None, cmap="tab10"):
+    cmap_obj = plt.colormaps.get_cmap(cmap)
+
+    if group_families is None:
+        return {
+            group: cmap_obj(i / max(len(group_order) - 1, 1))
+            for i, group in enumerate(group_order)
+        }, None
+
+    family_order = list(dict.fromkeys(group_families[group] for group in group_order))
+    base_colors = {
+        family: cmap_obj(i / max(len(family_order) - 1, 1))
+        for i, family in enumerate(family_order)
+    }
+
+    colors = {}
+    for family in family_order:
+        family_groups = [group for group in group_order if group_families[group] == family]
+        shade_levels = np.linspace(0.0, 0.35, len(family_groups))
+        for group, shade in zip(family_groups, shade_levels):
+            colors[group] = _blend_toward_white(base_colors[family], shade)
+
+    return colors, base_colors
+
+
+def bootstrap_metric_summary(
+    data,
+    metrics,
+    group_col="algorithm",
+    unit_col="user",
+    n_boot=2000,
+    interval=(0.05, 0.95),
+    random_state=2025,
+):
+    """Bootstrap per-unit medians and summarize them as point estimates plus intervals."""
+    columns = [group_col, "metric", "estimate", "lower", "upper"]
+    if data.empty:
+        return pd.DataFrame(columns=columns)
+
+    per_unit = (
+        data.groupby([unit_col, group_col], as_index=False)[metrics]
+        .median()
+    )
+    point_estimates = (
+        per_unit.groupby(group_col, as_index=False)[metrics]
+        .median()
+        .melt(
+            id_vars=group_col,
+            value_vars=metrics,
+            var_name="metric",
+            value_name="estimate",
+        )
+    )
+
+    unit_ids = per_unit[unit_col].drop_duplicates().to_numpy()
+    per_unit = per_unit.set_index(unit_col)
+    rng = np.random.default_rng(random_state)
+    bootstrap_rows = []
+
+    for bootstrap_id in range(n_boot):
+        sampled_units = rng.choice(unit_ids, size=len(unit_ids), replace=True)
+        sampled = per_unit.loc[sampled_units].reset_index()
+        summary = sampled.groupby(group_col, as_index=False)[metrics].median()
+        summary["bootstrap_id"] = bootstrap_id
+        bootstrap_rows.append(summary)
+
+    bootstrap_df = pd.concat(bootstrap_rows, ignore_index=True)
+    lower_q, upper_q = interval
+    intervals = (
+        bootstrap_df.melt(
+            id_vars=[group_col, "bootstrap_id"],
+            value_vars=metrics,
+            var_name="metric",
+            value_name="value",
+        )
+        .groupby([group_col, "metric"])["value"]
+        .quantile([lower_q, upper_q])
+        .unstack()
+        .reset_index()
+        .rename(columns={lower_q: "lower", upper_q: "upper"})
+    )
+
+    return point_estimates.merge(intervals, on=[group_col, "metric"], how="left")
+
+
 def plot_metric_vs_param(
     ax,
     data,
@@ -454,10 +546,113 @@ def plot_family_timing(summary_df, ax=None, title="Mean Time Per Parameterizatio
     return ax
 
 
+def plot_metric_intervals(
+    summary_df,
+    metrics,
+    group_col="algorithm",
+    group_order=None,
+    group_families=None,
+    colors=None,
+    cmap="tab10",
+    figsize=None,
+    save_path=None,
+    metric_titles=None,
+    legend_title="Base Algorithm",
+    x_tick_rotation=35,
+):
+    """Plot precomputed point estimates with interval whiskers for each metric."""
+    if group_order is None:
+        group_order = summary_df[group_col].drop_duplicates().tolist()
+
+    if colors is None:
+        colors, legend_colors = _group_palette(group_order, group_families=group_families, cmap=cmap)
+    else:
+        legend_colors = None
+
+    if figsize is None:
+        figsize = (max(4.2 * len(metrics), 10), 6.2)
+
+    fig, axes = plt.subplots(1, len(metrics), figsize=figsize, sharey=False)
+    if len(metrics) == 1:
+        axes = [axes]
+
+    for ax, metric in zip(axes, metrics):
+        metric_summary = (
+            summary_df.loc[summary_df["metric"] == metric]
+            .set_index(group_col)
+            .reindex(group_order)
+            .reset_index()
+        )
+        x = np.arange(len(group_order))
+        y = metric_summary["estimate"].to_numpy()
+        yerr = np.vstack([
+            y - metric_summary["lower"].to_numpy(),
+            metric_summary["upper"].to_numpy() - y,
+        ])
+
+        ax.set_facecolor("#EAEAF2")
+        ax.bar(
+            x,
+            y,
+            color=[colors[group] for group in group_order],
+            width=0.6,
+            edgecolor="black",
+            linewidth=0.8,
+            zorder=3,
+        )
+        ax.errorbar(
+            x,
+            y,
+            yerr=yerr,
+            fmt="none",
+            ecolor="black",
+            elinewidth=1.0,
+            capsize=4,
+            zorder=4,
+        )
+        ax.grid(axis="y", color="darkgray", linestyle="--", linewidth=0.8, alpha=0.75)
+        ax.set_xticks(x)
+        ax.set_xticklabels(group_order, rotation=x_tick_rotation, ha="right")
+
+        if metric_titles is None:
+            title = metric.replace("_", " ").title()
+        else:
+            title = metric_titles.get(metric, metric.replace("_", " ").title())
+        ax.set_title(title, fontsize=16)
+
+    if legend_colors is not None:
+        family_order = list(legend_colors.keys())
+        handles = [plt.matplotlib.patches.Patch(color=legend_colors[family], label=family) for family in family_order]
+        fig.legend(
+            handles,
+            family_order,
+            loc="lower center",
+            ncol=len(family_order),
+            bbox_to_anchor=(0.5, -0.08),
+            fontsize=12,
+            title=legend_title,
+            title_fontsize=13,
+            frameon=True,
+        )
+        plt.subplots_adjust(bottom=0.34, top=0.92)
+    else:
+        plt.subplots_adjust(bottom=0.22, top=0.92)
+
+    if save_path is not None:
+        save_path = Path(save_path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path.with_suffix(".png"), dpi=300, bbox_inches="tight")
+        fig.savefig(save_path.with_suffix(".svg"), bbox_inches="tight")
+
+    return fig, axes
+
+
 __all__ = [
     "AlgorithmRegistry",
+    "bootstrap_metric_summary",
     "compute_visitation_errors",
     "compute_stop_detection_metrics",
+    "plot_metric_intervals",
     "plot_metric_vs_param",
     "plot_family_timing",
 ]
