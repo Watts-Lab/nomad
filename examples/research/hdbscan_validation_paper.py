@@ -37,6 +37,7 @@ from nomad.stop_detection.validation import (
     AlgorithmRegistry,
     bootstrap_metric_summary,
     compute_stop_detection_metrics,
+    plot_metric_boxplots,
     plot_metric_intervals,
 )
 from joblib import Parallel, delayed
@@ -354,11 +355,23 @@ general_plot_df = bootstrap_metric_summary(
 )
 
 # %% [markdown]
-# ### Plot boostrapped per-stop metrics for general trajectory
+# ### Plot per-user metric distributions for general trajectory
 
 # %%
 algo_order = ['oracle','ta-hdbscan','lachesis_coarse','tadbscan_coarse','lachesis_fine', 'tadbscan_fine']
 algorithm_groups = {algo['family']: algo['algorithm'] for algo in registry}
+
+# %%
+plot_metric_boxplots(
+    general_metrics_df,
+    metrics,
+    group_order=algo_order,
+    group_families=algorithm_groups,
+    save_path=Path('examples/research/errors_per_stop_boxplots'),
+)
+
+# %% [markdown]
+# ### Plot bootstrapped median metrics for general trajectory
 
 # %%
 plot_metric_intervals(
@@ -366,7 +379,7 @@ plot_metric_intervals(
     metrics,
     group_order=algo_order,
     group_families=algorithm_groups,
-    save_path=Path('examples/research/errors_per_stop'),
+    save_path=Path('examples/research/errors_per_stop_medians'),
 )
 
 # %% [markdown]

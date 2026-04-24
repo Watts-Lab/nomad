@@ -546,6 +546,94 @@ def plot_family_timing(summary_df, ax=None, title="Mean Time Per Parameterizatio
     return ax
 
 
+def plot_metric_boxplots(
+    data,
+    metrics,
+    group_col="algorithm",
+    group_order=None,
+    group_families=None,
+    colors=None,
+    cmap="tab10",
+    figsize=None,
+    save_path=None,
+    metric_titles=None,
+    legend_title="Base Algorithm",
+    x_tick_rotation=35,
+    whis=(5, 95),
+    showfliers=False,
+):
+    """Plot per-group metric distributions as boxplots."""
+    if group_order is None:
+        group_order = data[group_col].drop_duplicates().tolist()
+
+    if colors is None:
+        colors, legend_colors = _group_palette(group_order, group_families=group_families, cmap=cmap)
+    else:
+        legend_colors = None
+
+    if figsize is None:
+        figsize = (max(4.2 * len(metrics), 10), 6.2)
+
+    fig, axes = plt.subplots(1, len(metrics), figsize=figsize, sharey=False)
+    if len(metrics) == 1:
+        axes = [axes]
+
+    for ax, metric in zip(axes, metrics):
+        metric_data = [data.loc[data[group_col] == group, metric].dropna() for group in group_order]
+        bp = ax.boxplot(
+            metric_data,
+            positions=np.arange(len(group_order)),
+            patch_artist=True,
+            widths=0.5,
+            whis=whis,
+            showfliers=showfliers,
+            medianprops={"color": "black", "linewidth": 0.9},
+            boxprops={"linewidth": 0.8},
+            whiskerprops={"linewidth": 0.8, "color": "black"},
+            capprops={"linewidth": 0.8, "color": "black"},
+        )
+        for box, group in zip(bp["boxes"], group_order):
+            box.set_facecolor(colors[group])
+            box.set_edgecolor("black")
+
+        ax.set_facecolor("#EAEAF2")
+        ax.grid(axis="y", color="darkgray", linestyle="--", linewidth=0.8, alpha=0.75)
+        ax.set_xticks(np.arange(len(group_order)))
+        ax.set_xticklabels(group_order, rotation=x_tick_rotation, ha="right")
+
+        if metric_titles is None:
+            title = metric.replace("_", " ").title()
+        else:
+            title = metric_titles.get(metric, metric.replace("_", " ").title())
+        ax.set_title(title, fontsize=16)
+
+    if legend_colors is not None:
+        family_order = list(legend_colors.keys())
+        handles = [plt.matplotlib.patches.Patch(color=legend_colors[family], label=family) for family in family_order]
+        fig.legend(
+            handles,
+            family_order,
+            loc="lower center",
+            ncol=len(family_order),
+            bbox_to_anchor=(0.5, -0.08),
+            fontsize=12,
+            title=legend_title,
+            title_fontsize=13,
+            frameon=True,
+        )
+        plt.subplots_adjust(bottom=0.34, top=0.92)
+    else:
+        plt.subplots_adjust(bottom=0.22, top=0.92)
+
+    if save_path is not None:
+        save_path = Path(save_path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path.with_suffix(".png"), dpi=300, bbox_inches="tight")
+        fig.savefig(save_path.with_suffix(".svg"), bbox_inches="tight")
+
+    return fig, axes
+
+
 def plot_metric_intervals(
     summary_df,
     metrics,
@@ -591,25 +679,22 @@ def plot_metric_intervals(
         ])
 
         ax.set_facecolor("#EAEAF2")
-        ax.bar(
-            x,
-            y,
-            color=[colors[group] for group in group_order],
-            width=0.6,
-            edgecolor="black",
-            linewidth=0.8,
-            zorder=3,
-        )
-        ax.errorbar(
-            x,
-            y,
-            yerr=yerr,
-            fmt="none",
-            ecolor="black",
-            elinewidth=1.0,
-            capsize=4,
-            zorder=4,
-        )
+        for idx, group in enumerate(group_order):
+            ax.errorbar(
+                x[idx],
+                y[idx],
+                yerr=yerr[:, idx:idx + 1],
+                fmt="o",
+                color="black",
+                ecolor="black",
+                elinewidth=1.0,
+                capsize=4,
+                markersize=7,
+                markerfacecolor=colors[group],
+                markeredgecolor="black",
+                markeredgewidth=0.8,
+                zorder=4,
+            )
         ax.grid(axis="y", color="darkgray", linestyle="--", linewidth=0.8, alpha=0.75)
         ax.set_xticks(x)
         ax.set_xticklabels(group_order, rotation=x_tick_rotation, ha="right")
@@ -652,6 +737,7 @@ __all__ = [
     "bootstrap_metric_summary",
     "compute_visitation_errors",
     "compute_stop_detection_metrics",
+    "plot_metric_boxplots",
     "plot_metric_intervals",
     "plot_metric_vs_param",
     "plot_family_timing",
