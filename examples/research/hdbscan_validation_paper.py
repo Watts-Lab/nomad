@@ -28,8 +28,6 @@ from pathlib import Path
 from shapely.geometry import Point
 from tqdm import tqdm
 
-import seaborn as sns
-
 import nomad.data as data_folder
 import nomad.io.base as loader
 import nomad.stop_detection.utils as utils
@@ -154,11 +152,12 @@ _diaries_path = Path("robustness-of-algorithms/diaries_2")
 _homes_path   = Path("robustness-of-algorithms/homes_2")
 
 _rng = np.random.default_rng(_GEN_SEED)
+HA_LOWER_BOUND = 8/15  # blocks; matches nomad.traj_gen._sample_horizontal_noise lower bound for pareto_prior
 _PARAMS = {
     "beta_ping":      _rng.uniform(3,   12,  _GEN_N).tolist(),
     "beta_start":     _rng.uniform(50,  500, _GEN_N).tolist(),
     "beta_durations": _rng.uniform(30,  300, _GEN_N).tolist(),
-    "ha":             _rng.uniform(0.5, 5,   _GEN_N).tolist(),
+    "ha":             _rng.uniform(HA_LOWER_BOUND + 1e-9, 5,   _GEN_N).tolist(),
 }
 
 def generate_agent_trajectory(args):
@@ -224,6 +223,13 @@ else:
         agent.diary = diary_df.drop(columns=['user_id'])
         population.add_agent(agent, verbose=False)
 
+    poi_data = pd.DataFrame({
+        'building_id': _city.buildings_gdf['id'].values,
+        'x': (_city.buildings_gdf['door_cell_x'].astype(float) + 0.5).values,
+        'y': (_city.buildings_gdf['door_cell_y'].astype(float) + 0.5).values,
+    })
+    population.reproject_to_mercator(sparse_traj=True, diaries=True, poi_data=poi_data)
+
     population.save_pop(
         sparse_path=str(_sparse_path),
         diaries_path=str(_diaries_path),
@@ -263,13 +269,10 @@ sparse_df = loader.from_file("robustness-of-algorithms/sparse_traj_2", format="p
 # %%
 # ── PREPROCESSING / POST-PROCESSING FUNCTIONS ─────────────────────────────────
 
-def no_op_df(data, **kwargs):
-    return data
+def no_op(value, *_args, **_kwargs):
+    return value
 
-def no_op_stops(stops, **kwargs):
-    return stops
-
-def prejoin_oracle_map(data, diary, **kwargs):
+def prejoin_oracle_map(data, diary):
     location = visits.oracle_map(data, diary, timestamp='timestamp', location_id='id')
     return data.join(location)
 
@@ -279,7 +282,7 @@ summarize_stops_with_loc = partial(
     timestamp='timestamp',
 )
 
-def postjoin_poly_map(data, **kwargs):
+def postjoin_poly_map(data):
     if not isinstance(data, gpd.GeoDataFrame):
         geometry = [Point(xy) for xy in zip(data['x'], data['y'])]
         data_gdf = gpd.GeoDataFrame(data, geometry=geometry, crs='EPSG:3857')
@@ -294,20 +297,20 @@ def postjoin_poly_map(data, **kwargs):
     )
     return data.join(location)
 
-def pad_oracle_stops_long(stops, **kwargs):
+def pad_oracle_stops_long(stops):
     return utils.pad_short_stops(stops, pad=15, dur_min=4, start_timestamp='start_timestamp')
 
 
 # ── PRE/POST PIPELINE — keyed by family name ──────────────────────────────────
 
 pipeline = {
-    'ta-hdbscan':      {'pre': no_op_df,           'post': postjoin_poly_map, 'fix': no_op_stops},
-    'oracle':          {'pre': prejoin_oracle_map,  'post': no_op_df,          'fix': pad_oracle_stops_long},
-    'tadbscan_coarse': {'pre': no_op_df,            'post': postjoin_poly_map, 'fix': no_op_stops},
-    'tadbscan_fine':   {'pre': no_op_df,            'post': postjoin_poly_map, 'fix': no_op_stops},
-    'lachesis_coarse': {'pre': no_op_df,            'post': postjoin_poly_map, 'fix': no_op_stops},
-    'lachesis_fine':   {'pre': no_op_df,            'post': postjoin_poly_map, 'fix': no_op_stops},
-    'seqscan':   {'pre': no_op_df,            'post': postjoin_poly_map, 'fix': no_op_stops},
+    'ta-hdbscan':      {'pre': no_op,           'post': postjoin_poly_map, 'fix': no_op},
+    'oracle':          {'pre': prejoin_oracle_map,  'post': no_op,          'fix': pad_oracle_stops_long},
+    'tadbscan_coarse': {'pre': no_op,            'post': postjoin_poly_map, 'fix': no_op},
+    'tadbscan_fine':   {'pre': no_op,            'post': postjoin_poly_map, 'fix': no_op},
+    'lachesis_coarse': {'pre': no_op,            'post': postjoin_poly_map, 'fix': no_op},
+    'lachesis_fine':   {'pre': no_op,            'post': postjoin_poly_map, 'fix': no_op},
+    'seqscan':   {'pre': no_op,            'post': postjoin_poly_map, 'fix': no_op},
 }
 
 
@@ -398,18 +401,18 @@ for user in tqdm(diaries_df.user_id.unique()[:10], desc='Processing users'):
         pipe = pipeline[name]
 
         # PRE
-        processed_sparse = pipe["pre"](data=sparse, diary=truth)
+        processed_sparse = pipe["pre"](sparse, truth)
 
         # ALGORITHM
         labels = registry.time_call(algo, processed_sparse, traj_cols=traj_cols)
 
         # POST
         data_with_clusters  = processed_sparse.join(labels)
-        data_with_locations = pipe["post"](data=data_with_clusters)
+        data_with_locations = pipe["post"](data_with_clusters)
         stops = data_with_locations[data_with_locations.cluster != -1].groupby(
             'cluster', as_index=False
         ).apply(summarize_stops_with_loc, include_groups=False)
-        stops = pipe["fix"](stops=stops, data_with_clusters=data_with_locations, params=algo["params"])
+        stops = pipe["fix"](stops)
 
         # METRICS
         metrics = compute_all_metrics(stops, truth, user, name)
