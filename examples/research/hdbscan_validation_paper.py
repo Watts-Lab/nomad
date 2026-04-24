@@ -137,10 +137,6 @@ def classify_dwell(duration):
 
 
 # %%
-# ── CONFIGURATION ─────────────────────────────────────────────────────────────
-traj_cols = {'user_id': 'user_id', 'x': 'x', 'y': 'y', 'timestamp': 'timestamp'}
-
-# %%
 _GEN_N     = 250
 _GEN_SEED  = 2025
 _GEN_START = pd.Timestamp("2024-06-01T00:00:00-04:00")
@@ -256,14 +252,14 @@ poi_table = blocks_to_mercator_gdf(
 )
 poi_table['building_size'] = poi_table['id'].apply(classify_building_size_from_id)
 
-diaries_df = loader.from_file("robustness-of-algorithms/diaries_2", format="parquet", **traj_cols)
+diaries_df = loader.from_file("robustness-of-algorithms/diaries_2", format="parquet")
 diaries_df = diaries_df.rename({'location': 'id'}, axis=1)
 diaries_df = diaries_df.merge(poi_table[['id', 'building_size', 'building_type']], on='id', how='left')
 diaries_df.loc[~diaries_df.id.isna(), 'dwell_length'] = (
     diaries_df.loc[~diaries_df.id.isna(), 'duration'].apply(classify_dwell)
 )
 
-sparse_df = loader.from_file("robustness-of-algorithms/sparse_traj_2", format="parquet", **traj_cols)
+sparse_df = loader.from_file("robustness-of-algorithms/sparse_traj_2", format="parquet")
 
 
 # %%
@@ -278,7 +274,7 @@ def prejoin_oracle_map(data, diary):
 
 summarize_stops_with_loc = partial(
     utils.summarize_stop, x='x', y='y',
-    keep_col_names=False, passthrough_cols=['id'], complete_output=True,
+    keep_col_names=True, passthrough_cols=['id'], complete_output=True,
     timestamp='timestamp',
 )
 
@@ -298,7 +294,7 @@ def postjoin_poly_map(data):
     return data.join(location)
 
 def pad_oracle_stops_long(stops):
-    return utils.pad_short_stops(stops, pad=15, dur_min=4, start_timestamp='start_timestamp')
+    return utils.pad_short_stops(stops, pad=15, dur_min=4, timestamp='timestamp')
 
 
 # ── PRE/POST PIPELINE — keyed by family name ──────────────────────────────────
@@ -335,44 +331,29 @@ print(f"Registry: {len(registry)} algorithm configurations")
 
 # %%
 # ── METRICS FUNCTION ──────────────────────────────────────────────────────────
-_STOPS_TRAJ_COLS = {
-    'location_id':     'id',
-    'start_timestamp': 'start_timestamp',
-    'end_timestamp':   'end_timestamp',
-    'duration':        'duration',
-}
-
-_TRUTH_TRAJ_COLS = {
-    'location_id':     'id',
-    'timestamp':       'timestamp',
-    'duration':        'duration',
-}
-
 def compute_all_metrics(stops, truth, user, algo):
-    truth_with_location = truth.dropna(subset=['id'])
-
     gen = compute_stop_detection_metrics(
         stops,
-        truth_with_location,
+        truth,
         algorithm=algo,
         prf_only=False,
-        traj_cols=_STOPS_TRAJ_COLS,
-        right_traj_cols=_TRUTH_TRAJ_COLS,
+        location_id='id',
+        timestamp='timestamp',
     )
     gen.update({'user': user, 'metric_category': 'general', 'category_value': 'all'})
     gen.pop('user_id', None)
     results = [gen]
 
     for category in ['building_size', 'building_type', 'dwell_length']:
-        for val in truth_with_location[category].dropna().unique():
-            truth_sub = truth_with_location[truth_with_location[category] == val]
+        for val in truth[category].dropna().unique():
+            truth_sub = truth[truth[category] == val]
             cat = compute_stop_detection_metrics(
                 stops,
                 truth_sub,
                 algorithm=algo,
                 prf_only=False,
-                traj_cols=_STOPS_TRAJ_COLS,
-                right_traj_cols=_TRUTH_TRAJ_COLS,
+                location_id='id',
+                timestamp='timestamp',
             )
             cat.update({'user': user, 'metric_category': category, 'category_value': val})
             cat.pop('user_id', None)
@@ -399,7 +380,7 @@ for user in tqdm(diaries_df.user_id.unique()[:10], desc='Processing users'):
         processed_sparse = pipe["pre"](sparse, truth)
 
         # ALGORITHM
-        labels = registry.time_call(algo, processed_sparse, traj_cols=traj_cols)
+        labels = registry.time_call(algo, processed_sparse, timestamp='timestamp')
 
         # POST
         data_with_clusters  = processed_sparse.join(labels)
