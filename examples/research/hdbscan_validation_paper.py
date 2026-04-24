@@ -21,9 +21,6 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 import geopandas as gpd
 import numpy as np
 from functools import partial
-import matplotlib.colors as mcolors
-import matplotlib.pyplot as plt
-from matplotlib.ticker import MaxNLocator
 from pathlib import Path
 from shapely.geometry import Point
 from tqdm import tqdm
@@ -36,7 +33,13 @@ import nomad.stop_detection.hdbscan as HDBSCAN
 import nomad.stop_detection.grid_based as GRID_BASED
 import nomad.stop_detection.lachesis as LACHESIS
 import nomad.stop_detection.density_based as SEQSCAN
-from nomad.stop_detection.validation import AlgorithmRegistry, compute_stop_detection_metrics
+from nomad.stop_detection.validation import (
+    AlgorithmRegistry,
+    bootstrap_metric_summary,
+    compute_stop_detection_metrics,
+    plot_metric_boxplots,
+    plot_metric_intervals,
+)
 from joblib import Parallel, delayed
 import time
 from nomad.traj_gen import Agent, Population
@@ -50,68 +53,6 @@ from nomad.map_utils import blocks_to_mercator_gdf
 
 data_dir = Path(data_folder.__file__).parent
 city = City.from_geopackage(data_dir / "garden-city.gpkg")
-
-def plot_metrics_boxplots(df, metrics,
-                          algo_order=None, colors=None,
-                          figsize=(24, 5.5), save_path=None):
-    # --- normalise inputs -------------------------------------------------
-    if algo_order is None:
-        # preserve appearance order in the DataFrame
-        algo_order = df.algorithm.drop_duplicates().tolist()
-
-    if colors is None:
-        cmap = plt.colormaps.get_cmap('tab10')
-        colors = {a: cmap(i % cmap.N) for i, a in enumerate(algo_order)}
-    else:
-        # fill in any missing algorithm colour with the next Tab10 entry
-        cmap = plt.colormaps.get_cmap('tab10')
-        for i, a in enumerate(algo_order):
-            colors.setdefault(a, cmap(i % cmap.N))
-
-    # --- figure -----------------------------------------------------------
-    fig, axes = plt.subplots(1, len(metrics), figsize=figsize, sharey=False)
-
-    if len(metrics) == 1:          # when only one metric is passed
-        axes = [axes]
-
-    for ax, metric in zip(axes, metrics):
-        ax.set_facecolor('#EAEAF2')
-
-        # list of series, one per algorithm
-        data = [df.loc[df.algorithm == a, metric].dropna() for a in algo_order]
-
-        bp = ax.boxplot(data,
-                        positions=range(len(algo_order)),
-                        patch_artist=True,
-                        widths=0.4,
-                        whis=(5, 95),
-                        showfliers=False,
-                        medianprops={'color': 'black', 'linewidth': 0.6})
-
-        for box, alg in zip(bp['boxes'], algo_order):
-            box.set_facecolor(colors[alg])
-
-        ax.grid(axis='y', color='darkgray', linestyle='--', linewidth=0.8)
-        ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
-        ax.set_title(metric.replace('_', ' ').title(), fontsize=16)
-        ax.set_xticks([])
-
-    # legend
-    handles = [plt.matplotlib.patches.Patch(color=colors[a], label=a)
-               for a in algo_order]
-    fig.legend(handles, algo_order,
-               loc='lower center',
-               ncol=len(algo_order),
-               bbox_to_anchor=(0.5, -0.015),
-               fontsize=15)
-
-    plt.subplots_adjust(bottom=0.1, top=0.95)
-
-    if save_path:
-        fig.savefig(f'{save_path}.png', dpi=300)
-        fig.savefig(f'{save_path}.svg')
-
-    plt.show()
 
 def classify_building_size_from_id(building_id):
     building = city.buildings_df.loc[building_id]
@@ -135,10 +76,6 @@ def classify_dwell(duration):
     else:
         return 'high'
 
-
-# %%
-# ── CONFIGURATION ─────────────────────────────────────────────────────────────
-traj_cols = {'user_id': 'user_id', 'x': 'x', 'y': 'y', 'timestamp': 'timestamp'}
 
 # %%
 _GEN_N     = 250
@@ -220,7 +157,7 @@ else:
         identifier, home, work = params[0], params[1], params[2]
         agent = Agent(identifier=identifier, city=_city, home=home, workplace=work)
         agent.sparse_traj = sparse_df.drop(columns=['home', 'workplace'])
-        agent.diary = diary_df.drop(columns=['user_id'])
+        agent.diary = diary_df
         population.add_agent(agent, verbose=False)
 
     poi_data = pd.DataFrame({
@@ -240,11 +177,11 @@ else:
         ha=_PARAMS['ha'],
     )
     del _city, population, results
-    print(f"Generated {_GEN_N} agents in {generation_time:.2f}s → {_diaries_path} / {_sparse_path}")
+    print(f"Generated {_GEN_N} agents in {generation_time:.2f}s -> {_diaries_path} / {_sparse_path}")
 
 # %%
 # ── DATA LOADING ──────────────────────────────────────────────────────────────
-poi_table = gpd.read_file(data_dir / "garden-city.gpkg")
+poi_table = gpd.read_file(data_dir / "garden-city.gpkg", layer='buildings')
 poi_table = poi_table.rename({'type': 'building_type'}, axis=1)
 # Project from local grid units → EPSG:3857 meters to match the saved sparse trajectories
 poi_table = blocks_to_mercator_gdf(
@@ -256,14 +193,14 @@ poi_table = blocks_to_mercator_gdf(
 )
 poi_table['building_size'] = poi_table['id'].apply(classify_building_size_from_id)
 
-diaries_df = loader.from_file("robustness-of-algorithms/diaries_2", format="parquet", **traj_cols)
+diaries_df = loader.from_file("robustness-of-algorithms/diaries_2", format="parquet")
 diaries_df = diaries_df.rename({'location': 'id'}, axis=1)
 diaries_df = diaries_df.merge(poi_table[['id', 'building_size', 'building_type']], on='id', how='left')
 diaries_df.loc[~diaries_df.id.isna(), 'dwell_length'] = (
     diaries_df.loc[~diaries_df.id.isna(), 'duration'].apply(classify_dwell)
 )
 
-sparse_df = loader.from_file("robustness-of-algorithms/sparse_traj_2", format="parquet", **traj_cols)
+sparse_df = loader.from_file("robustness-of-algorithms/sparse_traj_2", format="parquet")
 
 
 # %%
@@ -278,7 +215,7 @@ def prejoin_oracle_map(data, diary):
 
 summarize_stops_with_loc = partial(
     utils.summarize_stop, x='x', y='y',
-    keep_col_names=False, passthrough_cols=['id'], complete_output=True,
+    keep_col_names=True, passthrough_cols=['id'], complete_output=True,
     timestamp='timestamp',
 )
 
@@ -298,7 +235,7 @@ def postjoin_poly_map(data):
     return data.join(location)
 
 def pad_oracle_stops_long(stops):
-    return utils.pad_short_stops(stops, pad=15, dur_min=4, start_timestamp='start_timestamp')
+    return utils.pad_short_stops(stops, pad=15, dur_min=4, timestamp='timestamp')
 
 
 # ── PRE/POST PIPELINE — keyed by family name ──────────────────────────────────
@@ -335,49 +272,29 @@ print(f"Registry: {len(registry)} algorithm configurations")
 
 # %%
 # ── METRICS FUNCTION ──────────────────────────────────────────────────────────
-_VALIDATION_TRAJ_COLS = {
-    'user_id':         'user_id',
-    'location_id':     'location',
-    'start_timestamp': 'start_timestamp',
-    'end_timestamp':   'end_timestamp',
-    'duration':        'duration',
-}
-
-def _prep_stops(stops):
-    return stops.rename(columns={
-        'start_datetime': 'start_timestamp',
-        'end_datetime':   'end_timestamp',
-        'id':             'location',
-    })
-
-def _prep_truth(truth):
-    t = truth.copy()
-    # drop 'datetime' so _fallback_time_cols_dt resolves to 'start_timestamp'
-    t = t.drop(columns=['datetime'], errors='ignore')
-    if 'end_timestamp' not in t.columns:
-        # timestamp is unix seconds, duration is minutes — keep as integers
-        t['end_timestamp'] = (t['timestamp'].astype('int64')
-                              + (t['duration'].astype(float) * 60).astype('int64'))
-    return t.rename(columns={'timestamp': 'start_timestamp', 'id': 'location'})
-
 def compute_all_metrics(stops, truth, user, algo):
-    stops_v = _prep_stops(stops)
-    truth_v = _prep_truth(truth)
-
     gen = compute_stop_detection_metrics(
-        stops_v, truth_v.dropna(subset=['location']),
-        algorithm=algo, prf_only=False, traj_cols=_VALIDATION_TRAJ_COLS,
+        stops,
+        truth,
+        algorithm=algo,
+        prf_only=False,
+        location_id='id',
+        timestamp='timestamp',
     )
     gen.update({'user': user, 'metric_category': 'general', 'category_value': 'all'})
     gen.pop('user_id', None)
     results = [gen]
 
     for category in ['building_size', 'building_type', 'dwell_length']:
-        for val in truth_v[category].dropna().unique():
-            truth_sub = truth_v[(truth_v[category] == val) & (truth_v['location'].notna())]
+        for val in truth[category].dropna().unique():
+            truth_sub = truth[truth[category] == val]
             cat = compute_stop_detection_metrics(
-                stops_v, truth_sub,
-                algorithm=algo, prf_only=False, traj_cols=_VALIDATION_TRAJ_COLS,
+                stops,
+                truth_sub,
+                algorithm=algo,
+                prf_only=False,
+                location_id='id',
+                timestamp='timestamp',
             )
             cat.update({'user': user, 'metric_category': category, 'category_value': val})
             cat.pop('user_id', None)
@@ -390,37 +307,33 @@ def compute_all_metrics(stops, truth, user, algo):
 # ### OPTIMIZED LOOP
 
 # %%
-results_list = []
+results_rows = []
 
 for user in tqdm(diaries_df.user_id.unique()[:10], desc='Processing users'):
-    sparse = sparse_df[sparse_df['user_id'] == user].copy()
-    truth  = diaries_df[diaries_df['user_id'] == user].copy()
+    user_sparse = sparse_df[sparse_df['user_id'] == user].copy()
+    user_truth = diaries_df[diaries_df['user_id'] == user].copy()
 
     for algo in registry:
-        name = algo["family"]
-        pipe = pipeline[name]
+        algorithm = algo["family"]
+        steps = pipeline[algorithm]
 
-        # PRE
-        processed_sparse = pipe["pre"](sparse, truth)
+        sparse_for_algo = steps["pre"](user_sparse, user_truth)
+        labels = registry.time_call(algo, sparse_for_algo, timestamp='timestamp')
 
-        # ALGORITHM
-        labels = registry.time_call(algo, processed_sparse, traj_cols=traj_cols)
-
-        # POST
-        data_with_clusters  = processed_sparse.join(labels)
-        data_with_locations = pipe["post"](data_with_clusters)
-        stops = data_with_locations[data_with_locations.cluster != -1].groupby(
+        clustered = sparse_for_algo.join(labels)
+        located = steps["post"](clustered)
+        stops = located.loc[located['cluster'] != -1].groupby(
             'cluster', as_index=False
         ).apply(summarize_stops_with_loc, include_groups=False)
-        stops = pipe["fix"](stops)
+        stops = steps["fix"](stops)
 
-        # METRICS
-        metrics = compute_all_metrics(stops, truth, user, name)
-        if metrics:
-            metrics[0]['execution_time'] = registry._timings[-1]['elapsed_s']
-        results_list.extend(metrics)
+        metric_rows = compute_all_metrics(stops, user_truth, user, algorithm)
+        elapsed_s = registry._timings[-1]['elapsed_s']
+        for row in metric_rows:
+            row['execution_time'] = elapsed_s
+        results_rows.extend(metric_rows)
 
-results_df = pd.DataFrame(results_list)
+results_df = pd.DataFrame(results_rows)
 print("Processing Complete!")
 
 # %%
@@ -430,33 +343,44 @@ results_df[results_df['category_value'] == 'all']
 general_metrics_df = results_df[results_df['metric_category'] == 'general'].copy()
 
 # %%
-# BOOTSTRAPPING GROUPBY
-agg_keys = ['missed_fraction','merged_fraction','split_fraction','precision','recall','f1']
-ua = general_metrics_df.groupby(['user','algorithm'], as_index=False)[agg_keys].median()
-users = ua['user'].unique()
-output = []
-for _ in range(2000):
-    draw = np.random.choice(users, size=len(users), replace=True)
-    bs = ua[ua.user.isin(draw)]
-    output.append(bs.groupby('algorithm', as_index=False)[agg_keys].median())
-metrics_bootstrap_df = pd.concat(output, ignore_index=True)
+metrics = ['missed_fraction', 'merged_fraction', 'split_fraction', 'precision', 'recall', 'f1']
+general_plot_df = bootstrap_metric_summary(
+    general_metrics_df,
+    metrics=metrics,
+    unit_col='user',
+    group_col='algorithm',
+    n_boot=2000,
+    interval=(0.05, 0.95),
+    random_state=2025,
+)
 
 # %% [markdown]
-# ### Plot boostrapped per-stop metrics for general trajectory
+# ### Plot per-user metric distributions for general trajectory
 
 # %%
-# base colors for coarse versions
-shade = lambda c,f=0.6: mcolors.to_hex(tuple(f*x for x in mcolors.to_rgb(c)))
-raw = {'oracle':'royalblue','ta-hdbscan':'darkorange','lachesis_coarse':'palevioletred','tadbscan_coarse':'limegreen'}
-
-_base = {k:mcolors.to_hex(mcolors.to_rgb(v)) for k,v in raw.items()}
-
 algo_order = ['oracle','ta-hdbscan','lachesis_coarse','tadbscan_coarse','lachesis_fine', 'tadbscan_fine']
-colors = {a:(_base[a] if a in _base else shade(_base[a.split('_')[0]+'_coarse'])) for a in algo_order}
+algorithm_groups = {algo['family']: algo['algorithm'] for algo in registry}
 
 # %%
-metrics = ['missed_fraction', 'merged_fraction', 'split_fraction', 'precision', 'recall', 'f1']
-plot_metrics_boxplots(metrics_bootstrap_df, metrics, algo_order=algo_order, colors=colors, save_path='errors_per_stop')
+plot_metric_boxplots(
+    general_metrics_df,
+    metrics,
+    group_order=algo_order,
+    group_families=algorithm_groups,
+    save_path=Path('examples/research/errors_per_stop_boxplots'),
+)
+
+# %% [markdown]
+# ### Plot bootstrapped median metrics for general trajectory
+
+# %%
+plot_metric_intervals(
+    general_plot_df,
+    metrics,
+    group_order=algo_order,
+    group_families=algorithm_groups,
+    save_path=Path('examples/research/errors_per_stop_medians'),
+)
 
 # %% [markdown]
 # ### Metrics for each category value
