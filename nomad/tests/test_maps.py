@@ -7,50 +7,142 @@ Tests verify:
 3. Output includes OSM type, subtype, and category
 4. Geometries are proper polygons
 5. Rotation and explosion of geometries works correctly
+
+By default, tests use cached OSM data. Generate or refresh that cache with:
+
+    python -m nomad.data.generate_osm_test_cache
+
+To run the same tests against live OSMnx APIs instead, set:
+
+    NOMAD_OSM_TEST_CACHE=0
 """
 
-import pytest
-import geopandas as gpd
-from shapely.geometry import Polygon, LineString, MultiPolygon, MultiLineString
-import numpy as np
-import pandas as pd
 import os
-import tempfile
+
+import geopandas as gpd
+import numpy as np
 import osmnx as ox
+import pandas as pd
+import pytest
+from osmnx._errors import InsufficientResponseError
+from shapely.geometry import LineString, MultiLineString, MultiPolygon, Point, Polygon
 
-@pytest.fixture(scope="module", autouse=True)
-def osmnx_tmp_cache():
-    """Use a temporary OSMnx cache folder for this module and clean it up at teardown."""
-    prev_use_cache = getattr(ox.settings, 'use_cache', None)
-    prev_cache_folder = getattr(ox.settings, 'cache_folder', None)
-    prev_env_dir = os.environ.get('NOMAD_OSMNX_CACHE_DIR')
-    tmpdir_obj = tempfile.TemporaryDirectory(prefix="nomad-osmnx-cache-")
-    try:
-        os.environ['NOMAD_OSMNX_CACHE_DIR'] = tmpdir_obj.name
-        ox.settings.use_cache = True
-        ox.settings.cache_folder = tmpdir_obj.name
-        yield
-    finally:
-        if prev_env_dir is None:
-            os.environ.pop('NOMAD_OSMNX_CACHE_DIR', None)
-        else:
-            os.environ['NOMAD_OSMNX_CACHE_DIR'] = prev_env_dir
-        if prev_use_cache is not None:
-            ox.settings.use_cache = prev_use_cache
-        if prev_cache_folder is not None:
-            ox.settings.cache_folder = prev_cache_folder
-        tmpdir_obj.cleanup()
-
+import nomad.map_utils as map_utils
+from nomad.data.generate_osm_test_cache import (
+    BBOX_CASES,
+    OUTPUT_DIR,
+    SMALL_TOWN,
+    TAG_CASES,
+)
 from nomad.map_utils import (
+    _classify_building,
     download_osm_buildings,
     download_osm_streets,
-    rotate,
-    remove_overlaps,
-    _classify_building,
     get_city_boundary_osm,
-    save_geodata,
     load_geodata,
+    remove_overlaps,
+    rotate,
+    save_geodata,
 )
+
+
+OSM_TEST_CACHE_ENV = "NOMAD_OSM_TEST_CACHE"
+CACHED_OSM_MISSING_MESSAGE = (
+    "Run python -m nomad.data.generate_osm_test_cache first, "
+    "or rerun it to refresh stale cached data. "
+    "Set NOMAD_OSM_TEST_CACHE=0 to run against live OSMnx APIs instead."
+)
+
+EMPTY_OSM_BBOXES = [
+    (-66.20, 37.82, -65.79, 38.03),
+    (-66.19799553667396, 37.81476271794678, -65.78506182161694, 38.027365740492634),
+]
+
+EMPTY_OSM_POLYGONS = [
+    Polygon([
+        (-66.20, 37.82),
+        (-65.79, 37.82),
+        (-65.79, 38.03),
+        (-66.20, 38.03),
+        (-66.20, 37.82),
+    ])
+]
+
+
+def _require_cached_osm_file(path):
+    if not path.exists():
+        pytest.fail(
+            f"Missing cached OSM test data: {path}. {CACHED_OSM_MISSING_MESSAGE}",
+            pytrace=False,
+        )
+    return path
+
+
+def _cached_tag_case(tags):
+    for case, cached_tags in TAG_CASES.items():
+        if tags == cached_tags:
+            return case
+    pytest.fail(f"No cached OSM tag fixture for {tags}", pytrace=False)
+
+
+def _cached_bbox_case(bbox):
+    for case, cached_bbox in BBOX_CASES.items():
+        if np.allclose(bbox, cached_bbox):
+            return case
+    pytest.fail(f"No cached OSM bbox fixture for {bbox}", pytrace=False)
+
+
+def _is_empty_osm_bbox(bbox):
+    return any(np.allclose(bbox, empty_bbox) for empty_bbox in EMPTY_OSM_BBOXES)
+
+
+def _is_empty_osm_polygon(polygon):
+    return any(polygon.equals(empty_polygon) for empty_polygon in EMPTY_OSM_POLYGONS)
+
+
+@pytest.fixture(autouse=True)
+def osm_cached_data_mode(monkeypatch):
+    """Run map_utils normally while serving OSMnx calls from local cache."""
+    if os.environ.get(OSM_TEST_CACHE_ENV, "1") == "0":
+        return
+
+    def features_from_bbox(bbox, tags):
+        if _is_empty_osm_bbox(bbox):
+            raise InsufficientResponseError("No cached OSM data for empty test area")
+        path = OUTPUT_DIR / "features_from_bbox"
+        path = path / f"{_cached_bbox_case(bbox)}__{_cached_tag_case(tags)}.parquet"
+        return gpd.read_parquet(_require_cached_osm_file(path))
+
+    def features_from_polygon(polygon, tags):
+        if _is_empty_osm_polygon(polygon):
+            raise InsufficientResponseError("No cached OSM data for empty test polygon")
+        path = OUTPUT_DIR / "features_from_polygon"
+        path = path / f"small_town__{_cached_tag_case(tags)}.parquet"
+        return gpd.read_parquet(_require_cached_osm_file(path))
+
+    def geocode_to_gdf(query):
+        if query != SMALL_TOWN:
+            pytest.fail(f"No cached OSM geocode fixture for {query}", pytrace=False)
+        path = OUTPUT_DIR / "geocode_to_gdf" / "small_town.parquet"
+        return gpd.read_parquet(_require_cached_osm_file(path))
+
+    def graph_from_bbox(bbox, custom_filter=None, truncate_by_edge=True, simplify=True):
+        if _is_empty_osm_bbox(bbox):
+            raise InsufficientResponseError("No cached OSM graph for empty test area")
+        path = OUTPUT_DIR / "graph_from_bbox" / f"{_cached_bbox_case(bbox)}.graphml"
+        return ox.load_graphml(_require_cached_osm_file(path))
+
+    def graph_from_polygon(polygon, custom_filter=None, simplify=True):
+        if _is_empty_osm_polygon(polygon):
+            raise InsufficientResponseError("No cached OSM graph for empty test polygon")
+        path = OUTPUT_DIR / "graph_from_polygon" / "small_town.graphml"
+        return ox.load_graphml(_require_cached_osm_file(path))
+
+    monkeypatch.setattr(map_utils.ox, "features_from_bbox", features_from_bbox)
+    monkeypatch.setattr(map_utils.ox, "features_from_polygon", features_from_polygon)
+    monkeypatch.setattr(map_utils.ox, "geocode_to_gdf", geocode_to_gdf)
+    monkeypatch.setattr(map_utils.ox, "graph_from_bbox", graph_from_bbox)
+    monkeypatch.setattr(map_utils.ox, "graph_from_polygon", graph_from_polygon)
 
 
 @pytest.fixture
@@ -216,8 +308,6 @@ def test_priority_order():
 
 
 def test_save_load_geodata(tmp_path):
-    import geopandas as gpd
-    from shapely.geometry import Point, LineString
     gdf = gpd.GeoDataFrame({'id':[1,2],'name':['a','b']}, geometry=[Point(0,0), Point(1,1)], crs='EPSG:4326')
     # GeoJSON
     geojson_path = tmp_path / 'points.geojson'
@@ -713,10 +803,9 @@ def test_schema_switching():
         assert gc_categories != gl_categories, "Different schemas should have different categories"
 
 
-def test_city_boundary_by_name_salem():
+def test_city_boundary_by_name_small_town():
     """Boundary by city name should return (geometry, center tuple, population)."""
-    # This does not need Salem specifically; use an explicit small-town query to avoid county-scale results.
-    boundary, center, population = get_city_boundary_osm('Salem, New Jersey')
+    boundary, center, population = get_city_boundary_osm(SMALL_TOWN)
     assert boundary is not None, "Boundary geometry should not be None"
     assert hasattr(boundary, 'geom_type'), "Boundary must be a shapely geometry"
     assert isinstance(center, tuple) and len(center) == 2, "Center must be (lon, lat) tuple"
@@ -724,15 +813,13 @@ def test_city_boundary_by_name_salem():
         assert isinstance(population, int), "Population must be int or None"
 
 
-def test_download_osm_buildings_city_name_salem():
+def test_download_osm_buildings_city_name_small_town():
     """Download buildings by small city name; keep processing minimal."""
-    # This does not need Salem specifically; a tiny explicit town is enough for the city-name path.
-    buildings = download_osm_buildings('Salem, New Jersey', explode=False)
+    buildings = download_osm_buildings(SMALL_TOWN, explode=False)
     assert isinstance(buildings, gpd.GeoDataFrame)
 
 
-def test_download_osm_streets_city_name_salem():
+def test_download_osm_streets_city_name_small_town():
     """Download streets by small city name; keep processing minimal."""
-    # This does not need Salem specifically; a tiny explicit town avoids unnecessary large street graphs.
-    streets = download_osm_streets('Salem, New Jersey', explode=False)
+    streets = download_osm_streets(SMALL_TOWN, explode=False)
     assert isinstance(streets, gpd.GeoDataFrame)
