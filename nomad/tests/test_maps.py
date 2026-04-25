@@ -113,6 +113,7 @@ def test_download_osm_buildings_garden_city(philly_bbox):
 @pytest.mark.skip(reason="Trimmed suite: covered by schema switching test")
 def test_download_osm_buildings_geolife(philly_bbox):
     """Test with geolife_plus category schema."""
+    # Large OSM output is not needed here; a tiny bbox with known categories is equally informative.
     buildings = download_osm_buildings(philly_bbox, schema='geolife_plus')
 
     # Should return a GeoDataFrame
@@ -239,6 +240,7 @@ def test_save_load_geodata(tmp_path):
 @pytest.mark.skip(reason="Trimmed suite: CRS covered elsewhere")
 def test_crs_handling(philly_bbox):
     """Test that coordinate reference systems are handled correctly."""
+    # Large OSM output is not needed here; CRS behavior only needs one small non-empty feature set.
     # Default should be EPSG:4326 (WGS84 lat/lon)
     buildings_default = download_osm_buildings(philly_bbox)
     assert buildings_default.crs.to_string() == "EPSG:4326"
@@ -458,6 +460,7 @@ def test_remove_overlaps_exclude_categories():
 
 def test_empty_bounding_box():
     """Test behavior when no features exist in the bounding box."""
+    # Empty-response behavior should be represented as an expected empty OSMnx call, not cached as empty data files.
     # User-provided empty box (NW/SEx converted to west,south,east,north):
     # NW (lat, lon): 38.027365740492634, -66.19799553667396
     # SE (lat, lon): 37.81476271794678,  -65.78506182161694
@@ -483,6 +486,7 @@ def test_empty_bounding_box():
 
 def test_empty_polygon():
     """Test behavior when an empty-area polygon is provided directly."""
+    # Empty-response behavior should be represented as an expected empty OSMnx call, not cached as empty data files.
     # Simplified explicit coordinates near the same empty area
     poly = Polygon([
         (-66.20, 37.82), (-65.79, 37.82), (-65.79, 38.03), (-66.20, 38.03), (-66.20, 37.82)
@@ -500,6 +504,7 @@ def test_empty_polygon():
 @pytest.mark.skip(reason="Trimmed suite: empty-area CRS covered by other tests")
 def test_empty_bounding_box_custom_crs():
     """Empty-area downloads should work in other CRS as well (e.g., EPSG:3857)."""
+    # Large or non-empty OSM output is not needed here; this is only an empty-response plus CRS check.
     ocean_bbox = (
         -66.19799553667396,  # west
         37.81476271794678,   # south
@@ -517,6 +522,7 @@ def test_empty_bounding_box_custom_crs():
 @pytest.mark.skip(reason="Trimmed suite: CRS behavior already covered")
 def test_different_coordinate_systems():
     """Test that functions work correctly with different CRS."""
+    # Large OSM output is not needed here; a tiny bbox with one feature would exercise CRS conversion.
     # Philadelphia bounding box
     philly_bbox = (-75.1662060, 39.9411582, -75.1456557, 39.9557201)
     
@@ -536,6 +542,7 @@ def test_different_coordinate_systems():
 
 def test_water_feature_exclusion():
     """Test that water features are properly excluded from buildings and parks."""
+    # A small bbox around one water feature is enough; this should not require a large city-scale fixture.
     # Use a bounding box that includes water features (like Schuylkill River)
     water_bbox = (-75.18232868207252 - 0.006, 39.95057101861711 - 0.006,
                   -75.18232868207252 + 0.006, 39.95057101861711 + 0.006)
@@ -554,6 +561,7 @@ def test_water_feature_exclusion():
 
 def test_park_categorization():
     """Test that parks are correctly categorized as 'park', not 'other'."""
+    # A tiny bbox around one known park is enough; large OSM output adds no extra signal.
     # Use a bounding box known to have parks (like Washington Square Park)
     park_bbox = (-75.1531894880407 - 0.003, 39.9462501797551 - 0.003,
                  -75.1531894880407 + 0.003, 39.9462501797551 + 0.003)
@@ -577,6 +585,7 @@ def test_park_categorization():
 
 def test_parking_lot_classification():
     """Test that parking lots are classified as buildings, not parks."""
+    # A tiny bbox around one known parking lot is enough; large OSM output adds no extra signal.
     # Use a bounding box with parking lots
     parking_bbox = (-75.1550204236118 - 0.0005, 39.94419232826087 - 0.0005,
                     -75.1550204236118 + 0.0005, 39.94419232826087 + 0.0005)
@@ -592,6 +601,7 @@ def test_parking_lot_classification():
 
 def test_speculative_classification():
     """Test the infer_building_types parameter works correctly."""
+    # A small bbox with at least one inferable building is enough; large OSM output is not needed.
     # Use a small bounding box with mixed building types
     # Smaller bbox to keep this network call fast
     test_bbox = (-75.15849966125, 39.946618968625, -75.15336208875, 39.950259458375)
@@ -681,6 +691,7 @@ def test_overlap_removal_containment():
 
 def test_schema_switching():
     """Test that different schemas work correctly."""
+    # Large OSM output is only useful here to find category variety; a smaller curated bbox/fixture is preferable.
     test_bbox = (-75.1662060, 39.9411582, -75.1456557, 39.9557201)
     
     # Test garden_city schema
@@ -704,6 +715,7 @@ def test_schema_switching():
 
 def test_city_boundary_by_name_salem():
     """Boundary by city name should return (geometry, center tuple, population)."""
+    # This does not need Salem specifically; use an explicit small-town query to avoid county-scale results.
     boundary, center, population = get_city_boundary_osm('Salem, New Jersey')
     assert boundary is not None, "Boundary geometry should not be None"
     assert hasattr(boundary, 'geom_type'), "Boundary must be a shapely geometry"
@@ -714,11 +726,13 @@ def test_city_boundary_by_name_salem():
 
 def test_download_osm_buildings_city_name_salem():
     """Download buildings by small city name; keep processing minimal."""
+    # This does not need Salem specifically; a tiny explicit town is enough for the city-name path.
     buildings = download_osm_buildings('Salem, New Jersey', explode=False)
     assert isinstance(buildings, gpd.GeoDataFrame)
 
 
 def test_download_osm_streets_city_name_salem():
     """Download streets by small city name; keep processing minimal."""
+    # This does not need Salem specifically; a tiny explicit town avoids unnecessary large street graphs.
     streets = download_osm_streets('Salem, New Jersey', explode=False)
     assert isinstance(streets, gpd.GeoDataFrame)
