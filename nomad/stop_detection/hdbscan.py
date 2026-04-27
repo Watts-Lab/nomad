@@ -86,7 +86,9 @@ def _build_border_map(scale, core_distances, G):
     
     return core_to_border # return this but instead using something with input as G
 
-def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size, dur_min=5, min_pts=2):
+def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
+                      data, traj_cols, s_tree, node_times, dist_thresh,
+                      dur_min=5, min_pts=2):
     """
     Builds a cluster hierarchy from a pre-computed Minimum Spanning Tree.
 
@@ -115,6 +117,8 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size, dur_
     tuple
         (label_history_df, hierarchy_df)
     """
+    _, coord_key1, coord_key2, _, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, {})
+
     hierarchy = []
     label_history = []
 
@@ -603,6 +607,7 @@ def hdbscan_labels(data,
                    min_cluster_size = 1,
                    dur_min=5,
                    delta_roam=None,
+                   dist_thresh=None,
                    traj_cols=None, **kwargs):
     """
     Compute HDBSCAN cluster labels for trajectory data, with core/border assignment.
@@ -652,15 +657,10 @@ def hdbscan_labels(data,
     loader._has_spatial_cols(data.columns, traj_cols)
     loader._has_time_cols(data.columns, traj_cols)
 
-    G = _find_neighbors(data, time_thresh, traj_cols, dist_thresh=None,
+    G, t_tree, s_tree = _find_neighbors(data, time_thresh, traj_cols, dist_thresh,
                     weighted=True, use_datetime=use_datetime, use_lon_lat=use_lon_lat,
-                    return_trees=False, relabel_nodes=True)
-    
-    # neighbors = {node: set(G.neighbors(node)) for node in G.nodes()}
-    # time_pairs, times = _find_temp_neighbors(data[traj_cols[t_key]], time_thresh, use_datetime)
-    # neighbors = _build_neighbor_graph(time_pairs, times)
-    # ts_idx = {ts: i for i, ts in enumerate(times)}
-    # core_distances, coords = _compute_core_distance(data, time_pairs, times, use_lon_lat, traj_cols, min_pts)
+                    return_trees=True, relabel_nodes=True)
+    node_times = np.asarray(list(G), dtype=np.float64)
 
     core_distances = _compute_core_distance(G, min_pts)
 
@@ -672,6 +672,11 @@ def hdbscan_labels(data,
         G=G,
         H=H,
         min_cluster_size=min_cluster_size,
+        data=data,
+        traj_cols=traj_cols,
+        s_tree=s_tree,
+        node_times=node_times,
+        dist_thresh=dist_thresh,
         dur_min=dur_min,
     )
 
