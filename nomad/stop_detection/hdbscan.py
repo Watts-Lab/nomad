@@ -175,7 +175,8 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size, dur_
         H.remove_edges_from(edges_batch)
         nx.set_node_attributes(H, -1, 'temp_cluster_id')
 
-        components_by_parent = defaultdict(list)
+        _core_entries = {}
+        _parent_comp_count = defaultdict(int)
 
         for seed in event_nodes:
             if not H.has_node(seed):
@@ -186,37 +187,44 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size, dur_
 
             parent_id = H.nodes[seed]['cluster_id']
             component_nodes = nx.node_connected_component(H, seed)
-            
+
             if len(component_nodes) == 1:
                 node = next(iter(component_nodes))
                 if not H.has_edge(node, node):
                     H.remove_node(node)
                     continue
 
-            temp_id = len(components_by_parent[parent_id])
+            temp_id = _parent_comp_count[parent_id]
+            _parent_comp_count[parent_id] += 1
             for node in component_nodes:
                 H.nodes[node]['temp_cluster_id'] = temp_id
+                _core_entries[node] = parent_id
 
-            components_by_parent[parent_id].append(component_nodes)
-
-        # border_map = _build_border_map(scale, core_distances, G) # replace by something that can access / cache the border points of a given cluster in a hierarchy
+        # core_df: Series indexed by sorted timestamp, values = parent cluster_id.
+        # temp_cluster_id on each H node identifies which sub-component it belongs to.
+        core_df = pd.Series(_core_entries, name='cluster').sort_index()
 
         # border_map is now cluster-scoped and cached.
         # Each parent_id gets its own restricted border map; the flat call is gone.
         border_map_by_parent = {
             parent_id: _get_border_map(parent_id)
-            for parent_id in components_by_parent
+            for parent_id in core_df.unique()
         }
 
-        for parent_id, components in components_by_parent.items():
-            if len(components) >= 2:
-                # This is where removal of temporal overlaps will happen.
-                # Future pass will process this parent's children together with
-                # the parent's non-core neighbors from border_map.
+        for parent_id, parent_series in core_df.groupby(core_df):
+            temp_ids = pd.Series(
+                {ts: H.nodes[ts]['temp_cluster_id'] for ts in parent_series.index}
+            ).sort_index()
+            components = [set(grp.index) for _, grp in temp_ids.groupby(temp_ids)]
 
-                # core_df ~ values of components by parents, mapping id:list of sets
-                # cluster_df has no analog because border points aren't in graph H. 
-                # data is needed to query coords
+            if len(components) >= 2:
+                # Temporal overlap check: does the gap between the two earliest
+                # components represent a true split or a transient departure?
+                components_sorted = sorted(components, key=min)
+                active_cid = parent_id
+                curr_time = max(components_sorted[0])
+                prev_core_candidates = core_df[(core_df.index < curr_time) & (core_df == active_cid)]
+                prev_core = prev_core_candidates.index[-2] if len(prev_core_candidates) >= 2 else curr_time
                 future_core = core_df[(core_df.index > curr_time) & (core_df == active_cid)].index.min()
                 if pd.notna(future_core):
                     core_time_range = sorted(abs(nb - curr_time) for nb in G[curr_time])[min_pts - 1]
@@ -246,24 +254,11 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size, dur_
                         new_active_cluster = False
                 else:
                     new_active_cluster = True
-            else:  # not reachable, and first core point
-                new_active_cluster = True
-
-            if new_active_cluster:
-                # new active cluster branch
-                past_cutoff = candidate_cutoff
-                candidate_cutoff = curr_time
-                active_cid = active_cid + 1
-                prev_core = curr_time
-                _expand_active_cluster(curr_time, past_cutoff)
-            else:
-                if not reachable:
-                    core_df.at[curr_time] = -1
-                    cluster_df.at[curr_time] = -1
 
             non_spurious = []
             nodes_to_drop = set()
 
+            border_map = border_map_by_parent[parent_id]
             for component_nodes in components:
                 border_nodes = set()
                 for ts in component_nodes:
