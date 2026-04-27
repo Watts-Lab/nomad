@@ -217,6 +217,14 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size, dur_
             ).sort_index()
             components = [set(grp.index) for _, grp in temp_ids.groupby(temp_ids)]
 
+            border_map = border_map_by_parent[parent_id]
+            all_borders = set().union(*border_map.values()) if border_map else set()
+            cluster_df = pd.Series(
+                parent_id,
+                index=parent_series.index.union(pd.Index(sorted(all_borders))),
+                name='cluster',
+            )
+
             if len(components) >= 2:
                 # Temporal overlap check: does the gap between the two earliest
                 # components represent a true split or a transient departure?
@@ -255,10 +263,13 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size, dur_
                 else:
                     new_active_cluster = True
 
+                if not new_active_cluster:
+                    core_df.at[curr_time] = -1
+                    cluster_df.at[curr_time] = -1
+
             non_spurious = []
             nodes_to_drop = set()
 
-            border_map = border_map_by_parent[parent_id]
             for component_nodes in components:
                 border_nodes = set()
                 for ts in component_nodes:
