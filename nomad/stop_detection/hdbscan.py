@@ -20,6 +20,8 @@ def _compute_core_distance(G, min_pts):
     core_distances.index.name = 'time'
     return core_distances
 
+# TODO delete
+# this iterates over everything, just define it recursively, inheriting the neighbor's set of parents
 def _build_border_map(scale, core_distances, G):
     """
     For a given threshold `scale`, assign each non-core point to its nearest
@@ -177,11 +179,14 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
 
         # Remove both regular edges and self-loops at this scale.
         H.remove_edges_from(edges_batch)
+        # Remove edges, everything has temp_cluster_id of -1
         nx.set_node_attributes(H, -1, 'temp_cluster_id')
 
         _core_entries = {}
         _parent_comp_count = defaultdict(int)
 
+        # Assigns a temp_id from 0 to k for each component, where k is the number of children of a single parent_id
+        # Drops non-cores
         for seed in event_nodes:
             if not H.has_node(seed):
                 continue
@@ -199,6 +204,7 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
                     continue
 
             temp_id = _parent_comp_count[parent_id]
+            # default dict guards against missing keys, so this is safe even if parent_id is new (defaults to 0).
             _parent_comp_count[parent_id] += 1
             for node in component_nodes:
                 H.nodes[node]['temp_cluster_id'] = temp_id
@@ -206,28 +212,37 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
 
         # core_df: Series indexed by sorted timestamp, values = parent cluster_id.
         # temp_cluster_id on each H node identifies which sub-component it belongs to.
+        # Only the size of the reachable nodes from event nodes, which is already nodes with temp_cluster_id != -1
         core_df = pd.Series(_core_entries, name='cluster').sort_index()
 
         # border_map is now cluster-scoped and cached.
         # Each parent_id gets its own restricted border map; the flat call is gone.
+        # TODO right content, but should already exist and be initalized to empty at the beginning of hierarchy
         border_map_by_parent = {
             parent_id: _get_border_map(parent_id)
             for parent_id in core_df.unique()
         }
 
+        # Iterates over each parent cluster to be split
+        # TODO iterate over list of clusters to be split. maybe don't need core_df or a groupby at all
+        # maybe use dataframe with parent + child temp IDs
         for parent_id, parent_series in core_df.groupby(core_df):
             temp_ids = pd.Series(
                 {ts: H.nodes[ts]['temp_cluster_id'] for ts in parent_series.index}
-            ).sort_index()
+            ).sort_index() # look at networkx commands to do directly (get attributes as pandas series)
+            # TODO for dbstop might only need temp id, but iterate over all affected children 
+            # if only use is determining if we have length > 1, components is unnecessary. 
             components = [set(grp.index) for _, grp in temp_ids.groupby(temp_ids)]
 
             border_map = border_map_by_parent[parent_id]
+            # TODO don't need all_borders
             all_borders = set().union(*border_map.values()) if border_map else set()
             cluster_df = pd.Series(
                 parent_id,
                 index=parent_series.index.union(pd.Index(sorted(all_borders))),
                 name='cluster',
             )
+            # TODO cluster_df should be init to -1 like in dbstop, should have sorted indices temp_ids + border map
 
             if len(components) >= 2:
                 # Temporal overlap check: does the gap between the two earliest
@@ -240,6 +255,7 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
                 future_core = core_df[(core_df.index > curr_time) & (core_df == active_cid)].index.min()
                 if pd.notna(future_core):
                     core_time_range = sorted(abs(nb - curr_time) for nb in G[curr_time])[min_pts - 1]
+                    # TODO prev_pos and prev_coords should just be updated from iterating chronologically.
                     prev_pos, future_pos = np.searchsorted(node_times, [prev_core, future_core])
                     prev_coords = data.iloc[prev_pos][[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
                     future_coords = data.iloc[future_pos][[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
@@ -311,6 +327,7 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
             
             # Partition the parent's border pool among the newly minted children.
             # Each child inherits only the borders whose assigned core fell in its component.
+            # TODO should be done as part of dbstop
             parent_map = _get_border_map(parent_id)
             raw_at_scale = _build_border_map(scale, core_distances, G)
             for component, child_id in zip(non_spurious, new_ids):
