@@ -1,4 +1,6 @@
+import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 import matplotlib.dates as mdates
 import matplotlib.cm as cm
 import geopandas as gpd
@@ -8,6 +10,8 @@ import pandas as pd
 import numpy as np
 import nomad.io.base as loader
 import h3
+import time
+from matplotlib.animation import FuncAnimation
 pd.plotting.register_matplotlib_converters()
 
 def h3_cell_to_polygon(cell):
@@ -86,6 +90,8 @@ def plot_pings(data, ax,
                base_geom_background='#0e0e0e',
                data_crs=None,
                traj_cols=None,
+               edgecolor=None, 
+               linewidth=0.0,
                **kwargs):
     """
     Plot trajectory points.
@@ -148,14 +154,17 @@ def plot_pings(data, ax,
     if isinstance(color, str) and color in data.columns:
         if cmap:
             return gdf.plot(ax=ax, column=color, cmap=cmap, markersize=s,
-                           marker=marker, alpha=alpha, zorder=2).collections[-1]
+                           marker=marker, alpha=alpha, edgecolor=edgecolor,
+                            linewidth=linewidth,zorder=2).collections[-1]
         else:
             # Column contains actual colors
             return gdf.plot(ax=ax, color=data[color], markersize=s,
-                           marker=marker, alpha=alpha, zorder=2).collections[-1]
+                           marker=marker, alpha=alpha, edgecolor=edgecolor,
+                            linewidth=linewidth,zorder=2).collections[-1]
     
     return gdf.plot(ax=ax, color=color, markersize=s,
-                   marker=marker, alpha=alpha, zorder=2).collections[-1]
+                   marker=marker, alpha=alpha, edgecolor=edgecolor,
+                    linewidth=linewidth,zorder=2).collections[-1]
 
 
 def plot_circles(data, ax,
@@ -637,14 +646,46 @@ def plot_stops_barcode(stops, ax, cmap='Reds', stop_color=None, set_xlim=True, s
         end = start + pd.to_timedelta(stops[traj_cols['duration']] * 60, unit='s')
     else:
         end = stops[traj_cols[end_t_key]] if use_datetime else pd.to_datetime(stops[traj_cols[end_t_key]], unit='s')
-    clusters = np.arange(len(stops)) if 'cluster' not in stops else stops['cluster']
+    
+    """clusters = np.arange(len(stops)) if 'cluster' not in stops else stops['cluster']
     n = len(stops)
     if stop_color:
         colors = [stop_color for c in clusters]
     elif cmap:
         colors = [plt.get_cmap(cmap)((c+1)/(n+1)) for c in clusters]
     else:
+        raise ValueError("Specify either a color map (cmap) or a solid color (stop_color).")"""
+    
+    # ---- ANOUSHKA EDITS ----
+    clusters = np.arange(len(stops)) if 'cluster' not in stops.columns else stops['cluster']
+    n = len(stops)
+
+    if stop_color is not None:
+        if isinstance(stop_color, str) and stop_color in stops.columns:
+            colors = stops[stop_color]
+        else:
+            colors = [stop_color for _ in clusters]
+    elif cmap:
+        if 'cluster' in stops.columns:
+            unique_clusters = sorted(pd.Series(stops['cluster']).dropna().unique())
+            non_noise = [c for c in unique_clusters if c != -1]
+
+            cluster_color_map = {}
+            cmap_obj = plt.get_cmap(cmap)
+
+            for idx, cluster_id in enumerate(non_noise):
+                cluster_color_map[cluster_id] = cmap_obj(idx % cmap_obj.N)
+
+            if -1 in unique_clusters:
+                cluster_color_map[-1] = '#bdbdbd'
+
+            colors = stops['cluster'].map(cluster_color_map)
+        else:
+            colors = [plt.get_cmap(cmap)((i + 1) / (n + 1)) for i in range(n)]
+    else:
         raise ValueError("Specify either a color map (cmap) or a solid color (stop_color).")
+    
+    # -----------------------
         
     for s, e, color in zip(start, end, colors):
         ax.fill_betweenx([0, 1], s, e, color=color, alpha=stop_alpha)
@@ -682,3 +723,353 @@ def plot_stops_barcode(stops, ax, cmap='Reds', stop_color=None, set_xlim=True, s
             ax.tick_params(axis='x', which='minor', length=3)
         
         ax.tick_params(axis='x', which='major', labelsize=10)
+
+
+# ANOUSHKA EDITS
+      
+def animate_stop_dashboard(
+    data,
+    stops=None,
+    interval=100,
+    ping_color='black',
+    ping_cmap=None,
+    stop_cmap='Reds',
+    ping_size=6,
+    base_geometry=None,
+    base_geom_color='#2c353c',
+    base_geom_background='#0e0e0e',
+    data_crs=None,
+    traj_cols=None,
+    show_path=False,
+    show_stop_overlays=False,
+    figsize=(10, 8),
+    **kwargs
+):
+    """
+    Animate pings over space with a synchronized time barcode below.
+    """
+
+    if len(data) == 0:
+        raise ValueError("data must contain at least one row")
+
+    # DEBUG_ANIMATION: temporary progress instrumentation for animation renders.
+    debug_animation = kwargs.pop("debug_animation", False)
+    debug_every = kwargs.pop("debug_every", None)
+    inactive_ping_color = kwargs.pop("inactive_ping_color", "#d0d0d0")
+    inactive_ping_alpha = kwargs.pop("inactive_ping_alpha", 0.25)
+
+    data = data.copy()
+
+    fig = plt.figure(figsize=figsize)
+    gs = fig.add_gridspec(2, 1, height_ratios=[4, 1], hspace=0.1)
+    ax_map = fig.add_subplot(gs[0])
+    ax_time = fig.add_subplot(gs[1])
+
+    def _clear_time_axis(ax):
+        for spine in ['top', 'right', 'left']:
+            ax.spines[spine].set_visible(False)
+        ax.tick_params(axis='y', left=False, labelleft=False)
+
+    # ----------------------------
+    # STOP COLS
+    # ----------------------------
+    stop_cols = {
+        "timestamp": "timestamp",
+        "end_timestamp": "end_timestamp"
+    }
+
+    if stops is not None and len(stops) > 0:
+        stops = stops.copy()
+
+        if "x" in stops.columns and "y" in stops.columns:
+            stop_cols["x"] = "x"
+            stop_cols["y"] = "y"
+        if "h3_cell" in stops.columns:
+            stop_cols["location_id"] = "h3_cell"
+
+    # ----------------------------
+    # CLUSTER COLOR MAP (GLOBAL)
+    # ----------------------------
+    cluster_color_map = None
+
+    if ping_color == "cluster" and "cluster" in data.columns:
+        unique_clusters = sorted(pd.Series(data["cluster"]).dropna().unique())
+
+        cmap_name = ping_cmap if ping_cmap is not None else "tab10"
+        cmap = plt.get_cmap(cmap_name)
+
+        non_noise_clusters = [c for c in unique_clusters if c != -1]
+
+        cluster_color_map = {}
+        for idx, cluster_id in enumerate(non_noise_clusters):
+            cluster_color_map[cluster_id] = mcolors.to_hex(cmap(idx % cmap.N))
+
+        if -1 in unique_clusters:
+            cluster_color_map[-1] = "#bdbdbd"
+
+        data["cluster_color"] = data["cluster"].map(cluster_color_map)
+
+        if stops is not None and "cluster" in stops.columns:
+            stops["cluster_color"] = stops["cluster"].map(cluster_color_map)
+
+    else:
+        data["cluster_color"] = ping_color
+
+    # ----------------------------
+    # PING COLLECTION SETUP
+    # ----------------------------
+    if isinstance(data, gpd.GeoDataFrame):
+        all_x = data.geometry.x.to_numpy()
+        all_y = data.geometry.y.to_numpy()
+    else:
+        coord_key1, coord_key2, _ = loader._fallback_spatial_cols(
+            data.columns, traj_cols, kwargs
+        )
+        parsed_cols = loader._parse_traj_cols(
+            data.columns, traj_cols, kwargs, warn=False
+        )
+        all_x = data[parsed_cols[coord_key1]].to_numpy()
+        all_y = data[parsed_cols[coord_key2]].to_numpy()
+
+    all_offsets = np.column_stack([all_x, all_y])
+    inactive_rgba = np.array(mcolors.to_rgba(inactive_ping_color, inactive_ping_alpha))
+    inactive_edge_rgba = np.array(mcolors.to_rgba(inactive_ping_color, inactive_ping_alpha))
+
+    if ping_color == "cluster":
+        base_colors = data["cluster_color"]
+    elif isinstance(ping_color, str) and ping_color in data.columns:
+        base_colors = data[ping_color]
+    else:
+        base_colors = pd.Series(ping_color, index=data.index)
+    base_rgba = np.array([
+        mcolors.to_rgba(color if pd.notna(color) else inactive_ping_color)
+        for color in base_colors
+    ])
+
+    ping_collection = plot_pings(
+        data,
+        ax_map,
+        color=inactive_ping_color,
+        cmap=None,
+        s=ping_size * 0.8,
+        alpha=1.0,
+        marker='o',
+        edgecolor=inactive_ping_color,
+        linewidth=0.3,
+        base_geometry=base_geometry,
+        base_geom_color=base_geom_color,
+        base_geom_background=base_geom_background,
+        data_crs=data_crs,
+        traj_cols=traj_cols,
+        **kwargs
+    )
+    ping_collection.set_offsets(all_offsets)
+    ping_collection.set_facecolors(np.tile(inactive_rgba, (len(data), 1)))
+    ping_collection.set_edgecolors(np.tile(inactive_edge_rgba, (len(data), 1)))
+    ping_collection.set_sizes(np.full(len(data), ping_size * 0.8))
+
+    fixed_xlim = ax_map.get_xlim()
+    fixed_ylim = ax_map.get_ylim()
+    ax_map.set_aspect('equal', adjustable='box')
+    ax_map.set_title("")
+
+    path_line = None
+    if show_path:
+        path_line, = ax_map.plot([], [], color='black', alpha=0.08, linewidth=0.8, zorder=1)
+
+    stop_overlay_artists = []
+
+    # ----------------------------
+    # TIME GAP → FRAME REPEATS
+    # ----------------------------
+    ts_dt = pd.to_datetime(data["timestamp"], unit="s")
+    diffs = ts_dt.diff().dt.total_seconds().fillna(0)
+
+    positive_diffs = diffs[diffs > 0]
+    typical_gap = positive_diffs.median() if len(positive_diffs) > 0 else 1
+
+    frame_sequence = []
+    for i, gap in enumerate(diffs):
+        hold = int(np.clip(round(gap / typical_gap), 1, 10))
+        frame_sequence.extend([i] * hold)
+
+    if len(frame_sequence) == 0:
+        frame_sequence = list(range(len(data)))
+
+    # DEBUG_ANIMATION: temporary progress instrumentation for animation renders.
+    debug_frame_count = len(frame_sequence)
+    if debug_every is None:
+        debug_every = max(1, debug_frame_count // 10)
+    debug_start = time.perf_counter()
+    debug_update_count = {"n": 0}
+    if debug_animation:
+        print(
+            "[animate_stop_dashboard debug] "
+            f"rows={len(data)}, stops={0 if stops is None else len(stops)}, "
+            f"frames={debug_frame_count}, interval={interval}",
+            flush=True
+        )
+
+    # ----------------------------
+    # UPDATE FUNCTION
+    # ----------------------------
+    def update(frame):
+        # DEBUG_ANIMATION: temporary progress instrumentation for animation renders.
+        debug_update_count["n"] += 1
+        debug_update_i = debug_update_count["n"]
+        if debug_animation and (
+            debug_update_i == 1
+            or debug_update_i % debug_every == 0
+            or debug_update_i == debug_frame_count
+        ):
+            elapsed = time.perf_counter() - debug_start
+            print(
+                "[animate_stop_dashboard debug] "
+                f"update start call={debug_update_i}, frame={frame}, "
+                f"frames={debug_frame_count}, elapsed={elapsed:.1f}s",
+                flush=True
+            )
+
+        ax_time.clear()
+
+        current_data = data.iloc[:frame + 1]
+        current_time = current_data['timestamp'].iloc[-1]
+
+        stops_visible = None
+        if stops is not None and len(stops) > 0:
+            stops_visible = stops[stops['timestamp'] <= current_time]
+
+            # look for col end_timestamp, if not use complete output TRUE
+
+        # ----------------------------
+        # OPTIONAL PATH
+        # ----------------------------
+        n = len(current_data)
+        if path_line is not None:
+            path_line.set_data(all_x[:n], all_y[:n])
+
+        # ----------------------------
+        # SIZE DECAY (NOT COLOR FADE)
+        # ----------------------------
+        sizes = np.full(len(data), ping_size * 0.8)
+        facecolors = np.tile(inactive_rgba, (len(data), 1))
+        edgecolors = np.tile(inactive_edge_rgba, (len(data), 1))
+
+        visible_idx = np.arange(n)
+        age_frac = visible_idx / max(n - 1, 1)
+        visible_sizes = ping_size * (0.8 + 1.5 * age_frac)
+        visible_alpha = np.full(n, 0.9)
+
+        if ping_color == "cluster" and cluster_color_map is not None and "cluster" in data.columns:
+            noise_mask = data["cluster"].iloc[:n].to_numpy() == -1
+            visible_alpha[noise_mask] = 0.45
+            visible_sizes[noise_mask] *= 0.8
+
+        visible_sizes[-1] *= 1.25
+        visible_alpha[-1] = 1.0
+
+        facecolors[:n] = base_rgba[:n]
+        facecolors[:n, 3] = visible_alpha
+        edgecolors[:n] = mcolors.to_rgba("black", 1.0)
+        sizes[:n] = visible_sizes
+
+        ping_collection.set_sizes(sizes)
+        ping_collection.set_facecolors(facecolors)
+        ping_collection.set_edgecolors(edgecolors)
+
+        for artist in stop_overlay_artists:
+            artist.remove()
+        stop_overlay_artists.clear()
+
+        # ----------------------------
+        # OPTIONAL STOP OVERLAYS
+        # ----------------------------
+        if show_stop_overlays and stops_visible is not None and len(stops_visible) > 0:
+            if "h3_cell" in stops_visible.columns:
+                artist = plot_hexagons(
+                    stops_visible,
+                    ax=ax_map,
+                    color='cluster',
+                    cmap=stop_cmap,
+                    data_crs=data_crs,
+                    traj_cols={"location_id": "h3_cell"}
+                )
+            else:
+                artist = plot_stops(
+                    stops_visible,
+                    ax_map,
+                    cmap=stop_cmap,
+                    edge_only=True,
+                    base_geometry=None,
+                    data_crs=data_crs,
+                    traj_cols=stop_cols
+                )
+            if artist is not None:
+                stop_overlay_artists.append(artist)
+
+        # ----------------------------
+        # FIX VIEW
+        # ----------------------------
+        ax_map.set_xlim(fixed_xlim)
+        ax_map.set_ylim(fixed_ylim)
+        ax_map.set_aspect('equal', adjustable='box')
+        ax_map.set_title("")  # REMOVE TIMER
+
+        # ----------------------------
+        # BARCODE (SYNCED COLORS)
+        # ----------------------------
+        plot_time_barcode(
+            data,
+            ax_time,
+            color='cluster_color',
+            cmap=None,
+            current_idx=frame,
+            set_xlim=True,
+            lw=1.2
+        )
+
+        if stops_visible is not None and len(stops_visible) > 0:
+            plot_stops_barcode(
+                stops_visible,
+                ax_time,
+                stop_color="cluster_color",   # attempt sync
+                cmap=None,
+                set_xlim=False,
+                traj_cols=stop_cols
+            )
+
+        _clear_time_axis(ax_time)
+        # DEBUG_ANIMATION: temporary progress instrumentation for animation renders.
+        if debug_animation and (
+            debug_update_i == 1
+            or debug_update_i % debug_every == 0
+            or debug_update_i == debug_frame_count
+        ):
+            elapsed = time.perf_counter() - debug_start
+            print(
+                "[animate_stop_dashboard debug] "
+                f"update done call={debug_update_i}, frame={frame}, "
+                f"artists={len(ax_map.collections) + len(ax_time.collections)}, "
+                f"elapsed={elapsed:.1f}s",
+                flush=True
+            )
+        artists = [ping_collection]
+        if path_line is not None:
+            artists.append(path_line)
+        artists.extend(stop_overlay_artists)
+        return artists
+
+    # ----------------------------
+    # ANIMATION
+    # ----------------------------
+    anim = FuncAnimation(
+        fig,
+        update,
+        frames=frame_sequence,
+        interval=interval,
+        blit=False,
+        repeat=False
+    )
+
+    plt.close(fig)
+    return anim
