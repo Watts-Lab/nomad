@@ -2,15 +2,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import matplotlib.dates as mdates
-import matplotlib.cm as cm
 import geopandas as gpd
-from shapely.geometry import Point, Polygon
+from shapely.geometry import Polygon
 from shapely.affinity import scale
 import pandas as pd
-import numpy as np
 import nomad.io.base as loader
 import h3
-import time
 from matplotlib.animation import FuncAnimation
 pd.plotting.register_matplotlib_converters()
 
@@ -663,8 +660,10 @@ def plot_stops_barcode(stops, ax, cmap='Reds', stop_color=None, set_xlim=True, s
     if stop_color is not None:
         if isinstance(stop_color, str) and stop_color in stops.columns:
             colors = stops[stop_color]
-        else:
+        elif isinstance(stop_color, str):
             colors = [stop_color for _ in clusters]
+        else:
+            colors = stop_color
     elif cmap:
         if 'cluster' in stops.columns:
             unique_clusters = sorted(pd.Series(stops['cluster']).dropna().unique())
@@ -743,6 +742,8 @@ def animate_stop_dashboard(
     show_path=False,
     show_stop_overlays=False,
     figsize=(10, 8),
+    ax_map=None,
+    ax_barcode=None,
     **kwargs
 ):
     """
@@ -752,18 +753,23 @@ def animate_stop_dashboard(
     if len(data) == 0:
         raise ValueError("data must contain at least one row")
 
-    # DEBUG_ANIMATION: temporary progress instrumentation for animation renders.
-    debug_animation = kwargs.pop("debug_animation", False)
-    debug_every = kwargs.pop("debug_every", None)
     inactive_ping_color = kwargs.pop("inactive_ping_color", "#d0d0d0")
     inactive_ping_alpha = kwargs.pop("inactive_ping_alpha", 0.25)
 
-    data = data.copy()
+    t_key, use_datetime = loader._fallback_time_cols_dt(data.columns, traj_cols, kwargs)
+    parsed_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
+    time_col = parsed_cols[t_key]
 
-    fig = plt.figure(figsize=figsize)
-    gs = fig.add_gridspec(2, 1, height_ratios=[4, 1], hspace=0.1)
-    ax_map = fig.add_subplot(gs[0])
-    ax_time = fig.add_subplot(gs[1])
+    if ax_map is None and ax_barcode is None:
+        fig = plt.figure(figsize=figsize)
+        gs = fig.add_gridspec(2, 1, height_ratios=[10, 1], hspace=0.1)
+        ax_map = fig.add_subplot(gs[0])
+        ax_time = fig.add_subplot(gs[1])
+        close_fig = True
+    else:
+        fig = ax_map.figure
+        ax_time = ax_barcode
+        close_fig = False
 
     def _clear_time_axis(ax):
         for spine in ['top', 'right', 'left']:
@@ -773,14 +779,13 @@ def animate_stop_dashboard(
     # ----------------------------
     # STOP COLS
     # ----------------------------
+    end_t_key = "end_datetime" if use_datetime else "end_timestamp"
     stop_cols = {
-        "timestamp": "timestamp",
-        "end_timestamp": "end_timestamp"
+        t_key: time_col,
+        end_t_key: parsed_cols[end_t_key]
     }
 
     if stops is not None and len(stops) > 0:
-        stops = stops.copy()
-
         if "x" in stops.columns and "y" in stops.columns:
             stop_cols["x"] = "x"
             stop_cols["y"] = "y"
@@ -807,13 +812,18 @@ def animate_stop_dashboard(
         if -1 in unique_clusters:
             cluster_color_map[-1] = "#bdbdbd"
 
-        data["cluster_color"] = data["cluster"].map(cluster_color_map)
-
-        if stops is not None and "cluster" in stops.columns:
-            stops["cluster_color"] = stops["cluster"].map(cluster_color_map)
-
+        ping_colors = data["cluster"].map(cluster_color_map)
+        stop_colors = (
+            stops["cluster"].map(cluster_color_map)
+            if stops is not None and "cluster" in stops.columns else None
+        )
     else:
-        data["cluster_color"] = ping_color
+        ping_colors = (
+            data[ping_color]
+            if isinstance(ping_color, str) and ping_color in data.columns
+            else pd.Series(ping_color, index=data.index)
+        )
+        stop_colors = None
 
     # ----------------------------
     # PING COLLECTION SETUP
@@ -825,9 +835,6 @@ def animate_stop_dashboard(
         coord_key1, coord_key2, _ = loader._fallback_spatial_cols(
             data.columns, traj_cols, kwargs
         )
-        parsed_cols = loader._parse_traj_cols(
-            data.columns, traj_cols, kwargs, warn=False
-        )
         all_x = data[parsed_cols[coord_key1]].to_numpy()
         all_y = data[parsed_cols[coord_key2]].to_numpy()
 
@@ -835,15 +842,9 @@ def animate_stop_dashboard(
     inactive_rgba = np.array(mcolors.to_rgba(inactive_ping_color, inactive_ping_alpha))
     inactive_edge_rgba = np.array(mcolors.to_rgba(inactive_ping_color, inactive_ping_alpha))
 
-    if ping_color == "cluster":
-        base_colors = data["cluster_color"]
-    elif isinstance(ping_color, str) and ping_color in data.columns:
-        base_colors = data[ping_color]
-    else:
-        base_colors = pd.Series(ping_color, index=data.index)
     base_rgba = np.array([
         mcolors.to_rgba(color if pd.notna(color) else inactive_ping_color)
-        for color in base_colors
+        for color in ping_colors
     ])
 
     ping_collection = plot_pings(
@@ -870,8 +871,6 @@ def animate_stop_dashboard(
 
     fixed_xlim = ax_map.get_xlim()
     fixed_ylim = ax_map.get_ylim()
-    ax_map.set_aspect('equal', adjustable='box')
-    ax_map.set_title("")
 
     path_line = None
     if show_path:
@@ -882,7 +881,7 @@ def animate_stop_dashboard(
     # ----------------------------
     # TIME GAP → FRAME REPEATS
     # ----------------------------
-    ts_dt = pd.to_datetime(data["timestamp"], unit="s")
+    ts_dt = data[time_col] if use_datetime else pd.to_datetime(data[time_col], unit="s")
     diffs = ts_dt.diff().dt.total_seconds().fillna(0)
 
     positive_diffs = diffs[diffs > 0]
@@ -896,55 +895,22 @@ def animate_stop_dashboard(
     if len(frame_sequence) == 0:
         frame_sequence = list(range(len(data)))
 
-    # DEBUG_ANIMATION: temporary progress instrumentation for animation renders.
-    debug_frame_count = len(frame_sequence)
-    if debug_every is None:
-        debug_every = max(1, debug_frame_count // 10)
-    debug_start = time.perf_counter()
-    debug_update_count = {"n": 0}
-    if debug_animation:
-        print(
-            "[animate_stop_dashboard debug] "
-            f"rows={len(data)}, stops={0 if stops is None else len(stops)}, "
-            f"frames={debug_frame_count}, interval={interval}",
-            flush=True
-        )
-
     # ----------------------------
     # UPDATE FUNCTION
     # ----------------------------
     def update(frame):
-        # DEBUG_ANIMATION: temporary progress instrumentation for animation renders.
-        debug_update_count["n"] += 1
-        debug_update_i = debug_update_count["n"]
-        if debug_animation and (
-            debug_update_i == 1
-            or debug_update_i % debug_every == 0
-            or debug_update_i == debug_frame_count
-        ):
-            elapsed = time.perf_counter() - debug_start
-            print(
-                "[animate_stop_dashboard debug] "
-                f"update start call={debug_update_i}, frame={frame}, "
-                f"frames={debug_frame_count}, elapsed={elapsed:.1f}s",
-                flush=True
-            )
-
         ax_time.clear()
 
-        current_data = data.iloc[:frame + 1]
-        current_time = current_data['timestamp'].iloc[-1]
+        n = frame + 1
+        current_time = data[time_col].iloc[frame]
 
         stops_visible = None
         if stops is not None and len(stops) > 0:
-            stops_visible = stops[stops['timestamp'] <= current_time]
-
-            # look for col end_timestamp, if not use complete output TRUE
+            stops_visible = stops[stops[stop_cols[t_key]] <= current_time]
 
         # ----------------------------
         # OPTIONAL PATH
         # ----------------------------
-        n = len(current_data)
         if path_line is not None:
             path_line.set_data(all_x[:n], all_y[:n])
 
@@ -955,8 +921,7 @@ def animate_stop_dashboard(
         facecolors = np.tile(inactive_rgba, (len(data), 1))
         edgecolors = np.tile(inactive_edge_rgba, (len(data), 1))
 
-        visible_idx = np.arange(n)
-        age_frac = visible_idx / max(n - 1, 1)
+        age_frac = np.arange(n) / max(n - 1, 1)
         visible_sizes = ping_size * (0.8 + 1.5 * age_frac)
         visible_alpha = np.full(n, 0.9)
 
@@ -1012,47 +977,31 @@ def animate_stop_dashboard(
         # ----------------------------
         ax_map.set_xlim(fixed_xlim)
         ax_map.set_ylim(fixed_ylim)
-        ax_map.set_aspect('equal', adjustable='box')
-        ax_map.set_title("")  # REMOVE TIMER
 
         # ----------------------------
-        # BARCODE (SYNCED COLORS)
+        # BARCODE
         # ----------------------------
         plot_time_barcode(
-            data,
+            data[time_col],
             ax_time,
-            color='cluster_color',
-            cmap=None,
             current_idx=frame,
             set_xlim=True,
             lw=1.2
         )
 
         if stops_visible is not None and len(stops_visible) > 0:
+            stop_barcode_color = stop_colors.loc[stops_visible.index] if stop_colors is not None else None
             plot_stops_barcode(
                 stops_visible,
                 ax_time,
-                stop_color="cluster_color",   # attempt sync
-                cmap=None,
+                stop_color=stop_barcode_color,
+                cmap=None if stop_barcode_color is not None else stop_cmap,
+                stop_alpha=0.4,
                 set_xlim=False,
                 traj_cols=stop_cols
             )
 
         _clear_time_axis(ax_time)
-        # DEBUG_ANIMATION: temporary progress instrumentation for animation renders.
-        if debug_animation and (
-            debug_update_i == 1
-            or debug_update_i % debug_every == 0
-            or debug_update_i == debug_frame_count
-        ):
-            elapsed = time.perf_counter() - debug_start
-            print(
-                "[animate_stop_dashboard debug] "
-                f"update done call={debug_update_i}, frame={frame}, "
-                f"artists={len(ax_map.collections) + len(ax_time.collections)}, "
-                f"elapsed={elapsed:.1f}s",
-                flush=True
-            )
         artists = [ping_collection]
         if path_line is not None:
             artists.append(path_line)
@@ -1071,5 +1020,6 @@ def animate_stop_dashboard(
         repeat=False
     )
 
-    plt.close(fig)
+    if close_fig:
+        plt.close(fig)
     return anim
