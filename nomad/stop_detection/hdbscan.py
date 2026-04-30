@@ -221,14 +221,10 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
             components = [set(grp.index) for _, grp in parent_df.groupby('temp_id')]
 
             border_map = _get_border_map(parent_id)
-            # TODO don't need all_borders
-            all_borders = set().union(*border_map.values()) if border_map else set()
-            cluster_df = pd.Series(
-                parent_id,
-                index=parent_df.index.union(pd.Index(sorted(all_borders))),
-                name='cluster',
-            )
-            # TODO cluster_df should be init to -1 like in dbstop, should have sorted indices temp_ids + border map
+            # union of core timestamps and border timestamps for this parent cluster
+            all_ts = sorted(set(parent_df.index) | set().union(*border_map.values()))
+            cluster_df = pd.Series(-1, index=all_ts, name='cluster')
+            cluster_df.loc[parent_df.index] = parent_id
 
             if len(components) >= 2:
                 # Temporal overlap check: does the gap between the two earliest
