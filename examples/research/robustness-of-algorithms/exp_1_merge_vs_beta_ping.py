@@ -40,7 +40,7 @@ import nomad.filters as filters
 import nomad.city_gen as cg
 
 from nomad.map_utils import blocks_to_mercator_gdf
-from nomad.contact_estimation import compute_stop_detection_metrics
+from nomad.stop_detection.validation import compute_stop_detection_metrics
 
 
 # %%

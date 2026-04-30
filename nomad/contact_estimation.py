@@ -2,155 +2,180 @@
 
 # Authors: Thomas Li and Francisco Barreras
 
+import nomad.filters as filters
 import nomad.io.base as loader
-import nomad.stop_detection.hdbscan as HDBSCAN
-import nomad.stop_detection.utils as utils
-import pandas as pd
 import numpy as np
-import pdb
+import pandas as pd
 
-def overlapping_visits(left, right, match_location=False, traj_cols=None, **kwargs):
+
+def overlapping_visits(left, right, match_location=False, traj_cols=None, right_traj_cols=None, **kwargs):
     if len(left) == 0 or len(right) == 0:
         return pd.DataFrame()
-    
+
     left = left.copy()
     right = right.copy()
-    _ = loader._parse_traj_cols(right.columns, traj_cols, kwargs) # for warning
+    input_traj_cols = traj_cols
     traj_cols = loader._parse_traj_cols(left.columns, traj_cols, kwargs)
+    if right_traj_cols is None:
+        right_schema_input = input_traj_cols
+        right_kwargs = kwargs
+    else:
+        right_schema_input = right_traj_cols
+        right_kwargs = {}
+    temp_traj_cols = loader._parse_traj_cols(right.columns, right_schema_input, right_kwargs)
+    right_schema_hint = ""
+    if right_traj_cols is None:
+        right_schema_hint = (
+            " The shared traj_cols/kwargs mapping appears not to fit the right table. "
+            "Pass right_traj_cols for the right table, or make both tables use the same relevant "
+            "column names for time, duration, and location."
+        )
 
-    # Has required columns
-    uid_key = traj_cols['user_id']
-    loc_key = traj_cols['location_id']
-    e_t_key = traj_cols['end_timestamp']
-    
-    #check for keys
-    for df_name, df in {'left':left, 'right':right}.items():
-        loader._has_time_cols(df.columns, traj_cols)
-        
-        end_col_present = loader._has_end_cols(df.columns, traj_cols)
-        duration_col_present = loader._has_duration_cols(df.columns, traj_cols)
-        if not (end_col_present or duration_col_present):
-            print(f"Missing required (end or duration) temporal columns for {df_name} visits dataframe in columns {df.columns}.")
-            
-        if uid_key in df.columns and not (df[uid_key].nunique() == 1):
-            raise ValueError("Each visits dataframe must have at most one unique user_id")
-            
-        if traj_cols['location_id'] not in df:
+    left_uid_key = traj_cols["user_id"]
+    right_uid_key = temp_traj_cols["user_id"]
+    left_loc_key = traj_cols["location_id"]
+    right_loc_key = temp_traj_cols["location_id"]
+
+    loader._has_time_cols(left.columns, traj_cols)
+    if right_traj_cols is None:
+        time_keys = ["datetime", "start_datetime", "timestamp", "start_timestamp"]
+        if "timestamp" in kwargs or "start_timestamp" in kwargs:
+            time_keys = ["timestamp", "start_timestamp", "datetime", "start_datetime"]
+        if "datetime" in kwargs or "start_datetime" in kwargs:
+            time_keys = ["datetime", "start_datetime", "timestamp", "start_timestamp"]
+
+        right_has_time = any(
+            temp_traj_cols[key] in right.columns
+            for key in time_keys
+        )
+        if not right_has_time:
             raise ValueError(
-                "Could not find required location column in {}. The dataset must contain or map to "
-                "a location column'.".format(list(df.columns)))
+                "Could not find required temporal columns in {}. The dataset must contain or map to "
+                "at least one of 'datetime', 'timestamp', 'start_datetime', or 'start_timestamp'.".format(
+                    list(right.columns)
+                )
+                + right_schema_hint
+            )
+    else:
+        loader._has_time_cols(right.columns, temp_traj_cols)
 
-    keep_uid = (uid_key in left.columns and uid_key in right.columns )
+    if left_loc_key not in left.columns:
+        raise ValueError(
+            "Could not find required location column in {}. The dataset must contain or map to "
+            "a location column.".format(list(left.columns))
+        )
+    if right_loc_key not in right.columns:
+        raise ValueError(
+            "Could not find required location column in {}. The dataset must contain or map to "
+            "a location column.{}".format(list(right.columns), right_schema_hint if right_traj_cols is None else "")
+        )
+
+    if left_uid_key in left.columns and not (left[left_uid_key].nunique() == 1):
+        raise ValueError("Each visits dataframe must have at most one unique user_id")
+    if right_uid_key in right.columns and not (right[right_uid_key].nunique() == 1):
+        raise ValueError("Each visits dataframe must have at most one unique user_id")
+
+    keep_uid = (left_uid_key in left.columns and right_uid_key in right.columns)
     if keep_uid:
-        same_id = (left[uid_key].iloc[0] == right[uid_key].iloc[0])
-        uid = left[uid_key].iloc[0]
-    # Possibly different start time keys are valid
-    t_keys = []
-    for df in [left, right]:
-        if traj_cols['timestamp'] in df.columns:
-            t_key = traj_cols['timestamp']
-        elif traj_cols['start_timestamp'] in df.columns:
-            t_key = traj_cols['start_timestamp']
+        same_id = (left[left_uid_key].iloc[0] == right[right_uid_key].iloc[0])
+        uid = left[left_uid_key].iloc[0]
+    else:
+        same_id = False
+
+    left_t_name, left_use_datetime = loader._fallback_time_cols_dt(left.columns, input_traj_cols, kwargs)
+    left_t_key = traj_cols[left_t_name]
+    left_e_t_key = traj_cols["end_datetime" if left_use_datetime else "end_timestamp"]
+
+    right_t_name, right_use_datetime = loader._fallback_time_cols_dt(right.columns, right_schema_input, right_kwargs)
+    right_t_key = temp_traj_cols[right_t_name]
+    right_e_t_key = temp_traj_cols["end_datetime" if right_use_datetime else "end_timestamp"]
+
+    if not (loader._has_end_cols(left.columns, traj_cols) or loader._has_duration_cols(left.columns, traj_cols)):
+        raise ValueError(
+            "Missing required (end or duration) temporal columns for left visits dataframe in columns {}.".format(
+                list(left.columns)
+            )
+        )
+    if not (loader._has_end_cols(right.columns, temp_traj_cols) or loader._has_duration_cols(right.columns, temp_traj_cols)):
+        raise ValueError(
+            "Missing required (end or duration) temporal columns for right visits dataframe in columns {}.{}".format(
+                list(right.columns),
+                right_schema_hint if right_traj_cols is None else "",
+            )
+        )
+
+    if left_e_t_key not in left.columns:
+        if left_use_datetime:
+            left[left_e_t_key] = left[left_t_key] + pd.to_timedelta(left[traj_cols["duration"]], unit="m")
         else:
-            # TO DO: implement to timestamp conversion of datetime
-            raise ValueError('Overlap of visits with datetime64 objects not yet implemented')
+            left[left_e_t_key] = left[left_t_key] + left[traj_cols["duration"]] * 60
+    if right_e_t_key not in right.columns:
+        if right_use_datetime:
+            right[right_e_t_key] = right[right_t_key] + pd.to_timedelta(right[temp_traj_cols["duration"]], unit="m")
+        else:
+            right[right_e_t_key] = right[right_t_key] + right[temp_traj_cols["duration"]] * 60
 
-        t_keys += [t_key]
-        if e_t_key not in df.columns:
-            df[e_t_key] = df[t_key] + df[traj_cols['duration']]*60 # will fail if t_key is datetime!!
-        
-        cols = [t_key, e_t_key, loc_key]
-        if keep_uid and not same_id:
-            cols = [uid_key, t_key, e_t_key, loc_key]
-        df.drop([col for col in df.columns if col not in cols], axis=1, inplace=True)
+    if left_use_datetime:
+        left["temp_t_key"] = filters.to_timestamp(left[left_t_key])
+        left["temp_e_t_key"] = filters.to_timestamp(left[left_e_t_key])
+    else:
+        left["temp_t_key"] = left[left_t_key]
+        left["temp_e_t_key"] = left[left_e_t_key]
 
-    # rename timekeys for now to avoid conflict
-    left.rename({t_keys[0]:t_keys[1]}, axis=1, inplace=True)
-    t_key = t_keys[1] # keep the t_key in right
+    if right_use_datetime:
+        right["temp_t_key"] = filters.to_timestamp(right[right_t_key])
+        right["temp_e_t_key"] = filters.to_timestamp(right[right_e_t_key])
+    else:
+        right["temp_t_key"] = right[right_t_key]
+        right["temp_e_t_key"] = right[right_e_t_key]
+
+    left_cols = [left_t_key, left_e_t_key, left_loc_key, "temp_t_key", "temp_e_t_key"]
+    right_cols = [right_t_key, right_e_t_key, right_loc_key, "temp_t_key", "temp_e_t_key"]
+    if keep_uid and not same_id:
+        left_cols = [left_uid_key] + left_cols
+        right_cols = [right_uid_key] + right_cols
+    left.drop([col for col in left.columns if col not in left_cols], axis=1, inplace=True)
+    right.drop([col for col in right.columns if col not in right_cols], axis=1, inplace=True)
 
     if match_location:
-        merged = left.merge(right, on=loc_key, suffixes=('_left','_right'))
+        if left_loc_key == right_loc_key:
+            merged = left.merge(right, on=left_loc_key, suffixes=("_left", "_right"))
+        else:
+            merged = left.merge(right, left_on=left_loc_key, right_on=right_loc_key, suffixes=("_left", "_right"))
     else:
-        merged = left.merge(right, how='cross', suffixes=('_left','_right'))
-    
-    t_key_l = t_key+'_left'
-    t_key_r = t_key+'_right'
-    
-    cond = ((merged[t_key_l] < merged[e_t_key+'_right']) &
-            (merged[t_key_r] < merged[e_t_key+'_left']))
+        merged = left.merge(right, how="cross", suffixes=("_left", "_right"))
+
+    cond = (
+        (merged["temp_t_key_left"] < merged["temp_e_t_key_right"])
+        & (merged["temp_t_key_right"] < merged["temp_e_t_key_left"])
+    )
     merged = merged.loc[cond]
 
-    start_max = merged[[t_key_l, t_key_r]].max(axis=1)
-    end_min   = merged[[e_t_key+'_left',e_t_key+'_right']].min(axis=1)
+    start_max = merged[["temp_t_key_left", "temp_t_key_right"]].max(axis=1)
+    end_min = merged[["temp_e_t_key_left", "temp_e_t_key_right"]].min(axis=1)
+    merged[traj_cols["duration"]] = ((end_min - start_max) // 60).astype(int)
 
-    merged.drop([e_t_key+'_left', e_t_key+'_right'], axis=1)
-    merged[traj_cols['duration']] = ((end_min - start_max) // 60).astype(int) #output names use traj_cols
-    
     if keep_uid and same_id:
-        merged[uid_key] = uid
+        merged[left_uid_key] = uid
+
+    rename_cols = {}
+    if left_t_key != right_t_key:
+        rename_cols[left_t_key] = f"{left_t_key}_left"
+        rename_cols[right_t_key] = f"{right_t_key}_right"
+    if left_e_t_key != right_e_t_key:
+        rename_cols[left_e_t_key] = f"{left_e_t_key}_left"
+        rename_cols[right_e_t_key] = f"{right_e_t_key}_right"
+    if left_loc_key != right_loc_key:
+        rename_cols[left_loc_key] = f"{left_loc_key}_left"
+        rename_cols[right_loc_key] = f"{right_loc_key}_right"
+    if keep_uid and not same_id and left_uid_key != right_uid_key:
+        rename_cols[left_uid_key] = f"{left_uid_key}_left"
+        rename_cols[right_uid_key] = f"{right_uid_key}_right"
+    merged.rename(rename_cols, axis=1, inplace=True)
+
+    merged.drop(["temp_t_key_left", "temp_e_t_key_left", "temp_t_key_right", "temp_e_t_key_right"], axis=1, inplace=True)
 
     return merged.reset_index(drop=True)
-
-def compute_visitation_errors(overlaps, true_visits, traj_cols=None, **kwargs):
-    """
-    Return missed / merged / split fractions for a set of ground-truth stops
-    and an overlap table produced by `overlapping_visits`.
-
-    The start-timestamp column in `true_visits` *must* be unique; if not,
-    a ValueError is raised.  No gap filling is performed here: the caller
-    must supply already-filled tables where appropriate.
-    """
-
-    # 0 – make sure ground truth rows are valid
-    true_visits = true_visits.dropna()
-        
-    # 1 – decide the canonical start-time column once
-    t_key, _ = loader._fallback_time_cols_dt(true_visits.columns, traj_cols, kwargs)
-
-    # 2 – check uniqueness of that column in truth
-    if true_visits[t_key].duplicated().any():
-        dup_ts = true_visits.loc[true_visits[t_key].duplicated(), t_key].unique()
-        raise ValueError(
-            "Ground-truth stops share the same start time(s), which violates the "
-            "per-stop key assumption.  Duplicated timestamps: " + repr(dup_ts)
-        )
-    n_truth = len(true_visits)
-
-    # 3 – determine the canonical location column
-    loc_key = loader._parse_traj_cols(true_visits.columns, traj_cols, kwargs)['location_id']
-
-    # 4 – required column names in the overlap table
-    t_left   = f"{t_key}_left"
-    t_right  = f"{t_key}_right"
-    loc_left = f"{loc_key}_left"
-    loc_right = f"{loc_key}_right"
-
-    for col in (t_left, t_right, loc_left, loc_right):
-        if col not in overlaps.columns:
-            raise ValueError(
-                f"compute_visitation_errors: expected column '{col}' in overlaps but not found."
-            )
-
-    overlaps = overlaps.fillna({loc_left: 'Street'}) # So they count on merge and missing
-
-    # 5 – error if the overlap table references a start time not in ground truth
-    bad_ts = set(overlaps[t_right]) - set(true_visits[t_key])
-    if bad_ts:
-        raise ValueError(
-            "compute_visitation_errors: overlap rows reference start times that "
-            "do not exist in ground truth: " + repr(sorted(bad_ts)[:10])
-        )
-
-    diff_loc = overlaps[loc_left] != overlaps[loc_right] #because gt "street" segments are always under a minute, then predicted "street" can't ever be correct
-    same_loc = ~diff_loc
-
-    num_overlapped = overlaps[t_right].nunique()
-    missed_fraction = 1 - num_overlapped / n_truth
-
-    merged_fraction = diff_loc.groupby(overlaps[t_right]).any().mean()
-    split_fraction  = overlaps[same_loc].groupby(t_right)[t_left].nunique().gt(1).mean()
-
-    return {'missed_fraction': missed_fraction, 'merged_fraction': merged_fraction, 'split_fraction': split_fraction}
 
 def precision_recall_f1_from_minutes(total_pred, total_truth, tp):
     """Compute P/R/F1 from minute totals."""
@@ -163,17 +188,3 @@ def precision_recall_f1_from_minutes(total_pred, total_truth, tp):
     else:
         f1 = 2 * precision * recall / (precision + recall)
     return {'precision': precision, 'recall': recall, 'f1': f1}
-
-def compute_stop_detection_metrics(stops, truth, user_id=None, algorithm=None, prf_only=True, traj_cols=None, **kwargs):
-    """Backward-compatible forwarder to nomad.stop_detection.validation."""
-    from nomad.stop_detection.validation import compute_stop_detection_metrics as _compute
-
-    return _compute(
-        stops=stops,
-        truth=truth,
-        user_id=user_id,
-        algorithm=algorithm,
-        prf_only=prf_only,
-        traj_cols=traj_cols,
-        **kwargs,
-    )

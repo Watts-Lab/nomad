@@ -34,6 +34,9 @@ The examples/ folder contains notebooks and small sample datasets that demonstra
 
 ## Contribute 
 For development clone the repository and ensure unit tests, located in `nomad\tests\' are passed before submitting a pull request.
+
+Mapping tests use a local OSM cache by default. Create or refresh it with `python -m nomad.data.generate_osm_test_cache`, then run `pytest nomad/tests/test_maps.py`. To run against live OSM instead, set `NOMAD_OSM_TEST_CACHE=0` first (PowerShell: `$env:NOMAD_OSM_TEST_CACHE = "0"`). This mode uses pytest's built-in `monkeypatch` fixture; do not install a separate monkeypatch package. If cached files are missing or stale, rerun the cache script. Keep generated geospatial artifacts out of git unless their size has been reviewed, since OSM extracts can bloat repository history quickly.
+
 ## License 
 MIT © University of Pennsylvania 2025.
 
