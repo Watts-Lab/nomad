@@ -182,7 +182,7 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
         # Remove edges, everything has temp_cluster_id of -1
         nx.set_node_attributes(H, -1, 'temp_cluster_id')
 
-        _core_entries = {}
+        _split_entries = {}
         _parent_comp_count = defaultdict(int)
 
         # Assigns a temp_id from 0 to k for each component, where k is the number of children of a single parent_id
@@ -208,38 +208,24 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
             _parent_comp_count[parent_id] += 1
             for node in component_nodes:
                 H.nodes[node]['temp_cluster_id'] = temp_id
-                _core_entries[node] = parent_id
+                _split_entries[node] = (parent_id, temp_id)
 
-        # core_df: Series indexed by sorted timestamp, values = parent cluster_id.
-        # temp_cluster_id on each H node identifies which sub-component it belongs to.
-        # Only the size of the reachable nodes from event nodes, which is already nodes with temp_cluster_id != -1
-        core_df = pd.Series(_core_entries, name='cluster').sort_index()
+        # split_df: DataFrame indexed by sorted timestamp, columns = (parent_id, temp_id).
+        # parent_id identifies the cluster being split; temp_id identifies which sub-component the node belongs to.
+        split_df = pd.DataFrame.from_dict(
+            _split_entries, orient='index', columns=['parent_id', 'temp_id']
+        ).sort_index()
 
-        # border_map is now cluster-scoped and cached.
-        # Each parent_id gets its own restricted border map; the flat call is gone.
-        # TODO right content, but should already exist and be initalized to empty at the beginning of hierarchy
-        border_map_by_parent = {
-            parent_id: _get_border_map(parent_id)
-            for parent_id in core_df.unique()
-        }
+        for parent_id in split_df['parent_id'].unique():
+            parent_df = split_df[split_df['parent_id'] == parent_id]
+            components = [set(grp.index) for _, grp in parent_df.groupby('temp_id')]
 
-        # Iterates over each parent cluster to be split
-        # TODO iterate over list of clusters to be split. maybe don't need core_df or a groupby at all
-        # maybe use dataframe with parent + child temp IDs
-        for parent_id, parent_series in core_df.groupby(core_df):
-            temp_ids = pd.Series(
-                {ts: H.nodes[ts]['temp_cluster_id'] for ts in parent_series.index}
-            ).sort_index() # look at networkx commands to do directly (get attributes as pandas series)
-            # TODO for dbstop might only need temp id, but iterate over all affected children 
-            # if only use is determining if we have length > 1, components is unnecessary. 
-            components = [set(grp.index) for _, grp in temp_ids.groupby(temp_ids)]
-
-            border_map = border_map_by_parent[parent_id]
+            border_map = _get_border_map(parent_id)
             # TODO don't need all_borders
             all_borders = set().union(*border_map.values()) if border_map else set()
             cluster_df = pd.Series(
                 parent_id,
-                index=parent_series.index.union(pd.Index(sorted(all_borders))),
+                index=parent_df.index.union(pd.Index(sorted(all_borders))),
                 name='cluster',
             )
             # TODO cluster_df should be init to -1 like in dbstop, should have sorted indices temp_ids + border map
@@ -250,9 +236,9 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
                 components_sorted = sorted(components, key=min)
                 active_cid = parent_id
                 curr_time = max(components_sorted[0])
-                prev_core_candidates = core_df[(core_df.index < curr_time) & (core_df == active_cid)]
+                prev_core_candidates = split_df[(split_df.index < curr_time) & (split_df['parent_id'] == active_cid)]
                 prev_core = prev_core_candidates.index[-2] if len(prev_core_candidates) >= 2 else curr_time
-                future_core = core_df[(core_df.index > curr_time) & (core_df == active_cid)].index.min()
+                future_core = split_df[(split_df.index > curr_time) & (split_df['parent_id'] == active_cid)].index.min()
                 if pd.notna(future_core):
                     core_time_range = sorted(abs(nb - curr_time) for nb in G[curr_time])[min_pts - 1]
                     # TODO prev_pos and prev_coords should just be updated from iterating chronologically.
@@ -284,7 +270,7 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
                     new_active_cluster = True
 
                 if not new_active_cluster:
-                    core_df.at[curr_time] = -1
+                    split_df.at[curr_time, 'parent_id'] = -1
                     cluster_df.at[curr_time] = -1
 
             non_spurious = []
