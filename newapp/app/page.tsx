@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -12,6 +12,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { ArrowLeft, Home, Columns2, Square } from "lucide-react"
+
+const GROUND_TRUTH_PLACEHOLDER_IMAGE = "/issue-images/ground-truth-placeholder.svg"
 
 // ============ CSSLab Logo ============
 function CSSLabLogo({ className = "" }: { className?: string }) {
@@ -98,8 +100,31 @@ const rooms = [
 
 const pointColors = { orange: "#F5A623", pink: "#E57373", purple: "#7B68EE" }
 
-function FloorPlan({ dataPoints, selectedTimeRange, compact = false }: { dataPoints: DataPoint[]; selectedTimeRange: string | null; compact?: boolean }) {
+function FloorPlan({
+  dataPoints,
+  selectedTimeRange,
+  compact = false,
+  placeholderSrc,
+}: {
+  dataPoints: DataPoint[]
+  selectedTimeRange: string | null
+  compact?: boolean
+  placeholderSrc?: string
+}) {
   const filtered = selectedTimeRange ? dataPoints.filter((p) => p.time === selectedTimeRange) : dataPoints
+
+  if (placeholderSrc) {
+    return (
+      <div className="relative w-full">
+        <img
+          src={placeholderSrc}
+          alt="Ground truth trajectory placeholder"
+          className={`w-full ${compact ? "h-32" : "h-auto"} object-contain`}
+        />
+      </div>
+    )
+  }
+
   return (
     <div className="relative w-full">
       <svg viewBox="0 0 600 340" className={`w-full ${compact ? "h-32" : "h-auto"}`} style={{ backgroundColor: "#d4d4d4" }} preserveAspectRatio={compact ? "xMidYMid slice" : "xMidYMid meet"}>
@@ -250,6 +275,12 @@ type MetricsApiResponse = {
 type MetricsOptionsResponse = {
   algorithms: string[]
   trajectories: Array<{ user_id: string; label: string }>
+  parameter_notes?: Record<string, {
+    source: string
+    sweep_parameter: string
+    sweep_note?: string
+    fixed_parameters: string[]
+  }>
   defaults: {
     mode: "single" | "compare"
     left_algorithm: string
@@ -261,6 +292,35 @@ type MetricsOptionsResponse = {
     seed: number
   }
   max_iterations: number
+}
+
+const FALLBACK_PARAMETER_NOTES: NonNullable<MetricsOptionsResponse["parameter_notes"]> = {
+  Lachesis: {
+    source: "delta_roam_vs_acc_exp.ipynb",
+    sweep_parameter: "delta_roam",
+    sweep_note: "UI sweep is scaled as 1.7 × value for Lachesis.",
+    fixed_parameters: ["dt_max=60", "dur_min=5 (function default)"],
+  },
+  Sequential: {
+    source: "delta_roam_vs_acc_exp.ipynb",
+    sweep_parameter: "delta_roam",
+    fixed_parameters: ["dt_max=60", "method='centroid'", "dur_min=5 (function default)"],
+  },
+  SeqScan: {
+    source: "dist_thresh_vs_acc_exp.ipynb",
+    sweep_parameter: "dist_thresh",
+    fixed_parameters: ["time_thresh=60", "min_pts=2", "back_merge=False", "dur_min=5"],
+  },
+  "ST-DBSCAN": {
+    source: "dist_thresh_vs_acc_exp.ipynb",
+    sweep_parameter: "dist_thresh",
+    fixed_parameters: ["time_thresh=60", "min_pts=2", "remove_overlaps=True"],
+  },
+  DBSTOP: {
+    source: "ta_seqscan_examples.ipynb (dashboard compare path)",
+    sweep_parameter: "dist_thresh",
+    fixed_parameters: ["time_thresh=60", "min_pts=2", "dur_min=5", "back_merge=False"],
+  },
 }
 
 function CompareAnimationPanel({
@@ -430,6 +490,7 @@ export default function NomadDashboard() {
   const [compareLoading, setCompareLoading] = useState(false)
   const [compareError, setCompareError] = useState<string | null>(null)
   const [compareSeed, setCompareSeed] = useState(1)
+  const compareRequestIdRef = useRef(0)
   const [metricsOptions, setMetricsOptions] = useState<MetricsOptionsResponse | null>(null)
   const metricsMode: "compare" = "compare"
   const [metricsLeftAlgorithm, setMetricsLeftAlgorithm] = useState("Lachesis")
@@ -448,6 +509,7 @@ export default function NomadDashboard() {
     const leftAlgo = algorithms.find((a) => a.id === leftAlgorithm)
     const rightAlgo = algorithms.find((a) => a.id === rightAlgorithm)
     if (!leftAlgo || !rightAlgo) return
+    const requestId = ++compareRequestIdRef.current
 
     const parseParams = (algoId: string, algoParams: Record<string, string>) => {
       const algoDef = algorithms.find((a) => a.id === algoId)
@@ -476,6 +538,7 @@ export default function NomadDashboard() {
 
     setCompareLoading(true)
     setCompareError(null)
+    setCompareApiData(null)
     try {
       const res = await fetch("/api/algorithm-compare", {
         method: "POST",
@@ -500,10 +563,13 @@ export default function NomadDashboard() {
         throw new Error(msg || "Algorithm compare request failed")
       }
       const data = (await res.json()) as CompareApiResponse
+      if (requestId !== compareRequestIdRef.current) return
       setCompareApiData(data)
     } catch (err) {
+      if (requestId !== compareRequestIdRef.current) return
       setCompareError(err instanceof Error ? err.message : "Unexpected compare error")
     } finally {
+      if (requestId !== compareRequestIdRef.current) return
       setCompareLoading(false)
     }
   }, [leftAlgorithm, rightAlgorithm, leftParams, rightParams, compareMode])
@@ -622,6 +688,12 @@ export default function NomadDashboard() {
   const rightAlgo = algorithms.find((a) => a.id === rightAlgorithm)
   const metricsAlgorithms = metricsOptions?.algorithms ?? ["Lachesis", "Sequential"]
   const metricsTrajectories = metricsOptions?.trajectories ?? []
+  const parameterNotes = metricsOptions?.parameter_notes ?? FALLBACK_PARAMETER_NOTES
+  const leftParameterNote = parameterNotes[metricsLeftAlgorithm]
+  const rightParameterNote = parameterNotes[metricsRightAlgorithm]
+  const previewMapUrl = metricsApiData?.trajectory_preview?.image_data_url ?? null
+  const previewTimelineUrl = metricsApiData?.trajectory_preview?.timeline_data_url ?? null
+  const hasGroundTruthPreview = Boolean(previewMapUrl || previewTimelineUrl)
 
   useEffect(() => {
     if (activeView === "demo") {
@@ -691,7 +763,11 @@ export default function NomadDashboard() {
             <div className="flex flex-col gap-2 overflow-hidden">
               <Card className="bg-card overflow-hidden">
                 <CardContent className="p-0">
-                  <FloorPlan dataPoints={sampleDataPoints} selectedTimeRange={selectedTimeRange} />
+                  <FloorPlan
+                    dataPoints={sampleDataPoints}
+                    selectedTimeRange={selectedTimeRange}
+                    placeholderSrc={GROUND_TRUTH_PLACEHOLDER_IMAGE}
+                  />
                 </CardContent>
               </Card>
               <Timeline segments={timelineSegments} selectedSegment={selectedTimeRange} onSegmentClick={setSelectedTimeRange} />
@@ -941,9 +1017,57 @@ export default function NomadDashboard() {
               <CSSLabLogo />
             </div>
           </div>
-          <p className="text-sm text-muted-foreground">
-            Notebook-style scale-parameter versus accuracy charts with a trajectory preview.
-          </p>
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">
+              Each run sweeps one scale parameter and recomputes recall over sampled users.
+            </p>
+            <ul className="list-disc pl-4 text-xs text-muted-foreground space-y-1">
+              <li>Faint points are all user-by-sweep recall values.</li>
+              <li>Red points are each user&apos;s best recall across the sweep.</li>
+              <li>The solid line is the mean recall, and the dashed line is the max of that mean curve.</li>
+            </ul>
+            <div className="rounded-md border border-border bg-muted/20 p-3">
+              <p className="text-xs font-medium">Fixed parameters from notebooks</p>
+              <div className="grid md:grid-cols-2 gap-3 mt-2">
+                <div className="rounded-md border border-border/70 bg-background/60 p-2">
+                  <p className="text-xs font-medium">{metricsLeftAlgorithm}</p>
+                  {leftParameterNote ? (
+                    <>
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        Sweep: <span className="font-mono">{leftParameterNote.sweep_parameter}</span> · Source: {leftParameterNote.source}
+                      </p>
+                      {leftParameterNote.sweep_note && (
+                        <p className="text-[11px] text-muted-foreground mt-1">{leftParameterNote.sweep_note}</p>
+                      )}
+                      <div className="mt-1 text-[11px] text-muted-foreground">
+                        {leftParameterNote.fixed_parameters.join(" · ")}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground mt-1">No fixed-parameter note available.</p>
+                  )}
+                </div>
+                <div className="rounded-md border border-border/70 bg-background/60 p-2">
+                  <p className="text-xs font-medium">{metricsRightAlgorithm}</p>
+                  {rightParameterNote ? (
+                    <>
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        Sweep: <span className="font-mono">{rightParameterNote.sweep_parameter}</span> · Source: {rightParameterNote.source}
+                      </p>
+                      {rightParameterNote.sweep_note && (
+                        <p className="text-[11px] text-muted-foreground mt-1">{rightParameterNote.sweep_note}</p>
+                      )}
+                      <div className="mt-1 text-[11px] text-muted-foreground">
+                        {rightParameterNote.fixed_parameters.join(" · ")}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground mt-1">No fixed-parameter note available.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
 
           <div className="grid lg:grid-cols-[340px_1fr] gap-3 items-start">
             <Card className="overflow-hidden">
@@ -972,7 +1096,7 @@ export default function NomadDashboard() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-sm font-medium text-muted-foreground">Trajectory Preview</label>
+                  <label className="text-sm font-medium text-muted-foreground">Ground Truth Trajectory</label>
                   <Select value={metricsTrajectoryUser} onValueChange={setMetricsTrajectoryUser}>
                     <SelectTrigger className="h-10 text-base"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -1023,33 +1147,43 @@ export default function NomadDashboard() {
             <div className="flex flex-col gap-3">
               <Card className="overflow-hidden">
                 <CardHeader className="py-2 px-3 bg-muted/30">
-                  <CardTitle className="text-sm font-semibold">Trajectory Preview</CardTitle>
+                  <CardTitle className="text-sm font-semibold">Ground Truth Trajectory</CardTitle>
                 </CardHeader>
                 <CardContent className="p-2">
-                  <div className="grid md:grid-cols-2 gap-2">
-                    <div className="rounded-md border border-border bg-muted/30 min-h-[150px] flex items-center justify-center">
-                      {metricsApiData?.trajectory_preview?.image_data_url ? (
-                        <img
-                          src={metricsApiData.trajectory_preview.image_data_url}
-                          alt="Trajectory preview"
-                          className="w-full h-auto object-contain rounded-md"
-                        />
-                      ) : (
-                        <p className="text-xs text-muted-foreground">No trajectory preview</p>
-                      )}
+                  {hasGroundTruthPreview ? (
+                    <div className="flex flex-col gap-2">
+                      <div className="rounded-md border border-border bg-muted/30 min-h-[190px] flex items-center justify-center">
+                        {previewMapUrl ? (
+                          <img
+                            src={previewMapUrl}
+                            alt="Ground truth trajectory map"
+                            className="w-full h-auto object-contain rounded-md"
+                          />
+                        ) : (
+                          <p className="text-xs text-muted-foreground">No trajectory map preview</p>
+                        )}
+                      </div>
+                      <div className="rounded-md border border-border bg-muted/30 min-h-[120px] flex items-center justify-center">
+                        {previewTimelineUrl ? (
+                          <img
+                            src={previewTimelineUrl}
+                            alt="Ground truth timeline preview"
+                            className="w-full h-auto object-contain rounded-md"
+                          />
+                        ) : (
+                          <p className="text-xs text-muted-foreground">No timeline preview</p>
+                        )}
+                      </div>
                     </div>
-                    <div className="rounded-md border border-border bg-muted/30 min-h-[150px] flex items-center justify-center">
-                      {metricsApiData?.trajectory_preview?.timeline_data_url ? (
-                        <img
-                          src={metricsApiData.trajectory_preview.timeline_data_url}
-                          alt="Trajectory timeline preview"
-                          className="w-full h-auto object-contain rounded-md"
-                        />
-                      ) : (
-                        <p className="text-xs text-muted-foreground">No timeline preview</p>
-                      )}
+                  ) : (
+                    <div className="rounded-md border border-border bg-muted/30 overflow-hidden">
+                      <img
+                        src={GROUND_TRUTH_PLACEHOLDER_IMAGE}
+                        alt="Ground truth trajectory placeholder"
+                        className="w-full h-auto object-contain"
+                      />
                     </div>
-                  </div>
+                  )}
                 </CardContent>
               </Card>
 

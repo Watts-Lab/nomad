@@ -39,9 +39,58 @@ from nomad.contact_estimation import compute_stop_detection_metrics
 ROBUST_BASE_DIR = REPO_ROOT / "examples" / "research" / "robustness-of-algorithms"
 ROBUST_CONFIG_PATH = ROBUST_BASE_DIR / "config_2_stops.json"
 ROBUST_POI_LOCATIONS = ("w-x17-y10", "r-x19-y11")
-SCRIPT_VERSION = "v2"
+SCRIPT_VERSION = "v3"
 CACHE_DIR = Path(tempfile.gettempdir()) / "nomad_newapp_algorithm_metrics"
 SUPPORTED_ALGORITHMS = ("Lachesis", "Sequential", "SeqScan", "ST-DBSCAN", "DBSTOP")
+NOTEBOOK_PARAMETER_NOTES: dict[str, dict[str, Any]] = {
+    "Lachesis": {
+        "source": "delta_roam_vs_acc_exp.ipynb",
+        "sweep_parameter": "delta_roam",
+        "sweep_note": "UI sweep is scaled as 1.7 × value for Lachesis to mirror notebook setup.",
+        "fixed_parameters": [
+            "dt_max=60",
+            "dur_min=5 (function default)",
+        ],
+    },
+    "Sequential": {
+        "source": "delta_roam_vs_acc_exp.ipynb",
+        "sweep_parameter": "delta_roam",
+        "fixed_parameters": [
+            "dt_max=60",
+            "method='centroid'",
+            "dur_min=5 (function default)",
+        ],
+    },
+    "SeqScan": {
+        "source": "dist_thresh_vs_acc_exp.ipynb",
+        "sweep_parameter": "dist_thresh",
+        "fixed_parameters": [
+            "time_thresh=60",
+            "min_pts=2",
+            "back_merge=False",
+            "dur_min=5",
+        ],
+    },
+    "ST-DBSCAN": {
+        "source": "dist_thresh_vs_acc_exp.ipynb",
+        "sweep_parameter": "dist_thresh",
+        "fixed_parameters": [
+            "time_thresh=60",
+            "min_pts=2",
+            "remove_overlaps=True",
+        ],
+    },
+    "DBSTOP": {
+        "source": "ta_seqscan_examples.ipynb (dashboard compare code path)",
+        "sweep_parameter": "dist_thresh",
+        "fixed_parameters": [
+            "time_thresh=60",
+            "min_pts=2",
+            "dur_min=5",
+            "back_merge=False",
+        ],
+    },
+}
 
 
 def _load_input() -> dict:
@@ -400,7 +449,7 @@ def _render_trajectory_preview(bundle: dict[str, Any], selected_user_id: str) ->
             continue
         color = location_colors.get(str(row.location), "#ed6f6f")
         ax_map.scatter([row.x], [row.y], s=38, color=color, edgecolor="white", linewidth=0.5, zorder=4)
-    ax_map.set_title(f"Trajectory preview: {user_id}", fontsize=12)
+    ax_map.set_title(f"Ground truth trajectory: {user_id}", fontsize=12)
     ax_map.set_xticks([])
     ax_map.set_yticks([])
     for spine in ax_map.spines.values():
@@ -466,6 +515,7 @@ def _options_response(bundle: dict[str, Any]) -> dict[str, Any]:
     return {
         "algorithms": list(SUPPORTED_ALGORITHMS),
         "trajectories": trajectories,
+        "parameter_notes": NOTEBOOK_PARAMETER_NOTES,
         "defaults": {
             "mode": "single",
             "left_algorithm": "Lachesis",
