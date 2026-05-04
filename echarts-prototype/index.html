@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Lachesis ECharts Prototype</title>
+  <script src="https://cdn.jsdelivr.net/npm/echarts/dist/echarts.min.js"></script>
+</head>
+
+<body>
+  <h2>Lachesis Recall vs Delta Roam</h2>
+  <div id="chart" style="width: 100%; height: 700px;"></div>
+
+  <script>
+    const chart = echarts.init(document.getElementById("chart"));
+
+    fetch("lachesis_results.json")
+      .then(res => res.json())
+      .then(data => {
+
+        // Scatter: individual results
+        const scatterData = data.map(d => [d.delta_roam, d.recall, d.user_id]);
+
+        // Compute mean line
+        const grouped = {};
+        data.forEach(d => {
+          if (!grouped[d.delta_roam]) grouped[d.delta_roam] = [];
+          grouped[d.delta_roam].push(d.recall);
+        });
+
+        const meanLine = Object.entries(grouped)
+          .map(([delta, vals]) => [
+            Number(delta),
+            vals.reduce((a, b) => a + b, 0) / vals.length
+          ])
+          .sort((a, b) => a[0] - b[0]);
+
+        const option = {
+          title: { text: "Lachesis Recall vs Delta Roam" },
+
+          tooltip: {
+            trigger: "item",
+            formatter: params => {
+              if (params.seriesType === "scatter") {
+                return `
+                  delta_roam: ${params.value[0]}<br/>
+                  recall: ${params.value[1]}<br/>
+                  user_id: ${params.value[2]}
+                `;
+              }
+              return `delta_roam: ${params.value[0]}<br/>mean recall: ${params.value[1].toFixed(3)}`;
+            }
+          },
+
+          toolbox: {
+            feature: {
+              brush: {},
+              dataZoom: {},
+              saveAsImage: {}
+            }
+          },
+
+          brush: {
+            toolbox: ["rect", "polygon", "clear"],
+            xAxisIndex: 0
+          },
+
+          xAxis: {
+            type: "value",
+            name: "Roaming Distance (delta_roam)"
+          },
+
+          yAxis: {
+            type: "value",
+            name: "Recall",
+            min: 0,
+            max: 1
+          },
+
+          series: [
+            {
+              name: "Individual results",
+              type: "scatter",
+              data: scatterData,
+              symbolSize: 5,
+              opacity: 0.2
+            },
+            {
+              name: "Mean recall",
+              type: "line",
+              data: meanLine,
+              symbol: "none",
+              lineStyle: { width: 3 }
+            }
+          ]
+        };
+
+        chart.setOption(option);
+      });
+  </script>
+</body>
+</html>
