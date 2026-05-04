@@ -20,73 +20,26 @@ def _compute_core_distance(G, min_pts):
     core_distances.index.name = 'time'
     return core_distances
 
-# TODO delete
-# this iterates over everything, just define it recursively, inheriting the neighbor's set of parents
-def _build_border_map(scale, core_distances, G):
+def _borders_from_cores(scale, core_set, core_distances, G):
     """
-    For a given threshold `scale`, assign each non-core point to its nearest
-    core neighbor (preceding or succeeding in time) within distance <= scale.
-
-    Parameters
-    ----------
-    scale : float
-        Distance threshold at this dendogram level.
-    core_distances : pd.Series
-        Indexed by timestamp; contains each point's "core distance."
-        Must be sorted by index (timestamp).
-    G : nx.Graph
-        Weighted graph of distances between temporally-close points.
-
-    Returns
-    -------
-    defaultdict(set)
-        Mapping {core_ts: set(border_ts, ...)} of border points for each core.
+    For each core in `core_set`, walk its G-neighbors and assign any non-core node
+    reachable within `scale` to its nearest core by edge weight.
+    Returns {core_ts: set(border_ts)}.
     """
-    # Identify which timestamps are core vs border
-    is_core = core_distances <= scale
-    cores   = core_distances.index[is_core].to_numpy()
-    borders = core_distances.index[~is_core].to_numpy()
-    
-    if cores.size == 0 or borders.size == 0:
-        return defaultdict(set)
-    
-    # Locate insertion points of each border among cores
-    succ_pos = np.searchsorted(cores, borders, side="left")
-    pred_pos = succ_pos - 1
-    
-    # Build pairs (border, candidate_core) for existing neighbors
-    pairs = []
-    # predecessor candidates
-    valid_pred = pred_pos >= 0
-    for b, p in zip(borders[valid_pred], cores[pred_pos[valid_pred]]):
-        pairs.append((b, p))
-    # successor candidates
-    valid_succ = succ_pos < cores.size
-    for b, s in zip(borders[valid_succ], cores[succ_pos[valid_succ]]):
-        pairs.append((b, s))
-
-    rows = [
-        (b, c, G.edges[b, c]["weight"])
-        for b, c in pairs
-        if G.has_edge(b, c) and np.round(G.edges[b, c]["weight"] * 4) / 4 <= scale
-    ]
-
-    if not rows:
-        return defaultdict(set)
-
-    dists = pd.Series(
-        [w for _, _, w in rows],
-        index=pd.MultiIndex.from_tuples([(b, c) for b, c, _ in rows], names=["border", "core"]),
-        name="weight",
-    )
-    
-    # For each border, pick the core with minimal distance (ties break naturally)
-    best = dists.groupby(level="border").idxmin().values
-    core_to_border = defaultdict(set)
-    for border, core in best:
-        core_to_border[core].add(border)
-    
-    return core_to_border # return this but instead using something with input as G
+    border_to_best = {}  # border_ts -> (core_ts, edge_weight)
+    for core_ts in core_set:
+        for nb, edge_data in G[core_ts].items():
+            if nb == core_ts:
+                continue
+            if core_distances.at[nb] > scale:  # nb is non-core at this scale
+                w = np.round(edge_data['weight'] * 4) / 4
+                if w <= scale:
+                    if nb not in border_to_best or w < border_to_best[nb][1]:
+                        border_to_best[nb] = (core_ts, w)
+    result = defaultdict(set)
+    for border_ts, (core_ts, _) in border_to_best.items():
+        result[core_ts].add(border_ts)
+    return result
 
 def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
                       data, traj_cols, s_tree, node_times, dist_thresh,
@@ -151,23 +104,11 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
     _cluster_birth_scale  = {0: np.inf}  # root has no meaningful birth scale
  
     def _get_border_map(cluster_id):
-        """Return (and cache) the border map for *cluster_id*, restricted to its pool."""
+        """Return the pre-computed border map for *cluster_id*.
+        Non-root clusters are always populated eagerly at split time; the root (0)
+        has no parent borders and falls back to an empty map."""
         if cluster_id not in _cluster_border_map:
-            birth_scale = _cluster_birth_scale.get(cluster_id, np.inf)
-            if birth_scale == np.inf:
-                _cluster_border_map[cluster_id] = defaultdict(set)
-            else:
-                raw = _build_border_map(birth_scale, core_distances, G)
-                pool = _cluster_border_pool.get(cluster_id)
-                if pool is None:
-                    _cluster_border_map[cluster_id] = raw
-                else:
-                    restricted = defaultdict(set)
-                    for core_ts, borders in raw.items():
-                        kept = borders & pool
-                        if kept:
-                            restricted[core_ts] = kept
-                    _cluster_border_map[cluster_id] = restricted
+            _cluster_border_map[cluster_id] = defaultdict(set)
         return _cluster_border_map[cluster_id]
 
     # Iteratively process pruning events grouped by weight (scale)
@@ -227,47 +168,67 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
             cluster_df.loc[parent_df.index] = parent_id
 
             if len(components) >= 2:
-                # Temporal overlap check: does the gap between the two earliest
-                # components represent a true split or a transient departure?
-                components_sorted = sorted(components, key=min)
-                active_cid = parent_id
-                curr_time = max(components_sorted[0])
-                prev_core_candidates = split_df[(split_df.index < curr_time) & (split_df['parent_id'] == active_cid)]
-                prev_core = prev_core_candidates.index[-2] if len(prev_core_candidates) >= 2 else curr_time
-                future_core = split_df[(split_df.index > curr_time) & (split_df['parent_id'] == active_cid)].index.min()
-                if pd.notna(future_core):
-                    core_time_range = sorted(abs(nb - curr_time) for nb in G[curr_time])[min_pts - 1]
-                    # TODO prev_pos and prev_coords should just be updated from iterating chronologically.
-                    prev_pos, future_pos = np.searchsorted(node_times, [prev_core, future_core])
-                    prev_coords = data.iloc[prev_pos][[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
-                    future_coords = data.iloc[future_pos][[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
-                    counterfactual_coords = prev_coords + ((curr_time - prev_core) / (future_core - prev_core)) * (
-                        future_coords - prev_coords
-                    )
+                # Iterate chronologically; 'active_temp_id' is the current main thread.
+                # The check fires on the first step away from the active component
+                # (prev_temp_id == active but curr_temp_id != active).
+                # Separating "decide" (top if) from "advance window" (bottom if) avoids
+                # duplicating the coordinate update in both the normal and switch branches.
+                active_temp_id = parent_df.iloc[0]['temp_id']
+                prev_core = None; prev_coords = None
+                prev_prev_core = None; prev_prev_coords = None
+                prev_temp_id = None
 
-                    if use_lon_lat:
-                        spatial_nb_idx = s_tree.query_radius(
-                            # _find_neighbors builds BallTree in [lat, lon] radians.
-                            np.radians(counterfactual_coords[[1, 0]]).reshape(1, -1),
-                            r=dist_thresh / 6_371_000,
-                        )[0]
-                    else:
-                        spatial_nb_idx = s_tree.query_radius(
-                            np.asarray(counterfactual_coords).reshape(1, -1),
-                            r=dist_thresh,
-                        )[0]
+                for curr_time in parent_df.index:
+                    curr_temp_id = parent_df.at[curr_time, 'temp_id']
 
-                    if len(spatial_nb_idx) >= min_pts:
-                        counterfactual_time_range = np.sort(np.abs(node_times[spatial_nb_idx] - curr_time))[min_pts - 1]
-                        new_active_cluster = (core_time_range <= counterfactual_time_range)
-                    else:
-                        new_active_cluster = False
-                else:
-                    new_active_cluster = True
+                    if curr_temp_id != active_temp_id and prev_temp_id == active_temp_id:
+                        # First step away from active: evaluate the transition.
+                        check_time  = prev_core
+                        future_core = curr_time
 
-                if not new_active_cluster:
-                    split_df.at[curr_time, 'parent_id'] = -1
-                    cluster_df.at[curr_time] = -1
+                        core_time_range = sorted(abs(nb - check_time) for nb in G[check_time])[min_pts - 1]
+
+                        anchor        = prev_prev_core   if prev_prev_core   is not None else check_time
+                        anchor_coords = prev_prev_coords if prev_prev_coords is not None else prev_coords
+
+                        future_pos    = np.searchsorted(node_times, future_core)
+                        future_coords = data.iloc[future_pos][[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
+
+                        denom = future_core - anchor
+                        alpha = (check_time - anchor) / denom if denom != 0 else 0.0
+                        counterfactual_coords = anchor_coords + alpha * (future_coords - anchor_coords)
+
+                        if use_lon_lat:
+                            spatial_nb_idx = s_tree.query_radius(
+                                # _find_neighbors builds BallTree in [lat, lon] radians.
+                                np.radians(counterfactual_coords[[1, 0]]).reshape(1, -1),
+                                r=dist_thresh / 6_371_000,
+                            )[0]
+                        else:
+                            spatial_nb_idx = s_tree.query_radius(
+                                np.asarray(counterfactual_coords).reshape(1, -1),
+                                r=dist_thresh,
+                            )[0]
+
+                        if len(spatial_nb_idx) >= min_pts:
+                            counterfactual_time_range = np.sort(np.abs(node_times[spatial_nb_idx] - check_time))[min_pts - 1]
+                            new_active_cluster = (core_time_range <= counterfactual_time_range)
+                        else:
+                            new_active_cluster = False
+
+                        if not new_active_cluster:
+                            split_df.at[check_time, 'parent_id'] = -1
+                            cluster_df.at[check_time] = -1
+                        else:
+                            active_temp_id = curr_temp_id
+
+                    if curr_temp_id == active_temp_id:
+                        prev_prev_core, prev_prev_coords = prev_core, prev_coords
+                        prev_core = curr_time
+                        _pos = np.searchsorted(node_times, curr_time)
+                        prev_coords = data.iloc[_pos][[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
+
+                    prev_temp_id = curr_temp_id
 
             non_spurious = []
             nodes_to_drop = set()
@@ -309,9 +270,9 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
             
             # Partition the parent's border pool among the newly minted children.
             # Each child inherits only the borders whose assigned core fell in its component.
-            # TODO should be done as part of dbstop
             parent_map = _get_border_map(parent_id)
-            raw_at_scale = _build_border_map(scale, core_distances, G)
+            all_cores_at_scale = core_distances.index[core_distances <= scale]
+            raw_at_scale = _borders_from_cores(scale, all_cores_at_scale, core_distances, G)
             for component, child_id in zip(non_spurious, new_ids):
                 core_set = set(component)
                 child_pool = set()
@@ -712,7 +673,8 @@ def hdbscan_labels(data,
         include_border_points = True
         if include_border_points:
             # 2. Find border points for these unclaimed cores at this scale
-            border_map = _build_border_map(scale, core_distances, G)
+            all_cores_at_scale = core_distances.index[core_distances <= scale]
+            border_map = _borders_from_cores(scale, all_cores_at_scale, core_distances, G)
             potential_borders = set().union(*(border_map.get(ts, set()) for ts in unclaimed_cores))
             
             # Assign only unclaimed border points
