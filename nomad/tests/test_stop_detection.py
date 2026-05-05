@@ -1,7 +1,5 @@
 import pandas as pd
 import geopandas as gpd
-from pandas.testing import assert_frame_equal
-from scipy.spatial.distance import pdist, cdist
 import pygeohash as gh
 import pytest
 from pathlib import Path
@@ -17,6 +15,7 @@ import nomad.stop_detection.preprocessing as PREPROCESSING
 import nomad.stop_detection.utils as STOP_UTILS
 import nomad.stop_detection.sequential as SEQUENTIAL
 from pandas.api.types import is_integer_dtype
+import numpy as np
 
 @pytest.fixture
 def stop_test_params():
@@ -1248,3 +1247,205 @@ def test_empty_dataframe_xy_output(empty_traj_xy, empty_xy_case_registry, algo_n
 
     assert result.empty
     assert set(result.columns) == case["expected_cols"]
+
+def test_empty_dataframe_consistency():
+    """Test that all algorithms return consistent column structures for empty data."""
+
+    empty_data = pd.DataFrame(columns=['timestamp', 'longitude', 'latitude', 'location_id'])
+    traj_cols = {
+        'timestamp': 'timestamp', 
+        'longitude': 'longitude', 
+        'latitude': 'latitude', 
+        'location_id': 'location_id'
+    }
+    
+    # Test with complete_output=False for all algorithms
+    grid_result = GRID_BASED.grid_based(empty_data, traj_cols=traj_cols, complete_output=False)
+    hdbscan_result = HDBSCAN.st_hdbscan(empty_data, time_thresh=60, traj_cols=traj_cols, complete_output=False)
+    lachesis_result = LACHESIS.lachesis(empty_data, delta_roam=100, dt_max=60, traj_cols=traj_cols, complete_output=False)
+    
+    # All should be empty
+    assert grid_result.empty
+    assert hdbscan_result.empty
+    assert lachesis_result.empty
+    
+    # Grid-based should have location_id, others should have spatial coordinates
+    assert 'location_id' in grid_result.columns
+    assert 'longitude' in hdbscan_result.columns
+    assert 'latitude' in hdbscan_result.columns
+    assert 'longitude' in lachesis_result.columns
+    assert 'latitude' in lachesis_result.columns
+
+##########################################
+####          HDBSCAN TESTS          ####
+##########################################
+
+@pytest.fixture
+def hdbscan_traj():
+    """Trajectory with two clear stops separated by a long gap."""
+    np.random.seed(0)
+    base = 1609459200  # 2021-01-01 00:00:00 UTC
+    rows = []
+    # Stop 1: 20 points at (0, 0) over ~10 minutes (30s intervals)
+    for i in range(20):
+        rows.append({'x': np.random.normal(0, 2), 'y': np.random.normal(0, 2),
+                     'timestamp': base + i * 30})
+    # Gap of 30 minutes
+    t = base + 20 * 30 + 1800
+    # Stop 2: 20 points at (1000, 1000) over ~10 minutes
+    for i in range(20):
+        rows.append({'x': np.random.normal(1000, 2), 'y': np.random.normal(1000, 2),
+                     'timestamp': t + i * 30})
+    return pd.DataFrame(rows)
+
+
+def test_hdbscan_labels_single_stop(hdbscan_traj):
+    """hdbscan_labels detects at least one cluster on clear stop data."""
+    labels = HDBSCAN.hdbscan_labels(
+        hdbscan_traj, time_thresh=5, min_pts=3, min_cluster_size=3, dur_min=5,
+        traj_cols={'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
+    )
+    assert (labels >= 0).any(), "Expected at least one cluster"
+
+
+def test_hdbscan_labels_no_cluster_when_sparse(hdbscan_traj):
+    """No cluster forms when min_pts exceeds the number of temporal neighbors."""
+    labels = HDBSCAN.hdbscan_labels(
+        hdbscan_traj, time_thresh=5, min_pts=100, min_cluster_size=3, dur_min=5,
+        traj_cols={'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
+    )
+    assert (labels == -1).all(), "Expected all noise when min_pts is too high"
+
+
+def test_hdbscan_labels_no_cluster_insufficient_duration(hdbscan_traj):
+    """No cluster forms when dur_min exceeds actual stop duration."""
+    labels = HDBSCAN.hdbscan_labels(
+        hdbscan_traj, time_thresh=5, min_pts=3, min_cluster_size=3, dur_min=60,
+        traj_cols={'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
+    )
+    assert (labels == -1).all(), "Expected all noise when dur_min is too high"
+
+
+def test_hdbscan_labels_two_stops(hdbscan_traj):
+    """hdbscan_labels finds both stops in a two-stop trajectory."""
+    labels = HDBSCAN.hdbscan_labels(
+        hdbscan_traj, time_thresh=5, min_pts=3, min_cluster_size=3, dur_min=5,
+        traj_cols={'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
+    )
+    n_clusters = labels[labels >= 0].nunique()
+    assert n_clusters == 2, f"Expected 2 clusters, got {n_clusters}"
+
+
+def test_hdbscan_number_labels_matches_stop_table(hdbscan_traj):
+    """Number of unique non-noise labels equals number of rows in st_hdbscan output."""
+    traj_cols = {'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
+    labels = HDBSCAN.hdbscan_labels(
+        hdbscan_traj, time_thresh=5, min_pts=3, min_cluster_size=3, dur_min=5,
+        traj_cols=traj_cols
+    )
+    stops = HDBSCAN.st_hdbscan(
+        hdbscan_traj, time_thresh=5, min_pts=3, min_cluster_size=3, dur_min=5,
+        traj_cols=traj_cols
+    )
+    assert labels[labels >= 0].nunique() == len(stops)
+
+
+def test_st_hdbscan_output_is_valid_stop_df(base_df):
+    """st_hdbscan concise output conforms to the stop DataFrame standard."""
+    traj_cols = {'user_id': 'uid', 'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
+    df = loader.from_df(base_df, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior='utc')
+    first_user = df[traj_cols['user_id']].iloc[0]
+    single = df[df[traj_cols['user_id']] == first_user].copy()
+
+    stops = HDBSCAN.st_hdbscan(
+        single, time_thresh=10, min_pts=2, min_cluster_size=2, dur_min=5,
+        traj_cols=traj_cols, complete_output=False
+    )
+    del traj_cols['user_id']
+    assert loader._is_stop_df(stops, traj_cols=traj_cols, parse_dates=False)
+
+
+def test_st_hdbscan_ground_truth(agent_traj_ground_truth):
+    """st_hdbscan detects the expected number of stops on ground-truth data."""
+    traj_cols = {'user_id': 'identifier', 'x': 'x', 'y': 'y', 'timestamp': 'unix_timestamp'}
+    labels = HDBSCAN.hdbscan_labels(
+        agent_traj_ground_truth, time_thresh=10, min_pts=2, min_cluster_size=2, dur_min=3,
+        traj_cols=traj_cols
+    )
+    n_clusters = labels[labels >= 0].nunique()
+    assert 2 <= n_clusters <= 5, f"Expected 2-5 stops on ground truth, got {n_clusters}"
+
+
+def test_st_hdbscan_multiuser_raises(base_df):
+    """st_hdbscan raises ValueError when passed multi-user data."""
+    traj_cols = {'user_id': 'uid', 'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
+    df = loader.from_df(base_df, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior='utc')
+    with pytest.raises(ValueError, match="Multi-user"):
+        HDBSCAN.st_hdbscan(df, time_thresh=10, traj_cols=traj_cols)
+
+
+def test_st_hdbscan_per_user_basic(base_df):
+    """st_hdbscan_per_user runs on multi-user data and returns stops for multiple users."""
+    traj_cols = {'user_id': 'uid', 'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
+    df = loader.from_df(base_df, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior='utc')
+    stops = HDBSCAN.st_hdbscan_per_user(
+        df, time_thresh=10, min_pts=2, min_cluster_size=2, dur_min=5,
+        traj_cols=traj_cols
+    )
+    assert not stops.empty
+    assert 'uid' in stops.columns
+    assert stops['uid'].nunique() > 1
+
+
+def test_st_hdbscan_delta_roam(hdbscan_traj):
+    """delta_roam (epsilon cut) path runs without error and returns a DataFrame."""
+    traj_cols = {'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
+    stops = HDBSCAN.st_hdbscan(
+        hdbscan_traj, time_thresh=5, min_pts=3, min_cluster_size=3, dur_min=5,
+        delta_roam=50, traj_cols=traj_cols
+    )
+    assert isinstance(stops, pd.DataFrame)
+
+
+##########################################
+####        LOCATION CLUSTERING      ####
+####           (SLIDING.PY)          ####
+##########################################
+
+@pytest.fixture
+def position_fixes_simple():
+    """Simple position fixes for testing sliding window algorithm."""
+    times = pd.date_range("2025-01-01 08:00", periods=10, freq="1min").tolist()
+
+    # Create position fixes:
+    # Points 0-5: stationary (should form staypoint if time_threshold <= 5 min)
+    # Points 6-9: moved away
+    coords = [(0.0, 0.0)] * 6 + [(0.002, 0.002)] * 4
+
+    df = gpd.GeoDataFrame({
+        "user_id": "user1",
+        "tracked_at": times,
+        "geometry": [Point(lon, lat) for lon, lat in coords]
+    }, crs="EPSG:4326")
+
+    return df
+
+
+@pytest.fixture
+def position_fixes_with_gap():
+    """Position fixes with temporal gap for testing gap_threshold."""
+    times = pd.date_range("2025-01-01 08:00", periods=5, freq="1min").tolist()
+    # Add a large gap
+    times += [times[-1] + pd.Timedelta(minutes=20)]
+    times += pd.date_range(times[-1] + pd.Timedelta(minutes=1), periods=4, freq="1min").tolist()
+
+    # All points at same location
+    coords = [(0.0, 0.0)] * len(times)
+
+    df = gpd.GeoDataFrame({
+        "user_id": "user1",
+        "tracked_at": times,
+        "geometry": [Point(lon, lat) for lon, lat in coords]
+    }, crs="EPSG:4326")
+
+    return df
