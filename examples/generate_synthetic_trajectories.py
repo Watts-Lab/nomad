@@ -26,12 +26,14 @@ import time
 from pathlib import Path
 from joblib import Parallel, delayed
 
+import nomad.data as data_folder
 from nomad.city_gen import City
 from nomad.traj_gen import Agent, Population
 from nomad.stop_detection.viz import plot_pings, plot_time_barcode
 
 # %%
-city = City.from_geopackage('garden-city.gpkg')
+data_dir = Path(data_folder.__file__).parent
+city = City.from_geopackage(data_dir / "garden-city.gpkg")
 city._build_hub_network(hub_size=16)
 city.compute_gravity(exponent=2.0)
 city.compute_shortest_paths(callable_only=True)
@@ -110,7 +112,8 @@ plt.show()
 def generate_agent_trajectory(args):
     """Worker function for parallel generation."""
     identifier, home, work, seed = args
-    city = City.from_geopackage('garden-city.gpkg')
+    data_dir = Path(data_folder.__file__).parent
+    city = City.from_geopackage(data_dir / "garden-city.gpkg")
     city._build_hub_network(hub_size=16)
     city.compute_gravity(exponent=2.0)
     city.compute_shortest_paths(callable_only=True)
