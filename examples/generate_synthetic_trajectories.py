@@ -168,6 +168,8 @@ for df, params in zip(results, agent_params):
     agent.sparse_traj = df.drop(columns=['home', 'workplace'])
     parallel_population.add_agent(agent, verbose=False)
 
+parallel_population.reproject_to_mercator(sparse_traj=True)
+
 output_path = 'data/trajectories_15_users'
 parallel_population.save_pop(
     sparse_path=str(output_path),
