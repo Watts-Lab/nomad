@@ -22,23 +22,34 @@ def _compute_core_distance(G, min_pts):
 
 def _borders_from_cores(scale, core_set, core_distances, G):
     """
-    For each core in `core_set`, walk its G-neighbors and assign any non-core node
-    reachable within `scale` to its nearest core by edge weight.
+    Assign each non-core node to its nearest core (by edge weight) within `scale`,
+    checking only the temporally adjacent predecessor and successor core.
     Returns {core_ts: set(border_ts)}.
     """
-    border_to_best = {}  # border_ts -> (core_ts, edge_weight)
-    for core_ts in core_set:
-        for nb, edge_data in G[core_ts].items():
-            if nb == core_ts:
+    cores = np.asarray(sorted(core_set))
+    border_ts = core_distances.index[core_distances > scale].to_numpy()
+
+    if cores.size == 0 or border_ts.size == 0:
+        return defaultdict(set)
+
+    border_to_best = {}
+    for b in border_ts:
+        pos = np.searchsorted(cores, b)
+        candidates = []
+        if pos > 0:
+            candidates.append(cores[pos - 1])
+        if pos < cores.size:
+            candidates.append(cores[pos])
+        for c in candidates:
+            if not G.has_edge(b, c):
                 continue
-            if core_distances.at[nb] > scale:  # nb is non-core at this scale
-                w = np.round(edge_data['weight'] * 4) / 4
-                if w <= scale:
-                    if nb not in border_to_best or w < border_to_best[nb][1]:
-                        border_to_best[nb] = (core_ts, w)
+            w = np.round(G.edges[b, c]['weight'] * 4) / 4
+            if w <= scale and (b not in border_to_best or w < border_to_best[b][1]):
+                border_to_best[b] = (c, w)
+
     result = defaultdict(set)
-    for border_ts, (core_ts, _) in border_to_best.items():
-        result[core_ts].add(border_ts)
+    for b, (c, _) in border_to_best.items():
+        result[c].add(b)
     return result
 
 def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
@@ -103,14 +114,6 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
     _cluster_border_pool  = {0: None}    # root is unrestricted
     _cluster_birth_scale  = {0: np.inf}  # root has no meaningful birth scale
  
-    def _get_border_map(cluster_id):
-        """Return the pre-computed border map for *cluster_id*.
-        Non-root clusters are always populated eagerly at split time; the root (0)
-        has no parent borders and falls back to an empty map."""
-        if cluster_id not in _cluster_border_map:
-            _cluster_border_map[cluster_id] = defaultdict(set)
-        return _cluster_border_map[cluster_id]
-
     # Iteratively process pruning events grouped by weight (scale)
     for scale, edges_to_remove in edges_sorted.groupby(edges_sorted, sort=False):
         edges_batch = list(edges_to_remove.index)
@@ -158,14 +161,18 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
         ).sort_index()
 
         for parent_id in split_df['parent_id'].unique():
-            parent_df = split_df[split_df['parent_id'] == parent_id]
-            components = [set(grp.index) for _, grp in parent_df.groupby('temp_id')]
+            # once we have one parent id, subset to only the children of that parent
+            # then do the remove overlaps logic only with sorted timestamps and temporary label and neighbors
+            children_df = split_df[split_df['parent_id'] == parent_id]
+            components = [set(grp.index) for _, grp in children_df.groupby('temp_id')]
 
-            border_map = _get_border_map(parent_id)
+            border_map = _cluster_border_map.get(parent_id, {})
             # union of core timestamps and border timestamps for this parent cluster
-            all_ts = sorted(set(parent_df.index) | set().union(*border_map.values()))
+            all_ts = sorted(set(children_df.index) | set().union(*border_map.values()))
+
+            # initialize to -1
             cluster_df = pd.Series(-1, index=all_ts, name='cluster')
-            cluster_df.loc[parent_df.index] = parent_id
+            cluster_df.loc[children_df.index] = parent_id
 
             if len(components) >= 2:
                 # Iterate chronologically; 'active_temp_id' is the current main thread.
@@ -173,24 +180,32 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
                 # (prev_temp_id == active but curr_temp_id != active).
                 # Separating "decide" (top if) from "advance window" (bottom if) avoids
                 # duplicating the coordinate update in both the normal and switch branches.
-                active_temp_id = parent_df.iloc[0]['temp_id']
+                active_temp_id = children_df.iloc[0]['temp_id']
                 prev_core = None; prev_coords = None
+                # prev_prev is needed because prev_core == check_time (the point under evaluation).
+                # Using check_time as the interpolation anchor would make alpha=0 and collapse the
+                # counterfactual to the actual position, making the test trivially pass every time.
+                # prev_prev_core is the preceding active-cluster core point, giving a real anchor.
                 prev_prev_core = None; prev_prev_coords = None
                 prev_temp_id = None
 
-                for curr_time in parent_df.index:
-                    curr_temp_id = parent_df.at[curr_time, 'temp_id']
+                for curr_time in children_df.index:
+                    curr_temp_id = children_df.at[curr_time, 'temp_id']
 
                     if curr_temp_id != active_temp_id and prev_temp_id == active_temp_id:
                         # First step away from active: evaluate the transition.
                         check_time  = prev_core
                         future_core = curr_time
 
+                        # now we're confident that everything in children_df is a core point - no need to do checks
+
                         core_time_range = sorted(abs(nb - check_time) for nb in G[check_time])[min_pts - 1]
 
                         anchor        = prev_prev_core   if prev_prev_core   is not None else check_time
                         anchor_coords = prev_prev_coords if prev_prev_coords is not None else prev_coords
 
+                        # should already be easy to find? we already have sorted df and active id. 
+                        # think about this - should future_pos just be the next_one
                         future_pos    = np.searchsorted(node_times, future_core)
                         future_coords = data.iloc[future_pos][[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
 
@@ -270,7 +285,7 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
             
             # Partition the parent's border pool among the newly minted children.
             # Each child inherits only the borders whose assigned core fell in its component.
-            parent_map = _get_border_map(parent_id)
+            parent_map = _cluster_border_map.get(parent_id, {})
             all_cores_at_scale = core_distances.index[core_distances <= scale]
             raw_at_scale = _borders_from_cores(scale, all_cores_at_scale, core_distances, G)
             for component, child_id in zip(non_spurious, new_ids):
