@@ -19,7 +19,12 @@ def _compute_core_distance(G, min_pts):
     core_distances = pd.Series(result)
     core_distances.index.name = 'time'
     return core_distances
-
+   
+# pass non core points of parent
+# each parent has some border points at any given time
+# upon splitting, might have new border points in the same way as dbstop, assigns labels of border points
+# once written as permanent labels in hierarchy, they can be used for stability calculation and logged to
+# then correspond to their own children, ensuring at each level, nodes are disjoint -- non-overlap 
 def _borders_from_cores(scale, core_set, core_distances, G):
     """
     Assign each non-core node to its nearest core (by edge weight) within `scale`,
