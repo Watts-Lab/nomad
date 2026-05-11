@@ -12,6 +12,8 @@ import warnings
 import pdb
 from datetime import datetime, time, timedelta
 from nomad.filters import to_timestamp
+from joblib import Parallel, delayed
+from tqdm import tqdm
 
 def clip_stops_datetime(stops, start_datetime, end_datetime, traj_cols=None, **kwargs):
     """
@@ -149,24 +151,60 @@ def _medoid(coords, metric='euclidean'):
     medoid_index = np.argmin(sum_distances)
     return coords[medoid_index, :]
 
-def _haversine_distance(coord1, coord2):
+def _haversine_distance(coord1, coord2, radians=True):
     """
     Compute the haversine distance between two points on Earth.
 
     Parameters:
         coord1: [lat1, lon1] in radians
         coord2: [lat2, lon2] in radians
+        radians: If True, input coordinates are in radians; if False, they are in degrees.
 
     Returns:
         Distance in meters.
     """
     earth_radius_meters = 6371000  # Earth's radius in meters
-    delta_lat = coord2[0] - coord1[0]
-    delta_lon = coord2[1] - coord1[1]
+    if not radians:
+        coord1 = np.radians(coord1)
+        coord2 = np.radians(coord2)
+        delta_lat = np.radians(coord2[0] - coord1[0])
+        delta_lon = np.radians(coord2[1] - coord1[1])
+    else:
+        delta_lat = coord2[0] - coord1[0]
+        delta_lon = coord2[1] - coord1[1]
     a = np.sin(delta_lat / 2.0) ** 2 + np.cos(coord1[0]) * np.cos(
         coord2[0]) * np.sin(delta_lon / 2.0) ** 2
     c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
     return earth_radius_meters * c  # Distance in meters
+
+# def haversine_dist(lat1, lon1, lat2, lon2):
+#     # remove this and use what's in utils.py 
+#     """
+#     Calculate haversine distance between two points in meters.
+
+#     Parameters
+#     ----------
+#     lat1, lon1 : float or array-like
+#         Latitude and longitude of first point(s)
+#     lat2, lon2 : float or array-like
+#         Latitude and longitude of second point(s)
+
+#     Returns
+#     -------
+#     float or array-like
+#         Distance in meters
+#     """
+#     R = 6371000  # Earth radius in meters
+
+#     lat1_rad = np.radians(lat1)
+#     lat2_rad = np.radians(lat2)
+#     dlat = np.radians(lat2 - lat1)
+#     dlon = np.radians(lon2 - lon1)
+
+#     a = np.sin(dlat/2)**2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(dlon/2)**2
+#     c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1-a))
+
+#     return R * c
 
 
 def _pairwise_haversine(coords):
@@ -247,6 +285,43 @@ def _fallback_st_cols(col_names, traj_cols, kwargs):
     t_key, use_datetime = loader._fallback_time_cols_dt(col_names, traj_cols, kwargs)
     return t_key, coord_key1, coord_key2, use_datetime, use_lon_lat
 
+
+def applyParallel(groups, func, n_jobs=1, print_progress=False, **kwargs):
+    """
+    Apply a callable over grouped data, optionally in parallel.
+
+    Parameters
+    ----------
+    groups : DataFrameGroupBy
+        Grouped dataframe iterator (e.g. data.groupby(user_id)).
+    func : callable
+        Function applied to each group item.
+    n_jobs : int, default 1
+        Number of parallel jobs. 1 executes sequentially.
+    print_progress : bool, default False
+        Whether to show a progress bar.
+    **kwargs
+        Extra keyword args passed to func.
+
+    Returns
+    -------
+    list
+        List with one result per group.
+    """
+    if n_jobs == 1:
+        if print_progress:
+            return [func(group, **kwargs) for group in tqdm(groups, desc="Processing users")]
+        return [func(group, **kwargs) for group in groups]
+
+    group_list = list(groups)
+    if print_progress:
+        return Parallel(n_jobs=n_jobs)(
+            delayed(func)(group, **kwargs) for group in tqdm(group_list, desc="Processing users")
+        )
+    return Parallel(n_jobs=n_jobs)(
+        delayed(func)(group, **kwargs) for group in group_list
+    )
+
 def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_col_names = True, passthrough_cols= [], traj_cols=None, **kwargs):
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = _fallback_st_cols(grouped_data.columns, traj_cols, kwargs)
     traj_cols = loader._parse_traj_cols(grouped_data.columns, traj_cols, kwargs, warn=False)
@@ -296,8 +371,7 @@ def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_
     for col in passthrough_cols:
         if col in grouped_data.columns:
             stop_attr[col] = grouped_data[col].iloc[0]
-
-    return pd.Series(stop_attr)
+    return pd.Series(stop_attr, dtype="object")
 
 def summarize_stop_grid(
     grouped_data,
@@ -393,90 +467,160 @@ def summarize_stop_grid(
 
     return pd.Series(out, dtype='object')
 
-def _get_empty_stop_columns(input_columns, complete_output, passthrough_cols, traj_cols, keep_col_names, is_grid_based=False, **kwargs):
+def _get_empty_stop_df(input_columns, complete_output, passthrough_cols, traj_cols, keep_col_names, is_grid_based=False, **kwargs):
     """
-    Get the column names for an empty stop DataFrame by calling the actual helper functions.
-    This avoids the need for dummy data which can cause coordinate system mismatches.
-    
+    Build an empty stop DataFrame with the exact expected columns and dtypes.
+
     Parameters
     ----------
     input_columns : pd.Index or list
-        Column names from the original input data (even if empty)
+        Column names from the source trajectory data.
     complete_output : bool
-        Whether complete output columns should be included
+        Whether complete output columns should be included.
     passthrough_cols : list
-        Additional columns to passthrough
+        Additional columns to passthrough.
     traj_cols : dict
-        Column mapping dictionary
+        Column mapping dictionary.
     keep_col_names : bool
-        Whether to keep original column names
-    is_grid_based : bool
-        Whether this is for grid-based summarization
+        Whether to keep original column names.
+    is_grid_based : bool, optional
+        Whether this is for grid-based summarization.
     **kwargs
-        Additional arguments passed to summarize function
-    
+        Additional arguments passed through trajectory-column parsing helpers.
+
     Returns
     -------
-    list
-        List of column names for empty DataFrame
+    pd.DataFrame
+        Empty stop table with schema-aligned dtypes.
     """
     if passthrough_cols is None:
         passthrough_cols = []
-    
+
     if is_grid_based:
-        # Call the actual helper functions with the input columns
         t_key, use_datetime = loader._fallback_time_cols_dt(input_columns, traj_cols, kwargs)
-        # Parse traj_cols to get the column mappings
         cols = loader._parse_traj_cols(input_columns, traj_cols, kwargs, warn=False)
-        
-        # Decide output key names
+
         start_key = 'start_datetime' if use_datetime else 'start_timestamp'
         end_key = 'end_datetime' if use_datetime else 'end_timestamp'
-        
+
         if keep_col_names:
             cols[start_key] = cols[t_key]
             cols[end_key] = cols.get(end_key, end_key)
         else:
             cols[start_key] = start_key
             cols[end_key] = end_key
-        
-        # Build column list
+
         column_list = [cols[start_key], 'duration']
-        
         if complete_output:
             column_list.extend([cols[end_key], 'n_pings', 'max_gap'])
-        
-        # Add location_id and geometry
+
         column_list.append(cols['location_id'])
         if 'geometry' in input_columns:
             column_list.append('geometry')
-        
-        # Add passthrough columns
+
         column_list.extend(passthrough_cols)
-        
     else:
-        t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = _fallback_st_cols(input_columns, traj_cols, kwargs)
+        t_key, coord_key1, coord_key2, use_datetime, _ = _fallback_st_cols(input_columns, traj_cols, kwargs)
         cols = loader._parse_traj_cols(input_columns, traj_cols, kwargs, warn=False)
-        
+
         start_t_key = 'start_datetime' if use_datetime else 'start_timestamp'
         end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
-        
+
         if not keep_col_names:
             cols[coord_key1] = constants.DEFAULT_SCHEMA[coord_key1]
             cols[coord_key2] = constants.DEFAULT_SCHEMA[coord_key2]
         else:
             cols[start_t_key] = cols[t_key]
-        
-        # Build column list
-        column_list = [cols[coord_key1], cols[coord_key2], cols[start_t_key], 'duration']
-        
+
+        column_list = [cols[coord_key1], cols[coord_key2], cols[start_t_key]]
         if complete_output:
-            column_list.extend([cols[end_t_key], 'diameter', 'n_pings', 'max_gap'])
-        
-        # Add passthrough columns
+            if cols['ha'] in input_columns:
+                column_list.append(cols['ha'])
+            column_list.extend(['diameter', 'n_pings', cols[end_t_key]])
+
+        column_list.append('duration')
+
+        if complete_output:
+            column_list.append('max_gap')
+
         column_list.extend(passthrough_cols)
-    
-    return column_list
+
+    dtype_map = {}
+
+    datetime_keys = ['datetime', 'start_datetime', 'end_datetime']
+    for key in datetime_keys:
+        col = cols.get(key)
+        if col in column_list:
+            dtype_map[col] = 'datetime64[ns, UTC]'
+
+    integer_keys = ['timestamp', 'start_timestamp', 'end_timestamp', 'tz_offset', 'duration']
+    for key in integer_keys:
+        col = cols.get(key)
+        if col in column_list:
+            dtype_map[col] = 'Int64'
+
+    float_keys = ['latitude', 'longitude', 'x', 'y', 'ha']
+    for key in float_keys:
+        col = cols.get(key)
+        if col in column_list:
+            dtype_map[col] = 'Float64'
+
+    string_keys = ['user_id', 'geohash', 'location_id', 'date', 'utc_date', 'h3_cell']
+    for key in string_keys:
+        col = cols.get(key)
+        if col in column_list:
+            dtype_map[col] = 'string'
+
+    if 'duration' in column_list:
+        dtype_map['duration'] = 'Int64'
+    if 'n_pings' in column_list:
+        dtype_map['n_pings'] = 'Int64'
+    if 'max_gap' in column_list:
+        dtype_map['max_gap'] = 'Int64'
+    if 'diameter' in column_list:
+        dtype_map['diameter'] = 'Float64'
+    if 'geometry' in column_list:
+        dtype_map['geometry'] = 'object'
+
+    for col in column_list:
+        dtype_map.setdefault(col, 'object')
+
+    return pd.DataFrame({col: pd.Series(dtype=dtype_map[col]) for col in column_list})
+
+
+def has_overlapping_stops(stop_data, traj_cols=None, **kwargs):
+    """
+    Return True when any stop interval overlaps with the previous interval.
+
+    Intervals are interpreted from start/end columns when available, otherwise
+    end times are reconstructed from duration in minutes.
+    """
+    if len(stop_data) < 2:
+        return False
+
+    t_key, use_datetime = loader._fallback_time_cols_dt(stop_data.columns, traj_cols, kwargs)
+    end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
+
+    traj_cols = loader._parse_traj_cols(stop_data.columns, traj_cols, kwargs, warn=False)
+    end_col_present = loader._has_end_cols(stop_data.columns, traj_cols)
+    duration_col_present = loader._has_duration_cols(stop_data.columns, traj_cols)
+    if not (end_col_present or duration_col_present):
+        raise ValueError("Missing required (end or duration) temporal columns for stop_table dataframe.")
+
+    starts = stop_data[traj_cols[t_key]]
+    if end_col_present:
+        ends = stop_data[traj_cols[end_t_key]]
+    else:
+        dur_mins = stop_data[traj_cols['duration']]
+        if use_datetime:
+            ends = starts + pd.to_timedelta(dur_mins, unit='m')
+        else:
+            ends = starts + dur_mins * 60
+
+    intervals = pd.DataFrame({"_start": starts, "_end": ends}).sort_values("_start", kind="mergesort")
+    prev_end = intervals["_end"].shift(1)
+    overlap_mask = (intervals["_start"] < prev_end).iloc[1:]
+    return bool(overlap_mask.fillna(False).any())
 
 def pad_short_stops(stop_data, pad=5, dur_min=None, traj_cols = None, **kwargs):
     """

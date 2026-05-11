@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.1
+#       jupytext_version: 1.17.3
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -286,7 +286,7 @@ def run_simulation_for_single_seed(
         stops = pred[pred.cluster!=-1].groupby('cluster', as_index=False).apply(
             summarize_stops_with_loc, include_groups=False)
 
-        # ----------- REMOVING OVERLAPS (POST PROCESSING) -----------
+        # ----------- OVERLAP VALIDATION -----------
 
         if stops.empty:
             expected_stop_columns = [
@@ -294,16 +294,7 @@ def run_simulation_for_single_seed(
                 'end_timestamp', 'duration', 'max_gap', 'building_id']
             stops = pd.DataFrame(columns=expected_stop_columns)
 
-        try:
-            utils.invalid_stops(stops)
-        except Exception: 
-            stops = pp.remove_overlaps(
-                pred, 
-                time_thresh=TIME_THRESH,
-                min_pts=MIN_PTS,
-                dur_min=DUR_MIN,
-                traj_cols=traj_cols,
-                post_processing='polygon')
+        _ = utils.has_overlapping_stops(stops)
 
         stops['building_id'] = stops['building_id'].astype(str)
         
@@ -1332,7 +1323,7 @@ def run_simulation_for_single_agent(
                 stops = pred[pred.cluster!=-1].groupby('cluster', as_index=False).apply(
                     summarize_stops_with_loc, include_groups=False)
 
-            # ----------- REMOVING OVERLAPS (POST PROCESSING) -----------
+            # ----------- OVERLAP VALIDATION -----------
 
                 if stops.empty:
                     expected_stop_columns = [
@@ -1340,16 +1331,7 @@ def run_simulation_for_single_agent(
                         'end_timestamp', 'duration', 'max_gap', 'building_id']
                     stops = pd.DataFrame(columns=expected_stop_columns)
 
-                try:
-                    utils.invalid_stops(stops)
-                except Exception: 
-                    stops = pp.remove_overlaps(
-                        pred,
-                        time_thresh=TIME_THRESH,
-                        min_pts=MIN_PTS,
-                        dur_min=DUR_MIN,
-                        traj_cols=traj_cols,
-                        post_processing='polygon')
+                _ = utils.has_overlapping_stops(stops)
 
                 stops['building_id'] = stops['building_id'].astype(str)
                 

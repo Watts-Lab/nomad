@@ -20,6 +20,10 @@ docs/_build/
 
 # Exclude images from research folder only
 examples/research/**/*.png
+examples/research/**/*.svg
+
+# Exclude config files from research folder
+examples/research/**/*.json
 
 # OSM cache and large outputs
 cache/
@@ -66,3 +70,6 @@ virtual-environments/
 Thumbs.db
 *.tmp
 sandbox/sandbox_data.gpkg
+**/*.svg
+**/*.eps
+tmp_parallelized_per_user_pr_description.md

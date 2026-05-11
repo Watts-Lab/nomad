@@ -10,6 +10,7 @@ import warnings
 import geopandas as gpd
 import nomad.io.base as loader
 from nomad.stop_detection import utils
+from nomad.stop_detection.sequential import applyParallel
 from nomad.filters import to_timestamp
 
 ##########################################
@@ -43,7 +44,7 @@ def lachesis_labels(data, dt_max, delta_roam, dur_min=5, traj_cols=None, **kwarg
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
          raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
     if data.empty:
-        return pd.Series([], dtype=int, name='cluster')
+        return pd.Series(dtype='int64', name='cluster')
 
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)        
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
@@ -144,7 +145,8 @@ def lachesis(
             first = arr[0]
             if any(x != first for x in arr[1:]):
                 raise ValueError("Multi-user data? Use lachesis_per_user instead.")
-            passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
+            if traj_cols_temp['user_id'] not in passthrough_cols:
+                passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
     else:
         uid_col = None
 
@@ -160,12 +162,15 @@ def lachesis(
     merged = merged[merged.cluster != -1]
 
     if merged.empty:
-        # Get column names by calling summarize function on dummy data
-        cols = utils._get_empty_stop_columns(
-            data.columns, complete_output, passthrough_cols, traj_cols, 
-            keep_col_names=keep_col_names, is_grid_based=False, **kwargs
+        return utils._get_empty_stop_df(
+            data.columns,
+            complete_output,
+            passthrough_cols,
+            traj_cols,
+            keep_col_names=keep_col_names,
+            is_grid_based=False,
+            **kwargs,
         )
-        return pd.DataFrame(columns=cols, dtype=object)
 
     stop_table = merged.groupby('cluster', as_index=False, sort=False).apply(
         lambda grp: utils.summarize_stop(
@@ -177,7 +182,7 @@ def lachesis(
             **kwargs
         ),
         include_groups=False
-    )
+    ).reset_index(drop=True)
 
     return stop_table
 
@@ -189,22 +194,56 @@ def lachesis_per_user(
     complete_output=False,
     passthrough_cols=[],
     traj_cols=None,
+    n_jobs=1,
+    print_progress=False,
     **kwargs
 ):
     """
     Run lachesis on each user separately, then concatenate results.
-    Raises if 'user_id' not in traj_cols or missing from data.
+    
+    Parameters
+    ----------
+    data : pd.DataFrame or GeoDataFrame
+        Input trajectory with spatial and temporal columns.
+    dt_max : int
+        Maximum allowed gap in minutes between consecutive pings in a stop.
+    delta_roam : float
+        Maximum spatial diameter for a stop.
+    dur_min : int
+        Minimum duration in minutes for a valid stop.
+    complete_output : bool, default False
+        If True, include additional summary statistics in output.
+    passthrough_cols : list, optional
+        Columns to retain (and summarize/propagate) per stop.
+    traj_cols : dict, optional
+        Mapping for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'.
+    n_jobs : int, default 1
+        Number of parallel jobs to use. 1 means sequential processing.
+    print_progress : bool, default False
+        Whether to show progress bar during processing.
+    **kwargs
+        Passed along to column detection helper.
+        
+    Returns
+    -------
+    pd.DataFrame
+        Concatenated stop table with stops from all users.
+        
+    Raises
+    ------
+    ValueError if 'user_id' not in traj_cols or missing from data.
     """
     traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     if 'user_id' not in traj_cols_temp or traj_cols_temp['user_id'] not in data.columns:
         raise ValueError("lachesis_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
     uid = traj_cols_temp['user_id']
     
-    pt_cols = passthrough_cols + [uid]
+    pt_cols = passthrough_cols if uid in passthrough_cols else passthrough_cols + [uid]
     
-    results = [
-        lachesis(
-            group,
+    def process_user_group(group):
+        """Helper function to process a single user group."""
+        return lachesis(
+            group[1],
             dt_max=dt_max,
             delta_roam=delta_roam,
             dur_min=dur_min,
@@ -213,6 +252,55 @@ def lachesis_per_user(
             traj_cols=traj_cols,
             **kwargs
         )
-        for _, group in data.groupby(uid, sort=False)
-    ]
+    
+    # Use applyParallel to process groups in parallel
+    grouped = data.groupby(uid, sort=False)
+    results = applyParallel(
+        grouped,
+        process_user_group,
+        n_jobs=n_jobs,
+        print_progress=print_progress
+    )
+    
     return pd.concat(results, ignore_index=True)
+
+
+def lachesis_labels_per_user(
+    data,
+    dt_max,
+    delta_roam,
+    dur_min=5,
+    traj_cols=None,
+    n_jobs=1,
+    print_progress=False,
+    **kwargs
+):
+    """
+    Run lachesis_labels on each user separately and concatenate labels.
+
+    Raises if 'user_id' not in traj_cols or missing from data.
+    """
+    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    if 'user_id' not in traj_cols_temp or traj_cols_temp['user_id'] not in data.columns:
+        raise ValueError("lachesis_labels_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
+    uid = traj_cols_temp['user_id']
+
+    def process_user_group(group):
+        return lachesis_labels(
+            data=group[1],
+            dt_max=dt_max,
+            delta_roam=delta_roam,
+            dur_min=dur_min,
+            traj_cols=traj_cols,
+            **kwargs,
+        )
+
+    grouped = data.groupby(uid, sort=False)
+    results = applyParallel(
+        grouped,
+        process_user_group,
+        n_jobs=n_jobs,
+        print_progress=print_progress,
+    )
+
+    return pd.concat(results).reindex(data.index)

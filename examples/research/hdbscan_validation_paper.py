@@ -38,10 +38,8 @@ import nomad.io.base as loader
 import nomad.stop_detection.utils as utils
 import nomad.stop_detection.hdbscan as HDBSCAN
 import nomad.stop_detection.lachesis as LACHESIS
-#import nomad.stop_detection.ta_dbscan as TADBSCAN
 import nomad.stop_detection.dbscan as TADBSCAN
 import nomad.stop_detection.grid_based as GRID_BASED # for oracle visits
-import nomad.stop_detection.postprocessing as pp
 
 import nomad.visit_attribution as visits
 import nomad.filters as filters
@@ -210,7 +208,7 @@ def prejoin_oracle_map(data, diary, **kwargs):
     location = visits.oracle_map(data, diary, timestamp='timestamp', location_id='building_id')
     return data.join(location)
 
-# Post-processing snippets
+# Stop summarization snippets
 summarize_stops_with_loc = partial(utils.summarize_stop, x='x', y='y', keep_col_names=False, passthrough_cols=['building_id'], complete_output=True)
 
 def postjoin_poly_map(data, **kwargs):
@@ -220,12 +218,6 @@ def postjoin_poly_map(data, **kwargs):
     return data.join(location)
 
 # Special fix/adjustment snippets
-def rem_overlaps_hdbscan(stops, data_with_clusters, params, **kwargs):
-    if pp.invalid_stops(stops):
-        # The 'pred' data for remove_overlaps is the data with clusters and POI locations joined
-        return pp.remove_overlaps(data_with_clusters, **params, dur_min=5, traj_cols=traj_cols, method='cluster', location_id='building_id', summarize_stops=True)
-    return stops
-
 def pad_oracle_stops(stops, **kwargs):
     return utils.pad_short_stops(stops, pad=5, dur_min=0, start_timestamp='start_timestamp')
 
@@ -240,7 +232,7 @@ algo_params = pd.DataFrame([
         'params': {'time_thresh': 240, 'min_pts': 3, 'min_cluster_size': 1, 'include_border_points': True},
         'pre_process_func': no_op_df,             # Correct: Passes 'data'
         'post_labels_func': postjoin_poly_map,
-        'special_fix_func': rem_overlaps_hdbscan,
+        'special_fix_func': no_op_stops,
     },
     {
         'algo': 'oracle',
@@ -256,7 +248,7 @@ algo_params = pd.DataFrame([
         'params': {'time_thresh': 240, 'min_pts': 2, 'dist_thresh': 30},
         'pre_process_func': no_op_df,             # Correct
         'post_labels_func': postjoin_poly_map,
-        'special_fix_func': rem_overlaps_hdbscan,           # Correct
+        'special_fix_func': no_op_stops,           # Correct
     },
     {
         'algo': 'tadbscan_fine',
@@ -264,7 +256,7 @@ algo_params = pd.DataFrame([
         'params': {'time_thresh': 120, 'min_pts': 3, 'dist_thresh': 20},
         'pre_process_func': no_op_df,             # Correct
         'post_labels_func': postjoin_poly_map,
-        'special_fix_func': rem_overlaps_hdbscan,           # Correct
+        'special_fix_func': no_op_stops,           # Correct
     },
     {
         'algo': 'lachesis_coarse',

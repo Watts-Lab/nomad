@@ -1,15 +1,18 @@
 import geopandas as gpd
-import nomad.io.base as loader
-import nomad.constants as constants
 import warnings
 import pandas as pd
-import nomad.io.base as loader
 import pyproj
 import pdb
+import numpy as np
+from sklearn.cluster import DBSCAN
+from shapely.geometry import Point, MultiPoint
+import nomad.io.base as loader
+import nomad.constants as constants
+from nomad.stop_detection import utils
 
 # TO DO: change to stops_to_poi
 def point_in_polygon(data, poi_table, method='centroid', data_crs=None, max_distance=0,
-                     cluster_label=None, location_id=None, traj_cols=None, **kwargs):
+                     cluster_label=None, location_id=None, recompute_location=True, traj_cols=None, **kwargs):
     """
     Assign each stop or cluster of pings in `data` to a polygon in `poi_table`, 
     either by the cluster’s centroid location or by the most frequent polygon hit.
@@ -33,6 +36,10 @@ def point_in_polygon(data, poi_table, method='centroid', data_crs=None, max_dist
         Column name holding cluster IDs in ping data; inferred from `data` if absent.
     location_id : str, optional
         Column in `poi_table` containing the output ID; uses the GeoDataFrame index if None.
+    recompute_location : bool, default True
+        For labeled ping data, ignored for stop data. If False and a location column
+        (as determined by `location_id`) already exists in `data`, it will
+        be reused instead of overwritten.
     traj_cols : list of str, optional
         Names of the coordinate columns in `data` when it is a DataFrame.
     **kwargs
@@ -46,9 +53,11 @@ def point_in_polygon(data, poi_table, method='centroid', data_crs=None, max_dist
         are set to NaN.
     """
     # check if it is stop table
-    traj_cols_w_deflts = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
-    end_col_present = loader._has_end_cols(data.columns, traj_cols_w_deflts)
-    duration_col_present = loader._has_duration_cols(data.columns, traj_cols_w_deflts)
+    coord_key1, coord_key2, use_lon_lat = loader._fallback_spatial_cols(data.columns, traj_cols, kwargs)   
+    traj_cols_outer = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    
+    end_col_present = loader._has_end_cols(data.columns, traj_cols_outer)
+    duration_col_present = loader._has_duration_cols(data.columns, traj_cols_outer)
     is_stop_table = (end_col_present or duration_col_present)
 
     if is_stop_table:
@@ -82,33 +91,34 @@ def point_in_polygon(data, poi_table, method='centroid', data_crs=None, max_dist
             else:
                 raise ValueError(f"Argument `cluster_label` is required for visit attribution of labeled pings.")
 
+        loc_col = location_id if location_id is not None else "location_id"
         clustered_pings = data.loc[data[cluster_label] != -1].copy()
         if method=='majority': 
-            location = poi_map(
-                data=clustered_pings,
-                poi_table=poi_table,
-                max_distance=max_distance,
-                data_crs=data_crs,
-                location_id=location_id,
-                traj_cols=traj_cols,
-                **kwargs                
-            )
-            loc_col = location.name
-            clustered_pings = clustered_pings.join(location)
+            if recompute_location or (loc_col not in data.columns):
+                location = poi_map(
+                    data=clustered_pings,
+                    poi_table=poi_table,
+                    max_distance=max_distance,
+                    data_crs=data_crs,
+                    location_id=location_id,
+                    traj_cols=traj_cols,
+                    **kwargs
+                )
+                loc_col = location.name
+                clustered_pings = clustered_pings.join(location)
             
-            location = clustered_pings.groupby(cluster_label)[loc_col].agg(
+            major = clustered_pings.groupby(cluster_label)[loc_col].agg(
                 lambda x: x.mode().iloc[0] if not x.mode().empty else None) 
             
-            return data[[cluster_label]].join(location, on=cluster_label)[loc_col]
+            return data[[cluster_label]].join(major, on=cluster_label)[loc_col]
             
         elif method=='centroid': # should be medoid?
-            loader._has_spatial_cols(data.columns, traj_cols, exclusive=True)
-            use_lon_lat = ('latitude' in traj_cols and 'longitude' in traj_cols)
+            
             if use_lon_lat:
-                warnings.warn("Spherical ('longitude', 'latitude') coordinates were passed. Centroids will not agree with geodetic distances")                
-                centr_data = clustered_pings.groupby(cluster_label).agg({traj_cols['longitude']:'mean', traj_cols['latitude']:'mean'})
+                warnings.warn("Spherical ('longitude', 'latitude') coordinates were passed. Centroids will not agree with geodetic distances")              
+                centr_data = clustered_pings.groupby(cluster_label).agg({traj_cols_outer['longitude']:'mean', traj_cols_outer['latitude']:'mean'})
             else:
-                centr_data = clustered_pings.groupby(cluster_label).agg({traj_cols['x']:'mean', traj_cols['y']:'mean'})
+                centr_data = clustered_pings.groupby(cluster_label).agg({traj_cols_outer['x']:'mean', traj_cols_outer['y']:'mean'})
 
             location = poi_map(
                 data=centr_data,
@@ -171,12 +181,7 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, location_id=None, tr
             raise ValueError(f"Provided CRS {data_crs} conflicts with traj CRS {data.crs}.")
 
     if isinstance(data, pd.DataFrame):
-        # Parse traj_cols with kwargs to get spatial column mappings (using empty defaults to avoid conflicts)
-        traj_cols_w_deflts = loader._parse_traj_cols(data.columns, traj_cols, kwargs, defaults={}, warn=False)
-        # check that user specified x,y or lat, lon but not both
-        loader._has_spatial_cols(data.columns, traj_cols_w_deflts, exclusive=True)
-
-        use_lon_lat = ('latitude' in traj_cols_w_deflts and 'longitude' in traj_cols_w_deflts)
+        coord_key1, coord_key2, use_lon_lat = loader._fallback_spatial_cols(data.columns, traj_cols, kwargs) 
 
         if use_lon_lat:
             if data_crs:
@@ -190,8 +195,8 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, location_id=None, tr
                 data_crs = pyproj.CRS("EPSG:4326")
             
             pings_gdf= gpd.points_from_xy(
-                data[traj_cols_w_deflts['longitude']],
-                data[traj_cols_w_deflts['latitude']],
+                data[traj_cols['longitude']],
+                data[traj_cols['latitude']],
                 crs=data_crs) # order matters: lon first
         else:
             if not data_crs:
@@ -203,8 +208,8 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, location_id=None, tr
                              f"Did you mean to use {poi_table.crs}?"
                              )
             pings_gdf= gpd.points_from_xy(
-                data[traj_cols_w_deflts['x']],
-                data[traj_cols_w_deflts['y']],
+                data[traj_cols['x']],
+                data[traj_cols['y']],
                 crs=data_crs)
     else:
         raise TypeError("`data` must be a pandas DataFrame or a GeoDataFrame.")
@@ -213,17 +218,14 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, location_id=None, tr
         poi_table = poi_table.to_crs(data_crs)
         warnings.warn("CRS for `poi_table` does not match crs for `data`. Reprojecting...")
 
-    use_poi_idx = True
-    if location_id is not None:
-        loc_col = location_id
-        if location_id in poi_table:
-            use_poi_idx=False
-        else:
-            warnings.warn(f"{location_id} column not found in {poi_table.columns}, defaulting to poi_table.index for spatial join.")
-    else:
-        loc_col = 'location_id'
-        warnings.warn(f"location_id column not provided, defaulting to poi_table.index for spatial join.")
+    out_col = location_id if location_id is not None else "location_id"
+    # choose where IDs come from: poi_table column (if it exists) else poi_table.index
+    use_col = (location_id is not None) and (location_id in poi_table.columns)
 
+    if location_id is None:
+        warnings.warn("location_id not provided; using poi_table.index for spatial join.")
+    elif not use_col:
+        warnings.warn(f"{location_id} column not found in poi_table; using poi_table.index for spatial join.")
         
     if max_distance>0:
         if data_crs.is_geographic:
@@ -233,25 +235,16 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, location_id=None, tr
                          )        
         
         p_idx, idx = poi_table.sindex.nearest(pings_gdf, max_distance=max_distance, return_all=False)
-        if use_poi_idx:
-            s = pd.Series(poi_table.iloc[idx].index, index=data.index[p_idx])
-            s.name = loc_col
-        else:
-            s = pd.Series(poi_table.iloc[idx][loc_col].values, index=data.index[p_idx])
-            s.name = loc_col
-            
-        return s.reindex(data.index)
+
+        values = poi_table.iloc[idx][location_id] if use_col else pd.Series(poi_table.iloc[idx].index)
+        return values.set_axis(data.index[p_idx]).rename(out_col).reindex(data.index)
 
     else: # default max_distance = 0
         p_idx, idx = poi_table.sindex.query(pings_gdf, predicate="within") # boundary counts; use "contains" to exclude it
-        if use_poi_idx:
-            s = pd.Series(poi_table.iloc[idx].index, index=data.index[p_idx]) # might have duplicates
-            s = s.loc[~s.index.duplicated()]
-            s.name = loc_col
-        else:
-            s = pd.Series(poi_table.iloc[idx][loc_col].values, index=data.index[p_idx])
-            s = s.loc[~s.index.duplicated()]
-            s.name = loc_col        
+        values = poi_table.iloc[idx][location_id] if use_col else pd.Series(poi_table.iloc[idx].index)
+        
+        s = values.set_axis(data.index[p_idx]).rename(out_col)
+        s = s[~s.index.duplicated()]          # keep first match per ping
         return s.reindex(data.index)
 
 def oracle_map(data, true_visits, traj_cols=None, **kwargs):
@@ -436,6 +429,332 @@ def night_stops(stop_table, user='user', dawn_hour = 6, dusk_hour = 19, min_dwel
     dates = (start_date, end_date)
     df_clipped = clip_stays_date(stop_table, dates, dawn_hour, dusk_hour)
     df_clipped = df_clipped[(df_clipped['duration'] > 0) & (df_clipped['duration_night'] >= 15)]
-    
+
     return df_clipped.groupby(['id', 'location'], group_keys=False).apply(count_nights(dawn_hour, dusk_hour, min_dwell)).reset_index(drop=True)
+
+
+def _get_location_center(coords, metric='euclidean'):
+    """
+    Calculate the center of a location cluster.
+
+    Parameters
+    ----------
+    coords : numpy.ndarray
+        Array of coordinates (n_points, 2)
+    metric : str
+        'euclidean' for projected coordinates, 'haversine' for lat/lon
+
+    Returns
+    -------
+    tuple
+        (x, y) coordinates of the center
+    """
+    if metric == 'haversine':
+        # For geographic coordinates, use angle-based mean
+        # Convert to radians for calculation
+        coords_rad = np.radians(coords)
+        x = coords_rad[:, 0]
+        y = coords_rad[:, 1]
+
+        # Convert to 3D Cartesian coordinates
+        cos_y = np.cos(y)
+        cart_x = cos_y * np.cos(x)
+        cart_y = cos_y * np.sin(x)
+        cart_z = np.sin(y)
+
+        # Average and convert back
+        avg_x = np.mean(cart_x)
+        avg_y = np.mean(cart_y)
+        avg_z = np.mean(cart_z)
+
+        lon = np.arctan2(avg_y, avg_x)
+        hyp = np.sqrt(avg_x**2 + avg_y**2)
+        lat = np.arctan2(avg_z, hyp)
+
+        return np.degrees(lon), np.degrees(lat)
+    else:
+        # For projected coordinates, use simple mean
+        return np.mean(coords[:, 0]), np.mean(coords[:, 1])
+
+
+def _get_location_extent(points, epsilon, crs=None):
+    """
+    Calculate the spatial extent of a location.
+
+    Parameters
+    ----------
+    points : list of shapely Points
+        Points in the location cluster
+    epsilon : float
+        Buffer distance in meters (or degrees for unprojected)
+    crs : str, optional
+        Coordinate reference system
+
+    Returns
+    -------
+    shapely.Polygon
+        Convex hull buffered by epsilon
+    """
+    if len(points) == 1:
+        return points[0].buffer(epsilon)
+
+    multipoint = MultiPoint(points)
+    convex_hull = multipoint.convex_hull
+    return convex_hull.buffer(epsilon)
+
+
+def cluster_locations_dbscan(
+    stops,
+    epsilon=100,
+    num_samples=1,
+    distance_metric='euclidean',
+    agg_level='user',
+    traj_cols=None,
+    **kwargs
+):
+    """
+    Cluster stops into locations using DBSCAN.
+
+    Parameters
+    ----------
+    stops : pd.DataFrame or gpd.GeoDataFrame
+        Stop/staypoint data with spatial columns
+    epsilon : float, default 100
+        Maximum distance between stops in the same location (meters for haversine/euclidean)
+    num_samples : int, default 1
+        Minimum number of stops required to form a location
+    distance_metric : str, default 'euclidean'
+        Distance metric: 'euclidean' for projected coords, 'haversine' for lat/lon
+    agg_level : str, default 'user'
+        'user' = separate locations per user, 'dataset' = shared locations across users
+    traj_cols : dict, optional
+        Column name mappings for coordinates and user_id
+    **kwargs
+        Additional arguments passed to column detection
+
+    Returns
+    -------
+    tuple of (pd.DataFrame, gpd.GeoDataFrame)
+        - stops with added 'location_id' column (NaN for unclustered stops)
+        - locations GeoDataFrame with cluster centers and extents
+    """
+    if not isinstance(stops, (pd.DataFrame, gpd.GeoDataFrame)):
+        raise TypeError("Input 'stops' must be a pandas DataFrame or GeoDataFrame")
+
+    if stops.empty:
+        # Return empty results with proper schema
+        stops_out = stops.copy()
+        stops_out['location_id'] = pd.Series(dtype='Int64')
+        locations = gpd.GeoDataFrame(
+            columns=['center', 'extent'],
+            geometry='center',
+            crs=stops.crs if isinstance(stops, gpd.GeoDataFrame) else None
+        )
+        return stops_out, locations
+
+    # Parse column names
+    traj_cols = loader._parse_traj_cols(stops.columns, traj_cols, kwargs)
+    loader._has_spatial_cols(stops.columns, traj_cols)
+
+    # Determine coordinate columns
+    if 'longitude' in traj_cols and traj_cols['longitude'] in stops.columns:
+        coord_key1, coord_key2 = 'longitude', 'latitude'
+        use_lon_lat = True
+    elif 'x' in traj_cols and traj_cols['x'] in stops.columns:
+        coord_key1, coord_key2 = 'x', 'y'
+        use_lon_lat = False
+    else:
+        raise ValueError("Could not find spatial columns in stops data")
+
+    # Override distance metric based on coordinate type if not specified
+    if distance_metric == 'euclidean' and use_lon_lat:
+        warnings.warn(
+            "Using haversine metric for lat/lon coordinates instead of euclidean",
+            UserWarning
+        )
+        distance_metric = 'haversine'
+
+    # Get user_id column if present
+    user_col = None
+    if 'user_id' in traj_cols and traj_cols['user_id'] in stops.columns:
+        user_col = traj_cols['user_id']
+
+    # Check aggregation level
+    if agg_level == 'user' and user_col is None:
+        warnings.warn(
+            "agg_level='user' requires user_id column; falling back to 'dataset'",
+            UserWarning
+        )
+        agg_level = 'dataset'
+
+    stops_out = stops.copy()
+    stops_out['location_id'] = pd.Series(dtype='Int64')
+
+    location_list = []
+    location_id_counter = 0
+
+    # Group by user if needed
+    if agg_level == 'user':
+        groups = stops_out.groupby(user_col, sort=False)
+    else:
+        groups = [(None, stops_out)]
+
+    for group_key, group_data in groups:
+        if group_data.empty:
+            continue
+
+        # Extract coordinates
+        coords = group_data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy(dtype='float64')
+
+        # For haversine, convert to radians
+        if distance_metric == 'haversine':
+            # Convert epsilon from meters to radians (approximate)
+            # Earth radius in meters
+            epsilon_rad = epsilon / 6371000.0
+            coords_for_clustering = np.radians(coords)
+        else:
+            epsilon_rad = epsilon
+            coords_for_clustering = coords
+
+        # Run DBSCAN
+        clusterer = DBSCAN(
+            eps=epsilon_rad,
+            min_samples=num_samples,
+            metric=distance_metric,
+            algorithm='ball_tree'
+        )
+
+        labels = clusterer.fit_predict(coords_for_clustering)
+
+        # Assign location IDs (offset by counter for multi-group)
+        group_loc_ids = labels.copy()
+        valid_mask = labels >= 0
+        group_loc_ids[valid_mask] += location_id_counter
+        group_loc_ids[~valid_mask] = -1
+
+        # Update stops with location IDs
+        stops_out.loc[group_data.index, 'location_id'] = group_loc_ids
+
+        # Create location entries for each cluster
+        unique_labels = labels[labels >= 0]
+        if len(unique_labels) > 0:
+            for label in np.unique(unique_labels):
+                cluster_mask = labels == label
+                cluster_coords = coords[cluster_mask]
+                cluster_indices = group_data.index[cluster_mask]
+
+                # Calculate center
+                center_x, center_y = _get_location_center(
+                    cluster_coords,
+                    metric=distance_metric
+                )
+                center_point = Point(center_x, center_y)
+
+                # Calculate extent (convex hull + buffer)
+                cluster_points = [Point(x, y) for x, y in cluster_coords]
+                extent = _get_location_extent(
+                    cluster_points,
+                    epsilon,
+                    crs=stops.crs if isinstance(stops, gpd.GeoDataFrame) else None
+                )
+
+                location_entry = {
+                    'location_id': location_id_counter + label,
+                    'center': center_point,
+                    'extent': extent,
+                    'n_stops': cluster_mask.sum()
+                }
+
+                # Add user_id if available
+                if user_col is not None and agg_level == 'user':
+                    location_entry[user_col] = group_key
+
+                location_list.append(location_entry)
+
+            # Update counter for next group
+            location_id_counter += len(np.unique(unique_labels))
+
+    # Convert location_id to nullable integer (NaN for unclustered)
+    stops_out['location_id'] = stops_out['location_id'].replace(-1, pd.NA).astype('Int64')
+
+    # Create locations GeoDataFrame
+    if location_list:
+        locations = gpd.GeoDataFrame(
+            location_list,
+            geometry='center',
+            crs=stops.crs if isinstance(stops, gpd.GeoDataFrame) else None
+        )
+        # Set extent as additional geometry column
+        locations['extent'] = gpd.GeoSeries(
+            [loc['extent'] for loc in location_list],
+            crs=stops.crs if isinstance(stops, gpd.GeoDataFrame) else None
+        )
+    else:
+        locations = gpd.GeoDataFrame(
+            columns=['location_id', 'center', 'extent', 'n_stops'],
+            geometry='center',
+            crs=stops.crs if isinstance(stops, gpd.GeoDataFrame) else None
+        )
+
+    return stops_out, locations
+
+
+def cluster_locations_per_user(
+    stops,
+    epsilon=100,
+    num_samples=1,
+    distance_metric='euclidean',
+    traj_cols=None,
+    **kwargs
+):
+    """
+    Convenience function to cluster locations per user.
+
+    This is equivalent to calling cluster_locations_dbscan with agg_level='user'.
+
+    Parameters
+    ----------
+    stops : pd.DataFrame or gpd.GeoDataFrame
+        Stop data with user_id column
+    epsilon : float, default 100
+        Maximum distance between stops in same location (meters)
+    num_samples : int, default 1
+        Minimum stops required to form a location
+    distance_metric : str, default 'euclidean'
+        'euclidean' or 'haversine'
+    traj_cols : dict, optional
+        Column name mappings
+    **kwargs
+        Additional arguments
+
+    Returns
+    -------
+    tuple of (pd.DataFrame, gpd.GeoDataFrame)
+        Stops with location_id and locations table
+
+    Raises
+    ------
+    ValueError
+        If user_id column is not found
+    """
+    traj_cols_temp = loader._parse_traj_cols(stops.columns, traj_cols, kwargs)
+    if 'user_id' not in traj_cols_temp or traj_cols_temp['user_id'] not in stops.columns:
+        raise ValueError(
+            "cluster_locations_per_user requires a 'user_id' column "
+            "specified in traj_cols or kwargs"
+        )
+
+    return cluster_locations_dbscan(
+        stops,
+        epsilon=epsilon,
+        num_samples=num_samples,
+        distance_metric=distance_metric,
+        agg_level='user',
+        traj_cols=traj_cols,
+        **kwargs
+    )
+
+
+# Alias for convenience
+generate_locations = cluster_locations_dbscan
 

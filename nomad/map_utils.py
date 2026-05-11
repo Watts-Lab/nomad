@@ -979,7 +979,7 @@ def blocks_to_mercator_gdf(gdf, block_size, false_easting, false_northing,
     result = gdf.copy()
     
     if drop_garden_cols:
-        drop_cols = [c for c in ['coord_x', 'coord_y', 'door_cell_x', 'door_cell_y'] 
+        drop_cols = [c for c in ['coord_x', 'coord_y', 'door_cell_x', 'door_cell_y', 'door_point_x', 'door_point_y'] 
                     if c in result.columns]
         result = result.drop(columns=drop_cols)
     
