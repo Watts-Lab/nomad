@@ -181,8 +181,10 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
 
             border_set = _cluster_border_map.get(parent_id, None)
             parent_core_set = set(children_df.index)
+            # TODO is this IF even necessary anymore? 
+            # whoever is consuming parent_borders can deal with None on their own
             if border_set is None:
-                parent_borders = set().union(*(raw_at_scale.get(ts, set()) for ts in parent_core_set))
+                parent_borders = set()
             else:
                 parent_borders = border_set
 
@@ -254,9 +256,12 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
                                 new_active_cluster = False
 
                         if not new_active_cluster:
+                            # is split_df the equivalent to core_df?
+                            # do we drop from H?
                             split_df.at[check_time, 'parent_id'] = -1
                             cluster_df.at[check_time] = -1
                         else:
+                            # TODO check that something equivalent to dbstop line 104 (expand active cluster) is happening
                             active_temp_id = curr_temp_id
 
                     if curr_temp_id == active_temp_id:
@@ -296,6 +301,8 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
                 # Remaining child already has parent_id.
                 continue
 
+            # around here, we are querying cluster_df and change to new labels
+            # TODO however, child_border map = what's in cluster_df that's not a core
             new_ids = []
             for component in non_spurious:
                 for node in component:
@@ -307,10 +314,13 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
             
             # Partition the parent's border set among the newly minted children.
             # Each child inherits only the borders whose nearest core fell in its component.
+            # TODO below logic should be: each child inherits borders from parent, dbstop assigns cluster_df labels
+            # non-cores w/ right label are the border points
             for component, child_id in zip(non_spurious, new_ids):
                 core_set = set(component)
                 child_borders = set()
                 for core_ts in core_set:
+                    # don't need to add core points to border set. need to have non-cores
                     candidate = raw_at_scale.get(core_ts, set())
                     child_borders.update(candidate & border_set if border_set is not None else candidate)
                 _cluster_birth_scale[child_id] = scale
