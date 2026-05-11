@@ -179,14 +179,8 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
             children_df = split_df[split_df['parent_id'] == parent_id]
             components = [set(grp.index) for _, grp in children_df.groupby('temp_id')]
 
-            border_set = _cluster_border_map.get(parent_id, None)
             parent_core_set = set(children_df.index)
-            # TODO is this IF even necessary anymore? 
-            # whoever is consuming parent_borders can deal with None on their own
-            if border_set is None:
-                parent_borders = set()
-            else:
-                parent_borders = border_set
+            parent_borders = _cluster_border_map.get(parent_id, set())
 
             # union of core timestamps and border timestamps for this parent cluster
             all_ts = sorted(parent_core_set | parent_borders)
@@ -261,7 +255,10 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
                             split_df.at[check_time, 'parent_id'] = -1
                             cluster_df.at[check_time] = -1
                         else:
-                            # TODO check that something equivalent to dbstop line 104 (expand active cluster) is happening
+                            # No explicit expand needed: all core points in children_df are already
+                            # labeled parent_id (set before this loop), and border points are
+                            # assigned in the post-loop block below. Switching active_temp_id is
+                            # the only action required, equivalent to incrementing active_cid in dbstop.
                             active_temp_id = curr_temp_id
 
                     if curr_temp_id == active_temp_id:
@@ -302,7 +299,6 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
                 continue
 
             # around here, we are querying cluster_df and change to new labels
-            # TODO however, child_border map = what's in cluster_df that's not a core
             new_ids = []
             for component in non_spurious:
                 for node in component:
@@ -313,16 +309,16 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
                 current_label_id += 1
             
             # Partition the parent's border set among the newly minted children.
-            # Each child inherits only the borders whose nearest core fell in its component.
-            # TODO below logic should be: each child inherits borders from parent, dbstop assigns cluster_df labels
-            # non-cores w/ right label are the border points
+            # Each child inherits the subset of the parent's borders reachable from its core points,
+            # equivalent to dbstop's _expand_active_cluster labeling non-core neighbors: the
+            # non-core points that fall within a child's core neighborhood become that child's borders.
+            # If the parent has no borders, fall back to all raw neighbors (no basis to restrict).
             for component, child_id in zip(non_spurious, new_ids):
                 core_set = set(component)
                 child_borders = set()
                 for core_ts in core_set:
-                    # don't need to add core points to border set. need to have non-cores
                     candidate = raw_at_scale.get(core_ts, set())
-                    child_borders.update(candidate & border_set if border_set is not None else candidate)
+                    child_borders.update(candidate & parent_borders if parent_borders else candidate)
                 _cluster_birth_scale[child_id] = scale
                 _cluster_border_map[child_id] = child_borders
 
