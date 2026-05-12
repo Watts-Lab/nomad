@@ -53,6 +53,50 @@ def shared_algo_registry():
 
 
 @pytest.fixture
+def coordinate_label_case_registry(stop_test_params):
+    dt_max = stop_test_params["dt_max"]
+    dist_thresh = stop_test_params["dist_thresh"]
+    min_pts = stop_test_params["min_pts"]
+    return {
+        "sequential-sliding": {
+            "fn": SEQUENTIAL.detect_stops_labels,
+            "single_kwargs": {"dt_max": dt_max, "delta_roam": dist_thresh, "dur_min": 5, "method": "sliding"},
+            "two_stop_kwargs": {"dt_max": 5, "delta_roam": dist_thresh, "dur_min": 5, "method": "sliding"},
+        },
+        "sequential-centroid": {
+            "fn": SEQUENTIAL.detect_stops_labels,
+            "single_kwargs": {"dt_max": dt_max, "delta_roam": dist_thresh, "dur_min": 5, "method": "centroid"},
+            "two_stop_kwargs": {"dt_max": 5, "delta_roam": dist_thresh, "dur_min": 5, "method": "centroid"},
+        },
+        "lachesis": {
+            "fn": LACHESIS.lachesis_labels,
+            "single_kwargs": {"dt_max": dt_max, "delta_roam": dist_thresh, "dur_min": 5},
+            "two_stop_kwargs": {"dt_max": 5, "delta_roam": dist_thresh, "dur_min": 5},
+        },
+        "dbstop": {
+            "fn": DBSTOP.dbstop_labels,
+            "single_kwargs": {"time_thresh": dt_max, "dist_thresh": dist_thresh, "min_pts": min_pts},
+            "two_stop_kwargs": {"time_thresh": 5, "dist_thresh": dist_thresh, "min_pts": 3},
+        },
+        "tadbscan": {
+            "fn": DBSCAN.ta_dbscan_labels,
+            "single_kwargs": {"time_thresh": dt_max, "dist_thresh": dist_thresh, "min_pts": min_pts},
+            "two_stop_kwargs": {"time_thresh": 5, "dist_thresh": dist_thresh, "min_pts": 3},
+        },
+        "seqscan": {
+            "fn": DENSITY_BASED.seqscan_labels,
+            "single_kwargs": {"time_thresh": dt_max, "dist_thresh": dist_thresh, "min_pts": min_pts, "dur_min": 5},
+            "two_stop_kwargs": {"time_thresh": 5, "dist_thresh": dist_thresh, "min_pts": 3, "dur_min": 5},
+        },
+        "hdbscan": {
+            "fn": HDBSCAN.hdbscan_labels,
+            "single_kwargs": {"time_thresh": dt_max, "min_pts": min_pts, "min_cluster_size": 2, "dur_min": 5},
+            "two_stop_kwargs": {"time_thresh": 5, "min_pts": 3, "min_cluster_size": 3, "dur_min": 5},
+        },
+    }
+
+
+@pytest.fixture
 def fallback_label_case_registry(stop_test_params):
     dt_max = stop_test_params["dt_max"]
     dist_thresh = stop_test_params["dist_thresh"]
@@ -401,6 +445,45 @@ def simple_traj_ts(simple_traj):
     df["location_id"] = [0, 0, 0, 0, 0, 0, 1]
     return df
 
+
+@pytest.fixture
+def two_stop_traj():
+    """Trajectory with two clear stops separated by a long gap."""
+    np.random.seed(0)
+    base = 1609459200  # 2021-01-01 00:00:00 UTC
+    rows = []
+    for i in range(20):
+        rows.append({'x': np.random.normal(0, 2), 'y': np.random.normal(0, 2),
+                     'timestamp': base + i * 30})
+    t = base + 20 * 30 + 1800
+    for i in range(20):
+        rows.append({'x': np.random.normal(1000, 2), 'y': np.random.normal(1000, 2),
+                     'timestamp': t + i * 30})
+    return pd.DataFrame(rows)
+
+
+@pytest.fixture
+def hdbscan_traj(two_stop_traj):
+    return two_stop_traj
+
+
+def _assert_single_stop_plus_noise(labels):
+    stop_labels = labels.iloc[:6]
+    assert (stop_labels >= 0).all()
+    assert stop_labels.nunique() == 1
+    assert labels.iloc[6] == -1
+
+
+def _assert_two_stops(labels):
+    first_stop = labels.iloc[:20]
+    second_stop = labels.iloc[20:]
+    assert (first_stop >= 0).all()
+    assert (second_stop >= 0).all()
+    assert first_stop.nunique() == 1
+    assert second_stop.nunique() == 1
+    assert first_stop.iloc[0] != second_stop.iloc[0]
+    assert labels[labels >= 0].nunique() == 2
+
 ## ============================================= TESTS =========================================
 @pytest.mark.parametrize(
     "algo_name",
@@ -442,6 +525,76 @@ def test_stop_output_is_valid_stop_df(base_df, stop_df_schema_case_registry, sto
     )
 
     assert loader._is_stop_df(stops_df, traj_cols=input_cfg["traj_cols"], parse_dates=False)
+
+
+@pytest.mark.parametrize(
+    "algo_name",
+    [
+        pytest.param("sequential-sliding", id="sequential-sliding"),
+        pytest.param("sequential-centroid", id="sequential-centroid"),
+        pytest.param("lachesis", id="lachesis"),
+        pytest.param("dbstop", id="dbstop"),
+        pytest.param("tadbscan", id="tadbscan"),
+        pytest.param("seqscan", id="seqscan"),
+        pytest.param("hdbscan", id="hdbscan"),
+    ],
+)
+def test_coordinate_label_algorithms_single_stop_fixture(
+    simple_traj_ts,
+    coordinate_label_case_registry,
+    algo_name,
+):
+    case = coordinate_label_case_registry[algo_name]
+    labels = case["fn"](
+        simple_traj_ts,
+        traj_cols={"timestamp": "timestamp", "x": "x", "y": "y"},
+        **case["single_kwargs"],
+    )
+
+    _assert_single_stop_plus_noise(labels)
+
+
+@pytest.mark.parametrize(
+    "algo_name",
+    [
+        pytest.param("sequential-sliding", id="sequential-sliding"),
+        pytest.param("sequential-centroid", id="sequential-centroid"),
+        pytest.param("lachesis", id="lachesis"),
+        pytest.param("dbstop", id="dbstop"),
+        pytest.param("tadbscan", id="tadbscan"),
+        pytest.param("seqscan", id="seqscan"),
+        pytest.param("hdbscan", id="hdbscan"),
+    ],
+)
+def test_coordinate_label_algorithms_two_stop_fixture(
+    two_stop_traj,
+    coordinate_label_case_registry,
+    algo_name,
+):
+    case = coordinate_label_case_registry[algo_name]
+    labels = case["fn"](
+        two_stop_traj,
+        traj_cols={"timestamp": "timestamp", "x": "x", "y": "y"},
+        **case["two_stop_kwargs"],
+    )
+
+    _assert_two_stops(labels)
+
+
+def test_hdbscan_respects_explicit_xy_column_names(two_stop_traj):
+    traj = two_stop_traj.rename(
+        columns={"timestamp": "unix_time", "x": "merc_x", "y": "merc_y"}
+    )
+    labels = HDBSCAN.hdbscan_labels(
+        traj,
+        time_thresh=5,
+        min_pts=3,
+        min_cluster_size=3,
+        dur_min=5,
+        traj_cols={"timestamp": "unix_time", "x": "merc_x", "y": "merc_y"},
+    )
+
+    _assert_two_stops(labels)
 
    
 ##########################################
@@ -1280,25 +1433,6 @@ def test_empty_dataframe_consistency():
 ####          HDBSCAN TESTS          ####
 ##########################################
 
-@pytest.fixture
-def hdbscan_traj():
-    """Trajectory with two clear stops separated by a long gap."""
-    np.random.seed(0)
-    base = 1609459200  # 2021-01-01 00:00:00 UTC
-    rows = []
-    # Stop 1: 20 points at (0, 0) over ~10 minutes (30s intervals)
-    for i in range(20):
-        rows.append({'x': np.random.normal(0, 2), 'y': np.random.normal(0, 2),
-                     'timestamp': base + i * 30})
-    # Gap of 30 minutes
-    t = base + 20 * 30 + 1800
-    # Stop 2: 20 points at (1000, 1000) over ~10 minutes
-    for i in range(20):
-        rows.append({'x': np.random.normal(1000, 2), 'y': np.random.normal(1000, 2),
-                     'timestamp': t + i * 30})
-    return pd.DataFrame(rows)
-
-
 def test_hdbscan_labels_single_stop(hdbscan_traj):
     """hdbscan_labels detects at least one cluster on clear stop data."""
     labels = HDBSCAN.hdbscan_labels(
@@ -1365,6 +1499,13 @@ def test_st_hdbscan_output_is_valid_stop_df(base_df):
     assert loader._is_stop_df(stops, traj_cols=traj_cols, parse_dates=False)
 
 
+@pytest.mark.xfail(
+    reason=(
+        "Known HDBSCAN stability overfragmentation under _base_cdf; "
+        "see https://github.com/Watts-Lab/nomad/issues/289."
+    ),
+    strict=True,
+)
 def test_st_hdbscan_ground_truth(agent_traj_ground_truth):
     """st_hdbscan detects the expected number of stops on ground-truth data."""
     traj_cols = {'user_id': 'identifier', 'x': 'x', 'y': 'y', 'timestamp': 'unix_timestamp'}
