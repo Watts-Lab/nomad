@@ -1,14 +1,44 @@
 import pandas as pd
 import pytest
 
-# Tests for _get_empty_stop_columns function
-def test_get_empty_stop_columns_basic():
-    """Test _get_empty_stop_columns with basic parameters."""
+def _assert_empty_stop_df(empty_df, expected_columns, expected_dtypes):
+    assert empty_df.empty
+    assert list(empty_df.columns) == expected_columns
+    assert {col: str(dtype) for col, dtype in empty_df.dtypes.items()} == expected_dtypes
+
+
+def _summarize_stop_clusters(utils, data, complete_output, passthrough_cols, traj_cols, keep_col_names=True):
+    merged = data[data["cluster"] != -1]
+    if merged.empty:
+        return utils._get_empty_stop_df(
+            data.columns,
+            complete_output=complete_output,
+            passthrough_cols=passthrough_cols,
+            traj_cols=traj_cols,
+            keep_col_names=keep_col_names,
+            is_grid_based=False,
+        )
+
+    return merged.groupby("cluster", sort=False).apply(
+        lambda grp: utils.summarize_stop(
+            grp,
+            complete_output=complete_output,
+            keep_col_names=keep_col_names,
+            passthrough_cols=passthrough_cols,
+            traj_cols=traj_cols,
+        ),
+        include_groups=False,
+    ).reset_index(drop=True)
+
+
+# Tests for _get_empty_stop_df function
+def test_get_empty_stop_df_basic():
+    """Test _get_empty_stop_df with basic parameters."""
     import nomad.stop_detection.utils as utils
     
     # Test basic case - should match summarize_stop output
     input_columns = ['timestamp', 'longitude', 'latitude']
-    columns = utils._get_empty_stop_columns(
+    empty_df = utils._get_empty_stop_df(
         input_columns,
         complete_output=False,
         passthrough_cols=[],
@@ -17,17 +47,24 @@ def test_get_empty_stop_columns_basic():
         is_grid_based=False
     )
     
-    # Should have basic columns: longitude, latitude, timestamp (original name), duration
-    expected = ['longitude', 'latitude', 'timestamp', 'duration']
-    assert columns == expected, f"Expected {expected}, got {columns}"
+    _assert_empty_stop_df(
+        empty_df,
+        ['longitude', 'latitude', 'timestamp', 'duration'],
+        {
+            'longitude': 'Float64',
+            'latitude': 'Float64',
+            'timestamp': 'Int64',
+            'duration': 'Int64',
+        },
+    )
 
 
-def test_get_empty_stop_columns_complete_output():
-    """Test _get_empty_stop_columns with complete_output=True."""
+def test_get_empty_stop_df_complete_output():
+    """Test _get_empty_stop_df with complete_output=True."""
     import nomad.stop_detection.utils as utils
     
     input_columns = ['timestamp', 'longitude', 'latitude']
-    columns = utils._get_empty_stop_columns(
+    empty_df = utils._get_empty_stop_df(
         input_columns,
         complete_output=True,
         passthrough_cols=[],
@@ -36,17 +73,28 @@ def test_get_empty_stop_columns_complete_output():
         is_grid_based=False
     )
     
-    # Should have additional columns for complete output
-    expected = ['longitude', 'latitude', 'timestamp', 'duration', 'end_timestamp', 'diameter', 'n_pings', 'max_gap']
-    assert columns == expected, f"Expected {expected}, got {columns}"
+    _assert_empty_stop_df(
+        empty_df,
+        ['longitude', 'latitude', 'timestamp', 'diameter', 'n_pings', 'end_timestamp', 'duration', 'max_gap'],
+        {
+            'longitude': 'Float64',
+            'latitude': 'Float64',
+            'timestamp': 'Int64',
+            'diameter': 'Float64',
+            'n_pings': 'Int64',
+            'end_timestamp': 'Int64',
+            'duration': 'Int64',
+            'max_gap': 'Int64',
+        },
+    )
 
 
-def test_get_empty_stop_columns_with_passthrough():
-    """Test _get_empty_stop_columns with passthrough columns."""
+def test_get_empty_stop_df_with_passthrough():
+    """Test _get_empty_stop_df with passthrough columns."""
     import nomad.stop_detection.utils as utils
     
     input_columns = ['timestamp', 'longitude', 'latitude', 'user_id', 'location_id']
-    columns = utils._get_empty_stop_columns(
+    empty_df = utils._get_empty_stop_df(
         input_columns,
         complete_output=False,
         passthrough_cols=['user_id', 'location_id'],
@@ -55,17 +103,26 @@ def test_get_empty_stop_columns_with_passthrough():
         is_grid_based=False
     )
     
-    # Should include passthrough columns
-    expected = ['longitude', 'latitude', 'timestamp', 'duration', 'user_id', 'location_id']
-    assert columns == expected, f"Expected {expected}, got {columns}"
+    _assert_empty_stop_df(
+        empty_df,
+        ['longitude', 'latitude', 'timestamp', 'duration', 'user_id', 'location_id'],
+        {
+            'longitude': 'Float64',
+            'latitude': 'Float64',
+            'timestamp': 'Int64',
+            'duration': 'Int64',
+            'user_id': 'string',
+            'location_id': 'string',
+        },
+    )
 
 
-def test_get_empty_stop_columns_xy_coordinates():
-    """Test _get_empty_stop_columns with x,y coordinates."""
+def test_get_empty_stop_df_xy_coordinates():
+    """Test _get_empty_stop_df with x,y coordinates."""
     import nomad.stop_detection.utils as utils
     
     input_columns = ['timestamp', 'x', 'y']
-    columns = utils._get_empty_stop_columns(
+    empty_df = utils._get_empty_stop_df(
         input_columns,
         complete_output=False,
         passthrough_cols=[],
@@ -76,13 +133,20 @@ def test_get_empty_stop_columns_xy_coordinates():
         y='y'
     )
     
-    # Should use x,y instead of longitude,latitude
-    expected = ['x', 'y', 'timestamp', 'duration']
-    assert columns == expected, f"Expected {expected}, got {columns}"
+    _assert_empty_stop_df(
+        empty_df,
+        ['x', 'y', 'timestamp', 'duration'],
+        {
+            'x': 'Float64',
+            'y': 'Float64',
+            'timestamp': 'Int64',
+            'duration': 'Int64',
+        },
+    )
 
 
-def test_get_empty_stop_columns_custom_traj_cols():
-    """Test _get_empty_stop_columns with custom traj_cols."""
+def test_get_empty_stop_df_custom_traj_cols():
+    """Test _get_empty_stop_df with custom traj_cols."""
     import nomad.stop_detection.utils as utils
     
     traj_cols = {
@@ -92,7 +156,7 @@ def test_get_empty_stop_columns_custom_traj_cols():
     }
     
     input_columns = ['unix_timestamp', 'lon', 'lat']
-    columns = utils._get_empty_stop_columns(
+    empty_df = utils._get_empty_stop_df(
         input_columns,
         complete_output=False,
         passthrough_cols=[],
@@ -101,17 +165,24 @@ def test_get_empty_stop_columns_custom_traj_cols():
         is_grid_based=False
     )
     
-    # Should use custom column names
-    expected = ['lon', 'lat', 'unix_timestamp', 'duration']
-    assert columns == expected, f"Expected {expected}, got {columns}"
+    _assert_empty_stop_df(
+        empty_df,
+        ['lon', 'lat', 'unix_timestamp', 'duration'],
+        {
+            'lon': 'Float64',
+            'lat': 'Float64',
+            'unix_timestamp': 'Int64',
+            'duration': 'Int64',
+        },
+    )
 
 
-def test_get_empty_stop_columns_grid_based():
-    """Test _get_empty_stop_columns for grid-based summarization."""
+def test_get_empty_stop_df_grid_based():
+    """Test _get_empty_stop_df for grid-based summarization."""
     import nomad.stop_detection.utils as utils
     
     input_columns = ['timestamp', 'location_id']
-    columns = utils._get_empty_stop_columns(
+    empty_df = utils._get_empty_stop_df(
         input_columns,
         complete_output=False,
         passthrough_cols=[],
@@ -120,17 +191,23 @@ def test_get_empty_stop_columns_grid_based():
         is_grid_based=True
     )
     
-    # Should have grid-based columns: timestamp (original name), duration, location_id
-    expected = {'timestamp', 'duration', 'location_id'}
-    assert set(columns) == expected, f"Expected {expected}, got {set(columns)}"
+    _assert_empty_stop_df(
+        empty_df,
+        ['timestamp', 'duration', 'location_id'],
+        {
+            'timestamp': 'Int64',
+            'duration': 'Int64',
+            'location_id': 'string',
+        },
+    )
 
 
-def test_get_empty_stop_columns_grid_based_complete():
-    """Test _get_empty_stop_columns for grid-based with complete output."""
+def test_get_empty_stop_df_grid_based_complete():
+    """Test _get_empty_stop_df for grid-based with complete output."""
     import nomad.stop_detection.utils as utils
     
     input_columns = ['timestamp', 'location_id']
-    columns = utils._get_empty_stop_columns(
+    empty_df = utils._get_empty_stop_df(
         input_columns,
         complete_output=True,
         passthrough_cols=[],
@@ -139,17 +216,26 @@ def test_get_empty_stop_columns_grid_based_complete():
         is_grid_based=True
     )
     
-    # Should have complete grid-based columns
-    expected = {'timestamp', 'end_timestamp', 'n_pings', 'max_gap', 'duration', 'location_id'}
-    assert set(columns) == expected, f"Expected {expected}, got {set(columns)}"
+    _assert_empty_stop_df(
+        empty_df,
+        ['timestamp', 'duration', 'end_timestamp', 'n_pings', 'max_gap', 'location_id'],
+        {
+            'timestamp': 'Int64',
+            'duration': 'Int64',
+            'end_timestamp': 'Int64',
+            'n_pings': 'Int64',
+            'max_gap': 'Int64',
+            'location_id': 'string',
+        },
+    )
 
 
-def test_get_empty_stop_columns_grid_based_with_geometry():
-    """Test _get_empty_stop_columns for grid-based with geometry."""
+def test_get_empty_stop_df_grid_based_with_geometry():
+    """Test _get_empty_stop_df for grid-based with geometry."""
     import nomad.stop_detection.utils as utils
     
     input_columns = ['timestamp', 'location_id', 'geometry']
-    columns = utils._get_empty_stop_columns(
+    empty_df = utils._get_empty_stop_df(
         input_columns,
         complete_output=False,
         passthrough_cols=[],
@@ -158,17 +244,24 @@ def test_get_empty_stop_columns_grid_based_with_geometry():
         is_grid_based=True
     )
     
-    # Should include geometry column
-    expected = {'timestamp', 'duration', 'location_id', 'geometry'}
-    assert set(columns) == expected, f"Expected {expected}, got {set(columns)}"
+    _assert_empty_stop_df(
+        empty_df,
+        ['timestamp', 'duration', 'location_id', 'geometry'],
+        {
+            'timestamp': 'Int64',
+            'duration': 'Int64',
+            'location_id': 'string',
+            'geometry': 'object',
+        },
+    )
 
 
-def test_get_empty_stop_columns_keep_col_names_false():
-    """Test _get_empty_stop_columns with keep_col_names=False."""
+def test_get_empty_stop_df_keep_col_names_false():
+    """Test _get_empty_stop_df with keep_col_names=False."""
     import nomad.stop_detection.utils as utils
     
     input_columns = ['timestamp', 'longitude', 'latitude']
-    columns = utils._get_empty_stop_columns(
+    empty_df = utils._get_empty_stop_df(
         input_columns,
         complete_output=False,
         passthrough_cols=[],
@@ -177,46 +270,57 @@ def test_get_empty_stop_columns_keep_col_names_false():
         is_grid_based=False
     )
     
-    # Should use default schema column names
-    expected = ['longitude', 'latitude', 'start_timestamp', 'duration']
-    assert columns == expected, f"Expected {expected}, got {columns}"
+    _assert_empty_stop_df(
+        empty_df,
+        ['longitude', 'latitude', 'start_timestamp', 'duration'],
+        {
+            'longitude': 'Float64',
+            'latitude': 'Float64',
+            'start_timestamp': 'Int64',
+            'duration': 'Int64',
+        },
+    )
 
 
-def test_get_empty_stop_columns_matches_actual_summarize():
-    """Test that _get_empty_stop_columns produces the same columns as actual summarize functions."""
+def test_get_empty_stop_df_matches_summarize_stop_schema_for_empty_and_clustered_input():
+    """Test that empty and clustered summarize_stop paths share the exact output columns."""
     import nomad.stop_detection.utils as utils
-    
-    # Create minimal test data
-    test_data = pd.DataFrame({
-        'timestamp': [1609459200],
-        'longitude': [0.0],
-        'latitude': [0.0],
-        'user_id': ['test_user']
-    })
-    
-    # Get columns from actual summarize_stop
-    actual_result = utils.summarize_stop(
-        test_data,
-        complete_output=True,
-        keep_col_names=True,
-        passthrough_cols=['user_id'],
-        traj_cols={'longitude': 'longitude', 'latitude': 'latitude', 'timestamp': 'timestamp'}
+
+    traj_cols = {
+        "timestamp": "timestamp",
+        "x": "x",
+        "y": "y",
+        "ha": "ha",
+    }
+    passthrough_cols = ["user_id"]
+    base = pd.DataFrame(
+        {
+            "timestamp": [0, 60, 120, 180, 240, 300, 360],
+            "x": [0.0, 0.1, 0.2, 0.25, 0.3, 5.0, 5.1],
+            "y": [0.0, 0.1, 0.2, 0.25, 0.3, 5.0, 5.1],
+            "ha": [10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0],
+            "user_id": ["test_user"] * 7,
+        }
     )
-    actual_columns = list(actual_result.index)
-    
-    # Get columns from _get_empty_stop_columns
-    predicted_columns = utils._get_empty_stop_columns(
-        test_data.columns,
+
+    empty_output = _summarize_stop_clusters(
+        utils,
+        base.assign(cluster=-1),
         complete_output=True,
-        passthrough_cols=['user_id'],
-        traj_cols={'longitude': 'longitude', 'latitude': 'latitude', 'timestamp': 'timestamp'},
-        keep_col_names=True,
-        is_grid_based=False
+        passthrough_cols=passthrough_cols,
+        traj_cols=traj_cols,
     )
-    
-    # Should match (order might differ, so sort both)
-    assert sorted(actual_columns) == sorted(predicted_columns), \
-        f"Actual columns {sorted(actual_columns)} don't match predicted {sorted(predicted_columns)}"
+    clustered_output = _summarize_stop_clusters(
+        utils,
+        base.assign(cluster=[-1, -1, 0, 0, 0, 1, 1]),
+        complete_output=True,
+        passthrough_cols=passthrough_cols,
+        traj_cols=traj_cols,
+    )
+
+    assert empty_output.empty
+    assert not clustered_output.empty
+    assert list(empty_output.columns) == list(clustered_output.columns)
 
 
 def test_has_overlapping_stops_timestamp_detects_overlap():

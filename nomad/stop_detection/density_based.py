@@ -25,7 +25,9 @@ def seqscan_labels(
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
          raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
     if data.empty:
-        return pd.DataFrame()
+        if return_cores:
+            return pd.DataFrame({name: pd.Series(dtype='int64') for name in ('cluster', 'core')})
+        return pd.Series(dtype='int64', name='cluster')
 
     if user_id is not None:
         data = data.loc[data["user_id"] == user_id].copy()
@@ -248,7 +250,7 @@ def seqscan(
     ValueError if multi-user data detected; use ta_dbscan_per_user instead.
     """
     if data.empty:
-        cols = utils._get_empty_stop_columns(
+        return utils._get_empty_stop_df(
             data.columns,
             complete_output,
             passthrough_cols,
@@ -257,7 +259,6 @@ def seqscan(
             is_grid_based=False,
             **kwargs,
         )
-        return pd.DataFrame(columns=cols, dtype=object)
 
     traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     if 'user_id' in traj_cols_temp and traj_cols_temp['user_id'] in data.columns:
@@ -266,7 +267,8 @@ def seqscan(
         first = arr[0]
         if any(x != first for x in arr[1:]):
             raise ValueError("Multi-user data? Use ta_dbscan_per_user instead.")
-        passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
+        if traj_cols_temp['user_id'] not in passthrough_cols:
+            passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
 
     labels = seqscan_labels(
         data=data,
@@ -284,12 +286,15 @@ def seqscan(
     merged = merged[merged.cluster != -1]
 
     if merged.empty:
-        # Get column names by calling summarize function on dummy data
-        cols = utils._get_empty_stop_columns(
-            data.columns, complete_output, passthrough_cols, traj_cols, 
-            keep_col_names=keep_col_names, is_grid_based=False, **kwargs
+        return utils._get_empty_stop_df(
+            data.columns,
+            complete_output,
+            passthrough_cols,
+            traj_cols,
+            keep_col_names=keep_col_names,
+            is_grid_based=False,
+            **kwargs,
         )
-        return pd.DataFrame(columns=cols, dtype=object)
 
     stop_table = merged.groupby('cluster', as_index=False, sort=False).apply(
         lambda grp: utils.summarize_stop(
@@ -301,6 +306,102 @@ def seqscan(
             **kwargs
         ),
         include_groups=False
-    )
+    ).reset_index(drop=True)
     return stop_table
+
+
+def seqscan_per_user(
+    data,
+    dist_thresh,
+    min_pts,
+    time_thresh,
+    dur_min=5,
+    complete_output=False,
+    passthrough_cols=[],
+    keep_col_names=True,
+    traj_cols=None,
+    n_jobs=1,
+    print_progress=False,
+    **kwargs
+):
+    """
+    Run seqscan on each user separately, then concatenate results.
+    Raises if 'user_id' not in traj_cols or missing from data.
+    """
+    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    if 'user_id' not in traj_cols_temp or traj_cols_temp['user_id'] not in data.columns:
+        raise ValueError("seqscan_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
+    uid = traj_cols_temp['user_id']
+
+    pt_cols = passthrough_cols if uid in passthrough_cols else passthrough_cols + [uid]
+
+    def process_user_group(group):
+        return seqscan(
+            data=group[1].reset_index(drop=True),
+            dist_thresh=dist_thresh,
+            min_pts=min_pts,
+            time_thresh=time_thresh,
+            dur_min=dur_min,
+            complete_output=complete_output,
+            passthrough_cols=pt_cols,
+            keep_col_names=keep_col_names,
+            traj_cols=traj_cols,
+            **kwargs,
+        )
+
+    grouped = data.groupby(uid, sort=False, as_index=False)
+    results = utils.applyParallel(
+        grouped,
+        process_user_group,
+        n_jobs=n_jobs,
+        print_progress=print_progress,
+    )
+    return pd.concat(results, ignore_index=True)
+
+
+def seqscan_labels_per_user(
+    data,
+    dist_thresh,
+    dur_min=5,
+    time_thresh=90,
+    min_pts=3,
+    return_cores=False,
+    traj_cols=None,
+    back_merge=False,
+    n_jobs=1,
+    print_progress=False,
+    **kwargs
+):
+    """
+    Run seqscan_labels on each user separately and concatenate labels.
+
+    Raises if 'user_id' not in traj_cols or missing from data.
+    """
+    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    if 'user_id' not in traj_cols_temp or traj_cols_temp['user_id'] not in data.columns:
+        raise ValueError("seqscan_labels_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
+    uid = traj_cols_temp['user_id']
+
+    def process_user_group(group):
+        return seqscan_labels(
+            data=group[1],
+            dist_thresh=dist_thresh,
+            dur_min=dur_min,
+            time_thresh=time_thresh,
+            min_pts=min_pts,
+            return_cores=return_cores,
+            traj_cols=traj_cols,
+            back_merge=back_merge,
+            **kwargs,
+        )
+
+    grouped = data.groupby(uid, sort=False)
+    results = utils.applyParallel(
+        grouped,
+        process_user_group,
+        n_jobs=n_jobs,
+        print_progress=print_progress,
+    )
+
+    return pd.concat(results).reindex(data.index)
 
