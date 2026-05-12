@@ -65,8 +65,8 @@ def _borders_from_cores(scale, core_set, core_distances, G, parent_borders=None)
     return result
 
 def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
-                      data, traj_cols, s_tree, node_times, dist_thresh,
-                      dur_min=5, min_pts=2):
+                      data, coord_col1, coord_col2, use_lon_lat, s_tree, node_times,
+                      dist_thresh, dur_min=5, min_pts=2):
     """
     Builds a cluster hierarchy from a pre-computed Minimum Spanning Tree.
 
@@ -95,8 +95,6 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
     tuple
         (label_history_df, hierarchy_df)
     """
-    _, coord_key1, coord_key2, _, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, {})
-
     hierarchy = []
     label_history = []
 
@@ -122,6 +120,48 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
     # fell inside that child's component.
     _cluster_border_map   = {0: set()}
     _cluster_birth_scale  = {0: np.inf}  # root has no meaningful birth scale
+
+    def _is_non_spurious(component_nodes, border_nodes=None):
+        if not component_nodes:
+            return False
+        border_nodes = set() if border_nodes is None else set(border_nodes)
+        span_nodes = set(component_nodes) | border_nodes
+        return (
+            (max(span_nodes) - min(span_nodes)) >= dur_min * 60
+            and len(component_nodes) >= min_cluster_size
+        )
+
+    initial_components = [set(component) for component in nx.connected_components(H)]
+    if len(initial_components) > 1:
+        new_ids = []
+        nodes_to_drop = set()
+        for component in initial_components:
+            core_nodes = {node for node in component if np.isfinite(core_distances.at[node])}
+            border_nodes = component - core_nodes
+            if _is_non_spurious(core_nodes, border_nodes):
+                child_id = current_label_id
+                current_label_id += 1
+                for node in component:
+                    H.nodes[node]['cluster_id'] = child_id
+                _cluster_birth_scale[child_id] = np.inf
+                _cluster_border_map[child_id] = set(border_nodes)
+                new_ids.append(child_id)
+            else:
+                nodes_to_drop.update(component)
+
+        if nodes_to_drop:
+            H.remove_nodes_from(nodes_to_drop)
+
+        if new_ids:
+            hierarchy.append((np.inf, 0, new_ids))
+
+        cluster_ids = pd.Series(nx.get_node_attributes(H, 'cluster_id'))
+        cluster_ids = cluster_ids.reindex(all_pings, fill_value=-1)
+        label_history.append(pd.DataFrame({
+            'time': cluster_ids.index,
+            'cluster_id': cluster_ids.values,
+            'dendogram_scale': np.inf,
+        }))
  
     # Iteratively process pruning events grouped by weight (scale)
     for scale, edges_to_remove in edges_sorted.groupby(edges_sorted, sort=False):
@@ -223,7 +263,7 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
                         # should already be easy to find? we already have sorted df and active id. 
                         # think about this - should future_pos just be the next_one
                         future_pos    = np.searchsorted(node_times, future_core)
-                        future_coords = data.iloc[future_pos][[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
+                        future_coords = data.iloc[future_pos][[coord_col1, coord_col2]].to_numpy()
 
                         denom = future_core - anchor
                         alpha = (check_time - anchor) / denom if denom != 0 else 0.0
@@ -266,7 +306,7 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
                         prev_prev_core, prev_prev_coords = prev_core, prev_coords
                         prev_core = curr_time
                         _pos = np.searchsorted(node_times, curr_time)
-                        prev_coords = data.iloc[_pos][[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
+                        prev_coords = data.iloc[_pos][[coord_col1, coord_col2]].to_numpy()
 
                     prev_temp_id = curr_temp_id
 
@@ -284,7 +324,7 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
                     comp_min = min(comp_min, min(border_nodes))
                     comp_max = max(comp_max, max(border_nodes))
 
-                if ((comp_max - comp_min) >= dur_min * 60) and (len(component_nodes) >= min_cluster_size):
+                if _is_non_spurious(component_nodes, border_nodes):
                     non_spurious.append(component_nodes)
                 else:
                     nodes_to_drop.update(component_nodes)
@@ -670,7 +710,9 @@ def hdbscan_labels(data,
         H=H,
         min_cluster_size=min_cluster_size,
         data=data,
-        traj_cols=traj_cols,
+        coord_col1=traj_cols[coord_key1],
+        coord_col2=traj_cols[coord_key2],
+        use_lon_lat=use_lon_lat,
         s_tree=s_tree,
         node_times=node_times,
         dist_thresh=dist_thresh,
