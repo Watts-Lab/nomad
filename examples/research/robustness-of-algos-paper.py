@@ -45,7 +45,8 @@ import nomad.filters as filters
 from nomad.traj_gen import Agent, Population
 from nomad.generation.sparsity import gen_params_target_q
 import nomad.generation.viz as viz
-from nomad.contact_estimation import overlapping_visits, compute_visitation_errors, compute_precision_recall_f1
+from nomad.contact_estimation import overlapping_visits, compute_precision_recall_f1
+from nomad.stop_detection.validation import compute_visitation_errors
 
 # %%
 # At some point, we should fix the warnings in the codebase, but for now we can ignore them.
