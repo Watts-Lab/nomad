@@ -115,13 +115,12 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
     current_label_id = 1
 
     # Per-cluster border state:
-    #   _cluster_border_map  : cluster_id -> set(border_ts) or None
-    #                          None means unrestricted (root); children get a flat set of border timestamps.
+    #   _cluster_border_map  : cluster_id -> set(border_ts)
     #   _cluster_birth_scale : cluster_id -> float (scale at which cluster was born)
     #
     # When a cluster splits, each child inherits only the borders whose nearest core
     # fell inside that child's component.
-    _cluster_border_map   = {0: None}    # None = unrestricted for root
+    _cluster_border_map   = {0: set()}
     _cluster_birth_scale  = {0: np.inf}  # root has no meaningful birth scale
  
     # Iteratively process pruning events grouped by weight (scale)
@@ -172,6 +171,8 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
 
         all_cores_at_scale = core_distances.index[core_distances <= scale]
         raw_at_scale = _borders_from_cores(scale, all_cores_at_scale, core_distances, G)
+        root_core_set = set(split_df.index[split_df['parent_id'] == 0])
+        _cluster_border_map[0] = set().union(*(raw_at_scale.get(ts, set()) for ts in root_core_set))
 
         for parent_id in split_df['parent_id'].unique():
             # once we have one parent id, subset to only the children of that parent
@@ -180,7 +181,7 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
             components = [set(grp.index) for _, grp in children_df.groupby('temp_id')]
 
             parent_core_set = set(children_df.index)
-            parent_borders = _cluster_border_map.get(parent_id, set())
+            parent_borders = _cluster_border_map[parent_id]
 
             # union of core timestamps and border timestamps for this parent cluster
             all_ts = sorted(parent_core_set | parent_borders)
@@ -312,13 +313,12 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
             # Each child inherits the subset of the parent's borders reachable from its core points,
             # equivalent to dbstop's _expand_active_cluster labeling non-core neighbors: the
             # non-core points that fall within a child's core neighborhood become that child's borders.
-            # If the parent has no borders, fall back to all raw neighbors (no basis to restrict).
             for component, child_id in zip(non_spurious, new_ids):
                 core_set = set(component)
                 child_borders = set()
                 for core_ts in core_set:
                     candidate = raw_at_scale.get(core_ts, set())
-                    child_borders.update(candidate & parent_borders if parent_borders else candidate)
+                    child_borders.update(candidate & parent_borders)
                 _cluster_birth_scale[child_id] = scale
                 _cluster_border_map[child_id] = child_borders
 
