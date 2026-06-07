@@ -3,6 +3,7 @@ import numpy as np
 from collections import defaultdict
 import networkx as nx
 import warnings
+from nomad import data
 import nomad.io.base as loader
 from nomad.stop_detection import utils
 from nomad.filters import to_timestamp
@@ -18,74 +19,54 @@ def _compute_core_distance(G, min_pts):
     core_distances = pd.Series(result)
     core_distances.index.name = 'time'
     return core_distances
-
-def _build_border_map(scale, core_distances, G):
+   
+# pass non core points of parent
+# each parent has some border points at any given time
+# upon splitting, might have new border points in the same way as dbstop, assigns labels of border points
+# once written as permanent labels in hierarchy, they can be used for stability calculation and logged to
+# then correspond to their own children, ensuring at each level, nodes are disjoint -- non-overlap 
+def _borders_from_cores(scale, core_set, core_distances, G, parent_borders=None):
     """
-    For a given threshold `scale`, assign each non-core point to its nearest
-    core neighbor (preceding or succeeding in time) within distance <= scale.
+    Assign each non-core node to its nearest core (by edge weight) within `scale`,
+    checking only the temporally adjacent predecessor and successor core.
+    Returns {core_ts: set(border_ts)}.
 
-    Parameters
-    ----------
-    scale : float
-        Distance threshold at this dendogram level.
-    core_distances : pd.Series
-        Indexed by timestamp; contains each point's "core distance."
-        Must be sorted by index (timestamp).
-    G : nx.Graph
-        Weighted graph of distances between temporally-close points.
-
-    Returns
-    -------
-    defaultdict(set)
-        Mapping {core_ts: set(border_ts, ...)} of border points for each core.
+    parent_borders : set or None
+        If provided, only these timestamps are considered as candidate border points.
+        None means unrestricted (all non-core points at this scale are candidates).
     """
-    # Identify which timestamps are core vs border
-    is_core = core_distances <= scale
-    cores   = core_distances.index[is_core].to_numpy()
-    borders = core_distances.index[~is_core].to_numpy()
-    
-    if cores.size == 0 or borders.size == 0:
-        return defaultdict(set)
-    
-    # Locate insertion points of each border among cores
-    succ_pos = np.searchsorted(cores, borders, side="left")
-    pred_pos = succ_pos - 1
-    
-    # Build pairs (border, candidate_core) for existing neighbors
-    pairs = []
-    # predecessor candidates
-    valid_pred = pred_pos >= 0
-    for b, p in zip(borders[valid_pred], cores[pred_pos[valid_pred]]):
-        pairs.append((b, p))
-    # successor candidates
-    valid_succ = succ_pos < cores.size
-    for b, s in zip(borders[valid_succ], cores[succ_pos[valid_succ]]):
-        pairs.append((b, s))
+    cores = np.asarray(sorted(core_set))
+    if parent_borders is None:
+        border_ts = core_distances.index[core_distances > scale].to_numpy()
+    else:
+        border_ts = np.asarray(sorted(parent_borders))
 
-    rows = [
-        (b, c, G.edges[b, c]["weight"])
-        for b, c in pairs
-        if G.has_edge(b, c) and np.round(G.edges[b, c]["weight"] * 4) / 4 <= scale
-    ]
-
-    if not rows:
+    if cores.size == 0 or border_ts.size == 0:
         return defaultdict(set)
 
-    dists = pd.Series(
-        [w for _, _, w in rows],
-        index=pd.MultiIndex.from_tuples([(b, c) for b, c, _ in rows], names=["border", "core"]),
-        name="weight",
-    )
-    
-    # For each border, pick the core with minimal distance (ties break naturally)
-    best = dists.groupby(level="border").idxmin().values
-    core_to_border = defaultdict(set)
-    for border, core in best:
-        core_to_border[core].add(border)
-    
-    return core_to_border # return this but instead using something with input as G
+    border_to_best = {}
+    for b in border_ts:
+        pos = np.searchsorted(cores, b)
+        candidates = []
+        if pos > 0:
+            candidates.append(cores[pos - 1])
+        if pos < cores.size:
+            candidates.append(cores[pos])
+        for c in candidates:
+            if not G.has_edge(b, c):
+                continue
+            w = np.round(G.edges[b, c]['weight'] * 4) / 4
+            if w <= scale and (b not in border_to_best or w < border_to_best[b][1]):
+                border_to_best[b] = (c, w)
 
-def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size, dur_min=5):
+    result = defaultdict(set)
+    for b, (c, _) in border_to_best.items():
+        result[c].add(b)
+    return result
+
+def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
+                      data, coord_col1, coord_col2, use_lon_lat, s_tree, node_times,
+                      dist_thresh, dur_min=5, min_pts=2):
     """
     Builds a cluster hierarchy from a pre-computed Minimum Spanning Tree.
 
@@ -131,6 +112,57 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size, dur_
 
     current_label_id = 1
 
+    # Per-cluster border state:
+    #   _cluster_border_map  : cluster_id -> set(border_ts)
+    #   _cluster_birth_scale : cluster_id -> float (scale at which cluster was born)
+    #
+    # When a cluster splits, each child inherits only the borders whose nearest core
+    # fell inside that child's component.
+    _cluster_border_map   = {0: set()}
+    _cluster_birth_scale  = {0: np.inf}  # root has no meaningful birth scale
+
+    def _is_non_spurious(component_nodes, border_nodes=None):
+        if not component_nodes:
+            return False
+        border_nodes = set() if border_nodes is None else set(border_nodes)
+        span_nodes = set(component_nodes) | border_nodes
+        return (
+            (max(span_nodes) - min(span_nodes)) >= dur_min * 60
+            and len(component_nodes) >= min_cluster_size
+        )
+
+    initial_components = [set(component) for component in nx.connected_components(H)]
+    if len(initial_components) > 1:
+        new_ids = []
+        nodes_to_drop = set()
+        for component in initial_components:
+            core_nodes = {node for node in component if np.isfinite(core_distances.at[node])}
+            border_nodes = component - core_nodes
+            if _is_non_spurious(core_nodes, border_nodes):
+                child_id = current_label_id
+                current_label_id += 1
+                for node in component:
+                    H.nodes[node]['cluster_id'] = child_id
+                _cluster_birth_scale[child_id] = np.inf
+                _cluster_border_map[child_id] = set(border_nodes)
+                new_ids.append(child_id)
+            else:
+                nodes_to_drop.update(component)
+
+        if nodes_to_drop:
+            H.remove_nodes_from(nodes_to_drop)
+
+        if new_ids:
+            hierarchy.append((np.inf, 0, new_ids))
+
+        cluster_ids = pd.Series(nx.get_node_attributes(H, 'cluster_id'))
+        cluster_ids = cluster_ids.reindex(all_pings, fill_value=-1)
+        label_history.append(pd.DataFrame({
+            'time': cluster_ids.index,
+            'cluster_id': cluster_ids.values,
+            'dendogram_scale': np.inf,
+        }))
+ 
     # Iteratively process pruning events grouped by weight (scale)
     for scale, edges_to_remove in edges_sorted.groupby(edges_sorted, sort=False):
         edges_batch = list(edges_to_remove.index)
@@ -140,10 +172,14 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size, dur_
 
         # Remove both regular edges and self-loops at this scale.
         H.remove_edges_from(edges_batch)
+        # Remove edges, everything has temp_cluster_id of -1
         nx.set_node_attributes(H, -1, 'temp_cluster_id')
 
-        components_by_parent = defaultdict(list)
+        _split_entries = {}
+        _parent_comp_count = defaultdict(int)
 
+        # Assigns a temp_id from 0 to k for each component, where k is the number of children of a single parent_id
+        # Drops non-cores
         for seed in event_nodes:
             if not H.has_node(seed):
                 continue
@@ -153,35 +189,134 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size, dur_
 
             parent_id = H.nodes[seed]['cluster_id']
             component_nodes = nx.node_connected_component(H, seed)
-            
+
             if len(component_nodes) == 1:
                 node = next(iter(component_nodes))
                 if not H.has_edge(node, node):
                     H.remove_node(node)
                     continue
 
-            temp_id = len(components_by_parent[parent_id])
+            temp_id = _parent_comp_count[parent_id]
+            # default dict guards against missing keys, so this is safe even if parent_id is new (defaults to 0).
+            _parent_comp_count[parent_id] += 1
             for node in component_nodes:
                 H.nodes[node]['temp_cluster_id'] = temp_id
+                _split_entries[node] = (parent_id, temp_id)
 
-            components_by_parent[parent_id].append(component_nodes)
+        # split_df: DataFrame indexed by sorted timestamp, columns = (parent_id, temp_id).
+        # parent_id identifies the cluster being split; temp_id identifies which sub-component the node belongs to.
+        split_df = pd.DataFrame.from_dict(
+            _split_entries, orient='index', columns=['parent_id', 'temp_id']
+        ).sort_index()
 
-        border_map = _build_border_map(scale, core_distances, G)
+        all_cores_at_scale = core_distances.index[core_distances <= scale]
+        raw_at_scale = _borders_from_cores(scale, all_cores_at_scale, core_distances, G)
+        root_core_set = set(split_df.index[split_df['parent_id'] == 0])
+        _cluster_border_map[0] = set().union(*(raw_at_scale.get(ts, set()) for ts in root_core_set))
 
-        for parent_id, components in components_by_parent.items():
+        for parent_id in split_df['parent_id'].unique():
+            # once we have one parent id, subset to only the children of that parent
+            # then do the remove overlaps logic only with sorted timestamps and temporary label and neighbors
+            children_df = split_df[split_df['parent_id'] == parent_id]
+            components = [set(grp.index) for _, grp in children_df.groupby('temp_id')]
+
+            parent_core_set = set(children_df.index)
+            parent_borders = _cluster_border_map[parent_id]
+
+            # union of core timestamps and border timestamps for this parent cluster
+            all_ts = sorted(parent_core_set | parent_borders)
+
+            # initialize to -1
+            cluster_df = pd.Series(-1, index=all_ts, name='cluster')
+            cluster_df.loc[children_df.index] = parent_id
+
             if len(components) >= 2:
-                # This is where removal of temporal overlaps will happen.
-                # Future pass will process this parent's children together with
-                # the parent's non-core neighbors from border_map.
-                pass
+                # Iterate chronologically; 'active_temp_id' is the current main thread.
+                # The check fires on the first step away from the active component
+                # (prev_temp_id == active but curr_temp_id != active).
+                # Separating "decide" (top if) from "advance window" (bottom if) avoids
+                # duplicating the coordinate update in both the normal and switch branches.
+                active_temp_id = children_df.iloc[0]['temp_id']
+                prev_core = None; prev_coords = None
+                # prev_prev is needed because prev_core == check_time (the point under evaluation).
+                # Using check_time as the interpolation anchor would make alpha=0 and collapse the
+                # counterfactual to the actual position, making the test trivially pass every time.
+                # prev_prev_core is the preceding active-cluster core point, giving a real anchor.
+                prev_prev_core = None; prev_prev_coords = None
+                prev_temp_id = None
+
+                for curr_time in children_df.index:
+                    curr_temp_id = children_df.at[curr_time, 'temp_id']
+
+                    if curr_temp_id != active_temp_id and prev_temp_id == active_temp_id:
+                        # First step away from active: evaluate the transition.
+                        check_time  = prev_core
+                        future_core = curr_time
+
+                        # now we're confident that everything in children_df is a core point - no need to do checks
+
+                        core_time_range = sorted(abs(nb - check_time) for nb in G[check_time])[min_pts - 1]
+
+                        anchor        = prev_prev_core   if prev_prev_core   is not None else check_time
+                        anchor_coords = prev_prev_coords if prev_prev_coords is not None else prev_coords
+
+                        # should already be easy to find? we already have sorted df and active id. 
+                        # think about this - should future_pos just be the next_one
+                        future_pos    = np.searchsorted(node_times, future_core)
+                        future_coords = data.iloc[future_pos][[coord_col1, coord_col2]].to_numpy()
+
+                        denom = future_core - anchor
+                        alpha = (check_time - anchor) / denom if denom != 0 else 0.0
+                        counterfactual_coords = anchor_coords + alpha * (future_coords - anchor_coords)
+
+                        if dist_thresh is None:
+                            new_active_cluster = False
+                        else:
+                            if use_lon_lat:
+                                spatial_nb_idx = s_tree.query_radius(
+                                    # _find_neighbors builds BallTree in [lat, lon] radians.
+                                    np.radians(counterfactual_coords[[1, 0]]).reshape(1, -1),
+                                    r=dist_thresh / 6_371_000,
+                                )[0]
+                            else:
+                                spatial_nb_idx = s_tree.query_radius(
+                                    np.asarray(counterfactual_coords).reshape(1, -1),
+                                    r=dist_thresh,
+                                )[0]
+
+                            if len(spatial_nb_idx) >= min_pts:
+                                counterfactual_time_range = np.sort(np.abs(node_times[spatial_nb_idx] - check_time))[min_pts - 1]
+                                new_active_cluster = (core_time_range <= counterfactual_time_range)
+                            else:
+                                new_active_cluster = False
+
+                        if not new_active_cluster:
+                            # is split_df the equivalent to core_df?
+                            # do we drop from H?
+                            split_df.at[check_time, 'parent_id'] = -1
+                            cluster_df.at[check_time] = -1
+                        else:
+                            # No explicit expand needed: all core points in children_df are already
+                            # labeled parent_id (set before this loop), and border points are
+                            # assigned in the post-loop block below. Switching active_temp_id is
+                            # the only action required, equivalent to incrementing active_cid in dbstop.
+                            active_temp_id = curr_temp_id
+
+                    if curr_temp_id == active_temp_id:
+                        prev_prev_core, prev_prev_coords = prev_core, prev_coords
+                        prev_core = curr_time
+                        _pos = np.searchsorted(node_times, curr_time)
+                        prev_coords = data.iloc[_pos][[coord_col1, coord_col2]].to_numpy()
+
+                    prev_temp_id = curr_temp_id
 
             non_spurious = []
             nodes_to_drop = set()
 
             for component_nodes in components:
                 border_nodes = set()
-                for ts in component_nodes:
-                    border_nodes.update(border_map.get(ts, ()))
+                for core_ts in component_nodes:
+                    border_nodes.update(raw_at_scale.get(core_ts, set()))
 
                 comp_min = min(component_nodes)
                 comp_max = max(component_nodes)
@@ -189,7 +324,7 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size, dur_
                     comp_min = min(comp_min, min(border_nodes))
                     comp_max = max(comp_max, max(border_nodes))
 
-                if ((comp_max - comp_min) >= dur_min * 60) and (len(component_nodes) >= min_cluster_size):
+                if _is_non_spurious(component_nodes, border_nodes):
                     non_spurious.append(component_nodes)
                 else:
                     nodes_to_drop.update(component_nodes)
@@ -204,6 +339,7 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size, dur_
                 # Remaining child already has parent_id.
                 continue
 
+            # around here, we are querying cluster_df and change to new labels
             new_ids = []
             for component in non_spurious:
                 for node in component:
@@ -212,6 +348,19 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size, dur_
 
                 new_ids.append(current_label_id)
                 current_label_id += 1
+            
+            # Partition the parent's border set among the newly minted children.
+            # Each child inherits the subset of the parent's borders reachable from its core points,
+            # equivalent to dbstop's _expand_active_cluster labeling non-core neighbors: the
+            # non-core points that fall within a child's core neighborhood become that child's borders.
+            for component, child_id in zip(non_spurious, new_ids):
+                core_set = set(component)
+                child_borders = set()
+                for core_ts in core_set:
+                    candidate = raw_at_scale.get(core_ts, set())
+                    child_borders.update(candidate & parent_borders)
+                _cluster_birth_scale[child_id] = scale
+                _cluster_border_map[child_id] = child_borders
 
             hierarchy.append((scale, parent_id, new_ids))
 
@@ -310,23 +459,27 @@ def compute_cluster_stability(label_history_df, cdf_function=_base_cdf):
     # This allows us to detect when a point "exits" a cluster.
     df['next_cluster_id'] = df.groupby('time')['cluster_id'].shift(-1)
     
-    # 5. An exit occurs where the cluster_id changes.
-    # The 'eps_min' for that point-cluster pair is the scale at which it was last seen.
-    # When a point drops out of all clusters, its next_cluster_id is NaN.
-    exit_events = df[df['cluster_id'] != df['next_cluster_id']].copy()
+    # 5. An exit occurs where the cluster_id changes to a different *valid* cluster.
+    # Excluding NaN next_cluster_id here prevents double-counting with never_exited below:
+    # pandas treats (x != NaN) as True, so without the notna() guard, points that drop to
+    # noise would appear in both exit_events and never_exited.
+    exit_events = df[
+        (df['cluster_id'] != df['next_cluster_id']) & df['next_cluster_id'].notna()
+    ].copy()
     exit_events.rename(columns={'dendogram_scale': 'eps_min'}, inplace=True)
     
-    # 6. For points that never exit a cluster (i.e., stay in it until the MST is one component),
-    # their eps_min is effectively infinite. They contribute to stability until the end.
-    # We find these by identifying the last known state for each point.
+    # 6. For points that never exit a cluster, eps_min is the last scale at which they appear
+    # (the smallest scale the cluster reached). Using inf would make cdf(inf)=1 and give a
+    # negative stability term, incorrectly penalising persistent points.
     last_state = df.drop_duplicates(subset='time', keep='last')
-    # Filter for those that were not already marked as an exit event (i.e., next_cluster_id was NaN)
     never_exited = last_state[last_state['next_cluster_id'].isna()]
-    
+
     # Combine the two types of stability events
     stability_points = pd.concat([
         exit_events[['time', 'cluster_id', 'eps_min', 'eps_max']],
-        never_exited[['time', 'cluster_id', 'dendogram_scale', 'eps_max']].assign(eps_min=np.inf)
+        never_exited[['time', 'cluster_id', 'dendogram_scale', 'eps_max']].rename(
+            columns={'dendogram_scale': 'eps_min'}
+        ),
     ])
     
     # 7. Apply the provided CDF to calculate the stability contribution of each point.
@@ -491,6 +644,7 @@ def hdbscan_labels(data,
                    min_cluster_size = 1,
                    dur_min=5,
                    delta_roam=None,
+                   dist_thresh=None,
                    traj_cols=None, **kwargs):
     """
     Compute HDBSCAN cluster labels for trajectory data, with core/border assignment.
@@ -540,15 +694,10 @@ def hdbscan_labels(data,
     loader._has_spatial_cols(data.columns, traj_cols)
     loader._has_time_cols(data.columns, traj_cols)
 
-    G = _find_neighbors(data, time_thresh, traj_cols, dist_thresh=None,
+    G, t_tree, s_tree = _find_neighbors(data, time_thresh, traj_cols, dist_thresh,
                     weighted=True, use_datetime=use_datetime, use_lon_lat=use_lon_lat,
-                    return_trees=False, relabel_nodes=True)
-    
-    # neighbors = {node: set(G.neighbors(node)) for node in G.nodes()}
-    # time_pairs, times = _find_temp_neighbors(data[traj_cols[t_key]], time_thresh, use_datetime)
-    # neighbors = _build_neighbor_graph(time_pairs, times)
-    # ts_idx = {ts: i for i, ts in enumerate(times)}
-    # core_distances, coords = _compute_core_distance(data, time_pairs, times, use_lon_lat, traj_cols, min_pts)
+                    return_trees=True, relabel_nodes=True)
+    node_times = np.asarray(list(G), dtype=np.float64)
 
     core_distances = _compute_core_distance(G, min_pts)
 
@@ -560,6 +709,13 @@ def hdbscan_labels(data,
         G=G,
         H=H,
         min_cluster_size=min_cluster_size,
+        data=data,
+        coord_col1=traj_cols[coord_key1],
+        coord_col2=traj_cols[coord_key2],
+        use_lon_lat=use_lon_lat,
+        s_tree=s_tree,
+        node_times=node_times,
+        dist_thresh=dist_thresh,
         dur_min=dur_min,
     )
 
@@ -593,20 +749,14 @@ def hdbscan_labels(data,
         # Exclude points already claimed by a denser cluster (should be rare for cores, but good practice)
         unclaimed_cores = core_members - claimed_points
 
-        include_border_points = True
-        if include_border_points:
-            # 2. Find border points for these unclaimed cores at this scale
-            border_map = _build_border_map(scale, core_distances, G)
-            potential_borders = set().union(*(border_map.get(ts, set()) for ts in unclaimed_cores))
-            
-            # Assign only unclaimed border points
-            unclaimed_borders = potential_borders - claimed_points
-            
-            # 3. Assign labels and update claimed set
-            all_new_members = unclaimed_cores.union(unclaimed_borders)
-        else:
-            # just the core points
-            all_new_members = unclaimed_cores
+        # 2. Find border points for these unclaimed cores at this scale
+        all_cores_at_scale = core_distances.index[core_distances <= scale]
+        border_map = _borders_from_cores(scale, all_cores_at_scale, core_distances, G)
+        potential_borders = set().union(*(border_map.get(ts, set()) for ts in unclaimed_cores))
+        unclaimed_borders = potential_borders - claimed_points
+
+        # 3. Assign labels and update claimed set
+        all_new_members = unclaimed_cores.union(unclaimed_borders)
         
         if all_new_members:
             final_labels.loc[list(all_new_members)] = cid
