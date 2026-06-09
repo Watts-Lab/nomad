@@ -41,6 +41,7 @@ Installation
    :caption: User Guide
    :hidden:
 
+   getting_started
    data_ingestion
    filtering
    tessellation

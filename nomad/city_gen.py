@@ -93,18 +93,6 @@ class City:
     gravity : pandas.DataFrame
         A DataFrame containing the gravity values between all pairs of streets.
 
-    Methods
-    -------
-    add_building
-        Adds a building to the city.
-    get_block
-        Returns the block (Street or Building) at the given coordinates.
-    get_street_graph
-        Constructs the graph of streets and calculates the shortest paths between all pairs of streets.
-    save
-        Saves the city object to a file.
-    plot_city
-        Plots the city on a given matplotlib axis.
     """
 
     def __init__(self,
@@ -667,12 +655,16 @@ class City:
         
         Notes
         -----
-        Hub mode approximates: dist(i,j) ≈ manhattan(door_i, hub_i) + graph(hub_i, hub_j) + manhattan(hub_j, door_j)
-        True mode computes: dist(i,j) = shortest_path_length(door_i, door_j) on street graph
+        Hub mode approximates ``dist(i, j)`` as the distance from
+        ``door_i`` to ``hub_i``, plus the graph distance from ``hub_i`` to
+        ``hub_j``, plus the distance from ``hub_j`` to ``door_j``.
+        True mode computes ``shortest_path_length(door_i, door_j)`` on the
+        street graph.
         
         Stores result in self.grav as DataFrame (callable_only=False) or callable (callable_only=True)
         
         Persistence:
+
         - Hub mode (use_proxy_hub_distance=True): Gravity infrastructure is saved by 
           save_geopackage() and restored by from_geopackage(load_gravity=True). The 
           city.grav callable works immediately after loading.

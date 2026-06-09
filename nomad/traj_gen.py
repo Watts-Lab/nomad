@@ -75,10 +75,12 @@ def sample_bursts_gaps(traj,
         scale parameter (mean) of Exponential distribution modeling ping inter-arrival times
         within a burst, where 1/beta_ping is the rate of events (pings) per minute.
     ha: float
-        Mean horizontal-accuracy radius *in 15 m blocks*. The actual per-ping accuracy is random: ha ≥ 8 m/15m
-        and follows a Pareto distribution with that mean. For each ping the spatial noise (ε_x, ε_y) is drawn
-        i.i.d. N(0, σ²) with σ = HA / 1.515 so that |ε| ≤ HA with 68 % probability.
-    seed : int0
+        Mean horizontal-accuracy radius in 15 m blocks. The actual per-ping
+        accuracy is random: ha >= 8 m / 15 m and follows a Pareto distribution
+        with that mean. For each ping the spatial noise (epsilon_x, epsilon_y)
+        is drawn i.i.d. from N(0, sigma^2), with sigma = HA / 1.515 so that
+        abs(epsilon) <= HA with 68 percent probability.
+    seed : int
         The seed for random number generation.
     output_bursts : bool
         If True, outputs the latent variables on when bursts start and end.
@@ -150,12 +152,6 @@ class Agent:
     dt : float
         Time step duration.
 
-    Methods
-    -------
-    plot_traj
-        Plots the trajectory of the agent on the given axis.
-    sample_traj_hier_nhpp
-        Samples a sparse trajectory using a hierarchical non-homogeneous Poisson process.
     """
 
     def __init__(self, 
@@ -1320,6 +1316,8 @@ class Population:
     
         Parameters
         ----------
+        traj_cols : dict, optional
+            Column mapping used to normalize trajectory data before writing.
         sparse_path : str or Path, optional
             Destination path for sparse trajectories.
         full_path : str or Path, optional
@@ -1330,9 +1328,15 @@ class Population:
             Destination path for diaries.
         dest_diaries_path : str or Path, optional
             Destination path for destination diaries.
-        partition_cols : list of partition column names.
+        partition_cols : list of str, optional
+            Column names used to partition written datasets.
+        mixed_timezone_behavior : str, optional
+            Behavior passed to ``nomad.io.base.from_df`` for mixed timezone
+            columns.
         filesystem : pyarrow.fs.FileSystem or None
             Optional filesystem object (e.g., s3fs.S3FileSystem). If None, inferred automatically.
+        fmt : str, optional
+            File format to write.
         **kwargs : dict, optional
             Additional static columns to include in the homes table. Each key-value pair
             represents a column name and its values. Values must be a list/array of length N
