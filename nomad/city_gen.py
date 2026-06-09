@@ -1582,7 +1582,7 @@ class City:
             # Dict mode: lookup precomputed path
             if start_coord not in self.shortest_paths:
                 raise ValueError(f"Start coordinate {start_coord} is not in precomputed shortest path graph.")
-            if start_coord not in self.shortest_paths:
+            if end_coord not in self.shortest_paths[start_coord]:
                 raise ValueError(f"End coordinate {end_coord} is not among shortest paths from {start_coord}.")
             path = self.shortest_paths[start_coord][end_coord]
 
