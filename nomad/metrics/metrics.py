@@ -51,6 +51,95 @@ def _centroid(coords, metric='euclidean', weight=None):
     else:
         return np.sum(coords * weight[:, None], axis=0)
 
+
+def _as_group_cols(by):
+    if by is None:
+        return []
+    if isinstance(by, str):
+        return [by]
+    return list(by)
+
+
+def social_interaction_potential(
+    contacts,
+    by=None,
+    group_col=None,
+    weight_col=None,
+    user_id_cols=("user_id_1", "user_id_2"),
+):
+    """
+    Aggregate undirected contact events into user-level SIP.
+
+    Each contact contributes its weight to both users. If ``weight_col`` is not
+    supplied, the function uses ``contact_weight`` when present and otherwise
+    falls back to ``overlap_duration``. ``by`` is an optional column or list of
+    columns to include in the aggregation.
+    """
+    by_cols = _as_group_cols(by)
+    if len(user_id_cols) != 2:
+        raise ValueError("user_id_cols must contain exactly two column names.")
+
+    user_1_col, user_2_col = user_id_cols
+    if weight_col is None:
+        if "contact_weight" in contacts.columns:
+            weight_col = "contact_weight"
+        elif "overlap_duration" in contacts.columns:
+            weight_col = "overlap_duration"
+        else:
+            raise ValueError(
+                "Could not infer a weight column. Provide weight_col or include "
+                "'contact_weight' or 'overlap_duration'."
+            )
+
+    required_cols = by_cols + [user_1_col, user_2_col, weight_col]
+    group_1_col = None
+    group_2_col = None
+    if group_col is not None:
+        group_1_col = f"{group_col}_1"
+        group_2_col = f"{group_col}_2"
+        required_cols.extend([group_1_col, group_2_col])
+
+    missing = [col for col in required_cols if col not in contacts.columns]
+    if missing:
+        raise ValueError(f"Missing required contact columns: {missing}")
+
+    output_cols = by_cols + ["user_id", "sip"]
+    if group_col is not None:
+        output_cols.extend(["sip_self", "sip_pct"])
+    if len(contacts) == 0:
+        return pd.DataFrame(columns=output_cols)
+
+    left = contacts[by_cols + [user_1_col, weight_col]].copy()
+    left.rename(columns={user_1_col: "user_id", weight_col: "sip"}, inplace=True)
+
+    right = contacts[by_cols + [user_2_col, weight_col]].copy()
+    right.rename(columns={user_2_col: "user_id", weight_col: "sip"}, inplace=True)
+
+    sum_cols = ["sip"]
+    if group_col is not None:
+        same_group = contacts[group_1_col].eq(contacts[group_2_col]).fillna(False)
+        self_weight = contacts[weight_col].where(same_group, 0).to_numpy()
+        left["sip_self"] = self_weight
+        right["sip_self"] = self_weight
+        sum_cols.append("sip_self")
+
+    long_contacts = pd.concat([left, right], ignore_index=True)
+    result = (
+        long_contacts.groupby(by_cols + ["user_id"], dropna=False)[sum_cols]
+        .sum()
+        .reset_index()
+    )
+
+    if group_col is not None:
+        result["sip_pct"] = np.where(
+            result["sip"] != 0,
+            result["sip_self"] / result["sip"],
+            np.nan,
+        )
+
+    return result[output_cols]
+
+
 def rog(stops, agg_freq='d', weighted=True, traj_cols=None, time_weights=None, exploded=True, **kwargs):
     """
     if weighted AND time_weights, then
