@@ -1,11 +1,26 @@
 import pytest
 import pandas as pd
 import numpy as np
-from nomad.metrics.metrics import rog, self_containment
+from nomad.metrics.metrics import rog, self_containment, social_interaction_potential
 from pathlib import Path
 from nomad.io import base as loader
 from nomad.stop_detection import lachesis as LACHESIS
 import nomad.stop_detection.utils as utils
+
+
+def test_social_interaction_potential_credits_both_users():
+    contacts = pd.DataFrame(
+        {
+            "user_id_1": ["a", "b"],
+            "user_id_2": ["b", "c"],
+            "contact_weight": [2, 3],
+        }
+    )
+
+    sip = social_interaction_potential(contacts).set_index("user_id")["sip"]
+
+    assert sip.to_dict() == {"a": 2, "b": 5, "c": 3}
+
 
 @pytest.fixture
 def agent_traj_ground_truth():
