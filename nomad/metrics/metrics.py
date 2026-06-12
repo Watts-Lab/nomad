@@ -74,6 +74,31 @@ def social_interaction_potential(
     supplied, the function uses ``contact_weight`` when present and otherwise
     falls back to ``overlap_duration``. ``by`` is an optional column or list of
     columns to include in the aggregation.
+
+    Parameters
+    ----------
+    contacts : pandas.DataFrame
+        Contact event table with one row per undirected contact. By default,
+        the function expects ``user_id_1`` and ``user_id_2`` columns and either
+        ``contact_weight`` or ``overlap_duration``.
+    by : str or list of str, optional
+        Additional column(s) to include in the grouping, such as a date or
+        neighborhood column already present in ``contacts``.
+    group_col : str, optional
+        Base name for same-group SIP columns. If supplied, ``contacts`` must
+        contain ``f"{group_col}_1"`` and ``f"{group_col}_2"``.
+    weight_col : str, optional
+        Column to sum as SIP. Defaults to ``contact_weight`` if present, then
+        ``overlap_duration``.
+    user_id_cols : tuple of str, optional
+        Two columns identifying the users on either side of each contact row.
+
+    Returns
+    -------
+    pandas.DataFrame
+        User-level SIP table with columns ``user_id`` and ``sip`` plus any
+        ``by`` columns. If ``group_col`` is supplied, also returns
+        ``sip_self`` and ``sip_pct``.
     """
     by_cols = _as_group_cols(by)
     if len(user_id_cols) != 2:

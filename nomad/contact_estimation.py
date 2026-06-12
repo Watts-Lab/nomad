@@ -17,6 +17,7 @@ _TEMP_END = "_nomad_end"
 
 
 def _empty_contacts(mode):
+    """Return an empty contact table with the expected columns for a mode."""
     columns = [
         "user_id_1",
         "user_id_2",
@@ -34,6 +35,7 @@ def _empty_contacts(mode):
 
 
 def _to_seconds(values, use_datetime):
+    """Convert datetime-like values or numeric timestamps into seconds."""
     if use_datetime or pd.api.types.is_datetime64_any_dtype(values):
         seconds = filters.to_timestamp(values)
     else:
@@ -46,6 +48,7 @@ def _to_seconds(values, use_datetime):
 
 
 def _prepare_contact_stops(stops, traj_cols, kwargs):
+    """Parse NOMAD column mappings and add internal start/end seconds columns."""
     input_traj_cols = traj_cols
     traj_cols = loader._parse_traj_cols(stops.columns, traj_cols, kwargs)
 
@@ -69,6 +72,7 @@ def _prepare_contact_stops(stops, traj_cols, kwargs):
     if normalized[uid_col].isna().any():
         raise ValueError("The user_id column cannot contain missing values.")
 
+    # Stop provenance and row positions.
     normalized[_STOP_ID] = stops.index.to_numpy()
     normalized[_ROW] = np.arange(len(stops))
     normalized[_TEMP_START] = _to_seconds(normalized[start_col], use_datetime).to_numpy()
@@ -88,6 +92,7 @@ def _prepare_contact_stops(stops, traj_cols, kwargs):
 
 
 def _contact_time(seconds, use_datetime):
+    """Format contact interval endpoints to match datetime or timestamp inputs."""
     if use_datetime:
         return pd.to_datetime(seconds, unit="s")
 
@@ -98,6 +103,7 @@ def _contact_time(seconds, use_datetime):
 
 
 def _make_contacts(normalized, row, col, uid_col, use_datetime, mode, values=None):
+    """Build the public contact event table from paired stop row positions."""
     if len(row) == 0:
         return _empty_contacts(mode)
 
@@ -128,6 +134,7 @@ def _make_contacts(normalized, row, col, uid_col, use_datetime, mode, values=Non
 
 
 def _radius_candidates(normalized, traj_cols, input_traj_cols, kwargs, distance_threshold):
+    """Return stop row pairs within distance_threshold and their distances."""
     coord_key1, coord_key2, use_lon_lat = loader._fallback_spatial_cols(
         normalized.columns,
         input_traj_cols,
@@ -145,6 +152,7 @@ def _radius_candidates(normalized, traj_cols, input_traj_cols, kwargs, distance_
         raise ValueError("Spatial coordinate columns cannot contain missing values.")
 
     if use_lon_lat:
+        # Haversine uses radians.
         radius = distance_threshold / _EARTH_RADIUS_M
         query_coords = np.radians(coords.to_numpy())
         tree = BallTree(query_coords, metric="haversine")
@@ -163,6 +171,7 @@ def _radius_candidates(normalized, traj_cols, input_traj_cols, kwargs, distance_
     if counts.sum() == 0:
         return np.empty(0, dtype=int), np.empty(0, dtype=int), np.empty(0, dtype=float)
 
+    # Flatten neighbor lists.
     row = np.repeat(np.arange(len(normalized)), counts)
     col = np.concatenate(indices).astype(int)
     distance = np.concatenate(distances).astype(float)
@@ -207,6 +216,7 @@ def estimate_contacts(stops, distance_threshold=None, traj_cols=None, **kwargs):
         data = normalized.dropna(subset=[loc_col])
         cols = [uid_col, loc_col, _ROW, _TEMP_START, _TEMP_END]
         pairs = data[cols].merge(data[cols], on=loc_col, suffixes=("_1", "_2"))
+        # Final exact-contact filter.
         keep = (
             (pairs[f"{_ROW}_1"] < pairs[f"{_ROW}_2"])
             & (pairs[f"{uid_col}_1"] != pairs[f"{uid_col}_2"])
@@ -234,6 +244,7 @@ def estimate_contacts(stops, distance_threshold=None, traj_cols=None, **kwargs):
     users = normalized[uid_col].to_numpy()
     start = normalized[_TEMP_START].to_numpy()
     end = normalized[_TEMP_END].to_numpy()
+    # Final radius-contact filter.
     keep = (
         (users[row] != users[col])
         & (start[row] < end[col])
