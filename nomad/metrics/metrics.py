@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from nomad.contact_estimation import compute_contact_weights
 from nomad.constants import SEC_PER_UNIT
 from nomad.stop_detection import utils
 import nomad.io.base as loader
@@ -52,18 +53,8 @@ def _centroid(coords, metric='euclidean', weight=None):
         return np.sum(coords * weight[:, None], axis=0)
 
 
-def _as_group_cols(by):
-    if by is None:
-        return []
-    if isinstance(by, str):
-        return [by]
-    return list(by)
-
-
 def social_interaction_potential(
     contacts,
-    by=None,
-    group_col=None,
     weight_col=None,
     user_id_cols=("user_id_1", "user_id_2"),
 ):
@@ -72,8 +63,7 @@ def social_interaction_potential(
 
     Each contact contributes its weight to both users. If ``weight_col`` is not
     supplied, the function uses ``contact_weight`` when present and otherwise
-    falls back to ``overlap_duration``. ``by`` is an optional column or list of
-    columns to include in the aggregation.
+    computes duration weights from ``overlap_duration``.
 
     Parameters
     ----------
@@ -81,12 +71,6 @@ def social_interaction_potential(
         Contact event table with one row per undirected contact. By default,
         the function expects ``user_id_1`` and ``user_id_2`` columns and either
         ``contact_weight`` or ``overlap_duration``.
-    by : str or list of str, optional
-        Additional column(s) to include in the grouping, such as a date or
-        neighborhood column already present in ``contacts``.
-    group_col : str, optional
-        Base name for same-group SIP columns. If supplied, ``contacts`` must
-        contain ``f"{group_col}_1"`` and ``f"{group_col}_2"``.
     weight_col : str, optional
         Column to sum as SIP. Defaults to ``contact_weight`` if present, then
         ``overlap_duration``.
@@ -96,73 +80,39 @@ def social_interaction_potential(
     Returns
     -------
     pandas.DataFrame
-        User-level SIP table with columns ``user_id`` and ``sip`` plus any
-        ``by`` columns. If ``group_col`` is supplied, also returns
-        ``sip_self`` and ``sip_pct``.
+        User-level SIP table with columns ``user_id`` and ``sip``.
     """
-    by_cols = _as_group_cols(by)
     if len(user_id_cols) != 2:
         raise ValueError("user_id_cols must contain exactly two column names.")
 
     user_1_col, user_2_col = user_id_cols
-    if weight_col is None:
-        if "contact_weight" in contacts.columns:
-            weight_col = "contact_weight"
-        elif "overlap_duration" in contacts.columns:
-            weight_col = "overlap_duration"
-        else:
-            raise ValueError(
-                "Could not infer a weight column. Provide weight_col or include "
-                "'contact_weight' or 'overlap_duration'."
-            )
-
-    required_cols = by_cols + [user_1_col, user_2_col, weight_col]
-    group_1_col = None
-    group_2_col = None
-    if group_col is not None:
-        group_1_col = f"{group_col}_1"
-        group_2_col = f"{group_col}_2"
-        required_cols.extend([group_1_col, group_2_col])
-
-    missing = [col for col in required_cols if col not in contacts.columns]
+    missing = [col for col in user_id_cols if col not in contacts.columns]
+    if weight_col is not None and weight_col not in contacts.columns:
+        missing.append(weight_col)
     if missing:
         raise ValueError(f"Missing required contact columns: {missing}")
 
-    output_cols = by_cols + ["user_id", "sip"]
-    if group_col is not None:
-        output_cols.extend(["sip_self", "sip_pct"])
     if len(contacts) == 0:
-        return pd.DataFrame(columns=output_cols)
+        return pd.DataFrame(columns=["user_id", "sip"])
 
-    left = contacts[by_cols + [user_1_col, weight_col]].copy()
-    left.rename(columns={user_1_col: "user_id", weight_col: "sip"}, inplace=True)
+    if weight_col is None:
+        weights = (
+            contacts["contact_weight"]
+            if "contact_weight" in contacts.columns
+            else compute_contact_weights(contacts)
+        )
+    else:
+        weights = contacts[weight_col]
 
-    right = contacts[by_cols + [user_2_col, weight_col]].copy()
-    right.rename(columns={user_2_col: "user_id", weight_col: "sip"}, inplace=True)
-
-    sum_cols = ["sip"]
-    if group_col is not None:
-        same_group = contacts[group_1_col].eq(contacts[group_2_col]).fillna(False)
-        self_weight = contacts[weight_col].where(same_group, 0).to_numpy()
-        left["sip_self"] = self_weight
-        right["sip_self"] = self_weight
-        sum_cols.append("sip_self")
-
-    long_contacts = pd.concat([left, right], ignore_index=True)
-    result = (
-        long_contacts.groupby(by_cols + ["user_id"], dropna=False)[sum_cols]
-        .sum()
-        .reset_index()
+    left = pd.DataFrame(
+        {"user_id": contacts[user_1_col].to_numpy(), "sip": weights.to_numpy()}
+    )
+    right = pd.DataFrame(
+        {"user_id": contacts[user_2_col].to_numpy(), "sip": weights.to_numpy()}
     )
 
-    if group_col is not None:
-        result["sip_pct"] = np.where(
-            result["sip"] != 0,
-            result["sip_self"] / result["sip"],
-            np.nan,
-        )
-
-    return result[output_cols]
+    long_contacts = pd.concat([left, right], ignore_index=True)
+    return long_contacts.groupby("user_id", as_index=False, dropna=False)["sip"].sum()
 
 
 def rog(stops, agg_freq='d', weighted=True, traj_cols=None, time_weights=None, exploded=True, **kwargs):

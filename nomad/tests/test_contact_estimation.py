@@ -24,7 +24,10 @@ def test_estimate_contacts_exact_location_and_duration_weight():
     assert contacts.loc[0, "location_id"] == "cafe"
     assert contacts.loc[0, "overlap_duration"] == 5
     assert "distance" not in contacts.columns
-    assert weighted.loc[0, "contact_weight"] == 5
+    assert "stop_id_1" not in contacts.columns
+    assert "stop_id_2" not in contacts.columns
+    assert weighted.name == "contact_weight"
+    assert weighted.loc[0] == 5
 
 
 def test_estimate_contacts_radius_and_linear_distance_weight():
@@ -46,7 +49,8 @@ def test_estimate_contacts_radius_and_linear_distance_weight():
     assert len(contacts) == 1
     assert contacts.loc[0, "distance"] == pytest.approx(5)
     assert contacts.loc[0, "overlap_duration"] == 10
-    assert weighted.loc[0, "contact_weight"] == pytest.approx(5)
+    assert weighted.name == "contact_weight"
+    assert weighted.loc[0] == pytest.approx(5)
 
 
 @pytest.fixture

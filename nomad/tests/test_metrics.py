@@ -22,6 +22,20 @@ def test_social_interaction_potential_credits_both_users():
     assert sip.to_dict() == {"a": 2, "b": 5, "c": 3}
 
 
+def test_social_interaction_potential_uses_overlap_duration_by_default():
+    contacts = pd.DataFrame(
+        {
+            "user_id_1": ["a", "b"],
+            "user_id_2": ["b", "c"],
+            "overlap_duration": [4, 6],
+        }
+    )
+
+    sip = social_interaction_potential(contacts).set_index("user_id")["sip"]
+
+    assert sip.to_dict() == {"a": 4, "b": 10, "c": 6}
+
+
 @pytest.fixture
 def agent_traj_ground_truth():
     test_dir = Path(__file__).resolve().parent
