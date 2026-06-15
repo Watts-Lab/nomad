@@ -5,7 +5,6 @@ from nomad.constants import SEC_PER_UNIT
 from nomad.stop_detection import utils
 import nomad.io.base as loader
 import warnings
-import pdb
 
 def _centroid(coords, metric='euclidean', weight=None):
     """
@@ -82,9 +81,6 @@ def social_interaction_potential(
     pandas.DataFrame
         User-level SIP table with columns ``user_id`` and ``sip``.
     """
-    if len(user_id_cols) != 2:
-        raise ValueError("user_id_cols must contain exactly two column names.")
-
     user_1_col, user_2_col = user_id_cols
     missing = [col for col in user_id_cols if col not in contacts.columns]
     if weight_col is not None and weight_col not in contacts.columns:
