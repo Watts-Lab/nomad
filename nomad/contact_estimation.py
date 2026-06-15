@@ -98,7 +98,6 @@ def estimate_contacts(stops, distance_threshold=None, traj_cols=None, **kwargs):
     if len(stops) == 0:
         return pd.DataFrame(columns=output_cols)
 
-    stops = stops.copy()
     input_traj_cols = traj_cols
     traj_cols = loader._parse_traj_cols(stops.columns, traj_cols, kwargs)
 
@@ -114,25 +113,27 @@ def estimate_contacts(stops, distance_threshold=None, traj_cols=None, **kwargs):
     start_col = traj_cols[t_key]
     end_key = "end_datetime" if use_datetime else "end_timestamp"
     end_col = traj_cols[end_key]
-    if end_col not in stops.columns:
-        if not loader._has_duration_cols(stops.columns, traj_cols):
-            raise ValueError(
-                "Contact estimation requires an end time or duration column."
-            )
+    if end_col in stops.columns:
+        end_time = stops[end_col]
+    elif loader._has_duration_cols(stops.columns, traj_cols):
         if use_datetime:
-            stops[end_col] = stops[start_col] + pd.to_timedelta(
+            end_time = stops[start_col] + pd.to_timedelta(
                 stops[traj_cols["duration"]],
                 unit="m",
             )
         else:
-            stops[end_col] = stops[start_col] + stops[traj_cols["duration"]] * 60
+            end_time = stops[start_col] + stops[traj_cols["duration"]] * 60
+    else:
+        raise ValueError(
+            "Contact estimation requires an end time or duration column."
+        )
 
     if use_datetime:
         start = filters.to_timestamp(stops[start_col]).to_numpy()
-        end = filters.to_timestamp(stops[end_col]).to_numpy()
+        end = filters.to_timestamp(end_time).to_numpy()
     else:
         start = stops[start_col].to_numpy()
-        end = stops[end_col].to_numpy()
+        end = end_time.to_numpy()
 
     users = stops[uid_col].to_numpy()
 
