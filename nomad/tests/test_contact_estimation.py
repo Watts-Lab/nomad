@@ -86,6 +86,37 @@ def test_estimate_contacts_uses_strict_temporal_overlap():
     assert contacts.empty
 
 
+def test_estimate_contacts_empty_stops_has_expected_columns():
+    stops = pd.DataFrame(columns=["user_id", "start_timestamp", "end_timestamp", "location_id"])
+
+    contacts = contact.estimate_contacts(stops)
+
+    assert contacts.empty
+    assert contacts.columns.tolist() == [
+        "user_id_1",
+        "user_id_2",
+        "contact_start",
+        "contact_end",
+        "overlap_duration",
+        "location_id",
+    ]
+
+
+def test_estimate_contacts_excludes_same_user_overlap():
+    stops = pd.DataFrame(
+        {
+            "user_id": ["a", "a"],
+            "start_timestamp": [0, 300],
+            "end_timestamp": [600, 900],
+            "location_id": ["cafe", "cafe"],
+        }
+    )
+
+    contacts = contact.estimate_contacts(stops)
+
+    assert contacts.empty
+
+
 def test_estimate_contacts_exact_location_requires_non_missing_location():
     stops = pd.DataFrame(
         {
@@ -97,6 +128,32 @@ def test_estimate_contacts_exact_location_requires_non_missing_location():
     )
 
     with pytest.raises(ValueError, match="non-missing location_id"):
+        contact.estimate_contacts(stops)
+
+
+def test_estimate_contacts_requires_user_id():
+    stops = pd.DataFrame(
+        {
+            "start_timestamp": [0],
+            "end_timestamp": [600],
+            "location_id": ["cafe"],
+        }
+    )
+
+    with pytest.raises(ValueError, match="user_id"):
+        contact.estimate_contacts(stops)
+
+
+def test_estimate_contacts_requires_end_or_duration():
+    stops = pd.DataFrame(
+        {
+            "user_id": ["a"],
+            "start_timestamp": [0],
+            "location_id": ["cafe"],
+        }
+    )
+
+    with pytest.raises(ValueError, match="end time or duration"):
         contact.estimate_contacts(stops)
 
 
