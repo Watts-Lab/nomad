@@ -1,6 +1,7 @@
 import pytest
 import pandas as pd
 import numpy as np
+import nomad.contact_estimation as contact
 from nomad.metrics.metrics import rog, self_containment, social_interaction_potential
 from pathlib import Path
 from nomad.io import base as loader
@@ -17,8 +18,11 @@ def test_social_interaction_potential_credits_both_users():
         }
     )
 
-    sip = social_interaction_potential(contacts).set_index("user_id")["sip"]
+    result = social_interaction_potential(contacts)
+    sip = result.set_index("user_id")["sip"]
 
+    assert result.columns.tolist() == ["user_id", "sip"]
+    assert np.issubdtype(result["sip"].dtype, np.number)
     assert sip.to_dict() == {"a": 2, "b": 5, "c": 3}
 
 
@@ -34,6 +38,23 @@ def test_social_interaction_potential_uses_overlap_duration_by_default():
     sip = social_interaction_potential(contacts).set_index("user_id")["sip"]
 
     assert sip.to_dict() == {"a": 4, "b": 10, "c": 6}
+
+
+def test_social_interaction_potential_accepts_estimated_contacts_without_weights():
+    stops = pd.DataFrame(
+        {
+            "user_id": ["a", "b", "c"],
+            "start_timestamp": [0, 300, 0],
+            "end_timestamp": [600, 900, 600],
+            "location_id": ["cafe", "cafe", "park"],
+        }
+    )
+
+    contacts = contact.estimate_contacts(stops)
+    sip = social_interaction_potential(contacts).set_index("user_id")["sip"]
+
+    assert "contact_weight" not in contacts.columns
+    assert sip.to_dict() == {"a": 5, "b": 5}
 
 
 def test_social_interaction_potential_uses_explicit_weight_col():
@@ -52,6 +73,29 @@ def test_social_interaction_potential_uses_explicit_weight_col():
     ).set_index("user_id")["sip"]
 
     assert sip.to_dict() == {"a": 1.5, "b": 4.0, "c": 2.5}
+
+
+def test_social_interaction_potential_empty_contacts():
+    contacts = pd.DataFrame(columns=["user_id_1", "user_id_2", "overlap_duration"])
+
+    sip = social_interaction_potential(contacts)
+
+    assert sip.empty
+    assert sip.columns.tolist() == ["user_id", "sip"]
+
+
+def test_social_interaction_potential_requires_user_columns():
+    contacts = pd.DataFrame({"user_id_1": ["a"], "overlap_duration": [5]})
+
+    with pytest.raises(ValueError, match="user_id_2"):
+        social_interaction_potential(contacts)
+
+
+def test_social_interaction_potential_requires_overlap_or_weight():
+    contacts = pd.DataFrame({"user_id_1": ["a"], "user_id_2": ["b"]})
+
+    with pytest.raises(ValueError, match="overlap_duration"):
+        social_interaction_potential(contacts)
 
 
 @pytest.fixture
