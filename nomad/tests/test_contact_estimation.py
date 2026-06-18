@@ -53,6 +53,42 @@ def test_estimate_contacts_radius_and_linear_distance_weight():
     assert weighted.loc[0] == pytest.approx(5)
 
 
+def test_estimate_contacts_radius_keeps_temporal_block_boundary_overlap():
+    stops = pd.DataFrame(
+        {
+            "user_id": ["a", "b"],
+            "start_timestamp": [3540, 3600],
+            "end_timestamp": [3660, 3720],
+            "x": [0, 3],
+            "y": [0, 4],
+        }
+    )
+
+    contacts = contact.estimate_contacts(stops, distance_threshold=10)
+
+    assert len(contacts) == 1
+    assert contacts.loc[0, "contact_start"] == 3600
+    assert contacts.loc[0, "contact_end"] == 3660
+    assert contacts.loc[0, "overlap_duration"] == 1
+
+
+def test_estimate_contacts_radius_deduplicates_multi_block_overlap():
+    stops = pd.DataFrame(
+        {
+            "user_id": ["a", "b"],
+            "start_timestamp": [0, 1800],
+            "end_timestamp": [10800, 9000],
+            "x": [0, 3],
+            "y": [0, 4],
+        }
+    )
+
+    contacts = contact.estimate_contacts(stops, distance_threshold=10)
+
+    assert len(contacts) == 1
+    assert contacts.loc[0, "overlap_duration"] == 120
+
+
 def test_estimate_contacts_reconstructs_timestamp_end_from_duration():
     stops = pd.DataFrame(
         {

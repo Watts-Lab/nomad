@@ -10,9 +10,49 @@ from sklearn.neighbors import BallTree, KDTree
 
 
 _EARTH_RADIUS_M = 6_371_000
+_TEMPORAL_BLOCK_SECONDS = 60 * 60
 
 
-def _radius_candidates(stops, traj_cols, input_traj_cols, kwargs, distance_threshold):
+def _temporal_blocks(start, end):
+    """Return stop-to-hour block memberships for non-empty intervals."""
+    valid = end > start
+    if not valid.any():
+        return pd.DataFrame(columns=["block", "stop"])
+
+    stop = np.flatnonzero(valid)
+    start_bin = np.floor_divide(start[valid], _TEMPORAL_BLOCK_SECONDS).astype(np.int64)
+    end_bin = np.floor_divide(end[valid] - 1, _TEMPORAL_BLOCK_SECONDS).astype(np.int64)
+    counts = end_bin - start_bin + 1
+    offsets = np.repeat(np.r_[0, counts.cumsum()[:-1]], counts)
+    block = np.repeat(start_bin, counts) + np.arange(counts.sum()) - offsets
+    return pd.DataFrame({"block": block, "stop": np.repeat(stop, counts)})
+
+
+def _pair_distances(query_coords, stop_1, stop_2, use_lon_lat):
+    """Return distances for stop pairs."""
+    if use_lon_lat:
+        lat_1, lon_1 = query_coords[stop_1].T
+        lat_2, lon_2 = query_coords[stop_2].T
+        dlat = lat_2 - lat_1
+        dlon = lon_2 - lon_1
+        a = (
+            np.sin(dlat / 2) ** 2
+            + np.cos(lat_1) * np.cos(lat_2) * np.sin(dlon / 2) ** 2
+        )
+        return 2 * _EARTH_RADIUS_M * np.arcsin(np.sqrt(a))
+    return np.linalg.norm(query_coords[stop_1] - query_coords[stop_2], axis=1)
+
+
+def _radius_candidates(
+    stops,
+    traj_cols,
+    input_traj_cols,
+    kwargs,
+    distance_threshold,
+    start,
+    end,
+    users,
+):
     """Return stop row pairs within distance_threshold and their distances."""
     coord_key1, coord_key2, use_lon_lat = loader._fallback_spatial_cols(
         stops.columns,
@@ -25,32 +65,63 @@ def _radius_candidates(stops, traj_cols, input_traj_cols, kwargs, distance_thres
         coords = stops[[traj_cols["latitude"], traj_cols["longitude"]]].to_numpy()
         radius = distance_threshold / _EARTH_RADIUS_M
         query_coords = np.radians(coords)
-        tree = BallTree(query_coords, metric="haversine")
+        tree_class = BallTree
+        tree_kwargs = {"metric": "haversine"}
     else:
         coords = stops[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
         radius = distance_threshold
         query_coords = coords
-        tree = KDTree(query_coords)
+        tree_class = KDTree
+        tree_kwargs = {}
 
-    indices, distances = tree.query_radius(
-        query_coords,
-        r=radius,
-        return_distance=True,
-        sort_results=True,
-    )
-    counts = np.array([len(idx) for idx in indices])
-    if counts.sum() == 0:
+    blocks = _temporal_blocks(start, end)
+    if blocks.empty:
         return np.empty(0, dtype=int), np.empty(0, dtype=int), np.empty(0, dtype=float)
 
-    # Flatten neighbor lists.
-    row = np.repeat(np.arange(len(stops)), counts)
-    col = np.concatenate(indices).astype(int)
-    distance = np.concatenate(distances).astype(float)
-    if use_lon_lat:
-        distance = distance * _EARTH_RADIUS_M
+    rows = []
+    cols = []
+    for _, block_stops in blocks.groupby("block", sort=False)["stop"]:
+        block_stops = block_stops.to_numpy()
+        if len(block_stops) < 2:
+            continue
 
-    keep = row < col
-    return row[keep], col[keep], distance[keep]
+        tree = tree_class(query_coords[block_stops], **tree_kwargs)
+        indices = tree.query_radius(
+            query_coords[block_stops],
+            r=radius,
+            return_distance=False,
+            sort_results=False,
+        )
+        counts = np.array([len(idx) for idx in indices])
+        if counts.sum() == 0:
+            continue
+
+        row = block_stops[np.repeat(np.arange(len(block_stops)), counts)]
+        col = block_stops[np.concatenate(indices).astype(int)]
+        keep = row < col
+        rows.append(row[keep])
+        cols.append(col[keep])
+
+    if not rows:
+        return np.empty(0, dtype=int), np.empty(0, dtype=int), np.empty(0, dtype=float)
+
+    pairs = pd.DataFrame(
+        {"stop_1": np.concatenate(rows), "stop_2": np.concatenate(cols)}
+    ).drop_duplicates()
+    stop_1 = pairs["stop_1"].to_numpy()
+    stop_2 = pairs["stop_2"].to_numpy()
+    keep = (
+        (users[stop_1] != users[stop_2])
+        & (start[stop_1] < end[stop_2])
+        & (start[stop_2] < end[stop_1])
+    )
+    stop_1, stop_2 = stop_1[keep], stop_2[keep]
+    if len(stop_1) == 0:
+        return np.empty(0, dtype=int), np.empty(0, dtype=int), np.empty(0, dtype=float)
+
+    distance = _pair_distances(query_coords, stop_1, stop_2, use_lon_lat)
+    keep = distance <= distance_threshold
+    return stop_1[keep], stop_2[keep], distance[keep]
 
 
 def estimate_contacts(stops, distance_threshold=None, traj_cols=None, **kwargs):
@@ -168,13 +239,11 @@ def estimate_contacts(stops, distance_threshold=None, traj_cols=None, **kwargs):
             input_traj_cols,
             kwargs,
             distance_threshold,
+            start,
+            end,
+            users,
         )
-        keep = (
-            (users[stop_1] != users[stop_2])
-            & (start[stop_1] < end[stop_2])
-            & (start[stop_2] < end[stop_1])
-        )
-        stop_1, stop_2, contact_values = stop_1[keep], stop_2[keep], distance[keep]
+        contact_values = distance
 
     contact_start = np.maximum(start[stop_1], start[stop_2])
     contact_end = np.minimum(end[stop_1], end[stop_2])
