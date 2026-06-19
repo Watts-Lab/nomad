@@ -1,0 +1,393 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nomad.filters_spark &mdash; NOMAD 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html">
+            
+              <img src="../../_static/nomad-logo-black.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../data_ingestion.html">Data Ingestion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../filtering.html">Filtering &amp; Completeness</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tessellation.html">Tessellation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../stop_detection.html">Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../visit_attribution.html">Visit Attribution</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../metrics.html">Mobility Metrics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../colocation.html">Co-location &amp; Contact Networks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../aggregation.html">Aggregation &amp; Debiasing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../synthetic_data_generation.html">Synthetic Data Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../source/ingesting-data.html">Loading Trajectory Data</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/benchmarking_of_stop_detection_algorithms.html">Comparing runtimes of different stop detection algorithms on toy datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/lachesis_demo.html">Lachesis Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/tadbscan_demo.html">TADBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/hdbscan_demo.html">HDBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/grid_based_demo.html">Grid-Based Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/download_poi_data_from_OSM.html">Downloading places of interest (POI) Data from OSM</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/generate_synthetic_trajectories.html">Synthetic Trajectory Generation with Nomad</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">NOMAD</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">nomad.filters_spark</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nomad.filters_spark</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">from</span> <span class="nn">pandas.api.types</span> <span class="kn">import</span> <span class="n">is_integer_dtype</span>
+
+<span class="kn">import</span> <span class="nn">geopandas</span> <span class="k">as</span> <span class="nn">gpd</span>
+<span class="kn">import</span> <span class="nn">pyproj</span>
+<span class="kn">from</span> <span class="nn">shapely.geometry</span> <span class="kn">import</span> <span class="n">Polygon</span><span class="p">,</span> <span class="n">Point</span>
+<span class="kn">from</span> <span class="nn">shapely</span> <span class="kn">import</span> <span class="n">wkt</span>
+<span class="kn">import</span> <span class="nn">warnings</span>
+
+<span class="kn">import</span> <span class="nn">nomad.io.base</span> <span class="k">as</span> <span class="nn">loader</span>
+<span class="kn">from</span> <span class="nn">nomad.constants</span> <span class="kn">import</span> <span class="n">DEFAULT_SCHEMA</span><span class="p">,</span> <span class="n">SEC_PER_UNIT</span>
+
+<span class="kn">import</span> <span class="nn">pyspark</span>
+<span class="kn">from</span> <span class="nn">pyspark.sql</span> <span class="kn">import</span> <span class="n">SparkSession</span>
+<span class="kn">from</span> <span class="nn">pyspark.sql</span> <span class="kn">import</span> <span class="n">SQLContext</span>
+<span class="kn">from</span> <span class="nn">pyspark.sql</span> <span class="kn">import</span> <span class="n">functions</span> <span class="k">as</span> <span class="n">F</span>
+<span class="kn">from</span> <span class="nn">pyspark.sql.types</span> <span class="kn">import</span> <span class="n">StructType</span><span class="p">,</span> <span class="n">StructField</span><span class="p">,</span> <span class="n">StringType</span><span class="p">,</span> <span class="n">IntegerType</span><span class="p">,</span> <span class="n">LongType</span><span class="p">,</span> <span class="n">DoubleType</span>
+
+<div class="viewcode-block" id="to_projection">
+<a class="viewcode-back" href="../../api/nomad.filters_spark.html#nomad.filters_spark.to_projection">[docs]</a>
+<span class="k">def</span> <span class="nf">to_projection</span><span class="p">(</span>
+    <span class="n">traj</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+    <span class="n">input_crs</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">output_crs</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">spark_session</span><span class="p">:</span> <span class="n">SparkSession</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">kwargs</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Projects coordinate columns from one Coordinate Reference System (CRS) to another.</span>
+
+<span class="sd">    This function takes a DataFrame containing coordinate columns and projects them from one CRS to another specified CRS. </span>
+<span class="sd">    It supports both local and distributed computation using Spark. (TODO: SPARK)</span>
+
+<span class="sd">    If columns names are not specified in `kwargs`, the function will attempt to use default column names.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    traj : pd.DataFrame</span>
+<span class="sd">        Trajectory DataFrame containing coordinate columns.</span>
+<span class="sd">    input_crs : str, optional</span>
+<span class="sd">        EPSG code for the original CRS.</span>
+<span class="sd">    output_crs : str, optional</span>
+<span class="sd">        EPSG code for the target CRS.</span>
+<span class="sd">    spark_session : SparkSession, optional.</span>
+<span class="sd">        Spark session for distributed computation, if needed.</span>
+<span class="sd">    **kwargs :</span>
+<span class="sd">        Additional parameters to specify names of spatial columns to project from.</span>
+<span class="sd">        E.g., &#39;latitude&#39;, &#39;longitude&#39; or &#39;x&#39;, &#39;y&#39;.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    (pd.Series, pd.Series)</span>
+<span class="sd">        A pair of Series with the new projected coordinates.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If expected coordinate columns are missing.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Check whether traj contains spatial columns</span>
+    <span class="c1"># Uncomment exclusive=True when the function is committed.</span>
+    <span class="n">loader</span><span class="o">.</span><span class="n">_has_spatial_cols</span><span class="p">(</span><span class="n">traj</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span><span class="c1">#, exclusive=True)</span>
+
+    <span class="c1"># Check if user wants to project from x and y</span>
+    <span class="k">if</span> <span class="p">(</span><span class="s1">&#39;x&#39;</span> <span class="ow">in</span> <span class="n">kwargs</span> <span class="ow">and</span> <span class="s1">&#39;y&#39;</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">):</span>
+        <span class="n">input_x_col</span><span class="p">,</span> <span class="n">input_y_col</span> <span class="o">=</span> <span class="n">kwargs</span><span class="p">[</span><span class="s1">&#39;x&#39;</span><span class="p">],</span> <span class="n">kwargs</span><span class="p">[</span><span class="s1">&#39;y&#39;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">input_crs</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;input_crs not found in arguments.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">output_crs</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">output_crs</span> <span class="o">=</span> <span class="s2">&quot;EPSG:4326&quot;</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s2">&quot;output_crs not provided. Defaulting to EPSG:4326.&quot;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">input_x_col</span><span class="p">,</span> <span class="n">input_y_col</span> <span class="o">=</span> <span class="n">kwargs</span><span class="p">[</span><span class="s1">&#39;longitude&#39;</span><span class="p">],</span> <span class="n">kwargs</span><span class="p">[</span><span class="s1">&#39;latitude&#39;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">input_crs</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">input_crs</span> <span class="o">=</span> <span class="s2">&quot;EPSG:4326&quot;</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s2">&quot;input_crs not provided. Defaulting to EPSG:4326.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">output_crs</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;output_crs not found in arguments.&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">spark_session</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_to_projection_spark</span><span class="p">(</span><span class="n">traj</span><span class="p">,</span> <span class="n">input_crs</span><span class="p">,</span> <span class="n">output_crs</span><span class="p">,</span> <span class="n">input_x_col</span><span class="p">,</span> <span class="n">input_y_col</span><span class="p">,</span> <span class="n">spark_session</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_to_projection</span><span class="p">(</span><span class="n">traj</span><span class="p">,</span> <span class="n">input_crs</span><span class="p">,</span> <span class="n">output_crs</span><span class="p">,</span> <span class="n">input_x_col</span><span class="p">,</span> <span class="n">input_y_col</span><span class="p">)</span></div>
+
+
+
+<span class="k">def</span> <span class="nf">_to_projection_spark</span><span class="p">(</span>
+    <span class="n">traj</span><span class="p">,</span> 
+    <span class="n">input_crs</span><span class="p">,</span> 
+    <span class="n">output_crs</span><span class="p">,</span> 
+    <span class="n">input_x_col</span><span class="p">,</span> 
+    <span class="n">input_y_col</span><span class="p">,</span> 
+    <span class="n">spark_session</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Helper function to project latitude/longitude columns to a new CRS using Spark.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">from</span> <span class="nn">sedona.register</span> <span class="kn">import</span> <span class="n">SedonaRegistrator</span>
+    <span class="n">SedonaRegistrator</span><span class="o">.</span><span class="n">registerAll</span><span class="p">(</span><span class="n">spark_session</span><span class="p">)</span>
+
+    <span class="n">spark_df</span> <span class="o">=</span> <span class="n">spark_session</span><span class="o">.</span><span class="n">createDataFrame</span><span class="p">(</span><span class="n">traj</span><span class="p">)</span>
+    <span class="n">spark_df</span><span class="o">.</span><span class="n">createOrReplaceTempView</span><span class="p">(</span><span class="s2">&quot;temp_view&quot;</span><span class="p">)</span>
+
+    <span class="n">query</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">        SELECT</span>
+<span class="s2">            ST_X(ST_Transform(ST_Point(</span><span class="si">{</span><span class="n">input_x_col</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">input_y_col</span><span class="si">}</span><span class="s2">), &#39;</span><span class="si">{</span><span class="n">input_crs</span><span class="si">}</span><span class="s2">&#39;, &#39;</span><span class="si">{</span><span class="n">output_crs</span><span class="si">}</span><span class="s2">&#39;)) AS x,</span>
+<span class="s2">            ST_Y(ST_Transform(ST_Point(</span><span class="si">{</span><span class="n">input_x_col</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">input_y_col</span><span class="si">}</span><span class="s2">), &#39;</span><span class="si">{</span><span class="n">input_crs</span><span class="si">}</span><span class="s2">&#39;, &#39;</span><span class="si">{</span><span class="n">output_crs</span><span class="si">}</span><span class="s2">&#39;)) AS y</span>
+<span class="s2">        FROM temp_view</span>
+<span class="s2">    &quot;&quot;&quot;</span>
+    
+    <span class="n">result_df</span> <span class="o">=</span> <span class="n">spark_session</span><span class="o">.</span><span class="n">sql</span><span class="p">(</span><span class="n">query</span><span class="p">)</span>
+    <span class="n">pandas_df</span> <span class="o">=</span> <span class="n">result_df</span><span class="o">.</span><span class="n">toPandas</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">pandas_df</span><span class="p">[</span><span class="s1">&#39;x&#39;</span><span class="p">],</span> <span class="n">pandas_df</span><span class="p">[</span><span class="s1">&#39;y&#39;</span><span class="p">]</span>
+
+<div class="viewcode-block" id="filter_users">
+<a class="viewcode-back" href="../../api/nomad.filters_spark.html#nomad.filters_spark.filter_users">[docs]</a>
+<span class="k">def</span> <span class="nf">filter_users</span><span class="p">(</span>
+    <span class="n">traj</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+    <span class="n">start_time</span><span class="p">,</span>
+    <span class="n">end_time</span><span class="p">,</span>
+    <span class="n">timezone</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">polygon</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">min_active_days</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="n">min_pings_per_day</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="n">traj_cols</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">crs</span> <span class="o">=</span> <span class="s2">&quot;EPSG:3857&quot;</span><span class="p">,</span>
+    <span class="n">spark_session</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    Subsets to users who have at least min_pings_per_day pings on min_active_days distinct days</span>
+<span class="sd">    in the polygon within the timeframe start_time to start_time.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    traj : pd.DataFrame</span>
+<span class="sd">        Trajectory DataFrame with latitude and longitude columns.</span>
+<span class="sd">    start_time</span>
+<span class="sd">        Start of the timeframe for filtering.</span>
+<span class="sd">    end_time</span>
+<span class="sd">        End of the timeframe for filtering.</span>
+<span class="sd">    polygon : shapely.geometry.Polygon</span>
+<span class="sd">        Polygon defining the area to retain points within.</span>
+<span class="sd">        If None, no spatial filtering is applied.</span>
+<span class="sd">    min_active_days, min_pings_per_day: int</span>
+<span class="sd">        User is retained if they have at least min_pings_per_day pings on min_active_days distinct days.</span>
+<span class="sd">        Defaults to 1.</span>
+<span class="sd">    traj_cols : dict, optional</span>
+<span class="sd">        A dictionary defining column mappings for &#39;x&#39;, &#39;y&#39;, &#39;longitude&#39;, &#39;latitude&#39;, &#39;timestamp&#39;, or &#39;datetime&#39;.</span>
+<span class="sd">        If not provided, the function will attempt to use default column names or those provided in `kwargs`.</span>
+<span class="sd">    crs : str, optional</span>
+<span class="sd">        Coordinate Reference System (CRS) for the polygon.</span>
+<span class="sd">        Defaults to &quot;EPSG:3857&quot;.</span>
+<span class="sd">    spark_session : SparkSession, optional</span>
+<span class="sd">        Spark session for distributed computation, if needed.</span>
+<span class="sd">    **kwargs :</span>
+<span class="sd">        Additional parameters like &#39;user_id&#39;, &#39;latitude&#39;, &#39;longitude&#39;, or &#39;datetime&#39; column names.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.DataFrame</span>
+<span class="sd">        Filtered DataFrame with points inside the polygon&#39;s bounds.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+
+    <span class="n">traj_cols</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_parse_traj_cols</span><span class="p">(</span><span class="n">traj</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+    <span class="n">loader</span><span class="o">.</span><span class="n">_has_spatial_cols</span><span class="p">(</span><span class="n">traj</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">)</span><span class="c1">#, exclusive=True)</span>
+    <span class="n">loader</span><span class="o">.</span><span class="n">_has_time_cols</span><span class="p">(</span><span class="n">traj</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">)</span>
+
+    <span class="c1"># Check which spatial columns to project from</span>
+    <span class="k">if</span> <span class="p">(</span><span class="s1">&#39;x&#39;</span> <span class="ow">in</span> <span class="n">kwargs</span> <span class="ow">and</span> <span class="s1">&#39;y&#39;</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">):</span>
+        <span class="n">input_x_col</span><span class="p">,</span> <span class="n">input_y_col</span> <span class="o">=</span> <span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;x&#39;</span><span class="p">],</span> <span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;y&#39;</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">input_x_col</span><span class="p">,</span> <span class="n">input_y_col</span> <span class="o">=</span> <span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;longitude&#39;</span><span class="p">],</span> <span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;latitude&#39;</span><span class="p">]</span>
+
+    <span class="c1"># Check which time column to use from</span>
+    <span class="k">if</span> <span class="p">(</span><span class="s1">&#39;datetime&#39;</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="p">):</span>
+        <span class="n">time_col</span> <span class="o">=</span> <span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;datetime&#39;</span><span class="p">]</span>
+        <span class="n">start_time</span> <span class="o">=</span> <span class="n">_timestamp_handling</span><span class="p">(</span><span class="n">start_time</span><span class="p">,</span> <span class="s2">&quot;pd.timestamp&quot;</span><span class="p">,</span> <span class="n">timezone</span><span class="p">)</span>
+        <span class="n">end_time</span> <span class="o">=</span> <span class="n">_timestamp_handling</span><span class="p">(</span><span class="n">end_time</span><span class="p">,</span> <span class="s2">&quot;pd.timestamp&quot;</span><span class="p">,</span> <span class="n">timezone</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>  <span class="c1"># defaults to unix timestamps</span>
+        <span class="n">time_col</span> <span class="o">=</span> <span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;timestamp&#39;</span><span class="p">]</span>
+        <span class="n">start_time</span> <span class="o">=</span> <span class="n">_timestamp_handling</span><span class="p">(</span><span class="n">start_time</span><span class="p">,</span> <span class="s2">&quot;unix&quot;</span><span class="p">,</span> <span class="n">timezone</span><span class="p">)</span>
+        <span class="n">end_time</span> <span class="o">=</span> <span class="n">_timestamp_handling</span><span class="p">(</span><span class="n">end_time</span><span class="p">,</span> <span class="s2">&quot;unix&quot;</span><span class="p">,</span> <span class="n">timezone</span><span class="p">)</span>
+
+    <span class="c1"># Check if polygon is a valid Shapely Polygon object</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">polygon</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">polygon</span><span class="p">,</span> <span class="n">Polygon</span><span class="p">)):</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;Polygon parameter must be a Shapely Polygon object.&quot;</span><span class="p">)</span>
+    
+    <span class="c1"># Filter to the desired time range</span>
+    <span class="n">traj</span> <span class="o">=</span> <span class="n">traj</span><span class="p">[(</span><span class="n">traj</span><span class="p">[</span><span class="n">time_col</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">start_time</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">traj</span><span class="p">[</span><span class="n">time_col</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="n">end_time</span><span class="p">)]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+    <span class="k">if</span> <span class="n">spark_session</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_filter_users_spark</span><span class="p">(</span>
+            <span class="n">traj</span><span class="p">,</span> <span class="n">start_time</span><span class="p">,</span> <span class="n">end_time</span><span class="p">,</span> <span class="n">polygon</span><span class="o">.</span><span class="n">wkt</span><span class="p">,</span> <span class="n">min_active_days</span><span class="p">,</span> <span class="n">min_pings_per_day</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">input_x_col</span><span class="p">,</span> <span class="n">input_y_col</span><span class="p">,</span> <span class="n">time_col</span><span class="p">,</span> <span class="n">spark_session</span>
+            <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">users</span> <span class="o">=</span> <span class="n">_filtered_users</span><span class="p">(</span>
+            <span class="n">traj</span><span class="p">,</span> <span class="n">start_time</span><span class="p">,</span> <span class="n">end_time</span><span class="p">,</span> <span class="n">polygon</span><span class="p">,</span> <span class="n">min_active_days</span><span class="p">,</span> <span class="n">min_pings_per_day</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">input_x_col</span><span class="p">,</span> <span class="n">input_y_col</span><span class="p">,</span> <span class="n">time_col</span><span class="p">,</span> <span class="n">crs</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">traj</span><span class="p">[</span><span class="n">traj</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;user_id&#39;</span><span class="p">]]</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">users</span><span class="p">)]</span></div>
+
+
+<span class="k">def</span> <span class="nf">_filter_users_spark</span><span class="p">(</span>
+    <span class="n">traj</span><span class="p">,</span>
+    <span class="n">bounding_wkt</span><span class="p">,</span>
+    <span class="n">T0</span><span class="p">,</span>
+    <span class="n">T1</span><span class="p">,</span>
+    <span class="n">min_days</span><span class="p">,</span>
+    <span class="n">min_pings</span><span class="p">,</span>
+    <span class="n">traj_cols</span><span class="p">,</span>
+    <span class="n">input_x</span><span class="p">,</span>
+    <span class="n">input_y</span><span class="p">,</span>
+    <span class="n">spark</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Helper function that retains only users who have at least k distinct days </span>
+<span class="sd">    with pings inside the geometry between T0 and T1.</span>
+
+<span class="sd">    TODO: I don&#39;t know if this works / if it could be more efficient</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">from</span> <span class="nn">sedona.register</span> <span class="kn">import</span> <span class="n">SedonaRegistrator</span>
+    <span class="n">SedonaRegistrator</span><span class="o">.</span><span class="n">registerAll</span><span class="p">(</span><span class="n">spark</span><span class="p">)</span>
+
+    <span class="c1"># Ensure timestamp column is proper type</span>
+    <span class="n">traj</span> <span class="o">=</span> <span class="n">traj</span><span class="o">.</span><span class="n">withColumn</span><span class="p">(</span>
+        <span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;timestamp&#39;</span><span class="p">],</span> 
+        <span class="n">F</span><span class="o">.</span><span class="n">to_timestamp</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;timestamp&#39;</span><span class="p">]))</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Time filter</span>
+    <span class="n">traj_filtered</span> <span class="o">=</span> <span class="n">traj</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span>
+        <span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;timestamp&#39;</span><span class="p">])</span> <span class="o">&gt;=</span> <span class="n">F</span><span class="o">.</span><span class="n">to_timestamp</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">lit</span><span class="p">(</span><span class="n">T0</span><span class="p">)))</span> <span class="o">&amp;</span> 
+        <span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;timestamp&#39;</span><span class="p">])</span> <span class="o">&lt;=</span> <span class="n">F</span><span class="o">.</span><span class="n">to_timestamp</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">lit</span><span class="p">(</span><span class="n">T1</span><span class="p">)))</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Add geometry point column</span>
+    <span class="n">traj_filtered</span> <span class="o">=</span> <span class="n">traj_filtered</span><span class="o">.</span><span class="n">withColumn</span><span class="p">(</span>
+        <span class="s2">&quot;coordinate&quot;</span><span class="p">,</span> 
+        <span class="n">F</span><span class="o">.</span><span class="n">expr</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ST_Point(CAST(</span><span class="si">{</span><span class="n">input_x</span><span class="si">}</span><span class="s2"> AS DECIMAL(24,20)), CAST(</span><span class="si">{</span><span class="n">input_y</span><span class="si">}</span><span class="s2"> AS DECIMAL(24,20)))&quot;</span><span class="p">)</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Spatial filter + extract date</span>
+    <span class="n">traj_filtered</span><span class="o">.</span><span class="n">createOrReplaceTempView</span><span class="p">(</span><span class="s2">&quot;temp_df&quot;</span><span class="p">)</span>
+    <span class="n">query</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">        SELECT *, DATE(</span><span class="si">{</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;timestamp&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">) AS date</span>
+<span class="s2">        FROM temp_df</span>
+<span class="s2">        WHERE ST_Contains(ST_GeomFromWKT(&#39;</span><span class="si">{</span><span class="n">bounding_wkt</span><span class="si">}</span><span class="s2">&#39;), coordinate)</span>
+<span class="s2">    &quot;&quot;&quot;</span>
+
+    <span class="n">traj_inside</span> <span class="o">=</span> <span class="n">spark</span><span class="o">.</span><span class="n">sql</span><span class="p">(</span><span class="n">query</span><span class="p">)</span>
+
+    <span class="c1"># Count pings per user per day</span>
+    <span class="n">daily_counts</span> <span class="o">=</span> <span class="n">traj_inside</span><span class="o">.</span><span class="n">groupBy</span><span class="p">(</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;user_id&#39;</span><span class="p">],</span> <span class="s2">&quot;date&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">agg</span><span class="p">(</span>
+        <span class="n">F</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="s2">&quot;*&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">&quot;ping_count&quot;</span><span class="p">)</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Keep only user-day combos with at least `min_pings`</span>
+    <span class="n">filtered_days</span> <span class="o">=</span> <span class="n">daily_counts</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">&quot;ping_count&quot;</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">min_pings</span><span class="p">)</span>
+
+    <span class="c1"># Count how many qualifying days each user has</span>
+    <span class="n">qualifying_users</span> <span class="o">=</span> <span class="n">filtered_days</span><span class="o">.</span><span class="n">groupBy</span><span class="p">(</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;user_id&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">agg</span><span class="p">(</span>
+        <span class="n">F</span><span class="o">.</span><span class="n">countDistinct</span><span class="p">(</span><span class="s2">&quot;date&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">&quot;qualified_days&quot;</span><span class="p">)</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span>
+        <span class="n">F</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">&quot;qualified_days&quot;</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">min_days</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;user_id&#39;</span><span class="p">])</span>
+
+    <span class="n">result_traj</span> <span class="o">=</span> <span class="n">traj_inside</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">qualifying_users</span><span class="p">,</span> <span class="n">on</span><span class="o">=</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;user_id&#39;</span><span class="p">],</span> <span class="n">how</span><span class="o">=</span><span class="s1">&#39;inner&#39;</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">result_traj</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, CSSLab.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
