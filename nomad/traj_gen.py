@@ -682,52 +682,53 @@ class Agent:
             )
             return
         
+        building_ids, building_types, freq, allowed_idx_by_hour = _build_epr_arrays(visit_freqs)
+        bid_to_idx = {bid: i for i, bid in enumerate(building_ids)}
+        curr_idx = bid_to_idx[curr]
+
         dest_update = []
         # verbosity
         if verbose:
             print(f"Generating destination diary via EPR (rho={rho}, gamma={gamma}, epr_time_res={epr_time_res} min, seed={seed})")
         while start_time < end_time:
-            curr_type = visit_freqs.loc[curr, 'building_type'] if curr in visit_freqs.index else 'home'
-            allowed = allowed_buildings(start_time_local)
-            x = visit_freqs.loc[(visit_freqs['building_type'].isin(allowed)) & (visit_freqs.freq > 0)]
+            allowed_idx = allowed_idx_by_hour[start_time_local.hour]
+            allowed_freq = freq[allowed_idx]
+            visited_idx = allowed_idx[allowed_freq > 0]
+            unvisited_idx = allowed_idx[allowed_freq == 0]
 
-            S = len(x) if len(x) > 0 else 1
-
-            # probability of exploring
+            S = visited_idx.size if visited_idx.size > 0 else 1
             p_exp = rho*(S**(-gamma))
 
+            curr_type = building_types[curr_idx] if curr_idx >= 0 else 'home'
+            allowed_types = ALLOWED_BUILDINGS[start_time_local.hour]
+
             # Stay
-            if (curr_type in allowed) & (rng.uniform() < stay_probs.get(curr_type, 0.5)):
+            if (curr_type in allowed_types) & (rng.uniform() < stay_probs.get(curr_type, 0.5)):
                 pass
 
             # Exploration
             elif rng.uniform() < p_exp:
-                # Compute gravity probs from current door cell to unexplored candidates
-                y = visit_freqs.loc[(visit_freqs['building_type'].isin(allowed)) & (visit_freqs.freq == 0)]
-                if not y.empty:
-                    if callable(self.city.grav):
-                        probs = self.city.grav(curr).loc[y.index].values
-                    else:
-                        probs = self.city.grav.loc[curr, y.index].values
-                    
+                if unvisited_idx.size > 0:
+                    probs = _gravity_probs_for_unvisited(
+                        self.city, curr_idx, unvisited_idx, building_ids
+                    )
                     probs = probs / probs.sum()
-                    curr = rng.choice(y.index, p=probs)
+                    curr_idx = int(rng.choice(unvisited_idx, p=probs))
                 else:
-                    # Preferential return
-                    curr = _choose_destination(visit_freqs, x, rng)
+                    curr_idx = _choose_destination_idx(visited_idx, freq, building_ids, rng)
 
-                visit_freqs.loc[curr, 'freq'] += 1
+                freq[curr_idx] += 1
 
             # Preferential return
             else:
-                curr = _choose_destination(visit_freqs, x, rng)
-                visit_freqs.loc[curr, 'freq'] += 1
+                curr_idx = _choose_destination_idx(visited_idx, freq, building_ids, rng)
+                freq[curr_idx] += 1
 
             # Update destination diary
             entry = {'datetime': start_time_local,
                      'timestamp': start_time,
                      'duration': epr_time_res,
-                     'location': curr}
+                     'location': building_ids[curr_idx]}
             dest_update.append(entry)
 
             start_time_local = start_time_local + timedelta(minutes=int(epr_time_res))
@@ -740,7 +741,7 @@ class Agent:
                 [self.destination_diary, pd.DataFrame(dest_update)], ignore_index=True)
         self.destination_diary = condense_destinations(self.destination_diary)
 
-        self.visit_freqs = visit_freqs
+        self.visit_freqs = _sync_visit_freqs(building_ids, building_types, freq)
 
         return None
 
@@ -1500,6 +1501,67 @@ class Population:
 # =============================================================================
 # AUXILIARY METHODS
 # =============================================================================
+
+def _build_epr_arrays(visit_freqs):
+    """Extract NumPy arrays and per-hour allowed indices from visit_freqs."""
+    building_ids = visit_freqs.index.to_numpy()
+    building_types = visit_freqs['building_type'].to_numpy()
+    freq = visit_freqs['freq'].to_numpy(dtype=np.int64, copy=True)
+    type_labels, building_type_codes = np.unique(building_types, return_inverse=True)
+    type_to_code = {label: code for code, label in enumerate(type_labels)}
+
+    allowed_idx_by_hour = []
+    for hour in range(24):
+        allowed_codes = np.array([type_to_code[t] for t in ALLOWED_BUILDINGS[hour]], dtype=np.int64)
+        allowed_idx_by_hour.append(np.where(np.isin(building_type_codes, allowed_codes))[0])
+
+    return building_ids, building_types, freq, allowed_idx_by_hour
+
+
+def _sync_visit_freqs(building_ids, building_types, freq):
+    """Rebuild visit_freqs DataFrame from NumPy arrays."""
+    visit_freqs = pd.DataFrame(
+        {'building_type': building_types, 'freq': freq},
+        index=building_ids,
+    )
+    visit_freqs.index.name = None
+    return visit_freqs
+
+
+def _choose_destination_idx(visited_idx, freq, building_ids, rng):
+    """Preferential return over visited candidate indices."""
+    if visited_idx.size > 0:
+        weights = freq[visited_idx]
+        if weights.sum() > 0:
+            return int(rng.choice(visited_idx, p=weights / weights.sum()))
+    return int(rng.choice(np.arange(building_ids.size)))
+
+
+def _gravity_probs_for_unvisited(city, curr_idx, unvisited_idx, building_ids):
+    """Gravity probabilities over unvisited candidate indices."""
+    grav_fn = getattr(city, 'grav_for_candidates', None)
+    if grav_fn is not None and hasattr(city, '_grav_bid_to_idx'):
+        grav_bid_to_idx = city._grav_bid_to_idx
+        idx_to_grav = np.fromiter(
+            (grav_bid_to_idx[bid] for bid in building_ids),
+            dtype=np.int64,
+            count=building_ids.size,
+        )
+        grav_origin = idx_to_grav[curr_idx]
+        grav_candidates = idx_to_grav[unvisited_idx]
+        sort_order = np.argsort(grav_candidates)
+        sorted_cands = grav_candidates[sort_order]
+        probs_sorted = grav_fn(grav_origin, sorted_cands)
+        probs = np.empty_like(probs_sorted)
+        probs[sort_order] = probs_sorted
+        return probs
+
+    curr_id = building_ids[curr_idx]
+    candidate_ids = building_ids[unvisited_idx]
+    if callable(city.grav):
+        return city.grav(curr_id).loc[candidate_ids].values
+    return city.grav.loc[curr_id, candidate_ids].values
+
 
 def _choose_destination(visit_freqs, x, rng):
     """

@@ -532,6 +532,38 @@ def test_compute_gravity_callable():
         assert np.allclose(dense_row, callable_row, atol=1e-5)
 
 
+def test_grav_for_candidates_matches_full_row():
+    buildings, streets, boundary = _load_fixture()
+    buildings = buildings.head(100)
+
+    city = RasterCity(boundary, streets, buildings, block_side_length=15.0)
+    city._build_hub_network(hub_size=16)
+    city.compute_gravity(exponent=2.0, callable_only=True)
+
+    assert city.grav_for_candidates is not None
+    building_ids = city.buildings_gdf['id'].to_numpy()
+    bid_to_idx = city._grav_bid_to_idx
+
+    rng = np.random.default_rng(42)
+    for _ in range(5):
+        origin_bid = rng.choice(building_ids)
+        origin_idx = bid_to_idx[origin_bid]
+        n_cand = rng.integers(3, 20)
+        candidate_bids = rng.choice(
+            building_ids[building_ids != origin_bid],
+            size=n_cand,
+            replace=False,
+        )
+        candidate_idxs = np.array([bid_to_idx[b] for b in candidate_bids], dtype=np.int64)
+        sort_order = np.argsort(candidate_idxs)
+        sorted_idxs = candidate_idxs[sort_order]
+
+        cand_probs = city.grav_for_candidates(origin_idx, sorted_idxs)
+        full_row = city.grav(origin_bid).values
+        expected = full_row[sorted_idxs]
+        assert np.allclose(cand_probs, expected, atol=1e-5)
+
+
 def test_compute_gravity_true_distance():
     buildings, streets, boundary = _load_fixture()
     buildings = buildings.head(50)
@@ -596,6 +628,7 @@ def test_gravity_persistence_with_load(tmp_path):
     assert hasattr(city2, 'mh_dist_nearby_doors')
     assert hasattr(city2, 'grav')
     assert callable(city2.grav)
+    assert city2.grav_for_candidates is not None
     
     assert len(city2.hubs) == len(city.hubs)
     assert city2.hub_df.shape == city.hub_df.shape
