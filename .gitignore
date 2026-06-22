@@ -41,6 +41,7 @@ dist/
 build/
 pip
 tutorials/IC2S2-2025/tutorial-sample/*
+tutorials/SICSS_2026/data/
 
 # Development environment configurations (personal/local only)
 AGENTS.md
