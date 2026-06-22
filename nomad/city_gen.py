@@ -664,18 +664,18 @@ class City:
         self._grav_bid_to_idx = bid_to_idx
 
         if gravity_matrix is not None:
-            def grav_for_candidates(origin_idx, candidate_idxs):
-                return gravity_matrix[origin_idx, candidate_idxs]
+            def grav_for_candidates(origin_idx, sorted_candidate_idxs):
+                return gravity_matrix[origin_idx, sorted_candidate_idxs]
         else:
-            def grav_for_candidates(origin_idx, candidate_idxs):
+            def grav_for_candidates(origin_idx, sorted_candidate_idxs):
                 hub_i = closest_hub_idx[origin_idx]
                 dist_i = dist_to_closest_hub[origin_idx]
-                cand_hub = closest_hub_idx[candidate_idxs]
-                dist_j = dist_to_closest_hub[candidate_idxs]
+                cand_hub = closest_hub_idx[sorted_candidate_idxs]
+                dist_j = dist_to_closest_hub[sorted_candidate_idxs]
                 distances = dist_i + hub_to_hub[hub_i, cand_hub] + dist_j
                 for neighbor_idx, d in nearby_adj[origin_idx]:
-                    pos = np.searchsorted(candidate_idxs, neighbor_idx)
-                    if pos < candidate_idxs.size and candidate_idxs[pos] == neighbor_idx:
+                    pos = np.searchsorted(sorted_candidate_idxs, neighbor_idx)
+                    if pos < sorted_candidate_idxs.size and sorted_candidate_idxs[pos] == neighbor_idx:
                         distances[pos] = d
                 return 1.0 / (distances.astype(np.float64) ** exponent)
 

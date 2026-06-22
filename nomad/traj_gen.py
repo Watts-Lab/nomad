@@ -1550,8 +1550,8 @@ def _gravity_probs_for_unvisited(city, curr_idx, unvisited_idx, building_ids):
         grav_origin = idx_to_grav[curr_idx]
         grav_candidates = idx_to_grav[unvisited_idx]
         sort_order = np.argsort(grav_candidates)
-        sorted_cands = grav_candidates[sort_order]
-        probs_sorted = grav_fn(grav_origin, sorted_cands)
+        sorted_candidate_idxs = grav_candidates[sort_order]
+        probs_sorted = grav_fn(grav_origin, sorted_candidate_idxs)
         probs = np.empty_like(probs_sorted)
         probs[sort_order] = probs_sorted
         return probs

@@ -556,11 +556,11 @@ def test_grav_for_candidates_matches_full_row():
         )
         candidate_idxs = np.array([bid_to_idx[b] for b in candidate_bids], dtype=np.int64)
         sort_order = np.argsort(candidate_idxs)
-        sorted_idxs = candidate_idxs[sort_order]
+        sorted_candidate_idxs = candidate_idxs[sort_order]
 
-        cand_probs = city.grav_for_candidates(origin_idx, sorted_idxs)
+        cand_probs = city.grav_for_candidates(origin_idx, sorted_candidate_idxs)
         full_row = city.grav(origin_bid).values
-        expected = full_row[sorted_idxs]
+        expected = full_row[sorted_candidate_idxs]
         assert np.allclose(cand_probs, expected, atol=1e-5)
 
 
@@ -1119,5 +1119,4 @@ def test_rastercity_building_type_id_consistency():
         count = street_blocks_with_id.sum()
         examples = city.blocks_gdf[street_blocks_with_id].index.tolist()[:5]
         assert False, f"{count} street blocks have building_id (should be None). Examples: {examples}"
-
 

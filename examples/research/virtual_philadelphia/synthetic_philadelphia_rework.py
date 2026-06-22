@@ -36,9 +36,6 @@ from joblib import Parallel, cpu_count, delayed
 from shapely.geometry import box
 
 import nomad.map_utils as nm
-import importlib
-import nomad.city_gen
-importlib.reload(nomad.city_gen)
 from nomad.city_gen import RasterCity, load as load_city_pickle, save as save_city_pickle
 from nomad.io.base import from_df
 from nomad.traj_gen import Agent, Population
@@ -113,8 +110,9 @@ def write_parquet_file(df, path):
     df.to_parquet(path, index=False)
 
 
-def prepare_traj_dataset(df):
+def prepare_traj_parquet_dataset(df):
     out = from_df(df, mixed_timezone_behavior="naive")
+    # Store datetimes as text so every batch parquet file has the same schema.
     out["datetime"] = out["datetime"].astype(str)
     return out
 
@@ -263,14 +261,8 @@ def load_city_from_cache():
     city = load_city_pickle(CITY_CACHE_PICKLE)
     city.rotation_deg = rotation_metadata["rotation_deg"]
     city.rotation_origin = tuple(rotation_metadata["rotation_origin"])
-    if getattr(city, "mh_dist_nearby_doors", None) is not None and len(city.mh_dist_nearby_doors) > 0:
-        if city.grav is None:
-            if hasattr(city, "restore_gravity"):
-                city.restore_gravity(exponent=2.0, callable_only=True)
-            else:
-                city.compute_gravity(exponent=2.0, callable_only=True)
-    elif city.grav is None:
-        city.compute_gravity(exponent=2.0, callable_only=True)
+    if city.grav is None or city.grav_for_candidates is None:
+        city.restore_gravity(exponent=2.0, callable_only=True)
     if city.shortest_paths is None:
         city.compute_shortest_paths(callable_only=True)
     return city
@@ -458,8 +450,8 @@ def simulate_agent_batch(batch_id, agent_batch, batch_output_dir):
     t0 = time.perf_counter()
     write_parquet_file(sparse_df, paths["sparse"])
     write_parquet_file(diaries_df, paths["diaries"])
-    write_parquet_file(prepare_traj_dataset(sparse_df), paths["sparse_traj"])
-    write_parquet_file(prepare_traj_dataset(diaries_df), paths["diaries_traj"])
+    write_parquet_file(prepare_traj_parquet_dataset(sparse_df), paths["sparse_traj"])
+    write_parquet_file(prepare_traj_parquet_dataset(diaries_df), paths["diaries_traj"])
     write_parquet_file(dest_diaries_df, paths["dest_diaries"])
     write_parquet_file(summary_df, paths["summary"])
     write_time = time.perf_counter() - t0
