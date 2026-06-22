@@ -100,14 +100,15 @@ def social_interaction_potential(
     else:
         weights = contacts[weight_col]
 
-    left = pd.DataFrame(
-        {"user_id": contacts[user_1_col].to_numpy(), "sip": weights.to_numpy()}
+    sip = weights.to_numpy()
+    long_contacts = pd.DataFrame(
+        {
+            "user_id": np.concatenate(
+                [contacts[user_1_col].to_numpy(), contacts[user_2_col].to_numpy()]
+            ),
+            "sip": np.concatenate([sip, sip]),
+        }
     )
-    right = pd.DataFrame(
-        {"user_id": contacts[user_2_col].to_numpy(), "sip": weights.to_numpy()}
-    )
-
-    long_contacts = pd.concat([left, right], ignore_index=True)
     return long_contacts.groupby("user_id", as_index=False, dropna=False)["sip"].sum()
 
 

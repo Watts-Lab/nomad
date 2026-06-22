@@ -29,7 +29,6 @@ def _temporal_blocks(start, end):
     return pd.DataFrame({"block": block, "stop": np.repeat(stop, counts)})
 
 
-
 def _radius_candidates(
     stops,
     traj_cols,
@@ -49,22 +48,19 @@ def _radius_candidates(
 
     if use_lon_lat:
         # Haversine uses (lat, lon) in radians.
-        coords = stops[[traj_cols["latitude"], traj_cols["longitude"]]].to_numpy()
+        query_coords = np.radians(
+            stops[[traj_cols["latitude"], traj_cols["longitude"]]].to_numpy()
+        )
         radius = distance_threshold / _EARTH_RADIUS_M
-        query_coords = np.radians(coords)
         tree_class = BallTree
         tree_kwargs = {"metric": "haversine"}
     else:
-        coords = stops[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
+        query_coords = stops[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
         radius = distance_threshold
-        query_coords = coords
         tree_class = KDTree
         tree_kwargs = {}
 
     blocks = _temporal_blocks(start, end)
-    if blocks.empty:
-        return np.empty(0, dtype=int), np.empty(0, dtype=int), np.empty(0, dtype=float)
-
     rows = []
     cols = []
     for _, block_stops in blocks.groupby("block", sort=False)["stop"]:
@@ -100,9 +96,6 @@ def _radius_candidates(
         & (start[stop_2] < end[stop_1])
     )
     stop_1, stop_2 = stop_1[keep], stop_2[keep]
-    if len(stop_1) == 0:
-        return np.empty(0, dtype=int), np.empty(0, dtype=int), np.empty(0, dtype=float)
-
     if use_lon_lat:
         distance = _haversine_distance(
             query_coords[stop_1].T,
