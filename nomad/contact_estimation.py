@@ -6,6 +6,7 @@ import nomad.filters as filters
 import nomad.io.base as loader
 import numpy as np
 import pandas as pd
+from nomad.stop_detection.utils import _haversine_distance
 from sklearn.neighbors import BallTree, KDTree
 
 
@@ -27,20 +28,6 @@ def _temporal_blocks(start, end):
     block = np.repeat(start_bin, counts) + np.arange(counts.sum()) - offsets
     return pd.DataFrame({"block": block, "stop": np.repeat(stop, counts)})
 
-
-def _pair_distances(query_coords, stop_1, stop_2, use_lon_lat):
-    """Return distances for stop pairs."""
-    if use_lon_lat:
-        lat_1, lon_1 = query_coords[stop_1].T
-        lat_2, lon_2 = query_coords[stop_2].T
-        dlat = lat_2 - lat_1
-        dlon = lon_2 - lon_1
-        a = (
-            np.sin(dlat / 2) ** 2
-            + np.cos(lat_1) * np.cos(lat_2) * np.sin(dlon / 2) ** 2
-        )
-        return 2 * _EARTH_RADIUS_M * np.arcsin(np.sqrt(a))
-    return np.linalg.norm(query_coords[stop_1] - query_coords[stop_2], axis=1)
 
 
 def _radius_candidates(
@@ -116,7 +103,13 @@ def _radius_candidates(
     if len(stop_1) == 0:
         return np.empty(0, dtype=int), np.empty(0, dtype=int), np.empty(0, dtype=float)
 
-    distance = _pair_distances(query_coords, stop_1, stop_2, use_lon_lat)
+    if use_lon_lat:
+        distance = _haversine_distance(
+            query_coords[stop_1].T,
+            query_coords[stop_2].T,
+        )
+    else:
+        distance = np.linalg.norm(query_coords[stop_1] - query_coords[stop_2], axis=1)
     keep = distance <= distance_threshold
     return stop_1[keep], stop_2[keep], distance[keep]
 
