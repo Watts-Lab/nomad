@@ -1,10 +1,10 @@
 import numpy as np
 import pandas as pd
+from nomad.contact_estimation import compute_contact_weights
 from nomad.constants import SEC_PER_UNIT
 from nomad.stop_detection import utils
 import nomad.io.base as loader
 import warnings
-import pdb
 
 def _centroid(coords, metric='euclidean', weight=None):
     """
@@ -50,6 +50,67 @@ def _centroid(coords, metric='euclidean', weight=None):
         return np.degrees([lat_c, lon_c])
     else:
         return np.sum(coords * weight[:, None], axis=0)
+
+
+def social_interaction_potential(
+    contacts,
+    weight_col=None,
+    user_id_cols=("user_id_1", "user_id_2"),
+):
+    """
+    Aggregate undirected contact events into user-level SIP.
+
+    Each contact contributes its weight to both users. If ``weight_col`` is not
+    supplied, the function uses ``contact_weight`` when present and otherwise
+    computes duration weights from ``overlap_duration``.
+
+    Parameters
+    ----------
+    contacts : pandas.DataFrame
+        Contact event table with one row per undirected contact. By default,
+        the function expects ``user_id_1`` and ``user_id_2`` columns and either
+        ``contact_weight`` or ``overlap_duration``.
+    weight_col : str, optional
+        Column to sum as SIP. Defaults to ``contact_weight`` if present, then
+        ``overlap_duration``.
+    user_id_cols : tuple of str, optional
+        Two columns identifying the users on either side of each contact row.
+
+    Returns
+    -------
+    pandas.DataFrame
+        User-level SIP table with columns ``user_id`` and ``sip``.
+    """
+    user_1_col, user_2_col = user_id_cols
+    missing = [col for col in user_id_cols if col not in contacts.columns]
+    if weight_col is not None and weight_col not in contacts.columns:
+        missing.append(weight_col)
+    if missing:
+        raise ValueError(f"Missing required contact columns: {missing}")
+
+    if len(contacts) == 0:
+        return pd.DataFrame(columns=["user_id", "sip"])
+
+    if weight_col is None:
+        weights = (
+            contacts["contact_weight"]
+            if "contact_weight" in contacts.columns
+            else compute_contact_weights(contacts)
+        )
+    else:
+        weights = contacts[weight_col]
+
+    sip = weights.to_numpy()
+    long_contacts = pd.DataFrame(
+        {
+            "user_id": np.concatenate(
+                [contacts[user_1_col].to_numpy(), contacts[user_2_col].to_numpy()]
+            ),
+            "sip": np.concatenate([sip, sip]),
+        }
+    )
+    return long_contacts.groupby("user_id", as_index=False, dropna=False)["sip"].sum()
+
 
 def rog(stops, agg_freq='d', weighted=True, traj_cols=None, time_weights=None, exploded=True, **kwargs):
     """
