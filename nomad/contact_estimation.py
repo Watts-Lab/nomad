@@ -93,9 +93,6 @@ def _radius_candidates(
             sort_results=False,
         )
         counts = np.array([len(idx) for idx in indices])
-        if counts.sum() == 0:
-            continue
-
         row = block_stops[np.repeat(np.arange(len(block_stops)), counts)]
         col = block_stops[np.concatenate(indices).astype(int)]
         keep = row < col
