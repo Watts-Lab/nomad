@@ -1195,7 +1195,7 @@ def sample_users(
     
         if within is not None:
             pts = gpd.GeoSeries(gpd.points_from_xy(df[traj_cols[coord_key1]], df[traj_cols[coord_key2]]),
-                                     crs=data_crs)
+                                     index=df.index, crs=data_crs)
             user_ids = df.loc[pts.within(poly), uid_col].drop_duplicates()
         else:
             user_ids = df[uid_col].drop_duplicates()
