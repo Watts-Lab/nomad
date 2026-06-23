@@ -44,7 +44,7 @@ from nomad.traj_gen import Agent, Population
 # ## Configuration
 
 # %%
-LARGE_BOX = box(-75.1905, 39.9235, -75.1425, 39.9535)
+LARGE_BOX = box(-75.212193, 39.940800, -75.136933, 39.962847)
 
 USE_FULL_CITY = False
 OUTPUT_DIR = Path("output_rework")
