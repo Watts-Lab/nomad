@@ -179,6 +179,7 @@ class City:
         # Precomputed shortest paths (optional, built on demand via compute_shortest_paths)
         self.shortest_paths = None
         self.street_graph = None
+        self._street_coord_set = None
         # Hub network for efficient gravity computation (optional, built on demand)
         self.hubs = None
         self.hub_df = None
@@ -550,6 +551,7 @@ class City:
         Stores result in self.shortest_paths as dict or callable
         """
         G = self.get_street_graph()
+        self._street_coord_set = set(G.nodes)
         
         if callable_only:
             # TODO: Replace with hub-based routing for production use
@@ -563,6 +565,13 @@ class City:
         else:
             # Dense storage for small cities only
             self.shortest_paths = dict(nx.all_pairs_shortest_path(G))
+
+    def _get_street_coord_set(self):
+        if self._street_coord_set is None:
+            self._street_coord_set = set(
+                map(tuple, self.streets_gdf[['coord_x', 'coord_y']].to_numpy(dtype=int))
+            )
+        return self._street_coord_set
 
     # ---------------------------------------------------------------------
     # Shortcut ("highway") network for fast on-demand routing
@@ -1642,10 +1651,10 @@ class City:
         Requires compute_shortest_paths() to be called first. Uses precomputed
         paths (dict) or on-demand callable depending on mode.
         """
-        # Check if coordinates are street blocks
-        if not ((self.streets_gdf['coord_x'] == start_coord[0]) & (self.streets_gdf['coord_y'] == start_coord[1])).any():
+        street_coords = self._get_street_coord_set()
+        if start_coord not in street_coords:
             raise ValueError(f"Start coordinate {start_coord} must be a street block.")
-        if not ((self.streets_gdf['coord_x'] == end_coord[0]) & (self.streets_gdf['coord_y'] == end_coord[1])).any():
+        if end_coord not in street_coords:
             raise ValueError(f"End coordinate {end_coord} must be a street block.")
 
         # Auto-initialize callable if not set (lazy initialization for convenience)

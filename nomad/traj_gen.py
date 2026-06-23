@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import numpy.random as npr
 from shapely.geometry import box, Point, MultiLineString
-from shapely.ops import unary_union, linemerge
+from shapely.ops import linemerge
 from shapely import distance as shp_distance
 from datetime import timedelta
 import warnings
@@ -263,8 +263,10 @@ class Agent:
         self.sparse_traj = None
         
         # Trajectory simulation parameters (caching for performance)
-        self._cached_bound_poly = None
         self._cached_path_ml = None
+        self._cached_path_coord = None
+        self._cached_dest_id = None
+        self._cached_bound_poly_blocks_set = None
         self._previous_dest_building_row = None
         self._current_dest_building_row = None
 
@@ -279,7 +281,7 @@ class Agent:
         self.dt = None
         # null cache for trajectory generation
         self._cached_path_ml = None
-        self._cached_bound_poly = None
+        self._cached_path_coord = None
         self._cached_dest_id = None
         self._cached_bound_poly_blocks_set = None
         self._previous_dest_building_row = None
@@ -366,10 +368,11 @@ class Agent:
 
         # If already at destination building area, stay-within-building dynamics
         if in_current_dest:
-            # Clear cache when arriving at destination (bound_poly only for inter-building movement)
+            # Clear route cache when arriving at destination.
             self._cached_path_ml = None
-            self._cached_bound_poly = None
+            self._cached_path_coord = None
             self._cached_dest_id = None
+            self._cached_bound_poly_blocks_set = None
             location = brow['id']
             p = self.still_probs.get(dest_type, 0.5)
             sigma = self.speeds.get(dest_type, 0.5)
@@ -401,12 +404,11 @@ class Agent:
 
         # Check if cached geometry is valid for current destination
         use_cache = False
-        if self._cached_bound_poly is not None and self._cached_dest_id == brow['id']:
+        if self._cached_path_ml is not None and self._cached_dest_id == brow['id']:
             use_cache = True
 
         if use_cache:
             path_ml = self._cached_path_ml
-            bound_poly = self._cached_bound_poly
             bound_poly_blocks_set = self._cached_bound_poly_blocks_set
         else:
             # Shortest path between street blocks (door cells)
@@ -417,13 +419,6 @@ class Agent:
             centroids = street_blocks['geometry'].centroid
             path_segments = [start_segment + [(pt.x, pt.y) for pt in centroids] + [brow['door_point']]]
             path_ml = MultiLineString([linemerge(MultiLineString(path_segments))])
-            street_geom = unary_union(street_blocks['geometry'])
-            # Use previous destination building geometry if agent is departing from it, otherwise use start block geometry
-            if in_previous_dest and self._previous_dest_building_row is not None:
-                start_geom = self._previous_dest_building_row['geometry']
-            else:
-                start_geom = city.blocks_gdf.loc[start_block]['geometry']
-            bound_poly = unary_union([start_geom, street_geom])
             
             # Build bound_poly_blocks_set from components
             if in_previous_dest and self._previous_dest_building_row is not None:
@@ -434,12 +429,15 @@ class Agent:
             
             # Cache the results
             self._cached_path_ml = path_ml
-            self._cached_bound_poly = bound_poly
+            self._cached_path_coord = None
             self._cached_dest_id = brow['id']
             self._cached_bound_poly_blocks_set = bound_poly_blocks_set
 
         # Transformed coordinates of current position along the path
-        path_coord = _path_coords(path_ml, start_point_arr)
+        if use_cache and self._cached_path_coord is not None:
+            path_coord = self._cached_path_coord
+        else:
+            path_coord = _path_coords(path_ml, start_point_arr)
 
         heading_drift = 3.33 * dt
         sigma = 0.5 * dt / 1.96
@@ -457,6 +455,7 @@ class Agent:
             if _point_in_blocks(coord, bound_poly_blocks_set) or _point_in_blocks(coord, self._current_dest_building_row.get('blocks_set')):
                 break
 
+        self._cached_path_coord = path_coord
         return coord, location
 
     def _traj_from_dest_diary(self, dt, seed=0):
