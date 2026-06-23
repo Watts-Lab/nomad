@@ -70,7 +70,7 @@ config = {
     "box_name": BOX_NAME,
     "block_side_length": 15.0,
     "hub_size": 100,
-    "N": 200,
+    "N": 1000,
     "name_seed": 42,
     "name_count": 2,
     "epr_params": {
