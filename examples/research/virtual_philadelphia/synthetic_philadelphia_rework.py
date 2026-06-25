@@ -27,7 +27,9 @@ from pathlib import Path
 import json
 import time
 
+import contextily as cx
 import geopandas as gpd
+import matplotlib.pyplot as plt
 import numpy as np
 import osmnx as ox
 import pandas as pd
@@ -35,9 +37,11 @@ import pyarrow.dataset as ds
 from joblib import Parallel, cpu_count, delayed
 from shapely.geometry import box
 
+import nomad.filters as filters
 import nomad.map_utils as nm
+import nomad.stop_detection.viz as viz
 from nomad.city_gen import RasterCity, load as load_city_pickle, save as save_city_pickle
-from nomad.io.base import from_df
+from nomad.io.base import from_df, from_file
 from nomad.traj_gen import Agent, Population
 
 # %% [markdown]
@@ -65,6 +69,7 @@ CITY_CACHE_PICKLE = OUTPUT_DIR / f"raster_city_{BOX_NAME}.pkl"
 REGENERATE_SPATIAL_DATA = False
 REBUILD_CITY_CACHE = False
 N_JOBS = -1
+RUN_ANALYSIS = True
 
 config = {
     "box_name": BOX_NAME,
@@ -543,6 +548,137 @@ print(f"Batch timing saved to {timing_path}")
 print(f"Sparse trajectories: {OUTPUT_DIR / f'sparse_traj_{BOX_NAME}'}")
 print(f"Realized diaries:    {OUTPUT_DIR / f'diaries_{BOX_NAME}'}")
 print(f"Destination diaries: {OUTPUT_DIR / f'dest_diaries_{BOX_NAME}'}")
+
+# %% [markdown]
+# ## Trajectory Visualization
+
+# %%
+if RUN_ANALYSIS:
+    section("TRAJECTORY VISUALIZATION")
+
+    device_df = from_file(OUTPUT_DIR / f"sparse_traj_{BOX_NAME}", format="parquet")
+    device_df["plot_date"] = pd.to_datetime(device_df["timestamp"], unit="s").dt.strftime("%Y-%m-%d")
+    sample_dates = device_df["plot_date"].value_counts().head(3).sort_index().index.tolist()
+
+    stop_paths = [OUTPUT_DIR / f"diaries_{BOX_NAME}" / f"date={date}" for date in sample_dates]
+    stop_df = from_file(stop_paths, format="parquet")
+    stop_df["plot_date"] = pd.to_datetime(stop_df["timestamp"], unit="s").dt.strftime("%Y-%m-%d")
+
+    device_df_day = device_df[device_df["plot_date"].isin(sample_dates)].copy()
+    valid_stop_rows = stop_df[
+        stop_df["location"].notna()
+        & stop_df["x"].notna()
+        & stop_df["y"].notna()
+    ].copy()
+    selected_users = (
+        valid_stop_rows.loc[valid_stop_rows["user_id"].isin(device_df_day["user_id"]), "user_id"]
+        .drop_duplicates()
+        .head(3)
+    )
+
+    print(f"Selected dates: {', '.join(sample_dates)}")
+    print(f"Pings in window: {len(device_df_day):,}")
+    print(f"Stops with coordinates in window: {len(valid_stop_rows):,}")
+
+    fig, axes = plt.subplots(1, len(selected_users), figsize=(6 * len(selected_users), 7), squeeze=False)
+    axes = axes.ravel()
+
+    for ax, user_id in zip(axes, selected_users):
+        user_pings = device_df_day[device_df_day["user_id"] == user_id]
+        user_stops = valid_stop_rows[valid_stop_rows["user_id"] == user_id].copy()
+        user_stops["cluster"] = np.arange(1, len(user_stops) + 1)
+
+        viz.plot_pings(user_pings, ax, color="black", s=1, alpha=0.6, data_crs="EPSG:3857")
+        viz.plot_stops(
+            user_stops,
+            ax,
+            radius=40,
+            cmap="Reds",
+            data_crs="EPSG:3857",
+            traj_cols={"x": "x", "y": "y"},
+        )
+
+        cx.add_basemap(ax, source=cx.providers.CartoDB.Positron)
+        ax.set_title(f"User: {user_id} ({', '.join(sample_dates)})")
+        ax.set_axis_off()
+
+    plt.tight_layout()
+    plt.show()
+
+# %% [markdown]
+# ## Data Completeness Analysis
+
+# %%
+if RUN_ANALYSIS:
+    section("DATA COMPLETENESS ANALYSIS")
+
+    comp_hourly = filters.completeness(device_df, periods=1, freq="h", user_id="user_id", timestamp="timestamp")
+    comp_daily = filters.completeness(device_df, periods=1, freq="d", user_id="user_id", timestamp="timestamp")
+
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+
+    axes[0].hist(comp_hourly, bins=30, edgecolor="black", alpha=0.7, color="steelblue")
+    axes[0].set_xlabel("Completeness (proportion of hours with data)")
+    axes[0].set_ylabel("Number of Users")
+    axes[0].set_title("Hourly Completeness")
+    axes[0].grid(axis="y", alpha=0.3)
+
+    axes[1].hist(comp_daily, bins=5, edgecolor="black", alpha=0.7, color="coral")
+    axes[1].set_xlabel("Completeness (proportion of days with data)")
+    axes[1].set_ylabel("Number of Users")
+    axes[1].set_title("Daily Completeness")
+    axes[1].grid(axis="y", alpha=0.3)
+
+    plt.tight_layout()
+    plt.show()
+
+    print("Completeness Statistics:")
+    print(f"  Hourly  - Mean: {comp_hourly.mean():.3f}, Median: {comp_hourly.median():.3f}")
+    print(f"  Daily   - Mean: {comp_daily.mean():.3f}, Median: {comp_daily.median():.3f}")
+
+# %% [markdown]
+# ## Dataset Statistics
+
+# %%
+if RUN_ANALYSIS:
+    section("DATASET STATISTICS")
+
+    pings_per_user = device_df.groupby("user_id").size()
+
+    print(f"Number of users: {device_df['user_id'].nunique()}")
+    print(f"Total pings: {len(device_df):,}")
+    print(f"Pings per user - Mean: {pings_per_user.mean():.0f}, Median: {pings_per_user.median():.0f}")
+    print(f"Pings per user - Min: {pings_per_user.min()}, Max: {pings_per_user.max()}")
+
+    device_df["loc_grid"] = (device_df["x"] // 100).astype(str) + "_" + (device_df["y"] // 100).astype(str)
+    device_df["day_num"] = (
+        pd.to_datetime(device_df["plot_date"])
+        - pd.to_datetime(device_df["plot_date"]).min()
+    ).dt.days
+
+    first_seen = device_df.groupby(["user_id", "loc_grid"], as_index=False)["day_num"].min()
+    new_locations = first_seen.groupby(["user_id", "day_num"]).size().rename("new_locations")
+    full_index = pd.MultiIndex.from_product(
+        [device_df["user_id"].drop_duplicates(), range(device_df["day_num"].max() + 1)],
+        names=["user_id", "day"],
+    )
+    cum_loc_df = (
+        new_locations.rename_axis(index={"day_num": "day"})
+        .reindex(full_index, fill_value=0)
+        .groupby(level="user_id")
+        .cumsum()
+        .reset_index()
+        .rename(columns={"new_locations": "cumulative_locations"})
+    )
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.scatter(cum_loc_df["day"], cum_loc_df["cumulative_locations"], alpha=0.2, s=15, color="darkgreen")
+    ax.set_xlabel("Day (relative to start)")
+    ax.set_ylabel("Cumulative Unique Locations Visited (100m grid)")
+    ax.set_title("Growth of Unique Locations Over Time")
+    ax.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.show()
 
 # %% [markdown]
 # ## Quick Checks
