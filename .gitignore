@@ -75,3 +75,7 @@ sandbox/sandbox_data.gpkg
 **/*.svg
 **/*.eps
 tmp_parallelized_per_user_pr_description.md
+examples/research/virtual_philadelphia/output/
+examples/research/virtual_philadelphia/cache/
+examples/research/virtual_philadelphia/output_rework/
+examples/research/virtual_philadelphia/cache_rework/
