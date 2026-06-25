@@ -1039,8 +1039,6 @@ def mercator_to_blocks_gdf(gdf, block_size, false_easting, false_northing,
     
     This is the GeoDataFrame equivalent of mercator_to_blocks() for DataFrames.
     """
-    from shapely.affinity import scale, rotate as shapely_rotate
-    
     result = gdf.copy()
     
     # Apply rotation around centroid

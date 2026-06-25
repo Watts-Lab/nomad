@@ -1,0 +1,19 @@
+{
+  "source": "examples/research/virtual_philadelphia/output",
+  "outputs": {
+    "df_samp_rows": 45621,
+    "users": 200,
+    "areas": 1336,
+    "home_areas": 102,
+    "hexes_resolution_9": 143,
+    "start_time_min": "2025-05-23 00:00:30",
+    "start_time_max": "2025-06-30 23:43:30"
+  },
+  "notes": [
+    "df_samp contains non-travel diary rows with non-null coordinates.",
+    "Coordinates and geometry are EPSG:3857 for meter-based distance calculations.",
+    "H3 columns were computed after transforming points to EPSG:4326.",
+    "loc_area/home_area use Philadelphia 2010 Census Block Group GEOID10 values with a BG prefix.",
+    "Mobility metrics are intentionally calculated in the tutorial notebook, not precomputed here."
+  ]
+}
