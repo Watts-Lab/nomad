@@ -397,7 +397,10 @@ class Agent:
             start_segment = [tuple(start_point), prev_door_point]
             start_node = (int(self._previous_dest_building_row['door_cell_x']), int(self._previous_dest_building_row['door_cell_y']))
         else:
-            start_node = start_block
+            street_coords = city._get_street_coord_set()
+            start_node = start_block if start_block in street_coords else _nearest_block(start_point_arr, street_coords)
+            if start_node != start_block:
+                start_segment = [tuple(start_point)]
 
         # Resolve destination door coordinates for path computation
         dest_cell = (int(brow['door_cell_x']), int(brow['door_cell_y']))
@@ -424,7 +427,7 @@ class Agent:
             if in_previous_dest and self._previous_dest_building_row is not None:
                 start_blocks = self._previous_dest_building_row['blocks_set']
             else:
-                start_blocks = {start_block}
+                start_blocks = {start_block, start_node}
             bound_poly_blocks_set = start_blocks | set(street_path)
             
             # Cache the results
@@ -1141,6 +1144,12 @@ def _point_in_blocks(point_arr, blocks_set):
         return True
 
     return False
+
+
+def _nearest_block(point_arr, blocks_set):
+    blocks = np.asarray(sorted(blocks_set), dtype=float)
+    distances = np.abs(blocks - point_arr).sum(axis=1)
+    return tuple(map(int, blocks[np.argmin(distances)]))
 
 
 def _cartesian_coords(multilines, distance, offset, eps=0.001):
