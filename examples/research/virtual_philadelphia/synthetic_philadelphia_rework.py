@@ -41,7 +41,7 @@ import nomad.filters as filters
 import nomad.map_utils as nm
 import nomad.stop_detection.viz as viz
 from nomad.city_gen import RasterCity, load as load_city_pickle, save as save_city_pickle
-from nomad.io.base import from_df, from_file
+from nomad.io.base import from_file
 from nomad.traj_gen import Agent, Population
 
 # %% [markdown]
@@ -115,13 +115,6 @@ def write_parquet_file(df, path):
     df.to_parquet(path, index=False)
 
 
-def prepare_traj_parquet_dataset(df):
-    out = from_df(df, mixed_timezone_behavior="naive")
-    # Store datetimes as text so every batch parquet file has the same schema.
-    out["datetime"] = out["datetime"].astype(str)
-    return out
-
-
 def write_dataset_from_files(paths, path, partition_cols):
     dataset = ds.dataset([str(file_path) for file_path in paths], format="parquet")
     ds.write_dataset(
@@ -129,18 +122,6 @@ def write_dataset_from_files(paths, path, partition_cols):
         base_dir=str(path),
         format="parquet",
         partitioning=partition_cols,
-        existing_data_behavior="delete_matching",
-    )
-
-
-def write_traj_dataset_from_files(paths, path):
-    dataset = ds.dataset([str(file_path) for file_path in paths], format="parquet")
-    ds.write_dataset(
-        dataset.scanner(),
-        base_dir=str(path),
-        format="parquet",
-        partitioning=["date"],
-        partitioning_flavor="hive",
         existing_data_behavior="delete_matching",
     )
 
@@ -447,16 +428,12 @@ def simulate_agent_batch(batch_id, agent_batch, batch_output_dir):
     paths = {
         "sparse": batch_dir / "sparse.parquet",
         "diaries": batch_dir / "diaries.parquet",
-        "sparse_traj": batch_dir / "sparse_traj.parquet",
-        "diaries_traj": batch_dir / "diaries_traj.parquet",
         "dest_diaries": batch_dir / "dest_diaries.parquet",
         "summary": batch_dir / "summary.parquet",
     }
     t0 = time.perf_counter()
     write_parquet_file(sparse_df, paths["sparse"])
     write_parquet_file(diaries_df, paths["diaries"])
-    write_parquet_file(prepare_traj_parquet_dataset(sparse_df), paths["sparse_traj"])
-    write_parquet_file(prepare_traj_parquet_dataset(diaries_df), paths["diaries_traj"])
     write_parquet_file(dest_diaries_df, paths["dest_diaries"])
     write_parquet_file(summary_df, paths["summary"])
     write_time = time.perf_counter() - t0
@@ -533,8 +510,21 @@ timing_path = OUTPUT_DIR / f"batch_timing_{BOX_NAME}.parquet"
 batch_timing.to_parquet(timing_path, index=False)
 
 paths_by_output = batch_manifest.groupby("output")["path"].apply(list)
-write_traj_dataset_from_files(paths_by_output["sparse_traj"], OUTPUT_DIR / f"sparse_traj_{BOX_NAME}")
-write_traj_dataset_from_files(paths_by_output["diaries_traj"], OUTPUT_DIR / f"diaries_{BOX_NAME}")
+sparse_df = pd.concat([pd.read_parquet(path) for path in paths_by_output["sparse"]], ignore_index=True)
+diaries_df = pd.concat([pd.read_parquet(path) for path in paths_by_output["diaries"]], ignore_index=True)
+
+for user_id, user_sparse in sparse_df.groupby("user_id", sort=False):
+    population_template.roster[user_id].sparse_traj = user_sparse.reset_index(drop=True)
+
+for user_id, user_diary in diaries_df.groupby("user_id", sort=False):
+    population_template.roster[user_id].diary = user_diary.reset_index(drop=True)
+
+population_template.save_pop(
+    sparse_path=OUTPUT_DIR / f"sparse_traj_{BOX_NAME}",
+    diaries_path=OUTPUT_DIR / f"diaries_{BOX_NAME}",
+    partition_cols=["date"],
+    fmt="parquet",
+)
 write_dataset_from_files(paths_by_output["dest_diaries"], OUTPUT_DIR / f"dest_diaries_{BOX_NAME}", ["date"])
 write_dataset_from_files(paths_by_output["summary"], OUTPUT_DIR / f"homes_{BOX_NAME}", ["date"])
 
