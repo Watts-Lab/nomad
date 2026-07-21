@@ -5,15 +5,15 @@ import pytest
 from pathlib import Path
 import nomad.io.base as loader
 from nomad import filters
-import nomad.stop_detection.dbscan as DBSCAN
-import nomad.stop_detection.lachesis as LACHESIS
-import nomad.stop_detection.dbstop as DBSTOP
-import nomad.stop_detection.density_based as DENSITY_BASED
-import nomad.stop_detection.hdbscan as HDBSCAN
-import nomad.stop_detection.grid_based as GRID_BASED
+import nomad.stop_detection.density_algs as DBSCAN
+import nomad.stop_detection.sequential_algs as LACHESIS
+import nomad.stop_detection.density_algs as DBSTOP
+import nomad.stop_detection.density_algs as DENSITY_BASED
+import nomad.stop_detection.density_algs as HDBSCAN
+import nomad.stop_detection.sequential_algs as GRID_BASED
 import nomad.stop_detection.preprocessing as PREPROCESSING
 import nomad.stop_detection.utils as STOP_UTILS
-import nomad.stop_detection.sequential as SEQUENTIAL
+import nomad.stop_detection.sequential_algs as SEQUENTIAL
 from pandas.api.types import is_integer_dtype
 import numpy as np
 

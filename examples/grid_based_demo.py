@@ -35,7 +35,7 @@ import nomad.io.base as loader
 import geopandas as gpd
 from shapely.geometry import box
 from nomad.stop_detection.viz import plot_stops_barcode, plot_time_barcode, plot_hexagons, plot_pings
-import nomad.stop_detection.grid_based as GRID_BASED
+import nomad.stop_detection.sequential_algs as GRID_BASED
 import nomad.filters as filters 
 
 # Load data

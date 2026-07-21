@@ -161,7 +161,7 @@ def build_payload() -> dict:
     from nomad.city_gen import City
     import nomad.filters as filters
     import nomad.io.base as loader
-    import nomad.stop_detection.lachesis as LACHESIS
+    import nomad.stop_detection.sequential_algs as LACHESIS
 
     traj_cols = {
         "user_id": "gc_identifier",

@@ -33,9 +33,9 @@ import os
 
 import nomad.io.base as loader
 import nomad.stop_detection.utils as utils
-import nomad.stop_detection.lachesis as LACHESIS
-import nomad.stop_detection.ta_dbscan as TADBSCAN
-import nomad.stop_detection.grid_based as GRID_BASED
+import nomad.stop_detection.sequential_algs as LACHESIS
+import nomad.stop_detection.density_algs as TADBSCAN
+import nomad.stop_detection.sequential_algs as GRID_BASED
 import nomad.stop_detection.postprocessing as pp
 
 import nomad.visit_attribution as visits

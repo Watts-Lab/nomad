@@ -33,8 +33,8 @@ import nomad.city_gen as cg
 from nomad.city_gen import City
 import nomad.traj_gen as tg
 from nomad.traj_gen import Agent, Population
-import nomad.stop_detection.dbscan as DBSCAN
-import nomad.stop_detection.lachesis as Lachesis
+import nomad.stop_detection.density_algs as DBSCAN
+import nomad.stop_detection.sequential_algs as Lachesis
 
 from nomad.constants import DEFAULT_SPEEDS, FAST_SPEEDS, SLOW_SPEEDS, DEFAULT_STILL_PROBS
 from nomad.constants import FAST_STILL_PROBS, SLOW_STILL_PROBS, ALLOWED_BUILDINGS

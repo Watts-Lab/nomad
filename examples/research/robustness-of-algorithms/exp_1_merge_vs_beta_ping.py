@@ -31,9 +31,9 @@ from statsmodels.nonparametric.smoothers_lowess import lowess
 
 import nomad.io.base as loader
 import nomad.stop_detection.utils as utils
-import nomad.stop_detection.lachesis as LACHESIS
-import nomad.stop_detection.dbscan as TADBSCAN
-import nomad.stop_detection.grid_based as GRID_BASED # for oracle visits
+import nomad.stop_detection.sequential_algs as LACHESIS
+import nomad.stop_detection.density_algs as TADBSCAN
+import nomad.stop_detection.sequential_algs as GRID_BASED # for oracle visits
 
 import nomad.visit_attribution.visit_attribution as visits
 import nomad.filters as filters

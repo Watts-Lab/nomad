@@ -38,7 +38,7 @@ import nomad.io.base as loader
 import geopandas as gpd
 from shapely.geometry import box
 from nomad.stop_detection.viz import plot_stops_barcode, plot_time_barcode, plot_stops, plot_pings
-import nomad.stop_detection.lachesis as LACHESIS
+import nomad.stop_detection.sequential_algs as LACHESIS
 import nomad.data as data_folder
 from pathlib import Path
 

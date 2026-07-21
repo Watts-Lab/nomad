@@ -36,7 +36,7 @@ import nomad.io.base as loader
 import geopandas as gpd
 from shapely.geometry import box
 from nomad.stop_detection.viz import plot_stops_barcode, plot_time_barcode, plot_stops, plot_pings
-import nomad.stop_detection.dbscan as DBSCAN
+import nomad.stop_detection.density_algs as DBSCAN
 
 # Load data
 import nomad.data as data_folder

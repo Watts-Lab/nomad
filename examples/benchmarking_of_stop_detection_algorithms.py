@@ -31,10 +31,10 @@ from shapely.geometry import box
 import pandas as pd
 import numpy as np
 from nomad.stop_detection.viz import plot_stops_barcode, plot_pings, plot_stops, plot_time_barcode
-import nomad.stop_detection.dbscan as DBSCAN
-import nomad.stop_detection.lachesis as LACHESIS
-import nomad.stop_detection.grid_based as GRID_BASED
-import nomad.stop_detection.hdbscan as HDBSCAN
+import nomad.stop_detection.density_algs as DBSCAN
+import nomad.stop_detection.sequential_algs as LACHESIS
+import nomad.stop_detection.sequential_algs as GRID_BASED
+import nomad.stop_detection.density_algs as HDBSCAN
 import nomad.filters as filters 
 import time
 from tqdm import tqdm

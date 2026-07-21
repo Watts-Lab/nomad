@@ -4,7 +4,7 @@ import numpy as np
 from nomad.metrics.metrics import rog, self_containment
 from pathlib import Path
 from nomad.io import base as loader
-from nomad.stop_detection import lachesis as LACHESIS
+from nomad.stop_detection import sequential_algs as LACHESIS
 import nomad.stop_detection.utils as utils
 
 @pytest.fixture
@@ -344,4 +344,3 @@ def test_self_containment_with_time_weights():
     # Expected: 60/120 = 0.5
     assert len(result) == 1
     assert np.allclose(result['self_containment'].values[0], 60/120)
-
