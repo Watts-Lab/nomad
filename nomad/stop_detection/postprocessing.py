@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import nomad.io.base as loader
+from nomad.stop_detection.clustering import dbscan_labels
 
 def fill_timestamp_gaps(first_time, last_time, stop_table):
 
@@ -55,6 +56,44 @@ def fill_timestamp_gaps(first_time, last_time, stop_table):
     df_full = df_full.sort_values('start_timestamp').reset_index(drop=True)
 
     return df_full
+
+
+def cluster_stops(stops, epsilon=100, num_samples=1, traj_cols=None, **kwargs):
+    """
+    Cluster detected stops into recurring locations.
+
+    Parameters
+    ----------
+    stops : pd.DataFrame
+        Stop table containing x/y or longitude/latitude coordinates.
+    epsilon : float, default 100
+        Maximum distance between neighboring stops. Units match x/y coordinates
+        or are meters for longitude/latitude coordinates.
+    num_samples : int, default 1
+        Minimum number of stops required to form a cluster.
+    traj_cols : dict, optional
+        Column mappings for x/y or longitude/latitude coordinates.
+    **kwargs
+        Additional coordinate-column mappings.
+
+    Returns
+    -------
+    pd.DataFrame
+        Copy of ``stops`` with DBSCAN labels in ``location_id``.
+
+    Notes
+    -----
+    All stop rows are clustered together.
+    """
+    result = stops.copy()
+    result["location_id"] = dbscan_labels(
+        result,
+        epsilon=epsilon,
+        num_samples=num_samples,
+        traj_cols=traj_cols,
+        **kwargs,
+    )
+    return result
 
 
 def merge_stops(stops, max_time_gap="10min", location_col="loc_id", agg=None, traj_cols=None, **kwargs):
