@@ -19,7 +19,8 @@ DEFAULT_SCHEMA = {
     "duration" : "duration",
     "ha":"ha",
     "h3_cell":"h3_cell",
-    "location_id" : "location_id"}
+    "location_id" : "location_id",
+    "label": "label"}
 
 SEC_PER_UNIT = {'s': 1, 'min': 60, 'h': 3_600, 'd': 86_400, 'w': 604_800}
 

@@ -6,21 +6,14 @@ from nomad.filters import to_timestamp
 from nomad.stop_detection import utils
 from nomad.stop_detection.utils import _haversine_distance
 
-from .core_points import (
-    _empty_anchor_points,
-    finish_result,
-    records_to_anchor_points,
-)
-
-
 def detect_stops_labels(
     data,
     delta_roam=100,
     dt_max=15.0,
     dur_min=5.0,
     method='sliding',
-    anchor_plotting=False,
-    anchor_plotting_path=None,
+    return_anchor_points=False,
+    anchor_points_path=None,
     config_key=None,
     traj_cols=None,
     **kwargs
@@ -45,6 +38,10 @@ def detect_stops_labels(
         Minimum duration in minutes for a valid stop
     method : str, default 'sliding'
         Method to use ('sliding' or 'centroid') for the anchor point of the active stop
+    return_anchor_points : bool, default False
+        Return the anchor and accepted-point records alongside the labels.
+    anchor_points_path : path-like, optional
+        Write the anchor and accepted-point records to Parquet.
     traj_cols : dict, optional
         Mapping for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'
     **kwargs
@@ -52,21 +49,48 @@ def detect_stops_labels(
         
     Returns
     -------
-    pd.Series
-        One integer label per row, -1 for non-stop points, 0..K for stops
+    pd.Series or tuple
+        One integer label per row, or ``(labels, anchor_points)`` when
+        ``return_anchor_points`` is true.
     """
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
         raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
     
     if data.empty:
         result = pd.Series(dtype='int64', name='cluster')
-        return finish_result(result, _empty_anchor_points(), anchor_plotting, anchor_plotting_path)
+        return utils.finish_point_result(
+            result,
+            utils.empty_point_output(),
+            return_anchor_points,
+            anchor_points_path,
+        )
     
     # Get column mappings
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(
         data.columns, traj_cols, kwargs
     )
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    start_t_key = "start_datetime" if use_datetime else "start_timestamp"
+    collect_anchor_points = return_anchor_points or anchor_points_path is not None
+    if collect_anchor_points:
+        point_columns = [
+            traj_cols["user_id"],
+            traj_cols[t_key],
+            "config_key",
+            "role",
+            traj_cols[start_t_key],
+            traj_cols["label"],
+            traj_cols[coord_key1],
+            traj_cols[coord_key2],
+            "value",
+            "value_name",
+        ]
+        records = []
+        uid_values = (
+            data[traj_cols['user_id']].to_numpy()
+            if traj_cols['user_id'] in data.columns
+            else np.full(len(data), None, dtype=object)
+        )
     
     # Validate spatial and temporal columns
     loader._has_spatial_cols(data.columns, traj_cols)
@@ -80,8 +104,6 @@ def detect_stops_labels(
     n = len(data)
     labels = np.full(n, -1, dtype=int)
     cluster_id = 0
-    records = []
-    uid_values = data[traj_cols['user_id']].to_numpy() if 'user_id' in traj_cols and traj_cols['user_id'] in data.columns else np.full(n, None, dtype=object)
     
     i = 0
     while i < n:
@@ -122,7 +144,7 @@ def detect_stops_labels(
         if time_spent >= dur_min:
             # Assign cluster label to all points in this stop
             labels[i:j] = cluster_id
-            if anchor_plotting or anchor_plotting_path is not None:
+            if collect_anchor_points:
                 stop_coords = coords[i:j]
                 stop_times = times.iloc[i:j].to_numpy()
                 stop_users = uid_values[i:j]
@@ -139,26 +161,26 @@ def detect_stops_labels(
                     distances = np.linalg.norm(stop_coords - anchors, axis=1)
                 source_times = stop_times if method == 'centroid' else np.repeat(stop_times[0], len(stop_times))
                 anchor_rows = pd.DataFrame({
-                    "user_id": stop_users,
-                    "timestamp": stop_times,
+                    traj_cols["user_id"]: stop_users,
+                    traj_cols[t_key]: stop_times,
                     "config_key": config_key,
                     "role": 1,
-                    "source_timestamp": source_times,
-                    "cluster": cluster_id,
-                    "x": anchors[:, 0],
-                    "y": anchors[:, 1],
+                    traj_cols[start_t_key]: source_times,
+                    traj_cols["label"]: cluster_id,
+                    traj_cols[coord_key1]: anchors[:, 0],
+                    traj_cols[coord_key2]: anchors[:, 1],
                     "value": distances,
                     "value_name": "distance_to_anchor",
                 })
                 accepted_rows = pd.DataFrame({
-                    "user_id": stop_users[1:],
-                    "timestamp": stop_times[1:],
+                    traj_cols["user_id"]: stop_users[1:],
+                    traj_cols[t_key]: stop_times[1:],
                     "config_key": config_key,
                     "role": -1,
-                    "source_timestamp": source_times[1:],
-                    "cluster": cluster_id,
-                    "x": stop_coords[1:, 0],
-                    "y": stop_coords[1:, 1],
+                    traj_cols[start_t_key]: source_times[1:],
+                    traj_cols["label"]: cluster_id,
+                    traj_cols[coord_key1]: stop_coords[1:, 0],
+                    traj_cols[coord_key2]: stop_coords[1:, 1],
                     "value": distances[1:],
                     "value_name": "distance_to_anchor",
                 })
@@ -172,8 +194,17 @@ def detect_stops_labels(
             i += 1
     
     result = pd.Series(labels, index=data.index, name='cluster')
-    anchor_points = records_to_anchor_points(records)
-    return finish_result(result, anchor_points, anchor_plotting, anchor_plotting_path)
+    if collect_anchor_points:
+        anchor_points = pd.DataFrame.from_records(records, columns=point_columns)
+        anchor_points["role"] = anchor_points["role"].astype("int8")
+    else:
+        anchor_points = None
+    return utils.finish_point_result(
+        result,
+        anchor_points,
+        return_anchor_points,
+        anchor_points_path,
+    )
 
 
 def applyParallel(groups, func, n_jobs=1, print_progress=False, **kwargs):
@@ -193,7 +224,7 @@ def detect_stops(
     dur_min=5.0,
     method='sliding',
     complete_output=False,
-    passthrough_cols=[],
+    passthrough_cols=None,
     keep_col_names=True,
     traj_cols=None,
     **kwargs
@@ -235,6 +266,7 @@ def detect_stops(
     ------
     ValueError if multiple users found; use detect_stops_per_user instead.
     """
+    passthrough_cols = [] if passthrough_cols is None else passthrough_cols
     traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     if 'user_id' in traj_cols_temp and traj_cols_temp['user_id'] in data.columns:
         uid_col = data[traj_cols_temp['user_id']]
@@ -257,33 +289,15 @@ def detect_stops(
         traj_cols=traj_cols,
         **kwargs
     )
-    merged = data.join(labels)
-    merged = merged[merged.cluster != -1]
-
-    if merged.empty:
-        return utils._get_empty_stop_df(
-            data.columns,
-            complete_output,
-            passthrough_cols,
-            traj_cols,
-            keep_col_names=keep_col_names,
-            is_grid_based=False,
-            **kwargs,
-        )
-
-    stop_table = merged.groupby('cluster', as_index=False, sort=False).apply(
-        lambda grp: utils.summarize_stop(
-            grp,
-            complete_output=complete_output,
-            traj_cols=traj_cols,
-            keep_col_names=keep_col_names,
-            passthrough_cols=passthrough_cols,
-            **kwargs
-        ),
-        include_groups=False
-    ).reset_index(drop=True)
-
-    return stop_table
+    return utils.labels_to_stops(
+        data,
+        labels,
+        complete_output=complete_output,
+        passthrough_cols=passthrough_cols,
+        keep_col_names=keep_col_names,
+        traj_cols=traj_cols,
+        **kwargs,
+    )
 
 
 def detect_stops_per_user(
@@ -293,7 +307,7 @@ def detect_stops_per_user(
     dur_min=5.0,
     method='sliding',
     complete_output=False,
-    passthrough_cols=[],
+    passthrough_cols=None,
     keep_col_names=True,
     traj_cols=None,
     n_jobs=1,
@@ -339,6 +353,7 @@ def detect_stops_per_user(
     ------
     ValueError if 'user_id' not in traj_cols or missing from data.
     """
+    passthrough_cols = [] if passthrough_cols is None else passthrough_cols
     traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     if 'user_id' not in traj_cols_temp or traj_cols_temp['user_id'] not in data.columns:
         raise ValueError("detect_stops_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
@@ -379,8 +394,8 @@ def detect_stops_labels_per_user(
     dt_max=15.0,
     dur_min=5.0,
     method='sliding',
-    anchor_plotting=False,
-    anchor_plotting_path=None,
+    return_anchor_points=False,
+    anchor_points_path=None,
     config_key=None,
     traj_cols=None,
     n_jobs=1,
@@ -404,7 +419,7 @@ def detect_stops_labels_per_user(
             dt_max=dt_max,
             dur_min=dur_min,
             method=method,
-            anchor_plotting=anchor_plotting or anchor_plotting_path is not None,
+            return_anchor_points=return_anchor_points or anchor_points_path is not None,
             config_key=config_key,
             traj_cols=traj_cols,
             **kwargs,
@@ -418,10 +433,15 @@ def detect_stops_labels_per_user(
         print_progress=print_progress,
     )
 
-    if anchor_plotting or anchor_plotting_path is not None:
+    if return_anchor_points or anchor_points_path is not None:
         labels = pd.concat([result[0] for result in results]).reindex(data.index)
         anchor_points = pd.concat([result[1] for result in results], ignore_index=True)
-        return finish_result(labels, anchor_points, anchor_plotting, anchor_plotting_path)
+        return utils.finish_point_result(
+            labels,
+            anchor_points,
+            return_anchor_points,
+            anchor_points_path,
+        )
 
     return pd.concat(results).reindex(data.index)
 ########        Lachesis          ########
@@ -515,7 +535,7 @@ def lachesis(
     dt_max = 60,
     dur_min=5,
     complete_output=False,
-    passthrough_cols=[],
+    passthrough_cols=None,
     keep_col_names=True,
     traj_cols=None,
     **kwargs
@@ -549,6 +569,7 @@ def lachesis(
     ------
     ValueError if multiple users found; use lachesis_per_user instead.
     """
+    passthrough_cols = [] if passthrough_cols is None else passthrough_cols
     traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     if 'user_id' in traj_cols_temp and traj_cols_temp['user_id'] in data.columns:
         uid_col = data[traj_cols_temp['user_id']]
@@ -570,33 +591,15 @@ def lachesis(
         traj_cols=traj_cols,
         **kwargs
     )
-    merged = data.join(labels)
-    merged = merged[merged.cluster != -1]
-
-    if merged.empty:
-        return utils._get_empty_stop_df(
-            data.columns,
-            complete_output,
-            passthrough_cols,
-            traj_cols,
-            keep_col_names=keep_col_names,
-            is_grid_based=False,
-            **kwargs,
-        )
-
-    stop_table = merged.groupby('cluster', as_index=False, sort=False).apply(
-        lambda grp: utils.summarize_stop(
-            grp,
-            complete_output=complete_output,
-            traj_cols=traj_cols,
-            keep_col_names=keep_col_names,
-            passthrough_cols=passthrough_cols,
-            **kwargs
-        ),
-        include_groups=False
-    ).reset_index(drop=True)
-
-    return stop_table
+    return utils.labels_to_stops(
+        data,
+        labels,
+        complete_output=complete_output,
+        passthrough_cols=passthrough_cols,
+        keep_col_names=keep_col_names,
+        traj_cols=traj_cols,
+        **kwargs,
+    )
 
 def lachesis_per_user(
     data,
@@ -604,7 +607,7 @@ def lachesis_per_user(
     delta_roam,
     dur_min=5,
     complete_output=False,
-    passthrough_cols=[],
+    passthrough_cols=None,
     traj_cols=None,
     n_jobs=1,
     print_progress=False,
@@ -645,6 +648,7 @@ def lachesis_per_user(
     ------
     ValueError if 'user_id' not in traj_cols or missing from data.
     """
+    passthrough_cols = [] if passthrough_cols is None else passthrough_cols
     traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     if 'user_id' not in traj_cols_temp or traj_cols_temp['user_id'] not in data.columns:
         raise ValueError("lachesis_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
@@ -797,7 +801,7 @@ def grid_based(
     min_cluster_size=2,
     dur_min=5,
     complete_output=False,
-    passthrough_cols=[],
+    passthrough_cols=None,
     traj_cols=None,
     **kwargs
 ):
@@ -826,6 +830,7 @@ def grid_based(
     pd.DataFrame
         One row per stop, summarizing its centroid/medoid, duration, and optionally full stats.
     """
+    passthrough_cols = [] if passthrough_cols is None else passthrough_cols
     labels = grid_based_labels(
         data,
         time_thresh=time_thresh,
@@ -872,7 +877,7 @@ def grid_based_per_user(
     min_cluster_size=2,
     dur_min=5,
     complete_output=False,
-    passthrough_cols=[], 
+    passthrough_cols=None,
     traj_cols=None,
     n_jobs=1,
     print_progress=False,
@@ -882,6 +887,7 @@ def grid_based_per_user(
     Run grid_based stop detection on each user separately, then concatenate results.
     Raises an error if 'user_id' is not in traj_cols or kwargs.
     """
+    passthrough_cols = [] if passthrough_cols is None else passthrough_cols
     # Parse user_id
     traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     if traj_cols_temp['user_id'] not in data.columns:

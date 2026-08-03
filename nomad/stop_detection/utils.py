@@ -11,9 +11,42 @@ import h3
 import warnings
 import pdb
 from datetime import datetime, time, timedelta
+from pathlib import Path
 from nomad.filters import to_timestamp
 from joblib import Parallel, delayed
 from tqdm import tqdm
+
+
+def empty_point_output(columns=None):
+    if columns is None:
+        columns = [
+            constants.DEFAULT_SCHEMA["user_id"],
+            constants.DEFAULT_SCHEMA["timestamp"],
+            "config_key",
+            "role",
+            constants.DEFAULT_SCHEMA["start_timestamp"],
+            constants.DEFAULT_SCHEMA["label"],
+            constants.DEFAULT_SCHEMA["x"],
+            constants.DEFAULT_SCHEMA["y"],
+            "value",
+            "value_name",
+        ]
+    return pd.DataFrame(
+        {
+            column: pd.Series(dtype="int8" if column == "role" else "object")
+            for column in columns
+        }
+    )
+
+
+def finish_point_result(result, points, return_points=False, points_path=None):
+    if points_path is not None:
+        path = Path(points_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        points.to_parquet(path, index=False)
+    if return_points:
+        return result, points
+    return result
 
 def clip_stops_datetime(stops, start_datetime, end_datetime, traj_cols=None, **kwargs):
     """
@@ -322,7 +355,9 @@ def applyParallel(groups, func, n_jobs=1, print_progress=False, **kwargs):
         delayed(func)(group, **kwargs) for group in group_list
     )
 
-def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_col_names = True, passthrough_cols= [], traj_cols=None, **kwargs):
+def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_col_names = True, passthrough_cols=None, traj_cols=None, **kwargs):
+    if passthrough_cols is None:
+        passthrough_cols = []
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = _fallback_st_cols(grouped_data.columns, traj_cols, kwargs)
     traj_cols = loader._parse_traj_cols(grouped_data.columns, traj_cols, kwargs, warn=False)
     metric = 'haversine' if use_lon_lat else 'euclidean'    
@@ -372,6 +407,75 @@ def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_
         if col in grouped_data.columns:
             stop_attr[col] = grouped_data[col].iloc[0]
     return pd.Series(stop_attr, dtype="object")
+
+
+def labels_to_stops(
+    data,
+    labels,
+    complete_output=False,
+    dur_min=None,
+    passthrough_cols=None,
+    keep_col_names=True,
+    traj_cols=None,
+    **kwargs,
+):
+    """
+    Summarize non-noise point labels into one row per stop.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Input trajectory.
+    labels : pd.Series
+        Cluster label for each trajectory row, with ``-1`` denoting noise.
+    complete_output : bool
+        Whether to include extended stop statistics.
+    dur_min : number, optional
+        Minimum summarized stop duration to retain.
+    passthrough_cols : list, optional
+        Columns copied into each stop summary.
+    keep_col_names : bool
+        Whether to retain input coordinate and time column names.
+    traj_cols : dict, optional
+        Canonical-to-actual column mapping.
+    **kwargs
+        Additional column mappings.
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per non-noise cluster.
+    """
+    if passthrough_cols is None:
+        passthrough_cols = []
+
+    merged = data.join(labels)
+    merged = merged[merged.cluster != -1]
+    if merged.empty:
+        return _get_empty_stop_df(
+            data.columns,
+            complete_output,
+            passthrough_cols,
+            traj_cols,
+            keep_col_names=keep_col_names,
+            is_grid_based=False,
+            **kwargs,
+        )
+
+    stops = merged.groupby('cluster', as_index=False, sort=False).apply(
+        lambda group: summarize_stop(
+            group,
+            complete_output=complete_output,
+            traj_cols=traj_cols,
+            keep_col_names=keep_col_names,
+            passthrough_cols=passthrough_cols,
+            **kwargs,
+        ),
+        include_groups=False,
+    ).reset_index(drop=True)
+    if dur_min is not None:
+        stops = stops.loc[stops['duration'] >= dur_min]
+    return stops
 
 def summarize_stop_grid(
     grouped_data,
