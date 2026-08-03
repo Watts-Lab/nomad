@@ -43,7 +43,6 @@ import nomad.city_gen as cg
 import nomad.traj_gen as tg
 import nomad.filters as filters
 from nomad.traj_gen import Agent, Population
-from nomad.generation.sparsity import gen_params_target_q
 import nomad.generation.viz as viz
 from nomad.contact_estimation import overlapping_visits, compute_precision_recall_f1
 from nomad.stop_detection.validation import compute_visitation_errors
@@ -1223,7 +1222,7 @@ def run_simulation_for_single_agent(
     truth['building_type'] = truth['building_id'].apply(classify_building_type_from_id)
     truth['dwell_length'] = truth['duration'].apply(classify_dwell)
 
-    beta_params = gen_params_target_q(q_range=(0.4, 0.85), seed=agent_seed)
+    beta_params = Population.gen_params_target_q(q=(0.4, 0.85), seed=agent_seed)
     ha = np.random.uniform(10/15, 16/15, size=1)[0]
 
     # Iterate over simulation configurations

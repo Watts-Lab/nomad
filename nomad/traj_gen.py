@@ -1216,6 +1216,46 @@ def _path_coords(multilines, point, eps=0.001):
 
     return distance, offset
 
+_DEFAULT_PARAM = object()
+
+def _is_supplied(spec):
+    return spec is not _DEFAULT_PARAM and spec is not None
+
+def _sample_param_spec(spec, rng, *, probs=None, name="parameter"):
+    """Sample a numeric parameter from a scalar, uniform range, or value list."""
+    if spec is None or spec is _DEFAULT_PARAM:
+        return None
+
+    if isinstance(spec, dict):
+        values = spec.get("values")
+        if values is None:
+            raise ValueError(f"{name} spec dictionaries must include a 'values' key")
+        probs = spec.get("probs", probs)
+        spec = values
+
+    if np.isscalar(spec):
+        value = float(spec)
+    elif isinstance(spec, tuple) and len(spec) == 2:
+        lo, hi = spec
+        value = float(rng.uniform(lo, hi))
+    else:
+        values = list(spec)
+        if not values:
+            raise ValueError(f"{name} values must not be empty")
+        if probs is not None and len(probs) != len(values):
+            raise ValueError(f"{name} probs must have the same length as values")
+        value = float(rng.choice(values, p=probs))
+
+    if value <= 0:
+        raise ValueError(f"{name} must be positive")
+    return value
+
+def _sample_target_value(spec, rng, *, name):
+    value = _sample_param_spec(spec, rng, name=name)
+    if value is None:
+        raise ValueError(f"{name} must be provided")
+    return value
+
 class Population:
     """
     A class to represent a population of agents within a city.
@@ -1298,6 +1338,171 @@ class Population:
                           datetime=get_datetime(i),
                           seed=agent_seed)
             self.add_agent(agent)
+
+    @staticmethod
+    def gen_params_ranges(beta_start=(80, 450),
+                          beta_ping=(1.5, 20),
+                          beta_durations=(50, 300),
+                          *,
+                          beta_start_probs=None,
+                          beta_ping_probs=None,
+                          beta_durations_probs=None,
+                          seed=None):
+        """
+        Sample burst-sparsity parameters from independent specifications.
+
+        Each beta parameter may be a scalar, a ``(low, high)`` tuple sampled
+        uniformly, a list of exact values sampled uniformly, or a dict with
+        ``{"values": [...], "probs": [...]}``.
+        """
+        rng = npr.default_rng(seed)
+        sampled_durations = _sample_param_spec(
+            beta_durations, rng, probs=beta_durations_probs, name="beta_durations"
+        )
+        sampled_start = _sample_param_spec(
+            beta_start, rng, probs=beta_start_probs, name="beta_start"
+        )
+        sampled_ping = _sample_param_spec(
+            beta_ping, rng, probs=beta_ping_probs, name="beta_ping"
+        )
+        sampled_ping = min(sampled_ping, sampled_durations)
+        return {
+            "beta_durations": sampled_durations,
+            "beta_start": sampled_start,
+            "beta_ping": sampled_ping
+        }
+
+    @staticmethod
+    def gen_params_target_q(q=(0.3, 0.9),
+                            beta_start=_DEFAULT_PARAM,
+                            beta_ping=_DEFAULT_PARAM,
+                            beta_durations=_DEFAULT_PARAM,
+                            *,
+                            beta_start_probs=None,
+                            beta_ping_probs=None,
+                            beta_durations_probs=None,
+                            seed=None):
+        """
+        Sample burst parameters targeting coverage ``q``.
+
+        Coverage is modeled as ``beta_durations / beta_start``. Provide two of
+        ``beta_start``, ``beta_ping``, and ``beta_durations``; the missing
+        coverage parameter is derived from the sampled target ``q``. If no beta
+        parameters are supplied, this uses the legacy defaults:
+        ``beta_durations=(25, 240)`` and ``beta_ping=(2, 8)``.
+        """
+        rng = npr.default_rng(seed)
+        target_q = _sample_target_value(q, rng, name="q")
+        if not 0 < target_q <= 1:
+            raise ValueError("q must be in the interval (0, 1]")
+
+        start_supplied = _is_supplied(beta_start)
+        ping_supplied = _is_supplied(beta_ping)
+        durations_supplied = _is_supplied(beta_durations)
+        supplied_count = sum((start_supplied, ping_supplied, durations_supplied))
+        if supplied_count > 2:
+            raise ValueError("Provide at most two of beta_start, beta_ping, and beta_durations")
+        if start_supplied and durations_supplied:
+            raise ValueError("Provide only one of beta_start and beta_durations when targeting q")
+
+        if supplied_count == 0:
+            beta_ping = (2, 8)
+            beta_durations = (25, 240)
+        elif supplied_count == 1:
+            if start_supplied or durations_supplied:
+                beta_ping = (2, 8)
+            elif ping_supplied:
+                beta_durations = (25, 240)
+
+        sampled_start = _sample_param_spec(
+            beta_start, rng, probs=beta_start_probs, name="beta_start"
+        )
+        sampled_ping = _sample_param_spec(
+            beta_ping, rng, probs=beta_ping_probs, name="beta_ping"
+        )
+        sampled_durations = _sample_param_spec(
+            beta_durations, rng, probs=beta_durations_probs, name="beta_durations"
+        )
+
+        if sampled_start is None and sampled_durations is None:
+            raise ValueError("Provide beta_start or beta_durations so the other can be derived from q")
+        if sampled_start is None:
+            sampled_start = sampled_durations / target_q
+        if sampled_durations is None:
+            sampled_durations = target_q * sampled_start
+        if sampled_ping is None:
+            sampled_ping = _sample_param_spec((2, 8), rng, name="beta_ping")
+
+        sampled_ping = min(sampled_ping, sampled_durations)
+        return {
+            "beta_durations": sampled_durations,
+            "beta_start": sampled_start,
+            "beta_ping": sampled_ping,
+            "q": target_q
+        }
+
+    @staticmethod
+    def gen_params_target_f(f,
+                            beta_start=_DEFAULT_PARAM,
+                            beta_ping=_DEFAULT_PARAM,
+                            beta_durations=_DEFAULT_PARAM,
+                            *,
+                            beta_start_probs=None,
+                            beta_ping_probs=None,
+                            beta_durations_probs=None,
+                            seed=None):
+        """
+        Sample burst parameters targeting expected ping frequency ``f``.
+
+        Frequency is modeled in pings per minute as
+        ``beta_durations / (beta_start * beta_ping)``. Provide up to two of
+        ``beta_start``, ``beta_ping``, and ``beta_durations``; defaults fill in
+        one unspecified beta parameter when needed, and the remaining beta
+        parameter is derived from ``f``.
+        """
+        rng = npr.default_rng(seed)
+        target_f = _sample_target_value(f, rng, name="f")
+        if target_f <= 0:
+            raise ValueError("f must be positive")
+
+        start_supplied = _is_supplied(beta_start)
+        ping_supplied = _is_supplied(beta_ping)
+        durations_supplied = _is_supplied(beta_durations)
+        supplied_count = sum((start_supplied, ping_supplied, durations_supplied))
+        if supplied_count > 2:
+            raise ValueError("Provide at most two of beta_start, beta_ping, and beta_durations")
+        if supplied_count == 0:
+            beta_start = (80, 450)
+            beta_ping = (1.5, 20)
+        elif supplied_count == 1:
+            if start_supplied:
+                beta_ping = (1.5, 20)
+            elif ping_supplied or durations_supplied:
+                beta_start = (80, 450)
+
+        sampled_start = _sample_param_spec(
+            beta_start, rng, probs=beta_start_probs, name="beta_start"
+        )
+        sampled_ping = _sample_param_spec(
+            beta_ping, rng, probs=beta_ping_probs, name="beta_ping"
+        )
+        sampled_durations = _sample_param_spec(
+            beta_durations, rng, probs=beta_durations_probs, name="beta_durations"
+        )
+
+        if sampled_durations is None:
+            sampled_durations = target_f * sampled_start * sampled_ping
+        elif sampled_start is None:
+            sampled_start = sampled_durations / (target_f * sampled_ping)
+        elif sampled_ping is None:
+            sampled_ping = sampled_durations / (target_f * sampled_start)
+
+        return {
+            "beta_durations": sampled_durations,
+            "beta_start": sampled_start,
+            "beta_ping": sampled_ping,
+            "f": target_f
+        }
 
     def save_pop(self,
                  traj_cols=None,
