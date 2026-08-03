@@ -66,6 +66,8 @@ def _extract_density_core_points(
         }
     ).loc[clustered].groupby("cluster", sort=False):
         core_times = group.loc[group["is_core"], "timestamp"].to_numpy()
+        if core_times.size == 0:
+            continue
         times = group["timestamp"].to_numpy()
         positions = np.searchsorted(core_times, times)
         previous_times = core_times[np.clip(positions - 1, 0, len(core_times) - 1)]

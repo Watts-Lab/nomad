@@ -1,5 +1,6 @@
 import inspect
 
+import networkx as nx
 import pandas as pd
 import pytest
 from pandas.api.types import is_integer_dtype
@@ -19,6 +20,39 @@ POINT_COLUMNS = [
     "value",
     "value_name",
 ]
+
+
+def _extract_core_points(timestamps, clusters, cores):
+    data = pd.DataFrame(
+        {
+            "uid": ["user-1"] * len(timestamps),
+            "timestamp": timestamps,
+            "x": range(len(timestamps)),
+            "y": [0] * len(timestamps),
+        }
+    )
+    graph = nx.Graph()
+    graph.add_nodes_from(timestamps)
+    output = pd.DataFrame({"cluster": clusters, "core": cores})
+    traj_cols = {
+        "user_id": "uid",
+        "timestamp": "timestamp",
+        "start_timestamp": "start_timestamp",
+        "label": "label",
+        "x": "x",
+        "y": "y",
+    }
+    return density_algs._extract_density_core_points(
+        data,
+        graph,
+        output,
+        "test-config",
+        traj_cols,
+        "timestamp",
+        "x",
+        "y",
+        False,
+    )
 
 
 @pytest.fixture
@@ -259,6 +293,41 @@ def test_density_return_core_points_returns_stable_schema(
 
     labels_without_points = label_function(data, traj_cols=traj_cols, **kwargs)
     pd.testing.assert_series_equal(labels, labels_without_points)
+
+
+def test_density_core_points_retains_border_records_when_cluster_has_no_cores():
+    core_points = _extract_core_points(
+        timestamps=[0, 5],
+        clusters=[0, 0],
+        cores=[-1, -1],
+    )
+
+    assert core_points["role"].tolist() == [-1, -1]
+    assert core_points["label"].tolist() == [0, 0]
+    assert core_points["start_timestamp"].isna().all()
+
+
+def test_density_core_points_uses_nearest_core_timestamp():
+    core_points = _extract_core_points(
+        timestamps=[0, 4, 6, 10],
+        clusters=[0, 0, 0, 0],
+        cores=[0, -1, -1, 1],
+    )
+
+    assert core_points["role"].tolist() == [1, -1, -1, 1]
+    assert core_points["start_timestamp"].tolist() == [0, 0, 10, 10]
+
+
+def test_density_core_points_handles_mixed_clusters_with_and_without_cores():
+    core_points = _extract_core_points(
+        timestamps=[0, 5, 10, 15],
+        clusters=[0, 0, 1, 1],
+        cores=[-1, -1, 0, -1],
+    )
+
+    assert core_points["role"].tolist() == [-1, -1, 1, -1]
+    assert core_points.loc[:1, "start_timestamp"].isna().all()
+    assert core_points.loc[2:, "start_timestamp"].tolist() == [10, 10]
 
 
 def test_seqscan_retains_border_points_as_non_core():
