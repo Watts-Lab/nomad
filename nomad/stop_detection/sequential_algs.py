@@ -3,8 +3,10 @@ import numpy as np
 import pandas as pd
 import nomad.io.base as loader
 from nomad.filters import to_timestamp
+from nomad.stop_detection.postprocessing import merge_stops
 from nomad.stop_detection import utils
 from nomad.stop_detection.utils import _haversine_distance
+from nomad.visit_attribution.visit_attribution import cluster_locations_dbscan
 
 from .core_points import (
     _empty_anchor_points,
@@ -517,6 +519,9 @@ def lachesis(
     complete_output=False,
     passthrough_cols=[],
     keep_col_names=True,
+    postprocessing=None,
+    postprocessing_kwargs=None,
+    merge_kwargs=None,
     traj_cols=None,
     **kwargs
 ):
@@ -539,6 +544,12 @@ def lachesis(
         Passed along to the column‐detection helper.
     passthrough_cols : list, optional
         Columns to retain (and summarize/propagate) per stop.
+    postprocessing : {None, 'none', 'dbscan', 'infomap'}, optional
+        Destination-detection method applied after sequential stop detection.
+    postprocessing_kwargs : dict, optional
+        Arguments passed to DBSCAN destination detection.
+    merge_kwargs : dict, optional
+        Arguments passed to visit merging after destination detection.
 
     Returns
     -------
@@ -549,7 +560,9 @@ def lachesis(
     ------
     ValueError if multiple users found; use lachesis_per_user instead.
     """
-    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    traj_cols_temp = loader._parse_traj_cols(
+        data.columns, traj_cols, kwargs, warn=False
+    )
     if 'user_id' in traj_cols_temp and traj_cols_temp['user_id'] in data.columns:
         uid_col = data[traj_cols_temp['user_id']]
         arr = uid_col.values
@@ -574,7 +587,7 @@ def lachesis(
     merged = merged[merged.cluster != -1]
 
     if merged.empty:
-        return utils._get_empty_stop_df(
+        stop_table = utils._get_empty_stop_df(
             data.columns,
             complete_output,
             passthrough_cols,
@@ -583,20 +596,79 @@ def lachesis(
             is_grid_based=False,
             **kwargs,
         )
+    else:
+        stop_table = merged.groupby('cluster', as_index=False, sort=False).apply(
+            lambda grp: utils.summarize_stop(
+                grp,
+                complete_output=complete_output,
+                traj_cols=traj_cols,
+                keep_col_names=keep_col_names,
+                passthrough_cols=passthrough_cols,
+                **kwargs
+            ),
+            include_groups=False
+        ).reset_index(drop=True)
 
-    stop_table = merged.groupby('cluster', as_index=False, sort=False).apply(
-        lambda grp: utils.summarize_stop(
-            grp,
-            complete_output=complete_output,
-            traj_cols=traj_cols,
-            keep_col_names=keep_col_names,
-            passthrough_cols=passthrough_cols,
-            **kwargs
-        ),
-        include_groups=False
-    ).reset_index(drop=True)
+    return _postprocess_lachesis_stops(
+        stop_table,
+        postprocessing=postprocessing,
+        postprocessing_kwargs=postprocessing_kwargs,
+        merge_kwargs=merge_kwargs,
+        traj_cols=traj_cols,
+        **kwargs
+    )
 
-    return stop_table
+
+def _postprocess_lachesis_stops(
+    stops,
+    postprocessing=None,
+    postprocessing_kwargs=None,
+    merge_kwargs=None,
+    traj_cols=None,
+    **kwargs
+):
+    """Apply destination detection and visit merging to Lachesis stops."""
+    if postprocessing in (None, 'none'):
+        return stops
+    if postprocessing == 'infomap':
+        raise NotImplementedError("Lachesis postprocessing method 'infomap' is not implemented")
+    if postprocessing != 'dbscan':
+        raise ValueError("postprocessing must be one of: None, 'none', 'dbscan', 'infomap'")
+
+    traj_cols_temp = loader._parse_traj_cols(
+        stops.columns, traj_cols, kwargs, warn=False
+    )
+    user_col = traj_cols_temp['user_id']
+    cluster_options = dict(postprocessing_kwargs or {})
+    cluster_options.setdefault(
+        'agg_level', 'user' if user_col in stops.columns else 'dataset'
+    )
+
+    # Recognize recurring destinations, then combine interrupted visits to them.
+    labeled_stops, locations = cluster_locations_dbscan(
+        stops,
+        traj_cols=traj_cols,
+        **kwargs,
+        **cluster_options
+    )
+    location_col = traj_cols_temp['location_id']
+    merge_options = dict(merge_kwargs or {})
+    merge_options.setdefault('location_col', location_col)
+    visits = merge_stops(
+        labeled_stops,
+        traj_cols=traj_cols,
+        **kwargs,
+        **merge_options
+    )
+
+    # Report each visit at its recurring destination's center.
+    coord_key1, coord_key2, _ = loader._fallback_spatial_cols(
+        labeled_stops.columns, traj_cols_temp, kwargs
+    )
+    centers = locations.set_index(location_col).center
+    visits[traj_cols_temp[coord_key1]] = visits[location_col].map(centers.x)
+    visits[traj_cols_temp[coord_key2]] = visits[location_col].map(centers.y)
+    return visits
 
 def lachesis_per_user(
     data,
@@ -605,6 +677,9 @@ def lachesis_per_user(
     dur_min=5,
     complete_output=False,
     passthrough_cols=[],
+    postprocessing=None,
+    postprocessing_kwargs=None,
+    merge_kwargs=None,
     traj_cols=None,
     n_jobs=1,
     print_progress=False,
@@ -627,6 +702,12 @@ def lachesis_per_user(
         If True, include additional summary statistics in output.
     passthrough_cols : list, optional
         Columns to retain (and summarize/propagate) per stop.
+    postprocessing : {None, 'none', 'dbscan', 'infomap'}, optional
+        Destination-detection method applied after all users' stops are detected.
+    postprocessing_kwargs : dict, optional
+        Arguments passed to DBSCAN destination detection.
+    merge_kwargs : dict, optional
+        Arguments passed to visit merging after destination detection.
     traj_cols : dict, optional
         Mapping for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'.
     n_jobs : int, default 1
@@ -645,7 +726,9 @@ def lachesis_per_user(
     ------
     ValueError if 'user_id' not in traj_cols or missing from data.
     """
-    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    traj_cols_temp = loader._parse_traj_cols(
+        data.columns, traj_cols, kwargs, warn=False
+    )
     if 'user_id' not in traj_cols_temp or traj_cols_temp['user_id'] not in data.columns:
         raise ValueError("lachesis_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
     uid = traj_cols_temp['user_id']
@@ -661,6 +744,7 @@ def lachesis_per_user(
             dur_min=dur_min,
             complete_output=complete_output,
             passthrough_cols=pt_cols,
+            postprocessing=None,
             traj_cols=traj_cols,
             **kwargs
         )
@@ -674,7 +758,15 @@ def lachesis_per_user(
         print_progress=print_progress
     )
     
-    return pd.concat(results, ignore_index=True)
+    stops = pd.concat(results, ignore_index=True)
+    return _postprocess_lachesis_stops(
+        stops,
+        postprocessing=postprocessing,
+        postprocessing_kwargs=postprocessing_kwargs,
+        merge_kwargs=merge_kwargs,
+        traj_cols=traj_cols,
+        **kwargs
+    )
 
 
 def lachesis_labels_per_user(

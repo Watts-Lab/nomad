@@ -344,8 +344,8 @@ def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_
     end_time = grouped_data[traj_cols[t_key]].iloc[-1]
 
     stop_attr = {} # the pandas series for the output
-    stop_attr[coord_key1] = medoid[0]
-    stop_attr[coord_key2] = medoid[1]
+    stop_attr[traj_cols[coord_key1]] = medoid[0]
+    stop_attr[traj_cols[coord_key2]] = medoid[1]
     stop_attr[traj_cols[start_t_key]]  = grouped_data[traj_cols[t_key]].iloc[0]
 
     if complete_output:

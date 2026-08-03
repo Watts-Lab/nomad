@@ -5,7 +5,6 @@ import pyproj
 import pdb
 import numpy as np
 from sklearn.cluster import DBSCAN
-from shapely.geometry import Point, MultiPoint
 import nomad.io.base as loader
 import nomad.constants as constants
 from nomad.stop_detection import utils
@@ -477,32 +476,6 @@ def _get_location_center(coords, metric='euclidean'):
         return np.mean(coords[:, 0]), np.mean(coords[:, 1])
 
 
-def _get_location_extent(points, epsilon, crs=None):
-    """
-    Calculate the spatial extent of a location.
-
-    Parameters
-    ----------
-    points : list of shapely Points
-        Points in the location cluster
-    epsilon : float
-        Buffer distance in meters (or degrees for unprojected)
-    crs : str, optional
-        Coordinate reference system
-
-    Returns
-    -------
-    shapely.Polygon
-        Convex hull buffered by epsilon
-    """
-    if len(points) == 1:
-        return points[0].buffer(epsilon)
-
-    multipoint = MultiPoint(points)
-    convex_hull = multipoint.convex_hull
-    return convex_hull.buffer(epsilon)
-
-
 def cluster_locations_dbscan(
     stops,
     epsilon=100,
@@ -513,18 +486,21 @@ def cluster_locations_dbscan(
     **kwargs
 ):
     """
-    Cluster stops into locations using DBSCAN.
+    Cluster coordinate points or detected stops into locations using DBSCAN.
 
     Parameters
     ----------
     stops : pd.DataFrame or gpd.GeoDataFrame
-        Stop/staypoint data with spatial columns
+        Coordinate points or stop rows. DataFrames require x/y or
+        longitude/latitude columns. GeoDataFrames require point geometry.
     epsilon : float, default 100
-        Maximum distance between stops in the same location (meters for haversine/euclidean)
+        Maximum distance between rows in the same location. Units match projected
+        coordinates or are meters for longitude/latitude coordinates.
     num_samples : int, default 1
         Minimum number of stops required to form a location
     distance_metric : str, default 'euclidean'
-        Distance metric: 'euclidean' for projected coords, 'haversine' for lat/lon
+        Distance metric for projected coordinates. Geographic coordinates always
+        use haversine distance.
     agg_level : str, default 'user'
         'user' = separate locations per user, 'dataset' = shared locations across users
     traj_cols : dict, optional
@@ -535,166 +511,139 @@ def cluster_locations_dbscan(
     Returns
     -------
     tuple of (pd.DataFrame, gpd.GeoDataFrame)
-        - stops with added 'location_id' column (NaN for unclustered stops)
+        - input rows with a nonnegative location ID for every row
         - locations GeoDataFrame with cluster centers and extents
-    """
-    if not isinstance(stops, (pd.DataFrame, gpd.GeoDataFrame)):
-        raise TypeError("Input 'stops' must be a pandas DataFrame or GeoDataFrame")
 
+    Notes
+    -----
+    Each DBSCAN noise row is retained as its own singleton location.
+    """
+    traj_cols = loader._parse_traj_cols(stops.columns, traj_cols, kwargs, warn=False)
+    location_col = traj_cols['location_id']
+    crs = stops.crs if isinstance(stops, gpd.GeoDataFrame) else None
+
+    # Return the expected output schema when there are no rows to cluster.
     if stops.empty:
-        # Return empty results with proper schema
         stops_out = stops.copy()
-        stops_out['location_id'] = pd.Series(dtype='Int64')
+        stops_out[location_col] = pd.Series(index=stops.index, dtype='int64')
         locations = gpd.GeoDataFrame(
-            columns=['center', 'extent'],
+            columns=[location_col, 'center', 'extent', 'n_stops'],
             geometry='center',
-            crs=stops.crs if isinstance(stops, gpd.GeoDataFrame) else None
+            crs=crs,
         )
         return stops_out, locations
 
-    # Parse column names
-    traj_cols = loader._parse_traj_cols(stops.columns, traj_cols, kwargs)
-    loader._has_spatial_cols(stops.columns, traj_cols)
-
-    # Determine coordinate columns
-    if 'longitude' in traj_cols and traj_cols['longitude'] in stops.columns:
-        coord_key1, coord_key2 = 'longitude', 'latitude'
-        use_lon_lat = True
-    elif 'x' in traj_cols and traj_cols['x'] in stops.columns:
-        coord_key1, coord_key2 = 'x', 'y'
-        use_lon_lat = False
+    # Extract coordinates from point geometry or configured DataFrame columns.
+    if isinstance(stops, gpd.GeoDataFrame):
+        coords = np.column_stack((stops.geometry.x, stops.geometry.y))
+        use_lon_lat = crs is not None and pyproj.CRS(crs).is_geographic
     else:
-        raise ValueError("Could not find spatial columns in stops data")
-
-    # Override distance metric based on coordinate type if not specified
-    if distance_metric == 'euclidean' and use_lon_lat:
-        warnings.warn(
-            "Using haversine metric for lat/lon coordinates instead of euclidean",
-            UserWarning
+        coord_key1, coord_key2, use_lon_lat = loader._fallback_spatial_cols(
+            stops.columns, traj_cols, kwargs
         )
-        distance_metric = 'haversine'
+        coords = stops[
+            [traj_cols[coord_key1], traj_cols[coord_key2]]
+        ].to_numpy(dtype='float64')
+        if use_lon_lat:
+            crs = 'EPSG:4326'
 
-    # Get user_id column if present
-    user_col = None
-    if 'user_id' in traj_cols and traj_cols['user_id'] in stops.columns:
+    # DBSCAN expects geographic coordinates in radians and latitude-first order.
+    if use_lon_lat:
+        cluster_coords = np.radians(coords[:, [1, 0]])
+        cluster_epsilon = epsilon / 6_371_000
+        metric = 'haversine'
+    else:
+        cluster_coords = coords
+        cluster_epsilon = epsilon
+        metric = distance_metric
+
+    # Cluster each user independently, or treat the entire dataset as one group.
+    if agg_level == 'user':
         user_col = traj_cols['user_id']
+        if user_col not in stops.columns:
+            raise ValueError(
+                "agg_level='user' requires a user_id column specified in traj_cols or kwargs"
+            )
+        group_positions = stops.groupby(
+            user_col, sort=False, dropna=False
+        ).indices.values()
+    elif agg_level == 'dataset':
+        user_col = None
+        group_positions = [np.arange(len(stops))]
+    else:
+        raise ValueError("agg_level must be 'user' or 'dataset'")
 
-    # Check aggregation level
-    if agg_level == 'user' and user_col is None:
-        warnings.warn(
-            "agg_level='user' requires user_id column; falling back to 'dataset'",
-            UserWarning
+    location_ids = np.empty(len(stops), dtype='int64')
+    next_location_id = 0
+
+    # Offset each group's labels and turn every noise row into a unique location.
+    for positions in group_positions:
+        labels = DBSCAN(
+            eps=cluster_epsilon,
+            min_samples=num_samples,
+            metric=metric,
+            algorithm='ball_tree',
+        ).fit_predict(cluster_coords[positions])
+
+        non_noise = labels >= 0
+        cluster_codes = pd.factorize(labels[non_noise], sort=False)[0]
+        n_clusters = cluster_codes.max() + 1 if cluster_codes.size else 0
+        group_location_ids = np.empty(len(labels), dtype='int64')
+        group_location_ids[non_noise] = next_location_id + cluster_codes
+        group_location_ids[~non_noise] = np.arange(
+            next_location_id + n_clusters,
+            next_location_id + n_clusters + (~non_noise).sum(),
         )
-        agg_level = 'dataset'
+        location_ids[positions] = group_location_ids
+        next_location_id += n_clusters + (~non_noise).sum()
 
     stops_out = stops.copy()
-    stops_out['location_id'] = pd.Series(dtype='Int64')
+    stops_out[location_col] = location_ids
 
-    location_list = []
-    location_id_counter = 0
+    # Build one summary row for every assigned location.
+    location_rows = pd.DataFrame(
+        {
+            location_col: location_ids,
+            '_coord1': coords[:, 0],
+            '_coord2': coords[:, 1],
+        }
+    )
+    grouped_locations = location_rows.groupby(location_col, sort=True)
+    center_values = grouped_locations[['_coord1', '_coord2']].apply(
+        lambda group: _get_location_center(
+            group.to_numpy(), metric='haversine' if use_lon_lat else 'euclidean'
+        ),
+        include_groups=False,
+    )
+    center_coords = np.vstack(center_values.to_numpy())
+    locations = gpd.GeoDataFrame(
+        {
+            location_col: center_values.index.to_numpy(),
+            'n_stops': grouped_locations.size().to_numpy(),
+        },
+        geometry=gpd.points_from_xy(
+            center_coords[:, 0], center_coords[:, 1], crs=crs
+        ),
+        crs=crs,
+    ).rename_geometry('center')
 
-    # Group by user if needed
-    if agg_level == 'user':
-        groups = stops_out.groupby(user_col, sort=False)
-    else:
-        groups = [(None, stops_out)]
+    # The convex hull records the observed spatial extent of each location.
+    point_locations = gpd.GeoDataFrame(
+        {location_col: location_ids},
+        geometry=gpd.points_from_xy(coords[:, 0], coords[:, 1], crs=crs),
+        crs=crs,
+    )
+    extents = point_locations.dissolve(by=location_col).geometry.convex_hull
+    locations['extent'] = gpd.GeoSeries(
+        extents.reindex(locations[location_col]).to_numpy(),
+        index=locations.index,
+        crs=crs,
+    )
 
-    for group_key, group_data in groups:
-        if group_data.empty:
-            continue
-
-        # Extract coordinates
-        coords = group_data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy(dtype='float64')
-
-        # For haversine, convert to radians
-        if distance_metric == 'haversine':
-            # Convert epsilon from meters to radians (approximate)
-            # Earth radius in meters
-            epsilon_rad = epsilon / 6371000.0
-            coords_for_clustering = np.radians(coords)
-        else:
-            epsilon_rad = epsilon
-            coords_for_clustering = coords
-
-        # Run DBSCAN
-        clusterer = DBSCAN(
-            eps=epsilon_rad,
-            min_samples=num_samples,
-            metric=distance_metric,
-            algorithm='ball_tree'
-        )
-
-        labels = clusterer.fit_predict(coords_for_clustering)
-
-        # Assign location IDs (offset by counter for multi-group)
-        group_loc_ids = labels.copy()
-        valid_mask = labels >= 0
-        group_loc_ids[valid_mask] += location_id_counter
-        group_loc_ids[~valid_mask] = -1
-
-        # Update stops with location IDs
-        stops_out.loc[group_data.index, 'location_id'] = group_loc_ids
-
-        # Create location entries for each cluster
-        unique_labels = labels[labels >= 0]
-        if len(unique_labels) > 0:
-            for label in np.unique(unique_labels):
-                cluster_mask = labels == label
-                cluster_coords = coords[cluster_mask]
-                cluster_indices = group_data.index[cluster_mask]
-
-                # Calculate center
-                center_x, center_y = _get_location_center(
-                    cluster_coords,
-                    metric=distance_metric
-                )
-                center_point = Point(center_x, center_y)
-
-                # Calculate extent (convex hull + buffer)
-                cluster_points = [Point(x, y) for x, y in cluster_coords]
-                extent = _get_location_extent(
-                    cluster_points,
-                    epsilon,
-                    crs=stops.crs if isinstance(stops, gpd.GeoDataFrame) else None
-                )
-
-                location_entry = {
-                    'location_id': location_id_counter + label,
-                    'center': center_point,
-                    'extent': extent,
-                    'n_stops': cluster_mask.sum()
-                }
-
-                # Add user_id if available
-                if user_col is not None and agg_level == 'user':
-                    location_entry[user_col] = group_key
-
-                location_list.append(location_entry)
-
-            # Update counter for next group
-            location_id_counter += len(np.unique(unique_labels))
-
-    # Convert location_id to nullable integer (NaN for unclustered)
-    stops_out['location_id'] = stops_out['location_id'].replace(-1, pd.NA).astype('Int64')
-
-    # Create locations GeoDataFrame
-    if location_list:
-        locations = gpd.GeoDataFrame(
-            location_list,
-            geometry='center',
-            crs=stops.crs if isinstance(stops, gpd.GeoDataFrame) else None
-        )
-        # Set extent as additional geometry column
-        locations['extent'] = gpd.GeoSeries(
-            [loc['extent'] for loc in location_list],
-            crs=stops.crs if isinstance(stops, gpd.GeoDataFrame) else None
-        )
-    else:
-        locations = gpd.GeoDataFrame(
-            columns=['location_id', 'center', 'extent', 'n_stops'],
-            geometry='center',
-            crs=stops.crs if isinstance(stops, gpd.GeoDataFrame) else None
-        )
+    if user_col is not None:
+        location_rows[user_col] = stops[user_col].to_numpy()
+        location_users = location_rows.groupby(location_col, sort=True)[user_col].first()
+        locations[user_col] = locations[location_col].map(location_users)
 
     return stops_out, locations
 
@@ -757,4 +706,3 @@ def cluster_locations_per_user(
 
 # Alias for convenience
 generate_locations = cluster_locations_dbscan
-
