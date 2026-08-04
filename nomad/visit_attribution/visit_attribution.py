@@ -550,7 +550,7 @@ def cluster_locations_dbscan(
     # DBSCAN expects geographic coordinates in radians and latitude-first order.
     if use_lon_lat:
         cluster_coords = np.radians(coords[:, [1, 0]])
-        cluster_epsilon = epsilon / 6_371_000
+        cluster_epsilon = epsilon / constants.EARTH_RADIUS_METERS
         metric = 'haversine'
     else:
         cluster_coords = coords
