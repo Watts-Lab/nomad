@@ -479,7 +479,7 @@ def _get_location_center(coords, metric='euclidean'):
 def cluster_locations_dbscan(
     stops,
     epsilon=100,
-    num_samples=1,
+    min_pts=1,
     distance_metric='euclidean',
     agg_level='user',
     traj_cols=None,
@@ -496,7 +496,7 @@ def cluster_locations_dbscan(
     epsilon : float, default 100
         Maximum distance between rows in the same location. Units match projected
         coordinates or are meters for longitude/latitude coordinates.
-    num_samples : int, default 1
+    min_pts : int, default 1
         Minimum number of stops required to form a location
     distance_metric : str, default 'euclidean'
         Distance metric for projected coordinates. Geographic coordinates always
@@ -580,7 +580,7 @@ def cluster_locations_dbscan(
     for positions in group_positions:
         labels = DBSCAN(
             eps=cluster_epsilon,
-            min_samples=num_samples,
+            min_samples=min_pts,
             metric=metric,
             algorithm='ball_tree',
         ).fit_predict(cluster_coords[positions])
@@ -651,7 +651,7 @@ def cluster_locations_dbscan(
 def cluster_locations_per_user(
     stops,
     epsilon=100,
-    num_samples=1,
+    min_pts=1,
     distance_metric='euclidean',
     traj_cols=None,
     **kwargs
@@ -667,7 +667,7 @@ def cluster_locations_per_user(
         Stop data with user_id column
     epsilon : float, default 100
         Maximum distance between stops in same location (meters)
-    num_samples : int, default 1
+    min_pts : int, default 1
         Minimum stops required to form a location
     distance_metric : str, default 'euclidean'
         'euclidean' or 'haversine'
@@ -696,7 +696,7 @@ def cluster_locations_per_user(
     return cluster_locations_dbscan(
         stops,
         epsilon=epsilon,
-        num_samples=num_samples,
+        min_pts=min_pts,
         distance_metric=distance_metric,
         agg_level='user',
         traj_cols=traj_cols,

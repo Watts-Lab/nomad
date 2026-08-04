@@ -63,7 +63,7 @@ def test_cluster_locations_dbscan_relabels_noise_as_singleton_locations():
     labeled, locations = cluster_locations_dbscan(
         points,
         epsilon=2,
-        num_samples=2,
+        min_pts=2,
         agg_level="dataset",
     )
 
@@ -84,7 +84,7 @@ def test_cluster_locations_dbscan_assigns_unique_ids_when_all_rows_are_noise():
     labeled, _ = cluster_locations_dbscan(
         points,
         epsilon=2,
-        num_samples=2,
+        min_pts=2,
         agg_level="dataset",
     )
 
