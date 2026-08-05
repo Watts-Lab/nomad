@@ -23,6 +23,7 @@ DEFAULT_SCHEMA = {
     "label": "label"}
 
 SEC_PER_UNIT = {'s': 1, 'min': 60, 'h': 3_600, 'd': 86_400, 'w': 604_800}
+EARTH_RADIUS_METERS = 6_371_000
 
 ALLOWED_BUILDINGS = {
     0: ['home'], 1: ['home'], 2: ['home'], 3: ['home'], 4: ['home'],

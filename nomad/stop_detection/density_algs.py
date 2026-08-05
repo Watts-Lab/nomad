@@ -4,6 +4,7 @@ import geopandas as gpd
 import networkx as nx
 import numpy as np
 import pandas as pd
+import nomad.constants as constants
 import nomad.io.base as loader
 from nomad.stop_detection import utils
 from nomad.stop_detection.preprocessing import _find_neighbors
@@ -545,7 +546,7 @@ def dbstop_labels(data,
                         spatial_nb_idx = s_tree.query_radius(
                             # _find_neighbors builds BallTree in [lat, lon] radians.
                             np.radians(counterfactual_coords[[1, 0]]).reshape(1, -1),
-                            r=dist_thresh / 6_371_000,
+                            r=dist_thresh / constants.EARTH_RADIUS_METERS,
                         )[0]
                     else:
                         spatial_nb_idx = s_tree.query_radius(
@@ -1464,7 +1465,7 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
                                 spatial_nb_idx = s_tree.query_radius(
                                     # _find_neighbors builds BallTree in [lat, lon] radians.
                                     np.radians(counterfactual_coords[[1, 0]]).reshape(1, -1),
-                                    r=dist_thresh / 6_371_000,
+                                    r=dist_thresh / constants.EARTH_RADIUS_METERS,
                                 )[0]
                             else:
                                 spatial_nb_idx = s_tree.query_radius(

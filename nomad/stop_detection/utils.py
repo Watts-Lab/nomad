@@ -196,7 +196,6 @@ def _haversine_distance(coord1, coord2, radians=True):
     Returns:
         Distance in meters.
     """
-    earth_radius_meters = 6371000  # Earth's radius in meters
     if not radians:
         coord1 = np.radians(coord1)
         coord2 = np.radians(coord2)
@@ -208,36 +207,7 @@ def _haversine_distance(coord1, coord2, radians=True):
     a = np.sin(delta_lat / 2.0) ** 2 + np.cos(coord1[0]) * np.cos(
         coord2[0]) * np.sin(delta_lon / 2.0) ** 2
     c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
-    return earth_radius_meters * c  # Distance in meters
-
-# def haversine_dist(lat1, lon1, lat2, lon2):
-#     # remove this and use what's in utils.py 
-#     """
-#     Calculate haversine distance between two points in meters.
-
-#     Parameters
-#     ----------
-#     lat1, lon1 : float or array-like
-#         Latitude and longitude of first point(s)
-#     lat2, lon2 : float or array-like
-#         Latitude and longitude of second point(s)
-
-#     Returns
-#     -------
-#     float or array-like
-#         Distance in meters
-#     """
-#     R = 6371000  # Earth radius in meters
-
-#     lat1_rad = np.radians(lat1)
-#     lat2_rad = np.radians(lat2)
-#     dlat = np.radians(lat2 - lat1)
-#     dlon = np.radians(lon2 - lon1)
-
-#     a = np.sin(dlat/2)**2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(dlon/2)**2
-#     c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1-a))
-
-#     return R * c
+    return constants.EARTH_RADIUS_METERS * c
 
 
 def _pairwise_haversine(coords):
@@ -379,8 +349,8 @@ def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_
     end_time = grouped_data[traj_cols[t_key]].iloc[-1]
 
     stop_attr = {} # the pandas series for the output
-    stop_attr[coord_key1] = medoid[0]
-    stop_attr[coord_key2] = medoid[1]
+    stop_attr[traj_cols[coord_key1]] = medoid[0]
+    stop_attr[traj_cols[coord_key2]] = medoid[1]
     stop_attr[traj_cols[start_t_key]]  = grouped_data[traj_cols[t_key]].iloc[0]
 
     if complete_output:
