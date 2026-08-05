@@ -1,6 +1,34 @@
+import numpy as np
 import pandas as pd
 
 import nomad.io.base as loader
+
+
+def fill_timestamp_gaps(first_time, last_time, stop_table):
+    """Add unassigned intervals between timestamp-based stops."""
+    if stop_table.empty:
+        return stop_table.copy()
+
+    stops = stop_table.sort_values('start_timestamp').reset_index(drop=True)
+    starts = stops['start_timestamp'].to_numpy()
+    ends = starts + stops['duration'].to_numpy() * 60
+    gap_starts = np.concatenate(([first_time], ends))
+    gap_ends = np.concatenate((starts, [last_time]))
+    has_gap = gap_starts < gap_ends
+
+    gaps = pd.DataFrame(
+        {
+            'start_timestamp': gap_starts[has_gap],
+            'duration': (gap_ends[has_gap] - gap_starts[has_gap]) // 60,
+            'building_id': 'None',
+        }
+    ).reindex(columns=stops.columns)
+
+    return (
+        pd.concat([stops, gaps], ignore_index=True)
+        .sort_values('start_timestamp')
+        .reset_index(drop=True)
+    )
 
 
 def merge_stops(

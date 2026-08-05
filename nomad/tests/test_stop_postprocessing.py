@@ -1,7 +1,53 @@
 import pandas as pd
 import pytest
 
-from nomad.stop_detection.postprocessing import merge_stops
+from nomad.stop_detection.postprocessing import fill_timestamp_gaps, merge_stops
+
+
+def test_fill_timestamp_gaps_adds_unassigned_intervals():
+    stops = pd.DataFrame(
+        {
+            'cluster': [0, 1],
+            'x': [1.0, 2.0],
+            'y': [1.0, 2.0],
+            'start_timestamp': [600, 1800],
+            'duration': [10, 10],
+            'building_id': ['home', 'work'],
+        }
+    )
+
+    result = fill_timestamp_gaps(0, 3000, stops)
+
+    assert result['start_timestamp'].tolist() == [0, 600, 1200, 1800, 2400]
+    assert result['duration'].tolist() == [10, 10, 10, 10, 10]
+    assert result['building_id'].tolist() == [
+        'None', 'home', 'None', 'work', 'None'
+    ]
+
+
+def test_fill_timestamp_gaps_returns_empty_input_unchanged():
+    stops = pd.DataFrame(
+        columns=['start_timestamp', 'duration', 'building_id']
+    )
+
+    result = fill_timestamp_gaps(0, 600, stops)
+
+    pd.testing.assert_frame_equal(result, stops)
+    assert result is not stops
+
+
+def test_fill_timestamp_gaps_does_not_add_rows_without_gaps():
+    stops = pd.DataFrame(
+        {
+            'start_timestamp': [0, 600],
+            'duration': [10, 10],
+            'building_id': ['home', 'work'],
+        }
+    )
+
+    result = fill_timestamp_gaps(0, 1200, stops)
+
+    pd.testing.assert_frame_equal(result, stops)
 
 
 def test_merge_stops_merges_same_location_with_short_gap():
