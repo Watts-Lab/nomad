@@ -348,7 +348,7 @@ def ta_dbscan(
         traj_cols=traj_cols,
         **kwargs
     )
-    return utils.labels_to_stops(
+    return utils.summarize_stops(
         data,
         labels,
         complete_output=complete_output,
@@ -644,6 +644,7 @@ def dbstop(
     ------
     ValueError if multi-user data detected; use dbstop_per_user instead.
     """
+    # Use a fresh list per call so future in-place additions cannot leak across calls.
     passthrough_cols = [] if passthrough_cols is None else passthrough_cols
     if data.empty:
         return utils._get_empty_stop_df(
@@ -675,7 +676,7 @@ def dbstop(
         traj_cols=traj_cols,
         **kwargs
     )
-    return utils.labels_to_stops(
+    return utils.summarize_stops(
         data,
         labels,
         complete_output=complete_output,
@@ -1082,7 +1083,7 @@ def seqscan(
         traj_cols=traj_cols,
         **kwargs
     )
-    return utils.labels_to_stops(
+    return utils.summarize_stops(
         data,
         labels,
         complete_output=complete_output,
@@ -2092,7 +2093,7 @@ def st_hdbscan(
         traj_cols=traj_cols,
         **kwargs
     )
-    return utils.labels_to_stops(
+    return utils.summarize_stops(
         data,
         labels,
         complete_output=complete_output,

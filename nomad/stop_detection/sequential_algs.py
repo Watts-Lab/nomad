@@ -291,7 +291,7 @@ def detect_stops(
         traj_cols=traj_cols,
         **kwargs
     )
-    return utils.labels_to_stops(
+    return utils.summarize_stops(
         data,
         labels,
         complete_output=complete_output,
@@ -604,7 +604,7 @@ def lachesis(
         traj_cols=traj_cols,
         **kwargs
     )
-    stop_table = utils.labels_to_stops(
+    stop_table = utils.summarize_stops(
         data,
         labels,
         complete_output=complete_output,

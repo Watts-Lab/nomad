@@ -379,7 +379,7 @@ def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_
     return pd.Series(stop_attr, dtype="object")
 
 
-def labels_to_stops(
+def summarize_stops(
     data,
     labels,
     complete_output=False,
