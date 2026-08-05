@@ -11,7 +11,6 @@ import h3
 import warnings
 import pdb
 from datetime import datetime, time, timedelta
-from pathlib import Path
 from nomad.filters import to_timestamp
 from joblib import Parallel, delayed
 from tqdm import tqdm
@@ -38,15 +37,6 @@ def empty_point_output(columns=None):
         }
     )
 
-
-def finish_point_result(result, points, return_points=False, points_path=None):
-    if points_path is not None:
-        path = Path(points_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        points.to_parquet(path, index=False)
-    if return_points:
-        return result, points
-    return result
 
 def clip_stops_datetime(stops, start_datetime, end_datetime, traj_cols=None, **kwargs):
     """

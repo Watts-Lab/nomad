@@ -622,19 +622,17 @@ for i in range(2):
         ax = axes[i, j]
         Charlie.sample_trajectory(*hier_nhpp_params[j], seed=seed, replace_sparse_traj=True)
 
-        # dbscan_out IS the cluster labels
-        dbscan_out = DBSCAN.ta_dbscan_labels(
+        dbscan_labels = DBSCAN.ta_dbscan_labels(
             Charlie.sparse_traj,
             dist_thresh=dbscan_params[i][1],
             min_pts=dbscan_params[i][2],
             time_thresh=dbscan_params[i][0],
             traj_cols=traj_cols,
-            return_cores=True
         )
 
-        num_clusters = int((dbscan_out.cluster.unique() > -1).sum())
+        num_clusters = int((dbscan_labels.unique() > -1).sum())
         for cid in range(num_clusters):
-            cpings = dbscan_out[dbscan_out.cluster == cid]
+            cpings = dbscan_labels[dbscan_labels == cid]
             cdata = Charlie.sparse_traj.loc[cpings.index]
             col = cm.tab20c(cid/(num_clusters+1))
             ax.scatter(cdata.x, cdata.y, s=80, color=col, alpha=1, zorder=2)

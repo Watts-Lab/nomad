@@ -253,7 +253,7 @@ def label_concat_case_registry(stop_test_params):
             "fn": HDBSCAN.hdbscan_labels,
             "kwargs": {"time_thresh": dt_max, "min_pts": min_pts, "min_cluster_size": 2, "dur_min": 5},
             "traj_cols": {"timestamp": "timestamp", "x": "x", "y": "y"},
-            "supports_return_cores": False,
+            "supports_return_cores": True,
         },
         "grid-based": {
             "fn": GRID_BASED.grid_based_labels,
@@ -952,6 +952,7 @@ def test_density_label_algorithms_latlon_vs_xy_consistency(base_df, latlon_xy_la
         pytest.param("lachesis", False, id="lachesis-series"),
         pytest.param("sequential", False, id="sequential-series"),
         pytest.param("hdbscan", False, id="hdbscan-series"),
+        pytest.param("hdbscan", True, id="hdbscan-cores"),
         pytest.param("grid-based", False, id="grid-based-series"),
     ],
 )
@@ -982,9 +983,9 @@ def test_label_concat_with_empty_input_preserves_integer_schema(
 
     if return_cores:
         assert isinstance(labels_empty, pd.DataFrame)
-        assert list(labels_empty.columns) == ["cluster", "core"]
         assert isinstance(concatenated, pd.DataFrame)
-        assert list(concatenated.columns) == ["cluster", "core"]
+        assert list(labels_empty.columns) == list(labels_non_empty.columns)
+        assert {"cluster", "core", "role", "value", "value_name"} <= set(concatenated.columns)
         assert is_integer_dtype(concatenated["cluster"].dtype)
         assert is_integer_dtype(concatenated["core"].dtype)
     else:

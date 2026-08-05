@@ -14,8 +14,7 @@ def detect_stops_labels(
     dt_max=15.0,
     dur_min=5.0,
     method='sliding',
-    return_anchor_points=False,
-    anchor_points_path=None,
+    return_anchors=False,
     config_key=None,
     traj_cols=None,
     **kwargs
@@ -40,10 +39,8 @@ def detect_stops_labels(
         Minimum duration in minutes for a valid stop
     method : str, default 'sliding'
         Method to use ('sliding' or 'centroid') for the anchor point of the active stop
-    return_anchor_points : bool, default False
-        Return the anchor and accepted-point records alongside the labels.
-    anchor_points_path : path-like, optional
-        Write the anchor and accepted-point records to Parquet.
+    return_anchors : bool, default False
+        Return anchor, accepted, noise, and plotting records instead of labels.
     traj_cols : dict, optional
         Mapping for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'
     **kwargs
@@ -51,21 +48,16 @@ def detect_stops_labels(
         
     Returns
     -------
-    pd.Series or tuple
-        One integer label per row, or ``(labels, anchor_points)`` when
-        ``return_anchor_points`` is true.
+    pd.Series or pd.DataFrame
+        Cluster labels, or complete point records when ``return_anchors`` is true.
     """
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
         raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
     
     if data.empty:
-        result = pd.Series(dtype='int64', name='cluster')
-        return utils.finish_point_result(
-            result,
-            utils.empty_point_output(),
-            return_anchor_points,
-            anchor_points_path,
-        )
+        if return_anchors:
+            return utils.empty_point_output()
+        return pd.Series(dtype='int64', name='cluster')
     
     # Get column mappings
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(
@@ -73,7 +65,7 @@ def detect_stops_labels(
     )
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     start_t_key = "start_datetime" if use_datetime else "start_timestamp"
-    collect_anchor_points = return_anchor_points or anchor_points_path is not None
+    collect_anchor_points = return_anchors
     if collect_anchor_points:
         point_columns = [
             traj_cols["user_id"],
@@ -197,16 +189,24 @@ def detect_stops_labels(
     
     result = pd.Series(labels, index=data.index, name='cluster')
     if collect_anchor_points:
+        noise = labels == -1
+        noise_rows = pd.DataFrame({
+            traj_cols["user_id"]: uid_values[noise],
+            traj_cols[t_key]: times.iloc[noise].to_numpy(),
+            "config_key": config_key,
+            "role": 0,
+            traj_cols[start_t_key]: np.nan,
+            traj_cols["label"]: -1,
+            traj_cols[coord_key1]: coords[noise, 0],
+            traj_cols[coord_key2]: coords[noise, 1],
+            "value": np.nan,
+            "value_name": "distance_to_anchor",
+        })
+        records.extend(noise_rows.to_dict("records"))
         anchor_points = pd.DataFrame.from_records(records, columns=point_columns)
         anchor_points["role"] = anchor_points["role"].astype("int8")
-    else:
-        anchor_points = None
-    return utils.finish_point_result(
-        result,
-        anchor_points,
-        return_anchor_points,
-        anchor_points_path,
-    )
+        return anchor_points
+    return result
 
 
 def applyParallel(groups, func, n_jobs=1, print_progress=False, **kwargs):
@@ -396,8 +396,7 @@ def detect_stops_labels_per_user(
     dt_max=15.0,
     dur_min=5.0,
     method='sliding',
-    return_anchor_points=False,
-    anchor_points_path=None,
+    return_anchors=False,
     config_key=None,
     traj_cols=None,
     n_jobs=1,
@@ -421,7 +420,7 @@ def detect_stops_labels_per_user(
             dt_max=dt_max,
             dur_min=dur_min,
             method=method,
-            return_anchor_points=return_anchor_points or anchor_points_path is not None,
+            return_anchors=return_anchors,
             config_key=config_key,
             traj_cols=traj_cols,
             **kwargs,
@@ -435,16 +434,8 @@ def detect_stops_labels_per_user(
         print_progress=print_progress,
     )
 
-    if return_anchor_points or anchor_points_path is not None:
-        labels = pd.concat([result[0] for result in results]).reindex(data.index)
-        anchor_points = pd.concat([result[1] for result in results], ignore_index=True)
-        return utils.finish_point_result(
-            labels,
-            anchor_points,
-            return_anchor_points,
-            anchor_points_path,
-        )
-
+    if return_anchors:
+        return pd.concat(results, ignore_index=True)
     return pd.concat(results).reindex(data.index)
 ########        Lachesis          ########
 ##########################################

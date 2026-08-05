@@ -10,7 +10,30 @@ from nomad.stop_detection import utils
 from nomad.stop_detection.preprocessing import _find_neighbors
 
 
-def _extract_density_core_points(
+def _empty_density_output(columns=None):
+    if columns is None:
+        columns = [
+            constants.DEFAULT_SCHEMA["user_id"],
+            constants.DEFAULT_SCHEMA["timestamp"],
+            "config_key",
+            "role",
+            constants.DEFAULT_SCHEMA["start_timestamp"],
+            constants.DEFAULT_SCHEMA["label"],
+            constants.DEFAULT_SCHEMA["x"],
+            constants.DEFAULT_SCHEMA["y"],
+            "value",
+            "value_name",
+            "cluster",
+            "core",
+        ]
+    output = utils.empty_point_output(columns)
+    output[columns[5]] = pd.Series(dtype="int64")
+    output["cluster"] = pd.Series(dtype="int64")
+    output["core"] = pd.Series(dtype="int64")
+    return output
+
+
+def _format_density_points(
     data,
     graph,
     output,
@@ -22,7 +45,7 @@ def _extract_density_core_points(
     use_datetime,
 ):
     """
-    Convert completed density labels into core and border-point records.
+    Convert completed density labels into core, border, and noise-point records.
 
     Parameters
     ----------
@@ -44,17 +67,17 @@ def _extract_density_core_points(
     Returns
     -------
     pd.DataFrame
-        Core and border-point records.
+        Core, border, and noise-point records.
     """
     start_t_key = "start_datetime" if use_datetime else "start_timestamp"
     point_columns = [
         traj_cols["user_id"], traj_cols[t_key], "config_key", "role",
         traj_cols[start_t_key], traj_cols["label"], traj_cols[coord_key1],
-        traj_cols[coord_key2], "value", "value_name",
+        traj_cols[coord_key2], "value", "value_name", "cluster", "core",
     ]
     timestamps = pd.Series(list(graph), index=data.index)
     neighbor_counts = pd.Series([len(graph[t]) for t in graph], index=data.index)
-    roles = pd.Series(pd.NA, index=data.index, dtype="Int8")
+    roles = pd.Series(0, index=data.index, dtype="Int8")
     clustered = output["cluster"] >= 0
     roles.loc[clustered] = -1
     roles.loc[clustered & (output["core"] >= 0)] = 1
@@ -78,27 +101,28 @@ def _extract_density_core_points(
             previous_times,
             next_times,
         )
-    retained = roles.notna()
     core_points = pd.DataFrame(
         {
             traj_cols["user_id"]: (
-                data.loc[retained, traj_cols["user_id"]]
+                data[traj_cols["user_id"]]
                 if traj_cols["user_id"] in data.columns
                 else None
             ),
-            traj_cols[t_key]: timestamps.loc[retained],
+            traj_cols[t_key]: timestamps,
             "config_key": config_key,
-            "role": roles.loc[retained],
-            traj_cols[start_t_key]: source_timestamps.loc[retained],
-            traj_cols["label"]: output.loc[retained, "cluster"],
-            traj_cols[coord_key1]: data.loc[retained, traj_cols[coord_key1]],
-            traj_cols[coord_key2]: data.loc[retained, traj_cols[coord_key2]],
-            "value": neighbor_counts.loc[retained],
+            "role": roles,
+            traj_cols[start_t_key]: source_timestamps,
+            traj_cols["label"]: output["cluster"],
+            traj_cols[coord_key1]: data[traj_cols[coord_key1]],
+            traj_cols[coord_key2]: data[traj_cols[coord_key2]],
+            "value": neighbor_counts,
             "value_name": "neighbor_count",
+            "cluster": output["cluster"],
+            "core": output["core"],
         },
-        index=data.index[retained.to_numpy()],
+        index=data.index,
     )
-    core_points = core_points.loc[:, point_columns].reset_index(drop=True)
+    core_points = core_points.loc[:, point_columns]
     core_points["role"] = core_points["role"].astype("int8")
     return core_points
 
@@ -112,8 +136,6 @@ def ta_dbscan_labels(data,
                      min_pts,
                      time_thresh,
                      return_cores=False,
-                     return_core_points=False,
-                     core_points_path=None,
                      config_key=None,
                      remove_overlaps=True,
                      traj_cols=None,
@@ -122,10 +144,8 @@ def ta_dbscan_labels(data,
          raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
     if data.empty:
         if return_cores:
-            result = pd.DataFrame({name: pd.Series(dtype='int64') for name in ('cluster', 'core')})
-        else:
-            result = pd.Series(dtype='int64', name='cluster')
-        return utils.finish_point_result(result, utils.empty_point_output(), return_core_points, core_points_path)
+            return _empty_density_output()
+        return pd.Series(dtype='int64', name='cluster')
 
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)        
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
@@ -248,8 +268,8 @@ def ta_dbscan_labels(data,
         prev_run_end = max_assigned
             
     output = pd.DataFrame({'cluster': cluster_df, 'core': core_df}).set_axis(data.index)
-    if return_core_points or core_points_path is not None:
-        core_points = _extract_density_core_points(
+    if return_cores:
+        return _format_density_points(
             data,
             G,
             output,
@@ -260,15 +280,7 @@ def ta_dbscan_labels(data,
             coord_key2,
             use_datetime,
         )
-    else:
-        core_points = None
-
-    if return_cores:
-        result = output
-    else:
-        labels = output.cluster
-        result = labels
-    return utils.finish_point_result(result, core_points, return_core_points, core_points_path)
+    return output.cluster
        
 def ta_dbscan(
     data,
@@ -413,8 +425,6 @@ def ta_dbscan_labels_per_user(
     min_pts,
     time_thresh,
     return_cores=False,
-    return_core_points=False,
-    core_points_path=None,
     config_key=None,
     remove_overlaps=True,
     traj_cols=None,
@@ -439,7 +449,6 @@ def ta_dbscan_labels_per_user(
             min_pts=min_pts,
             time_thresh=time_thresh,
             return_cores=return_cores,
-            return_core_points=return_core_points or core_points_path is not None,
             config_key=config_key,
             remove_overlaps=remove_overlaps,
             traj_cols=traj_cols,
@@ -454,19 +463,14 @@ def ta_dbscan_labels_per_user(
         print_progress=print_progress,
     )
 
-    if return_core_points or core_points_path is not None:
-        labels = pd.concat([result[0] for result in results]).reindex(data.index)
-        core_points = pd.concat([result[1] for result in results], ignore_index=True)
-        return utils.finish_point_result(labels, core_points, return_core_points, core_points_path)
-
+    if return_cores:
+        return pd.concat(results).reindex(data.index)
     return pd.concat(results).reindex(data.index)
 def dbstop_labels(data,
                  dist_thresh,
                  min_pts,
                  time_thresh,
                  return_cores=False,
-                 return_core_points=False,
-                 core_points_path=None,
                  config_key=None,
                  traj_cols=None,
                  **kwargs):
@@ -474,10 +478,8 @@ def dbstop_labels(data,
          raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
     if data.empty:
         if return_cores:
-            result = pd.DataFrame({name: pd.Series(dtype='int64') for name in ('cluster', 'core')})
-        else:
-            result = pd.Series(dtype='int64', name='cluster')
-        return utils.finish_point_result(result, utils.empty_point_output(), return_core_points, core_points_path)
+            return _empty_density_output()
+        return pd.Series(dtype='int64', name='cluster')
 
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)        
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
@@ -577,8 +579,8 @@ def dbstop_labels(data,
                     cluster_df.at[curr_time] = -1
 
     output = pd.DataFrame({'cluster': cluster_df, 'core': core_df}).set_axis(data.index)
-    if return_core_points or core_points_path is not None:
-        core_points = _extract_density_core_points(
+    if return_cores:
+        return _format_density_points(
             data,
             G,
             output,
@@ -589,15 +591,7 @@ def dbstop_labels(data,
             coord_key2,
             use_datetime,
         )
-    else:
-        core_points = None
-
-    if return_cores:
-        result = output
-    else:
-        labels = output.cluster
-        result = labels
-    return utils.finish_point_result(result, core_points, return_core_points, core_points_path)
+    return output.cluster
        
 def dbstop(
     data,
@@ -743,8 +737,6 @@ def dbstop_labels_per_user(
     min_pts,
     time_thresh,
     return_cores=False,
-    return_core_points=False,
-    core_points_path=None,
     config_key=None,
     traj_cols=None,
     n_jobs=1,
@@ -768,7 +760,6 @@ def dbstop_labels_per_user(
             min_pts=min_pts,
             time_thresh=time_thresh,
             return_cores=return_cores,
-            return_core_points=return_core_points or core_points_path is not None,
             config_key=config_key,
             traj_cols=traj_cols,
             **kwargs
@@ -782,11 +773,8 @@ def dbstop_labels_per_user(
         print_progress=print_progress
     )
 
-    if return_core_points or core_points_path is not None:
-        labels = pd.concat([result[0] for result in results]).reindex(data.index)
-        core_points = pd.concat([result[1] for result in results], ignore_index=True)
-        return utils.finish_point_result(labels, core_points, return_core_points, core_points_path)
-
+    if return_cores:
+        return pd.concat(results).reindex(data.index)
     return pd.concat(results).reindex(data.index)
 def window_graph(G, lo, hi):
     return nx.subgraph_view(G, filter_node=lambda n, lo=lo, hi=hi: lo <= n <= hi)
@@ -799,8 +787,6 @@ def seqscan_labels(
     min_pts=3,
     user_id=None,
     return_cores=False,
-    return_core_points=False,
-    core_points_path=None,
     config_key=None,
     traj_cols=None,
     back_merge=False,
@@ -810,10 +796,8 @@ def seqscan_labels(
          raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
     if data.empty:
         if return_cores:
-            result = pd.DataFrame({name: pd.Series(dtype='int64') for name in ('cluster', 'core')})
-        else:
-            result = pd.Series(dtype='int64', name='cluster')
-        return utils.finish_point_result(result, utils.empty_point_output(), return_core_points, core_points_path)
+            return _empty_density_output()
+        return pd.Series(dtype='int64', name='cluster')
 
     if user_id is not None:
         data = data.loc[data["user_id"] == user_id].copy()
@@ -984,8 +968,8 @@ def seqscan_labels(
     cluster_df.loc[cluster_df > active_cid] = -1
     core_df.loc[core_df > active_cid] = -1
     output = pd.DataFrame({'cluster': cluster_df, 'core': core_df}).set_axis(data.index)
-    if return_core_points or core_points_path is not None:
-        core_points = _extract_density_core_points(
+    if return_cores:
+        return _format_density_points(
             data,
             G,
             output,
@@ -996,15 +980,7 @@ def seqscan_labels(
             coord_key2,
             use_datetime,
         )
-    else:
-        core_points = None
-
-    if return_cores:
-        result = output
-    else:
-        labels = output.cluster
-        result = labels
-    return utils.finish_point_result(result, core_points, return_core_points, core_points_path)
+    return output.cluster
     
 def seqscan(
     data,
@@ -1151,8 +1127,6 @@ def seqscan_labels_per_user(
     time_thresh=90,
     min_pts=3,
     return_cores=False,
-    return_core_points=False,
-    core_points_path=None,
     config_key=None,
     traj_cols=None,
     back_merge=False,
@@ -1178,7 +1152,6 @@ def seqscan_labels_per_user(
             time_thresh=time_thresh,
             min_pts=min_pts,
             return_cores=return_cores,
-            return_core_points=return_core_points or core_points_path is not None,
             config_key=config_key,
             traj_cols=traj_cols,
             back_merge=back_merge,
@@ -1193,11 +1166,8 @@ def seqscan_labels_per_user(
         print_progress=print_progress,
     )
 
-    if return_core_points or core_points_path is not None:
-        labels = pd.concat([result[0] for result in results]).reindex(data.index)
-        core_points = pd.concat([result[1] for result in results], ignore_index=True)
-        return utils.finish_point_result(labels, core_points, return_core_points, core_points_path)
-
+    if return_cores:
+        return pd.concat(results).reindex(data.index)
     return pd.concat(results).reindex(data.index)
 def _compute_core_distance(G, min_pts):
     result = {}
@@ -1835,8 +1805,7 @@ def hdbscan_labels(data,
                    dur_min=5,
                    delta_roam=None,
                    dist_thresh=None,
-                   return_core_points=False,
-                   core_points_path=None,
+                   return_cores=False,
                    config_key=None,
                    traj_cols=None, **kwargs):
     """
@@ -1854,10 +1823,8 @@ def hdbscan_labels(data,
         Minimum cluster size for a valid stop (default: 1).
     dur_min : int, optional
         Minimum duration (minutes) for a stop (default: 5).
-    return_core_points : bool, default False
-        Return core and border-point records alongside the labels.
-    core_points_path : path-like, optional
-        Write core and border-point records to Parquet.
+    return_cores : bool, default False
+        Return core, border, noise, and plotting records instead of labels.
     passthrough_cols : list, optional
         Columns to propagate for later stop summarization.
     traj_cols : dict, optional
@@ -1867,9 +1834,8 @@ def hdbscan_labels(data,
 
     Returns
     -------
-    pd.Series or tuple
-        Cluster label for each row, or ``(labels, core_points)`` when
-        ``return_core_points`` is true. Noise is labeled –1.
+    pd.Series or pd.DataFrame
+        Cluster labels, or complete point records when ``return_cores`` is true.
     """
     # Check if user wants long and lat and datetime
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)
@@ -1879,18 +1845,14 @@ def hdbscan_labels(data,
     point_columns = [
         traj_cols["user_id"], traj_cols[t_key], "config_key", "role",
         traj_cols[start_t_key], traj_cols["label"], traj_cols[coord_key1],
-        traj_cols[coord_key2], "value", "value_name",
+        traj_cols[coord_key2], "value", "value_name", "cluster", "core",
     ]
     
     # Handle empty data
     if data.empty:
-        result = pd.Series(dtype='int64', name='cluster')
-        return utils.finish_point_result(
-            result,
-            utils.empty_point_output(point_columns),
-            return_core_points,
-            core_points_path,
-        )
+        if return_cores:
+            return _empty_density_output(point_columns)
+        return pd.Series(dtype='int64', name='cluster')
     
     if traj_cols['user_id'] in data.columns:
         uid_col = data[traj_cols['user_id']]
@@ -1937,19 +1899,10 @@ def hdbscan_labels(data,
         selected_clusters = select_clusters_by_epsilon(hierarchy_df, label_history_df, epsilon=delta_roam)
 
     final_labels = pd.Series(-1, index=core_distances.index, name='cluster', dtype=int)
-    collect_core_points = return_core_points or core_points_path is not None
+    collect_core_points = return_cores
     if collect_core_points:
-        roles = pd.Series(pd.NA, index=core_distances.index, dtype="Int8")
+        roles = pd.Series(0, index=core_distances.index, dtype="Int8")
         source_timestamps = pd.Series(np.nan, index=core_distances.index, name=traj_cols[start_t_key])
-    
-    if not selected_clusters: # Handle case with no stable clusters
-        final_labels.index = data.index
-        return utils.finish_point_result(
-            final_labels,
-            utils.empty_point_output(point_columns),
-            return_core_points,
-            core_points_path,
-        )
         
     # keep only info of selected clusters and their birthscales, sort from denser to less dense
     cluster_info_df = label_history_df[label_history_df['cluster_id'].isin(selected_clusters)]
@@ -1995,7 +1948,7 @@ def hdbscan_labels(data,
         timestamps = pd.Series(core_distances.index.to_numpy(), index=data.index)
         labels = final_labels.set_axis(data.index)
         aligned_roles = roles.reindex(timestamps.to_numpy()).set_axis(data.index)
-        retained = aligned_roles.notna()
+        retained = pd.Series(True, index=data.index)
         aligned_sources = source_timestamps.reindex(
             timestamps.to_numpy()
         ).set_axis(data.index)
@@ -2018,16 +1971,20 @@ def hdbscan_labels(data,
                 traj_cols[coord_key2]: data.loc[retained, traj_cols[coord_key2]],
                 "value": aligned_distances.loc[retained],
                 "value_name": "core_distance",
+                "cluster": labels.loc[retained],
+                "core": labels.loc[retained].where(
+                    aligned_roles.loc[retained] == 1,
+                    -1,
+                ),
             },
             index=data.index[retained.to_numpy()],
         )
-        core_points = core_points.loc[:, point_columns].reset_index(drop=True)
+        core_points = core_points.loc[:, point_columns]
         core_points["role"] = core_points["role"].astype("int8")
-    else:
-        core_points = utils.empty_point_output(point_columns)
     final_labels.index = data.index
-    
-    return utils.finish_point_result(final_labels, core_points, return_core_points, core_points_path)
+    if return_cores:
+        return core_points
+    return final_labels
 
 def st_hdbscan(
     data,
@@ -2159,8 +2116,7 @@ def hdbscan_labels_per_user(
     min_cluster_size=1,
     dur_min=5,
     delta_roam=None,
-    return_core_points=False,
-    core_points_path=None,
+    return_cores=False,
     config_key=None,
     traj_cols=None,
     n_jobs=1,
@@ -2185,7 +2141,7 @@ def hdbscan_labels_per_user(
             min_cluster_size=min_cluster_size,
             dur_min=dur_min,
             delta_roam=delta_roam,
-            return_core_points=return_core_points or core_points_path is not None,
+            return_cores=return_cores,
             config_key=config_key,
             traj_cols=traj_cols,
             **kwargs,
@@ -2199,11 +2155,8 @@ def hdbscan_labels_per_user(
         print_progress=print_progress,
     )
 
-    if return_core_points or core_points_path is not None:
-        labels = pd.concat([result[0] for result in results]).reindex(data.index)
-        core_points = pd.concat([result[1] for result in results], ignore_index=True)
-        return utils.finish_point_result(labels, core_points, return_core_points, core_points_path)
-
+    if return_cores:
+        return pd.concat(results).reindex(data.index)
     return pd.concat(results).reindex(data.index)
 
 
