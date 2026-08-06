@@ -413,7 +413,7 @@ def test_population_gen_params_target_q_derives_missing_beta():
     params = Population.gen_params_target_q(
         q=0.25,
         beta_durations=30,
-        beta_ping=None,
+        beta_ping=(2, 8),
         seed=42
     )
 
@@ -458,7 +458,7 @@ def test_population_gen_params_target_f_derives_missing_beta():
 
 
 def test_population_param_sampling_validates_inputs():
-    params = Population.gen_params_ranges(
+    params = Population.sample_from_intervals(
         beta_start={"values": [100, 200], "probs": [0.0, 1.0]},
         beta_ping=(5, 5),
         beta_durations=[20],
@@ -471,14 +471,30 @@ def test_population_param_sampling_validates_inputs():
         "beta_ping": 5
     }
 
-    with pytest.raises(ValueError, match="Provide at most two"):
+    single_value_params = Population.sample_from_intervals(
+        beta_start=200,
+        beta_ping=5,
+        beta_durations=20,
+        seed=42
+    )
+
+    assert single_value_params == {
+        "beta_durations": 20,
+        "beta_start": 200,
+        "beta_ping": 5
+    }
+
+    with pytest.raises(ValueError, match="Provide exactly two"):
         Population.gen_params_target_q(q=0.5, beta_start=100, beta_ping=5, beta_durations=40)
 
     with pytest.raises(ValueError, match="Provide only one of beta_start and beta_durations"):
         Population.gen_params_target_q(q=0.5, beta_start=100, beta_durations=40)
 
-    with pytest.raises(ValueError, match="Provide at most two"):
+    with pytest.raises(ValueError, match="Provide exactly two"):
         Population.gen_params_target_f(f=0.02, beta_start=100, beta_ping=5, beta_durations=20)
+
+    with pytest.raises(ValueError, match="q must be provided"):
+        Population.gen_params_target_q(q=None, beta_start=100, beta_ping=5)
 
 
 def test_sample_hier_nhpp_edge_cases():

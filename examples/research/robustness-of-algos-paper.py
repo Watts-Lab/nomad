@@ -1222,7 +1222,12 @@ def run_simulation_for_single_agent(
     truth['building_type'] = truth['building_id'].apply(classify_building_type_from_id)
     truth['dwell_length'] = truth['duration'].apply(classify_dwell)
 
-    beta_params = Population.gen_params_target_q(q=(0.4, 0.85), seed=agent_seed)
+    beta_params = Population.gen_params_target_q(
+        q=(0.4, 0.85),
+        beta_durations=(25, 240),
+        beta_ping=(2, 8),
+        seed=agent_seed
+    )
     ha = np.random.uniform(10/15, 16/15, size=1)[0]
 
     # Iterate over simulation configurations
