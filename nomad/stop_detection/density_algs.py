@@ -15,7 +15,6 @@ def _empty_density_output(columns=None):
         columns = [
             constants.DEFAULT_SCHEMA["user_id"],
             constants.DEFAULT_SCHEMA["timestamp"],
-            "config_key",
             "role",
             constants.DEFAULT_SCHEMA["start_timestamp"],
             constants.DEFAULT_SCHEMA["label"],
@@ -27,7 +26,7 @@ def _empty_density_output(columns=None):
             "core",
         ]
     output = utils.empty_point_output(columns)
-    output[columns[5]] = pd.Series(dtype="int64")
+    output[columns[4]] = pd.Series(dtype="int64")
     output["cluster"] = pd.Series(dtype="int64")
     output["core"] = pd.Series(dtype="int64")
     return output
@@ -37,7 +36,6 @@ def _format_density_points(
     data,
     graph,
     output,
-    config_key,
     traj_cols,
     t_key,
     coord_key1,
@@ -55,8 +53,6 @@ def _format_density_points(
         Completed neighborhood graph keyed by timestamp.
     output : pd.DataFrame
         Algorithm output containing ``cluster`` and ``core`` columns.
-    config_key : object
-        Configuration identifier copied to the point records.
     traj_cols : dict
         Canonical-to-actual column mapping.
     t_key, coord_key1, coord_key2 : str
@@ -71,7 +67,7 @@ def _format_density_points(
     """
     start_t_key = "start_datetime" if use_datetime else "start_timestamp"
     point_columns = [
-        traj_cols["user_id"], traj_cols[t_key], "config_key", "role",
+        traj_cols["user_id"], traj_cols[t_key], "role",
         traj_cols[start_t_key], traj_cols["label"], traj_cols[coord_key1],
         traj_cols[coord_key2], "value", "value_name", "cluster", "core",
     ]
@@ -103,7 +99,6 @@ def _format_density_points(
         )
     extra_columns = pd.DataFrame(
         {
-            "config_key": config_key,
             "role": roles,
             traj_cols[start_t_key]: source_timestamps,
             traj_cols["label"]: output["cluster"],
@@ -135,7 +130,6 @@ def ta_dbscan_labels(data,
                      min_pts,
                      time_thresh,
                      return_cores=False,
-                     config_key=None,
                      remove_overlaps=True,
                      traj_cols=None,
                      **kwargs):
@@ -272,7 +266,6 @@ def ta_dbscan_labels(data,
             data,
             G,
             output,
-            config_key,
             traj_cols,
             t_key,
             coord_key1,
@@ -424,7 +417,6 @@ def ta_dbscan_labels_per_user(
     min_pts,
     time_thresh,
     return_cores=False,
-    config_key=None,
     remove_overlaps=True,
     traj_cols=None,
     n_jobs=1,
@@ -448,7 +440,6 @@ def ta_dbscan_labels_per_user(
             min_pts=min_pts,
             time_thresh=time_thresh,
             return_cores=return_cores,
-            config_key=config_key,
             remove_overlaps=remove_overlaps,
             traj_cols=traj_cols,
             **kwargs,
@@ -470,7 +461,6 @@ def dbstop_labels(data,
                  min_pts,
                  time_thresh,
                  return_cores=False,
-                 config_key=None,
                  traj_cols=None,
                  **kwargs):
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
@@ -583,7 +573,6 @@ def dbstop_labels(data,
             data,
             G,
             output,
-            config_key,
             traj_cols,
             t_key,
             coord_key1,
@@ -736,7 +725,6 @@ def dbstop_labels_per_user(
     min_pts,
     time_thresh,
     return_cores=False,
-    config_key=None,
     traj_cols=None,
     n_jobs=1,
     print_progress=False,
@@ -759,7 +747,6 @@ def dbstop_labels_per_user(
             min_pts=min_pts,
             time_thresh=time_thresh,
             return_cores=return_cores,
-            config_key=config_key,
             traj_cols=traj_cols,
             **kwargs
         )
@@ -786,7 +773,6 @@ def seqscan_labels(
     min_pts=3,
     user_id=None,
     return_cores=False,
-    config_key=None,
     traj_cols=None,
     back_merge=False,
     **kwargs
@@ -972,7 +958,6 @@ def seqscan_labels(
             data,
             G,
             output,
-            config_key,
             traj_cols,
             t_key,
             coord_key1,
@@ -1126,7 +1111,6 @@ def seqscan_labels_per_user(
     time_thresh=90,
     min_pts=3,
     return_cores=False,
-    config_key=None,
     traj_cols=None,
     back_merge=False,
     n_jobs=1,
@@ -1151,7 +1135,6 @@ def seqscan_labels_per_user(
             time_thresh=time_thresh,
             min_pts=min_pts,
             return_cores=return_cores,
-            config_key=config_key,
             traj_cols=traj_cols,
             back_merge=back_merge,
             **kwargs,
@@ -1805,7 +1788,6 @@ def hdbscan_labels(data,
                    delta_roam=None,
                    dist_thresh=None,
                    return_cores=False,
-                   config_key=None,
                    traj_cols=None, **kwargs):
     """
     Compute HDBSCAN cluster labels for trajectory data, with core/border assignment.
@@ -1842,7 +1824,7 @@ def hdbscan_labels(data,
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     start_t_key = "start_datetime" if use_datetime else "start_timestamp"
     point_columns = [
-        traj_cols["user_id"], traj_cols[t_key], "config_key", "role",
+        traj_cols["user_id"], traj_cols[t_key], "role",
         traj_cols[start_t_key], traj_cols["label"], traj_cols[coord_key1],
         traj_cols[coord_key2], "value", "value_name", "cluster", "core",
     ]
@@ -1962,7 +1944,6 @@ def hdbscan_labels(data,
                     else None
                 ),
                 traj_cols[t_key]: timestamps.loc[retained],
-                "config_key": config_key,
                 "role": aligned_roles.loc[retained],
                 traj_cols[start_t_key]: aligned_sources.loc[retained],
                 traj_cols["label"]: labels.loc[retained],
@@ -2116,7 +2097,6 @@ def hdbscan_labels_per_user(
     dur_min=5,
     delta_roam=None,
     return_cores=False,
-    config_key=None,
     traj_cols=None,
     n_jobs=1,
     print_progress=False,
@@ -2141,7 +2121,6 @@ def hdbscan_labels_per_user(
             dur_min=dur_min,
             delta_roam=delta_roam,
             return_cores=return_cores,
-            config_key=config_key,
             traj_cols=traj_cols,
             **kwargs,
         )

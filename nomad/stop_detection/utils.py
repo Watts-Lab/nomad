@@ -21,7 +21,6 @@ def empty_point_output(columns=None):
         columns = [
             constants.DEFAULT_SCHEMA["user_id"],
             constants.DEFAULT_SCHEMA["timestamp"],
-            "config_key",
             "role",
             constants.DEFAULT_SCHEMA["start_timestamp"],
             constants.DEFAULT_SCHEMA["label"],

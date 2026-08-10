@@ -15,7 +15,6 @@ def detect_stops_labels(
     dur_min=5.0,
     method='sliding',
     return_anchors=False,
-    config_key=None,
     traj_cols=None,
     **kwargs
 ):
@@ -70,7 +69,6 @@ def detect_stops_labels(
         point_columns = [
             traj_cols["user_id"],
             traj_cols[t_key],
-            "config_key",
             "role",
             traj_cols[start_t_key],
             traj_cols["label"],
@@ -191,7 +189,6 @@ def detect_stops_labels(
                 roles == 1, [traj_cols[coord_key1], traj_cols[coord_key2]]
             ] = np.concatenate(anchor_coordinates)
         extra_columns = pd.DataFrame({
-            "config_key": config_key,
             "role": roles,
             traj_cols[start_t_key]: np.concatenate(source_times),
             traj_cols["label"]: labels[point_indices],
@@ -390,7 +387,6 @@ def detect_stops_labels_per_user(
     dur_min=5.0,
     method='sliding',
     return_anchors=False,
-    config_key=None,
     traj_cols=None,
     n_jobs=1,
     print_progress=False,
@@ -414,7 +410,6 @@ def detect_stops_labels_per_user(
             dur_min=dur_min,
             method=method,
             return_anchors=return_anchors,
-            config_key=config_key,
             traj_cols=traj_cols,
             **kwargs,
         )

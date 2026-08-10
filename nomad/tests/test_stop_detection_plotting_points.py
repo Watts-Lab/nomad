@@ -11,7 +11,6 @@ from nomad.stop_detection import density_algs, sequential_algs
 POINT_COLUMNS = [
     "uid",
     "timestamp",
-    "config_key",
     "role",
     "start_timestamp",
     "label",
@@ -46,7 +45,6 @@ def _extract_core_points(timestamps, clusters, cores):
         data,
         graph,
         output,
-        "test-config",
         traj_cols,
         "timestamp",
         "x",
@@ -88,7 +86,6 @@ def test_sequential_return_anchors_returns_complete_points(
         dur_min=5,
         method=method,
         return_anchors=True,
-        config_key=method,
         traj_cols=traj_cols,
     )
 
@@ -96,7 +93,6 @@ def test_sequential_return_anchors_returns_complete_points(
     assert not anchor_points.empty
     assert is_integer_dtype(anchor_points["role"])
     assert set(anchor_points["role"]) == {-1, 1}
-    assert set(anchor_points["config_key"]) == {method}
 
     labels_without_points = sequential_algs.detect_stops_labels(
         data,
@@ -129,6 +125,30 @@ def test_sequential_return_anchors_includes_noise(single_user_trajectory):
     assert set(anchor_points["label"]) == {-1}
 
 
+def test_sequential_return_anchors_empty_schema(single_user_trajectory):
+    data, traj_cols = single_user_trajectory
+
+    anchor_points = sequential_algs.detect_stops_labels(
+        data.iloc[:0],
+        return_anchors=True,
+        traj_cols=traj_cols,
+    )
+
+    assert anchor_points.empty
+    assert list(anchor_points.columns) == [
+        "user_id",
+        "timestamp",
+        "role",
+        "start_timestamp",
+        "label",
+        "x",
+        "y",
+        "value",
+        "value_name",
+    ]
+    assert is_integer_dtype(anchor_points["role"])
+
+
 def test_point_output_follows_traj_cols_names(single_user_trajectory):
     data, traj_cols = single_user_trajectory
     traj_cols = {
@@ -150,7 +170,6 @@ def test_point_output_follows_traj_cols_names(single_user_trajectory):
     assert list(anchor_points.columns) == [
         "uid",
         "timestamp",
-        "config_key",
         "role",
         "anchor_timestamp",
         "stop_label",
@@ -176,6 +195,22 @@ def test_grid_based_does_not_advertise_core_output():
         parameters = inspect.signature(function).parameters
         assert "return_cores" not in parameters
         assert "config_key" not in parameters
+
+
+def test_point_output_algorithms_do_not_advertise_config_key():
+    for function in (
+        sequential_algs.detect_stops_labels,
+        sequential_algs.detect_stops_labels_per_user,
+        density_algs.ta_dbscan_labels,
+        density_algs.ta_dbscan_labels_per_user,
+        density_algs.dbstop_labels,
+        density_algs.dbstop_labels_per_user,
+        density_algs.seqscan_labels,
+        density_algs.seqscan_labels_per_user,
+        density_algs.hdbscan_labels,
+        density_algs.hdbscan_labels_per_user,
+    ):
+        assert "config_key" not in inspect.signature(function).parameters
 
 
 @pytest.mark.parametrize(
@@ -265,7 +300,6 @@ def test_density_return_cores_returns_complete_schema(
     core_points = label_function(
         data,
         return_cores=True,
-        config_key=label_function.__name__,
         traj_cols=traj_cols,
         **kwargs,
     )
@@ -274,7 +308,6 @@ def test_density_return_cores_returns_complete_schema(
     assert list(core_points.columns) == [
         "uid",
         "timestamp",
-        "config_key",
         "role",
         "core_timestamp",
         "stop_label",
