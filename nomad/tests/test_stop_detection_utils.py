@@ -8,27 +8,14 @@ def _assert_empty_stop_df(empty_df, expected_columns, expected_dtypes):
 
 
 def _summarize_stop_clusters(utils, data, complete_output, passthrough_cols, traj_cols, keep_col_names=True):
-    merged = data[data["cluster"] != -1]
-    if merged.empty:
-        return utils._get_empty_stop_df(
-            data.columns,
-            complete_output=complete_output,
-            passthrough_cols=passthrough_cols,
-            traj_cols=traj_cols,
-            keep_col_names=keep_col_names,
-            is_grid_based=False,
-        )
-
-    return merged.groupby("cluster", sort=False).apply(
-        lambda grp: utils.summarize_stop(
-            grp,
-            complete_output=complete_output,
-            keep_col_names=keep_col_names,
-            passthrough_cols=passthrough_cols,
-            traj_cols=traj_cols,
-        ),
-        include_groups=False,
-    ).reset_index(drop=True)
+    return utils.summarize_stops(
+        data.drop(columns="cluster"),
+        data["cluster"],
+        complete_output=complete_output,
+        keep_col_names=keep_col_names,
+        passthrough_cols=passthrough_cols,
+        traj_cols=traj_cols,
+    )
 
 
 # Tests for _get_empty_stop_df function
@@ -282,7 +269,7 @@ def test_get_empty_stop_df_keep_col_names_false():
     )
 
 
-def test_get_empty_stop_df_matches_summarize_stop_schema_for_empty_and_clustered_input():
+def test_summarize_stops_matches_empty_schema_for_empty_and_clustered_input():
     """Test that empty and clustered summarize_stop paths share the exact output columns."""
     import nomad.stop_detection.utils as utils
 
@@ -319,8 +306,11 @@ def test_get_empty_stop_df_matches_summarize_stop_schema_for_empty_and_clustered
     )
 
     assert empty_output.empty
-    assert not clustered_output.empty
+    assert len(clustered_output) == 2
     assert list(empty_output.columns) == list(clustered_output.columns)
+    assert clustered_output["timestamp"].tolist() == [120, 300]
+    assert clustered_output["duration"].tolist() == [2, 1]
+    assert clustered_output["user_id"].tolist() == ["test_user", "test_user"]
 
 
 def test_has_overlapping_stops_timestamp_detects_overlap():

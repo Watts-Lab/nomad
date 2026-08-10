@@ -20,7 +20,6 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 import geopandas as gpd
 import numpy as np
-from functools import partial
 from itertools import chain
 from pathlib import Path
 from shapely.geometry import Point
@@ -233,12 +232,6 @@ def prejoin_oracle_map(data, diary):
     location = visits.oracle_map(data, diary, timestamp='timestamp', location_id='id')
     return data.join(location)
 
-summarize_stops_with_loc = partial(
-    utils.summarize_stop, x='x', y='y',
-    keep_col_names=True, passthrough_cols=['id'], complete_output=True,
-    timestamp='timestamp',
-)
-
 def postjoin_poly_map(data):
     if not isinstance(data, gpd.GeoDataFrame):
         geometry = [Point(xy) for xy in zip(data['x'], data['y'])]
@@ -342,9 +335,11 @@ for user in tqdm(diaries_df.user_id.unique()[:10], desc='Processing users'):
 
         clustered = sparse_for_algo.join(labels)
         located = steps["post"](clustered)
-        stops = located.loc[located['cluster'] != -1].groupby(
-            'cluster', as_index=False
-        ).apply(summarize_stops_with_loc, include_groups=False)
+        stops = utils.summarize_stops(
+            located.drop(columns='cluster'), labels,
+            x='x', y='y', timestamp='timestamp',
+            keep_col_names=True, passthrough_cols=['id'], complete_output=True,
+        )
         stops = steps["fix"](stops)
 
         metric_rows = compute_all_metrics(stops, user_truth, user, algorithm)

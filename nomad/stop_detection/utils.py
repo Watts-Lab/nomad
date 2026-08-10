@@ -373,6 +373,75 @@ def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_
             stop_attr[col] = grouped_data[col].iloc[0]
     return pd.Series(stop_attr, dtype="object")
 
+
+def summarize_stops(
+    data,
+    labels,
+    complete_output=False,
+    dur_min=None,
+    passthrough_cols=None,
+    keep_col_names=True,
+    traj_cols=None,
+    **kwargs,
+):
+    """
+    Summarize non-noise point labels into one row per stop.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Input trajectory.
+    labels : pd.Series
+        Cluster label for each trajectory row, with ``-1`` denoting noise.
+    complete_output : bool
+        Whether to include extended stop statistics.
+    dur_min : number, optional
+        Minimum summarized stop duration to retain.
+    passthrough_cols : list, optional
+        Columns copied into each stop summary.
+    keep_col_names : bool
+        Whether to retain input coordinate and time column names.
+    traj_cols : dict, optional
+        Canonical-to-actual column mapping.
+    **kwargs
+        Additional column mappings.
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per non-noise cluster.
+    """
+    if passthrough_cols is None:
+        passthrough_cols = []
+
+    merged = data.join(labels)
+    merged = merged[merged.cluster != -1]
+    if merged.empty:
+        return _get_empty_stop_df(
+            data.columns,
+            complete_output,
+            passthrough_cols,
+            traj_cols,
+            keep_col_names=keep_col_names,
+            is_grid_based=False,
+            **kwargs,
+        )
+
+    stops = merged.groupby('cluster', sort=False).apply(
+        lambda group: summarize_stop(
+            group,
+            complete_output=complete_output,
+            traj_cols=traj_cols,
+            keep_col_names=keep_col_names,
+            passthrough_cols=passthrough_cols,
+            **kwargs,
+        ),
+        include_groups=False,
+    ).reset_index(drop=True)
+    if dur_min is not None:
+        stops = stops.loc[stops['duration'] >= dur_min]
+    return stops
+
 def summarize_stop_grid(
     grouped_data,
     complete_output=False,
