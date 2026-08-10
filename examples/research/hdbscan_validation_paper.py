@@ -305,18 +305,13 @@ for user in tqdm(diaries_df.user_id.unique()[:10], desc='Processing users'):
         labels = registry.time_call(algo, sparse_for_algo, timestamp='timestamp')
 
         clustered = sparse_for_algo.join(labels)
-        if algorithm != 'oracle':
-            location = visits.point_in_polygon(
-                clustered, poi_table=poi_table, method='majority', max_distance=12,
-                cluster_label='cluster', location_id='id', recompute_location=False,
-                x='x', y='y', data_crs='EPSG:3857',
-            )
-            clustered = clustered.drop(columns='id').join(location)
-
         stops = utils.summarize_stops(
             clustered.drop(columns='cluster'), labels,
             x='x', y='y', timestamp='timestamp',
             keep_col_names=True, passthrough_cols=['id'], complete_output=True,
+            passthrough_agg={
+                'id': lambda values: values.mode().iat[0] if values.notna().any() else None,
+            },
         )
 
         metric_rows = compute_all_metrics(stops, user_truth, user, algorithm)

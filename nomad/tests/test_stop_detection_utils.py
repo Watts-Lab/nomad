@@ -1,6 +1,9 @@
 import pandas as pd
 import pytest
 
+import nomad.stop_detection.utils as utils
+
+
 def _assert_empty_stop_df(empty_df, expected_columns, expected_dtypes):
     assert empty_df.empty
     assert list(empty_df.columns) == expected_columns
@@ -311,6 +314,37 @@ def test_summarize_stops_matches_empty_schema_for_empty_and_clustered_input():
     assert clustered_output["timestamp"].tolist() == [120, 300]
     assert clustered_output["duration"].tolist() == [2, 1]
     assert clustered_output["user_id"].tolist() == ["test_user", "test_user"]
+
+
+def test_summarize_stops_aggregates_passthrough_columns():
+    data = pd.DataFrame(
+        {
+            "timestamp": [0, 60, 120, 180],
+            "x": [0.0, 0.1, 0.2, 0.3],
+            "y": [0.0, 0.1, 0.2, 0.3],
+            "location_id": ["work", "home", "home", None],
+            "confidence": [0.2, 0.4, 0.6, 0.8],
+            "source": ["first", "later", "later", "later"],
+        }
+    )
+    labels = pd.Series([0, 0, 0, 0], name="cluster")
+
+    stops = utils.summarize_stops(
+        data,
+        labels,
+        passthrough_cols=["location_id", "confidence", "source"],
+        passthrough_agg={
+            "location_id": lambda values: values.mode().iat[0] if values.notna().any() else None,
+            "confidence": "mean",
+        },
+        timestamp="timestamp",
+        x="x",
+        y="y",
+    )
+
+    assert stops.loc[0, "location_id"] == "home"
+    assert stops.loc[0, "confidence"] == pytest.approx(0.5)
+    assert stops.loc[0, "source"] == "first"
 
 
 def test_has_overlapping_stops_timestamp_detects_overlap():

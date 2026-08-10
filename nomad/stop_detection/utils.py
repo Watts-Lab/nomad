@@ -322,7 +322,20 @@ def applyParallel(groups, func, n_jobs=1, print_progress=False, **kwargs):
         delayed(func)(group, **kwargs) for group in group_list
     )
 
-def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_col_names = True, passthrough_cols= [], traj_cols=None, **kwargs):
+def summarize_stop(
+    grouped_data,
+    method='medoid',
+    complete_output=False,
+    keep_col_names=True,
+    passthrough_cols=None,
+    passthrough_agg=None,
+    traj_cols=None,
+    **kwargs,
+):
+    if passthrough_cols is None:
+        passthrough_cols = []
+    if passthrough_agg is None:
+        passthrough_agg = {}
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = _fallback_st_cols(grouped_data.columns, traj_cols, kwargs)
     traj_cols = loader._parse_traj_cols(grouped_data.columns, traj_cols, kwargs, warn=False)
     metric = 'haversine' if use_lon_lat else 'euclidean'    
@@ -370,7 +383,11 @@ def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_
     # passthrough columns: e.g. location_id
     for col in passthrough_cols:
         if col in grouped_data.columns:
-            stop_attr[col] = grouped_data[col].iloc[0]
+            stop_attr[col] = (
+                grouped_data[col].agg(passthrough_agg[col])
+                if col in passthrough_agg
+                else grouped_data[col].iloc[0]
+            )
     return pd.Series(stop_attr, dtype="object")
 
 
@@ -380,6 +397,7 @@ def summarize_stops(
     complete_output=False,
     dur_min=None,
     passthrough_cols=None,
+    passthrough_agg=None,
     keep_col_names=True,
     traj_cols=None,
     **kwargs,
@@ -398,7 +416,10 @@ def summarize_stops(
     dur_min : number, optional
         Minimum summarized stop duration to retain.
     passthrough_cols : list, optional
-        Columns copied into each stop summary.
+        Columns copied into each stop summary. The first value is used by default.
+    passthrough_agg : dict, optional
+        Pandas-compatible aggregation function for each passthrough column that
+        should not use its first value.
     keep_col_names : bool
         Whether to retain input coordinate and time column names.
     traj_cols : dict, optional
@@ -434,6 +455,7 @@ def summarize_stops(
             traj_cols=traj_cols,
             keep_col_names=keep_col_names,
             passthrough_cols=passthrough_cols,
+            passthrough_agg=passthrough_agg,
             **kwargs,
         ),
         include_groups=False,
