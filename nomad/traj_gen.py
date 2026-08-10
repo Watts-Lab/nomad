@@ -145,15 +145,37 @@ class Agent:
 
     Attributes
     ----------
+    identifier : str
+        Agent identifier.
+    city : City
+        City object containing buildings and movement topology.
+    home : str
+        Building ID for the agent's home.
+    workplace : str
+        Building ID for the agent's workplace.
+    home_centroid : shapely.geometry.Point
+        Centroid of the agent's home building.
+    workplace_centroid : shapely.geometry.Point
+        Centroid of the agent's workplace building.
     still_probs : dict
         Dictionary containing probabilities of the agent staying still.
     speeds : dict
         Dictionary containing possible speeds of the agent.
+    destination_diary : pandas.DataFrame
+        Planned destinations with columns ['datetime', 'timestamp', 'duration', 'location'].
+    trajectory : pandas.DataFrame or None
+        Full simulated trajectory.
+    sparse_traj : pandas.DataFrame or None
+        Sampled sparse trajectory.
+    diary : pandas.DataFrame
+        Travel diary produced from trajectory generation.
+    sparsity_params : dict
+        Default sparse trajectory sampling parameters.
+    last_ping : pandas.Series or None
+        Most recent known agent state.
     dt : float
         Time step duration.
-
     """
-
     def __init__(self, 
                  identifier, 
                  city,
@@ -164,6 +186,7 @@ class Agent:
                  destination_diary=None,
                  trajectory=None,
                  diary=None,
+                 sparsity_params=None,
                  seed=0,
                  x=None,
                  y=None,
@@ -193,8 +216,20 @@ class Agent:
             If provided, a DataFrame with columns ['x','y','datetime','timestamp','identifier'].
         diary : pandas.DataFrame, optional
             If provided, a DataFrame with columns ['datetime','timestamp','duration','location'].
+        sparsity_params : dict, optional
+            Optional defaults for sparse trajectory sampling. Valid keys are
+            'beta_start', 'beta_durations', and 'beta_ping'. Values passed to
+            sample_trajectory override these defaults.
         seed : int, optional
             RNG seed used for sampling fallback home/work locations.
+        x, y : float, optional
+            Initial coordinates. Must be provided together.
+        location : str, optional
+            Building ID used to set the initial position from that building's centroid.
+        datetime : str or pandas.Timestamp, optional
+            Initial datetime. If omitted, uses the current time in America/New_York.
+        timestamp : int, optional
+            Initial Unix timestamp in seconds. If omitted, derived from datetime.
         """
 
         rng = npr.default_rng(seed)
@@ -261,7 +296,16 @@ class Agent:
         self.diary = diary if diary is not None else pd.DataFrame(
             columns=['datetime', 'timestamp', 'duration', 'location', 'identifier'])
         self.sparse_traj = None
-        
+        if sparsity_params is not None:
+            if not isinstance(sparsity_params, dict):
+                raise ValueError("sparsity_params must be a dictionary.")
+            allowed_keys = {'beta_start', 'beta_durations', 'beta_ping'}
+            unknown_keys = set(sparsity_params) - allowed_keys
+            if unknown_keys:
+                raise ValueError(f"sparsity_params contains unknown keys: {unknown_keys}.")
+            self.sparsity_params = sparsity_params.copy()
+        else:
+            self.sparsity_params = {}
         # Trajectory simulation parameters (caching for performance)
         self._cached_bound_poly = None
         self._cached_path_ml = None
@@ -859,7 +903,7 @@ class Agent:
     def sample_trajectory(self,
                           beta_start=None,
                           beta_durations=None,
-                          beta_ping=5,
+                          beta_ping=None,
                           seed=0,
                           ha=3/4,
                           pareto_prior=True,
@@ -869,19 +913,22 @@ class Agent:
                           replace_sparse_traj=False,
                           cache_traj=False):
         """
-        Samples a sparse trajectory using a hierarchical non-homogeneous Poisson process.
+        Samples a sparse trajectory using a hierarchical inhomogeneous Poisson process.
 
         Parameters
         ----------
         beta_start : float
             The rate parameter governing the Poisson Process controlling 
-            the start of the trajectory.
+            the start of the trajectory. If not provided, uses
+            self.sparsity_params['beta_start'] when present.
         beta_durations : float
             The rate parameter governing the Exponential controlling 
-            for the durations of the trajectory.
-        beta_ping : float
+            for the durations of the trajectory. If not provided, uses
+            self.sparsity_params['beta_durations'] when present.
+        beta_ping : float, optional
             The rate parameter governing the Poisson Process controlling
-            which pings are sampled.
+            which pings are sampled. If not provided, uses
+            self.sparsity_params['beta_ping'] when present, otherwise 5.
         seed : int
             Random seed for reproducibility.
         ha : float
@@ -896,12 +943,31 @@ class Agent:
         """
         if not self.trajectory.timestamp.is_monotonic_increasing:
             raise ValueError("The input trajectory is not sorted chronologically.")
+
+        resolved_beta_start = beta_start if beta_start is not None else self.sparsity_params.get('beta_start')
+        resolved_beta_durations = (
+            beta_durations if beta_durations is not None else self.sparsity_params.get('beta_durations')
+        )
+        resolved_beta_ping = beta_ping if beta_ping is not None else self.sparsity_params.get('beta_ping', 5)
+
+        if (resolved_beta_start is None) != (resolved_beta_durations is None):
+            raise ValueError(
+                "beta_start and beta_durations must either both be provided "
+                "or both be None for one full-trajectory burst."
+            )
+
+        if beta_start is not None:
+            self.sparsity_params['beta_start'] = resolved_beta_start
+        if beta_durations is not None:
+            self.sparsity_params['beta_durations'] = resolved_beta_durations
+        if beta_ping is not None or 'beta_ping' not in self.sparsity_params:
+            self.sparsity_params['beta_ping'] = resolved_beta_ping
             
         result = sample_bursts_gaps(
             self.trajectory, 
-            beta_start, 
-            beta_durations, 
-            beta_ping, 
+            resolved_beta_start, 
+            resolved_beta_durations, 
+            resolved_beta_ping,
             ha=ha,
             pareto_prior=pareto_prior,
             seed=seed, 
@@ -1395,10 +1461,8 @@ class Population:
         Sample burst parameters targeting coverage ``q``, modeled as 
         ``beta_durations / beta_start``.
         
-        Provide exactly two of ``beta_start``, ``beta_ping``, and
-        ``beta_durations``. ``beta_start`` and ``beta_durations`` cannot both be
-        provided because that would already determine coverage and leave
-        ``beta_ping`` unspecified.
+        ``beta_ping`` must be provided. Provide exactly one of ``beta_start``
+        and ``beta_durations``; the other is derived from the sampled ``q``.
         """
         if rng is None:
             rng = npr.default_rng(seed)
@@ -1408,11 +1472,10 @@ class Population:
         if not 0 < target_q <= 1:
             raise ValueError("q must be in the interval (0, 1]")
 
-        supplied_count = sum(value is not None for value in (beta_start, beta_ping, beta_durations))
-        if supplied_count != 2:
-            raise ValueError("Provide exactly two of beta_start, beta_ping, and beta_durations")
-        if beta_start is not None and beta_durations is not None:
-            raise ValueError("Provide only one of beta_start and beta_durations when targeting q")
+        if beta_ping is None:
+            raise ValueError("beta_ping must be provided when targeting q")
+        if (beta_start is None) == (beta_durations is None):
+            raise ValueError("Provide exactly one of beta_start and beta_durations when targeting q")
 
         sampled_start = _sample_param_spec(
             beta_start, rng, probs=beta_start_probs, name="beta_start"

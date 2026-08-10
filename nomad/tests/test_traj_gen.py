@@ -335,6 +335,25 @@ def test_agent_state_management(garden_city, simple_dest_diary, default_ids):
     assert agent.last_ping is None
 
 
+def test_agent_sample_trajectory_uses_sparsity_params(garden_city, simple_dest_diary, default_ids):
+    agent = Agent(
+        identifier="test_agent",
+        city=garden_city,
+        home=default_ids['home'],
+        workplace=default_ids['work'],
+        sparsity_params={'beta_ping': 7}
+    )
+
+    agent.generate_trajectory(destination_diary=simple_dest_diary, dt=1, seed=42)
+    agent.sample_trajectory(seed=42, ha=0.75)
+
+    assert agent.sparse_traj is not None
+    assert agent.sparsity_params['beta_ping'] == 7
+
+    with pytest.raises(ValueError, match="beta_start and beta_durations must either both be provided"):
+        agent.sample_trajectory(beta_start=30, beta_ping=5, seed=42, ha=0.75, replace_sparse_traj=True)
+
+
 def test_parse_agent_attr_validation():
     """
     Test parse_agent_attr function with various inputs.
@@ -484,11 +503,14 @@ def test_population_param_sampling_validates_inputs():
         "beta_ping": 5
     }
 
-    with pytest.raises(ValueError, match="Provide exactly two"):
+    with pytest.raises(ValueError, match="Provide exactly one"):
         Population.gen_params_target_q(q=0.5, beta_start=100, beta_ping=5, beta_durations=40)
 
-    with pytest.raises(ValueError, match="Provide only one of beta_start and beta_durations"):
+    with pytest.raises(ValueError, match="beta_ping must be provided"):
         Population.gen_params_target_q(q=0.5, beta_start=100, beta_durations=40)
+
+    with pytest.raises(ValueError, match="Provide exactly one"):
+        Population.gen_params_target_q(q=0.5, beta_ping=5)
 
     with pytest.raises(ValueError, match="Provide exactly two"):
         Population.gen_params_target_f(f=0.02, beta_start=100, beta_ping=5, beta_durations=20)

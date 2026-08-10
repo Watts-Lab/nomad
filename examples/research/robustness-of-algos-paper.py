@@ -885,7 +885,13 @@ Charlie = Agent(identifier="Charlie",
                 city=city)
 
 Charlie.generate_trajectory(destination_diary=destinations, dt=0.25, seed=300)
-Charlie.sample_trajectory(*(20, 45, 10), seed=300, replace_sparse_traj=True)
+Charlie.sample_trajectory(
+    beta_start=20,
+    beta_durations=45,
+    beta_ping=10,
+    seed=300,
+    replace_sparse_traj=True
+)
 
 if algo == 'ta-dbscan':
     labels = TADBSCAN._temporal_dbscan_labels(

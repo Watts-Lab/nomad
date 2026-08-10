@@ -535,7 +535,14 @@ seed = 819
 
 for j in range(2):
     ax = axes[j]
-    Charlie.sample_trajectory(*hier_nhpp_params[j], seed=seed, replace_sparse_traj=True)
+    beta_start, beta_durations, beta_ping = hier_nhpp_params[j]
+    Charlie.sample_trajectory(
+        beta_start=beta_start,
+        beta_durations=beta_durations,
+        beta_ping=beta_ping,
+        seed=seed,
+        replace_sparse_traj=True
+    )
 
     ax.scatter(Charlie.sparse_traj.x, Charlie.sparse_traj.y, s=6, color='black', alpha=1, zorder=2)
     city.plot_city(ax, doors=True, address=False, zorder=1)
@@ -571,8 +578,11 @@ for j in range(2):
     [spine.set_visible(False) for name, spine in ax.spines.items() if name != 'bottom']
     ax.yaxis.set_visible(False)
 
+    beta_start, beta_durations, beta_ping = hier_nhpp_params[j]
     burst_info = Charlie.sample_trajectory(
-        *hier_nhpp_params[j], 
+        beta_start=beta_start,
+        beta_durations=beta_durations,
+        beta_ping=beta_ping,
         seed=seed, 
         output_bursts=True,
         replace_sparse_traj=True)
@@ -620,7 +630,14 @@ traj_cols = {
 for i in range(2):
     for j in range(2):
         ax = axes[i, j]
-        Charlie.sample_trajectory(*hier_nhpp_params[j], seed=seed, replace_sparse_traj=True)
+        beta_start, beta_durations, beta_ping = hier_nhpp_params[j]
+        Charlie.sample_trajectory(
+            beta_start=beta_start,
+            beta_durations=beta_durations,
+            beta_ping=beta_ping,
+            seed=seed,
+            replace_sparse_traj=True
+        )
 
         # dbscan_out IS the cluster labels
         dbscan_out = DBSCAN.ta_dbscan_labels(
@@ -786,7 +803,15 @@ for j in range(2):
     ax = axes[j]
     agent = [Daniel, Elaine][j]
 
-    agent.sample_trajectory(*hier_nhpp_params, seed=seed, ha=ha[j], replace_sparse_traj=True)
+    beta_start, beta_durations, beta_ping = hier_nhpp_params
+    agent.sample_trajectory(
+        beta_start=beta_start,
+        beta_durations=beta_durations,
+        beta_ping=beta_ping,
+        seed=seed,
+        ha=ha[j],
+        replace_sparse_traj=True
+    )
 
     lachesis_out = Lachesis.lachesis_labels(
         agent.sparse_traj,
