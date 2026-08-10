@@ -21,6 +21,7 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 import geopandas as gpd
 import numpy as np
 from functools import partial
+from itertools import chain
 from pathlib import Path
 from shapely.geometry import Point
 from tqdm import tqdm
@@ -40,7 +41,7 @@ from nomad.stop_detection.validation import (
     plot_metric_boxplots,
     plot_metric_intervals,
 )
-from joblib import Parallel, delayed
+from joblib import Parallel, delayed, effective_n_jobs
 import time
 from nomad.traj_gen import Agent, Population
 
@@ -93,12 +94,8 @@ _BETA_PING_RANGE = (3, 12)
 _BETA_DURATIONS_RANGE = (30, 300)
 HA_LOWER_BOUND = 8/15  # blocks; matches nomad.traj_gen._sample_horizontal_noise lower bound for pareto_prior
 
-def generate_agent_trajectory(params):
+def generate_agent_trajectory(params, city):
     """Generate dense and sparse trajectories for one agent."""
-    city = City.from_geopackage(_DATA_DIR / "garden-city.gpkg")
-    city._build_hub_network(hub_size=16)
-    city.compute_gravity(exponent=2.0)
-    city.compute_shortest_paths(callable_only=True)
     agent = Agent(
         identifier=params.identifier,
         city=city,
@@ -122,6 +119,16 @@ def generate_agent_trajectory(params):
     diary_df['user_id'] = params.identifier
 
     return sparse_df, diary_df
+
+
+def generate_agent_batch(params_batch):
+    """Initialize one city and generate a batch of agent trajectories."""
+    city = City.from_geopackage(_DATA_DIR / "garden-city.gpkg")
+    city._build_hub_network(hub_size=16)
+    city.compute_gravity(exponent=2.0)
+    city.compute_shortest_paths(callable_only=True)
+    return [generate_agent_trajectory(params, city) for params in params_batch]
+
 
 if _sparse_path.exists() and _diaries_path.exists():
     print("Data already exists — skipping generation.")
@@ -155,10 +162,15 @@ else:
     print(f"Generating {_GEN_N} agents in parallel...")
     start_time = time.time()
 
-    results = Parallel(n_jobs=-1, verbose=10)(
-        delayed(generate_agent_trajectory)(params)
-        for params in agent_params.itertuples(index=False)
+    n_jobs = min(effective_n_jobs(-1), len(agent_params))
+    agent_batches = [
+        list(agent_params.iloc[index].itertuples(index=False))
+        for index in np.array_split(np.arange(len(agent_params)), n_jobs)
+    ]
+    batch_results = Parallel(n_jobs=n_jobs, verbose=10)(
+        delayed(generate_agent_batch)(batch) for batch in agent_batches
     )
+    results = list(chain.from_iterable(batch_results))
 
     generation_time = time.time() - start_time
     print(f"Generated {_GEN_N} agents in {generation_time:.2f}s ({generation_time / _GEN_N:.2f}s per agent)")
@@ -184,7 +196,7 @@ else:
         q=agent_params['q'].tolist(),
         ha=agent_params['ha'].tolist(),
     )
-    del _city, population, results
+    del _city, population, results, batch_results
     print(f"Generated {_GEN_N} agents in {generation_time:.2f}s -> {_diaries_path} / {_sparse_path}")
 
 # %%
