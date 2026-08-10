@@ -77,7 +77,7 @@ def _format_density_points(
     ]
     timestamps = pd.Series(list(graph), index=data.index)
     neighbor_counts = pd.Series([len(graph[t]) for t in graph], index=data.index)
-    roles = pd.Series(0, index=data.index, dtype="Int8")
+    roles = pd.Series(0, index=data.index, dtype="int8")
     clustered = output["cluster"] >= 0
     roles.loc[clustered] = -1
     roles.loc[clustered & (output["core"] >= 0)] = 1
@@ -101,30 +101,29 @@ def _format_density_points(
             previous_times,
             next_times,
         )
-    core_points = pd.DataFrame(
+    extra_columns = pd.DataFrame(
         {
-            traj_cols["user_id"]: (
-                data[traj_cols["user_id"]]
-                if traj_cols["user_id"] in data.columns
-                else None
-            ),
-            traj_cols[t_key]: timestamps,
             "config_key": config_key,
             "role": roles,
             traj_cols[start_t_key]: source_timestamps,
             traj_cols["label"]: output["cluster"],
-            traj_cols[coord_key1]: data[traj_cols[coord_key1]],
-            traj_cols[coord_key2]: data[traj_cols[coord_key2]],
             "value": neighbor_counts,
             "value_name": "neighbor_count",
-            "cluster": output["cluster"],
-            "core": output["core"],
         },
         index=data.index,
     )
-    core_points = core_points.loc[:, point_columns]
-    core_points["role"] = core_points["role"].astype("int8")
-    return core_points
+    existing_columns = data.reindex(
+        columns=[
+            traj_cols["user_id"],
+            traj_cols[t_key],
+            traj_cols[coord_key1],
+            traj_cols[coord_key2],
+        ]
+    ).copy()
+    existing_columns[traj_cols[t_key]] = timestamps
+    return pd.concat(
+        [existing_columns, extra_columns, output[["cluster", "core"]]], axis=1
+    ).loc[:, point_columns]
 
 
 ##########################################

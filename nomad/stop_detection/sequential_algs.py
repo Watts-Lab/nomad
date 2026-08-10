@@ -79,12 +79,11 @@ def detect_stops_labels(
             "value",
             "value_name",
         ]
-        records = []
-        uid_values = (
-            data[traj_cols['user_id']].to_numpy()
-            if traj_cols['user_id'] in data.columns
-            else np.full(len(data), None, dtype=object)
-        )
+        point_indices = []
+        roles = []
+        source_times = []
+        distances = []
+        anchor_coordinates = []
     
     # Validate spatial and temporal columns
     loader._has_spatial_cols(data.columns, traj_cols)
@@ -141,45 +140,27 @@ def detect_stops_labels(
             if collect_anchor_points:
                 stop_coords = coords[i:j]
                 stop_times = times.iloc[i:j].to_numpy()
-                stop_users = uid_values[i:j]
                 if method == 'centroid':
                     anchors = np.cumsum(stop_coords, axis=0) / np.arange(1, len(stop_coords) + 1).reshape(-1, 1)
                 else:
                     anchors = np.repeat(stop_coords[:1], len(stop_coords), axis=0)
                 if use_lon_lat:
-                    distances = np.asarray([
+                    stop_distances = np.asarray([
                         _haversine_distance(anchor, point, radians=False)
                         for anchor, point in zip(anchors, stop_coords)
                     ])
                 else:
-                    distances = np.linalg.norm(stop_coords - anchors, axis=1)
-                source_times = stop_times if method == 'centroid' else np.repeat(stop_times[0], len(stop_times))
-                anchor_rows = pd.DataFrame({
-                    traj_cols["user_id"]: stop_users,
-                    traj_cols[t_key]: stop_times,
-                    "config_key": config_key,
-                    "role": 1,
-                    traj_cols[start_t_key]: source_times,
-                    traj_cols["label"]: cluster_id,
-                    traj_cols[coord_key1]: anchors[:, 0],
-                    traj_cols[coord_key2]: anchors[:, 1],
-                    "value": distances,
-                    "value_name": "distance_to_anchor",
-                })
-                accepted_rows = pd.DataFrame({
-                    traj_cols["user_id"]: stop_users[1:],
-                    traj_cols[t_key]: stop_times[1:],
-                    "config_key": config_key,
-                    "role": -1,
-                    traj_cols[start_t_key]: source_times[1:],
-                    traj_cols["label"]: cluster_id,
-                    traj_cols[coord_key1]: stop_coords[1:, 0],
-                    traj_cols[coord_key2]: stop_coords[1:, 1],
-                    "value": distances[1:],
-                    "value_name": "distance_to_anchor",
-                })
-                records.extend(anchor_rows.to_dict("records"))
-                records.extend(accepted_rows.to_dict("records"))
+                    stop_distances = np.linalg.norm(stop_coords - anchors, axis=1)
+                stop_sources = stop_times if method == 'centroid' else np.repeat(stop_times[0], len(stop_times))
+                stop_indices = np.arange(i, j)
+                point_indices.append(np.concatenate([stop_indices, stop_indices[1:]]))
+                roles.append(np.concatenate([
+                    np.ones(len(stop_indices), dtype="int8"),
+                    -np.ones(len(stop_indices) - 1, dtype="int8"),
+                ]))
+                source_times.append(np.concatenate([stop_sources, stop_sources[1:]]))
+                distances.append(np.concatenate([stop_distances, stop_distances[1:]]))
+                anchor_coordinates.append(anchors)
             cluster_id += 1
             # Move to the point that broke the stop
             i = j
@@ -189,23 +170,35 @@ def detect_stops_labels(
     
     result = pd.Series(labels, index=data.index, name='cluster')
     if collect_anchor_points:
-        noise = labels == -1
-        noise_rows = pd.DataFrame({
-            traj_cols["user_id"]: uid_values[noise],
-            traj_cols[t_key]: times.iloc[noise].to_numpy(),
+        noise_indices = np.flatnonzero(labels == -1)
+        point_indices.append(noise_indices)
+        roles.append(np.zeros(len(noise_indices), dtype="int8"))
+        source_times.append(np.full(len(noise_indices), np.nan))
+        distances.append(np.full(len(noise_indices), np.nan))
+        point_indices = np.concatenate(point_indices)
+        roles = np.concatenate(roles)
+        existing_columns = data.iloc[point_indices].reindex(
+            columns=[
+                traj_cols["user_id"],
+                traj_cols[t_key],
+                traj_cols[coord_key1],
+                traj_cols[coord_key2],
+            ]
+        ).reset_index(drop=True)
+        existing_columns[traj_cols[t_key]] = times.iloc[point_indices].to_numpy()
+        if anchor_coordinates:
+            existing_columns.loc[
+                roles == 1, [traj_cols[coord_key1], traj_cols[coord_key2]]
+            ] = np.concatenate(anchor_coordinates)
+        extra_columns = pd.DataFrame({
             "config_key": config_key,
-            "role": 0,
-            traj_cols[start_t_key]: np.nan,
-            traj_cols["label"]: -1,
-            traj_cols[coord_key1]: coords[noise, 0],
-            traj_cols[coord_key2]: coords[noise, 1],
-            "value": np.nan,
+            "role": roles,
+            traj_cols[start_t_key]: np.concatenate(source_times),
+            traj_cols["label"]: labels[point_indices],
+            "value": np.concatenate(distances),
             "value_name": "distance_to_anchor",
         })
-        records.extend(noise_rows.to_dict("records"))
-        anchor_points = pd.DataFrame.from_records(records, columns=point_columns)
-        anchor_points["role"] = anchor_points["role"].astype("int8")
-        return anchor_points
+        return pd.concat([existing_columns, extra_columns], axis=1).loc[:, point_columns]
     return result
 
 
