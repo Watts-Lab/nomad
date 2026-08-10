@@ -88,38 +88,38 @@ _sparse_path  = Path("robustness-of-algorithms/sparse_traj_2")
 _diaries_path = Path("robustness-of-algorithms/diaries_2")
 _homes_path   = Path("robustness-of-algorithms/homes_2")
 
-_rng = np.random.default_rng(_GEN_SEED)
+_Q_RANGE = (0.3, 0.9)
+_BETA_PING_RANGE = (3, 12)
+_BETA_DURATIONS_RANGE = (30, 300)
 HA_LOWER_BOUND = 8/15  # blocks; matches nomad.traj_gen._sample_horizontal_noise lower bound for pareto_prior
-_PARAMS = {
-    "beta_ping":      _rng.uniform(3,   12,  _GEN_N).tolist(),
-    "beta_start":     _rng.uniform(50,  500, _GEN_N).tolist(),
-    "beta_durations": _rng.uniform(30,  300, _GEN_N).tolist(),
-    "ha":             _rng.uniform(HA_LOWER_BOUND + 1e-9, 5,   _GEN_N).tolist(),
-}
 
-def generate_agent_trajectory(args):
-    """Worker function for parallel generation."""
-    identifier, home, work, seed, beta_ping, beta_start, beta_durations, ha = args
-
+def generate_agent_trajectory(params):
+    """Generate dense and sparse trajectories for one agent."""
     city = City.from_geopackage(_DATA_DIR / "garden-city.gpkg")
     city._build_hub_network(hub_size=16)
     city.compute_gravity(exponent=2.0)
     city.compute_shortest_paths(callable_only=True)
-
-    agent = Agent(identifier=identifier, city=city, home=home, workplace=work)
-    agent.generate_trajectory(datetime=_GEN_START, end_time=_GEN_END, seed=seed)
+    agent = Agent(
+        identifier=params.identifier,
+        city=city,
+        home=params.home,
+        workplace=params.workplace,
+    )
+    agent.generate_trajectory(datetime=_GEN_START, end_time=_GEN_END, seed=params.seed)
     agent.sample_trajectory(
-        beta_ping=beta_ping, beta_start=beta_start, beta_durations=beta_durations,
-        ha=ha, seed=seed, replace_sparse_traj=True,
+        beta_ping=params.beta_ping,
+        beta_start=params.beta_start,
+        beta_durations=params.beta_durations,
+        ha=params.ha,
+        seed=params.seed,
+        replace_sparse_traj=True,
     )
 
     sparse_df = agent.sparse_traj.copy()
-    sparse_df['user_id'] = identifier
-    sparse_df['home'] = home
-    sparse_df['workplace'] = work
+    sparse_df['user_id'] = params.identifier
 
     diary_df = agent.diary.copy()
-    diary_df['user_id'] = identifier
+    diary_df['user_id'] = params.identifier
 
     return sparse_df, diary_df
 
@@ -127,38 +127,45 @@ if _sparse_path.exists() and _diaries_path.exists():
     print("Data already exists — skipping generation.")
 else:
     _city = City.from_geopackage(_DATA_DIR / "garden-city.gpkg")
-    homes      = _city.buildings_gdf[_city.buildings_gdf['building_type'] == 'home']['id'].to_numpy()
-    workplaces = _city.buildings_gdf[_city.buildings_gdf['building_type'] == 'workplace']['id'].to_numpy()
+    _rng = np.random.default_rng(_GEN_SEED)
+    population = Population(_city)
+    population.generate_agents(N=_GEN_N, seed=_GEN_SEED, datetimes=_GEN_START)
 
-    agent_params = [
-        (f'agent_{i:04d}',
-         _rng.choice(homes),
-         _rng.choice(workplaces),
-         i,
-         _PARAMS['beta_ping'][i],
-         _PARAMS['beta_start'][i],
-         _PARAMS['beta_durations'][i],
-         _PARAMS['ha'][i])
-        for i in range(_GEN_N)
-    ]
+    sampling_params = pd.DataFrame([
+        Population.gen_params_target_q(
+            q=_Q_RANGE,
+            beta_ping=_BETA_PING_RANGE,
+            beta_durations=_BETA_DURATIONS_RANGE,
+            rng=_rng,
+        )
+        for _ in range(_GEN_N)
+    ])
+    sampling_params['ha'] = _rng.uniform(HA_LOWER_BOUND + 1e-9, 5, _GEN_N)
+    sampling_params['seed'] = np.arange(_GEN_N)
+
+    agent_params = pd.DataFrame([
+        {
+            'identifier': agent.identifier,
+            'home': agent.home,
+            'workplace': agent.workplace,
+        }
+        for agent in population.roster.values()
+    ]).join(sampling_params)
 
     print(f"Generating {_GEN_N} agents in parallel...")
     start_time = time.time()
 
     results = Parallel(n_jobs=-1, verbose=10)(
-        delayed(generate_agent_trajectory)(params) for params in agent_params
+        delayed(generate_agent_trajectory)(params)
+        for params in agent_params.itertuples(index=False)
     )
 
     generation_time = time.time() - start_time
     print(f"Generated {_GEN_N} agents in {generation_time:.2f}s ({generation_time / _GEN_N:.2f}s per agent)")
 
-    population = Population(_city)
-    for (sparse_df, diary_df), params in zip(results, agent_params):
-        identifier, home, work = params[0], params[1], params[2]
-        agent = Agent(identifier=identifier, city=_city, home=home, workplace=work)
-        agent.sparse_traj = sparse_df.drop(columns=['home', 'workplace'])
+    for (sparse_df, diary_df), agent in zip(results, population.roster.values()):
+        agent.sparse_traj = sparse_df
         agent.diary = diary_df
-        population.add_agent(agent, verbose=False)
 
     poi_data = pd.DataFrame({
         'building_id': _city.buildings_gdf['id'].values,
@@ -171,10 +178,11 @@ else:
         sparse_path=str(_sparse_path),
         diaries_path=str(_diaries_path),
         homes_path=str(_homes_path),
-        beta_ping=_PARAMS['beta_ping'],
-        beta_start=_PARAMS['beta_start'],
-        beta_durations=_PARAMS['beta_durations'],
-        ha=_PARAMS['ha'],
+        beta_ping=agent_params['beta_ping'].tolist(),
+        beta_start=agent_params['beta_start'].tolist(),
+        beta_durations=agent_params['beta_durations'].tolist(),
+        q=agent_params['q'].tolist(),
+        ha=agent_params['ha'].tolist(),
     )
     del _city, population, results
     print(f"Generated {_GEN_N} agents in {generation_time:.2f}s -> {_diaries_path} / {_sparse_path}")
