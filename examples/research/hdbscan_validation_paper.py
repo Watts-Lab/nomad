@@ -22,7 +22,6 @@ import geopandas as gpd
 import numpy as np
 from itertools import chain
 from pathlib import Path
-from shapely.geometry import Point
 from tqdm import tqdm
 
 import nomad.data as data_folder
@@ -220,49 +219,17 @@ diaries_df.loc[~diaries_df.id.isna(), 'dwell_length'] = (
 )
 
 sparse_df = loader.from_file("robustness-of-algorithms/sparse_traj_2", format="parquet")
+sparse_gdf = gpd.GeoDataFrame(
+    sparse_df, geometry=gpd.points_from_xy(sparse_df['x'], sparse_df['y']), crs='EPSG:3857',
+)
+sparse_df['id'] = visits.poi_map(
+    sparse_gdf, poi_table=poi_table, max_distance=12, location_id='id',
+    x='x', y='y', data_crs='EPSG:3857',
+)
 
 
 # %%
-# ── PREPROCESSING / POST-PROCESSING FUNCTIONS ─────────────────────────────────
-
-def no_op(value, *_args, **_kwargs):
-    return value
-
-def prejoin_oracle_map(data, diary):
-    location = visits.oracle_map(data, diary, timestamp='timestamp', location_id='id')
-    return data.join(location)
-
-def postjoin_poly_map(data):
-    if not isinstance(data, gpd.GeoDataFrame):
-        geometry = [Point(xy) for xy in zip(data['x'], data['y'])]
-        data_gdf = gpd.GeoDataFrame(data, geometry=geometry, crs='EPSG:3857')
-    else:
-        data_gdf = data
-        if data_gdf.crs is None:
-            data_gdf = data_gdf.set_crs('EPSG:3857', allow_override=True)
-    location = visits.point_in_polygon(
-        data=data_gdf, poi_table=poi_table, method='majority',
-        max_distance=12, cluster_label='cluster', location_id='id',
-        x='x', y='y', data_crs='EPSG:3857',
-    )
-    return data.join(location)
-
-def pad_oracle_stops_long(stops):
-    return utils.pad_short_stops(stops, pad=15, dur_min=4, timestamp='timestamp')
-
-
-# ── PRE/POST PIPELINE — keyed by family name ──────────────────────────────────
-
-pipeline = {
-    'ta-hdbscan':      {'pre': no_op,           'post': postjoin_poly_map, 'fix': no_op},
-    'oracle':          {'pre': prejoin_oracle_map,  'post': no_op,          'fix': pad_oracle_stops_long},
-    'tadbscan_coarse': {'pre': no_op,            'post': postjoin_poly_map, 'fix': no_op},
-    'tadbscan_fine':   {'pre': no_op,            'post': postjoin_poly_map, 'fix': no_op},
-    'lachesis_coarse': {'pre': no_op,            'post': postjoin_poly_map, 'fix': no_op},
-    'lachesis_fine':   {'pre': no_op,            'post': postjoin_poly_map, 'fix': no_op},
-    'seqscan':   {'pre': no_op,            'post': postjoin_poly_map, 'fix': no_op},
-}
-
+# ── STOP SUMMARIZATION AND ALGORITHM CONFIGURATION ────────────────────────────
 
 registry = AlgorithmRegistry()
 
@@ -328,19 +295,29 @@ for user in tqdm(diaries_df.user_id.unique()[:10], desc='Processing users'):
 
     for algo in registry:
         algorithm = algo["family"]
-        steps = pipeline[algorithm]
+        sparse_for_algo = user_sparse
+        if algorithm == 'oracle':
+            sparse_for_algo = user_sparse.drop(columns='id')
+            sparse_for_algo['id'] = visits.oracle_map(
+                sparse_for_algo, user_truth, timestamp='timestamp', location_id='id',
+            )
 
-        sparse_for_algo = steps["pre"](user_sparse, user_truth)
         labels = registry.time_call(algo, sparse_for_algo, timestamp='timestamp')
 
         clustered = sparse_for_algo.join(labels)
-        located = steps["post"](clustered)
+        if algorithm != 'oracle':
+            location = visits.point_in_polygon(
+                clustered, poi_table=poi_table, method='majority', max_distance=12,
+                cluster_label='cluster', location_id='id', recompute_location=False,
+                x='x', y='y', data_crs='EPSG:3857',
+            )
+            clustered = clustered.drop(columns='id').join(location)
+
         stops = utils.summarize_stops(
-            located.drop(columns='cluster'), labels,
+            clustered.drop(columns='cluster'), labels,
             x='x', y='y', timestamp='timestamp',
             keep_col_names=True, passthrough_cols=['id'], complete_output=True,
         )
-        stops = steps["fix"](stops)
 
         metric_rows = compute_all_metrics(stops, user_truth, user, algorithm)
         elapsed_s = registry._timings[-1]['elapsed_s']
