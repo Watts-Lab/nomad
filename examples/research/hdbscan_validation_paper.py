@@ -317,12 +317,10 @@ for user in tqdm(diaries_df.user_id.unique()[:10], desc='Processing users'):
         )
 
         metric_rows = compute_all_metrics(stops, user_truth, user, algorithm)
-        elapsed_s = registry._timings[-1]['elapsed_s']
-        for row in metric_rows:
-            row['execution_time'] = elapsed_s
         results_rows.extend(metric_rows)
 
 results_df = pd.DataFrame(results_rows)
+timing_df = registry.timing_frame()
 print("Processing Complete!")
 
 # %%
