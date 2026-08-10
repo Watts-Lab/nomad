@@ -289,8 +289,56 @@ def test_compute_visitation_errors_supports_distinct_schemas(distinct_visit_tabl
     )
 
     assert errors["missed_fraction"] == 0.0
-    assert errors["merged_fraction"] == pytest.approx(0.5)
-    assert errors["split_fraction"] == pytest.approx(1.0)
+    assert errors["merged_fraction"] == pytest.approx(0.0)
+    assert errors["split_fraction"] == pytest.approx(0.5)
+
+
+def test_compute_visitation_errors_counts_structural_merges():
+    predicted = pd.DataFrame(
+        {
+            "start_timestamp": [0],
+            "end_timestamp": [1200],
+            "location_id": ["home"],
+        }
+    )
+    truth = pd.DataFrame(
+        {
+            "start_timestamp": [0, 600],
+            "end_timestamp": [600, 1200],
+            "location_id": ["home", "work"],
+        }
+    )
+
+    overlaps = contact.overlapping_visits(predicted, truth, match_location=False)
+    errors = compute_visitation_errors(overlaps, truth)
+
+    assert errors["missed_fraction"] == pytest.approx(0.0)
+    assert errors["merged_fraction"] == pytest.approx(1.0)
+    assert errors["split_fraction"] == pytest.approx(0.0)
+
+
+def test_compute_visitation_errors_handles_no_temporal_overlap():
+    predicted = pd.DataFrame(
+        {
+            "start_timestamp": [1200],
+            "end_timestamp": [1800],
+            "location_id": ["home"],
+        }
+    )
+    truth = pd.DataFrame(
+        {
+            "start_timestamp": [0],
+            "end_timestamp": [600],
+            "location_id": ["home"],
+        }
+    )
+
+    overlaps = contact.overlapping_visits(predicted, truth, match_location=False)
+    errors = compute_visitation_errors(overlaps, truth)
+
+    assert errors["missed_fraction"] == pytest.approx(1.0)
+    assert errors["merged_fraction"] == pytest.approx(0.0)
+    assert errors["split_fraction"] == pytest.approx(0.0)
 
 
 def test_compute_stop_detection_metrics_supports_distinct_schemas():

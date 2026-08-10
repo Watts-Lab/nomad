@@ -196,13 +196,13 @@ def compute_visitation_errors(overlaps, true_visits, traj_cols=None, right_traj_
             "do not exist in ground truth: " + repr(sorted(bad_ts)[:10])
         )
 
-    diff_loc = overlaps[loc_left] != overlaps[loc_right]
-    same_loc = ~diff_loc
+    same_loc = overlaps[loc_left] == overlaps[loc_right]
+    merged_rows = overlaps.groupby(t_left)[loc_right].transform("nunique").gt(1)
 
     num_overlapped = overlaps[t_right].nunique()
     missed_fraction = 1 - num_overlapped / n_truth
-    merged_fraction = diff_loc.groupby(overlaps[t_right]).any().mean()
-    split_fraction = overlaps[same_loc].groupby(t_right)[t_left].nunique().gt(1).mean()
+    merged_fraction = overlaps.loc[merged_rows, t_right].nunique() / n_truth
+    split_fraction = overlaps[same_loc].groupby(t_right)[t_left].nunique().gt(1).sum() / n_truth
 
     return {
         "missed_fraction": missed_fraction,
