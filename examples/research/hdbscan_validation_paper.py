@@ -53,8 +53,8 @@ from nomad.map_utils import blocks_to_mercator_gdf
 data_dir = Path(data_folder.__file__).parent
 city = City.from_geopackage(data_dir / "garden-city.gpkg")
 
-def classify_building_size_from_id(building_id):
-    building = city.buildings_df.loc[building_id]
+def classify_building_size(location_id):
+    building = city.buildings_df.loc[location_id]
     n_blocks = len(building.blocks)
     if n_blocks == 1:
         return 'small'
@@ -63,8 +63,8 @@ def classify_building_size_from_id(building_id):
     else:
         return 'big'
 
-def classify_building_type_from_id(building_id):
-    building = city.buildings_df.loc[building_id]
+def classify_building_type(location_id):
+    building = city.buildings_df.loc[location_id]
     return building.building_type
 
 def classify_dwell(duration):
@@ -200,7 +200,7 @@ else:
 # %%
 # ── DATA LOADING ──────────────────────────────────────────────────────────────
 poi_table = gpd.read_file(data_dir / "garden-city.gpkg", layer='buildings')
-poi_table = poi_table.rename({'type': 'building_type'}, axis=1)
+poi_table = poi_table.rename({'id': 'location_id', 'type': 'building_type'}, axis=1)
 # Project from local grid units → EPSG:3857 meters to match the saved sparse trajectories
 poi_table = blocks_to_mercator_gdf(
     poi_table,
@@ -209,21 +209,23 @@ poi_table = blocks_to_mercator_gdf(
     false_northing=city.web_mercator_origin_y,
     drop_garden_cols=False,
 )
-poi_table['building_size'] = poi_table['id'].apply(classify_building_size_from_id)
+poi_table['building_size'] = poi_table['location_id'].apply(classify_building_size)
 
 diaries_df = loader.from_file("robustness-of-algorithms/diaries_2", format="parquet")
-diaries_df = diaries_df.rename({'location': 'id'}, axis=1)
-diaries_df = diaries_df.merge(poi_table[['id', 'building_size', 'building_type']], on='id', how='left')
-diaries_df.loc[~diaries_df.id.isna(), 'dwell_length'] = (
-    diaries_df.loc[~diaries_df.id.isna(), 'duration'].apply(classify_dwell)
+diaries_df = diaries_df.rename({'location': 'location_id'}, axis=1)
+diaries_df = diaries_df.merge(
+    poi_table[['location_id', 'building_size', 'building_type']], on='location_id', how='left',
+)
+diaries_df.loc[~diaries_df.location_id.isna(), 'dwell_length'] = (
+    diaries_df.loc[~diaries_df.location_id.isna(), 'duration'].apply(classify_dwell)
 )
 
 sparse_df = loader.from_file("robustness-of-algorithms/sparse_traj_2", format="parquet")
 sparse_gdf = gpd.GeoDataFrame(
     sparse_df, geometry=gpd.points_from_xy(sparse_df['x'], sparse_df['y']), crs='EPSG:3857',
 )
-sparse_df['id'] = visits.poi_map(
-    sparse_gdf, poi_table=poi_table, max_distance=12, location_id='id',
+sparse_df['location_id'] = visits.poi_map(
+    sparse_gdf, poi_table=poi_table, max_distance=12, location_id='location_id',
     x='x', y='y', data_crs='EPSG:3857',
 )
 
@@ -238,7 +240,7 @@ registry.add_algorithm(SEQSCAN.seqscan_labels, family='seqscan', dist_thresh=30,
 registry.add_algorithm(HDBSCAN.hdbscan_labels,       family='ta-hdbscan',
                        time_thresh=240, min_pts=3, min_cluster_size=1, include_border_points=True)
 registry.add_algorithm(GRID_BASED.grid_based_labels,  family='oracle',
-                       time_thresh=600, min_pts=0, location_id='id')
+                       time_thresh=600, min_pts=0, location_id='location_id')
 registry.add_algorithm(TADBSCAN.ta_dbscan_labels,     family='tadbscan_coarse',
                        time_thresh=240, min_pts=2, dist_thresh=30)
 registry.add_algorithm(TADBSCAN.ta_dbscan_labels,     family='tadbscan_fine',
@@ -258,7 +260,7 @@ def compute_all_metrics(stops, truth, user, algo):
         truth,
         algorithm=algo,
         prf_only=False,
-        location_id='id',
+        location_id='location_id',
         timestamp='timestamp',
     )
     gen.update({'user': user, 'metric_category': 'general', 'category_value': 'all'})
@@ -273,7 +275,7 @@ def compute_all_metrics(stops, truth, user, algo):
                 truth_sub,
                 algorithm=algo,
                 prf_only=False,
-                location_id='id',
+                location_id='location_id',
                 timestamp='timestamp',
             )
             cat.update({'user': user, 'metric_category': category, 'category_value': val})
@@ -297,9 +299,9 @@ for user in tqdm(diaries_df.user_id.unique()[:10], desc='Processing users'):
         algorithm = algo["family"]
         sparse_for_algo = user_sparse
         if algorithm == 'oracle':
-            sparse_for_algo = user_sparse.drop(columns='id')
-            sparse_for_algo['id'] = visits.oracle_map(
-                sparse_for_algo, user_truth, timestamp='timestamp', location_id='id',
+            sparse_for_algo = user_sparse.drop(columns='location_id')
+            sparse_for_algo['location_id'] = visits.oracle_map(
+                sparse_for_algo, user_truth, timestamp='timestamp', location_id='location_id',
             )
 
         labels = registry.time_call(algo, sparse_for_algo, timestamp='timestamp')
@@ -308,9 +310,9 @@ for user in tqdm(diaries_df.user_id.unique()[:10], desc='Processing users'):
         stops = utils.summarize_stops(
             clustered.drop(columns='cluster'), labels,
             x='x', y='y', timestamp='timestamp',
-            keep_col_names=True, passthrough_cols=['id'], complete_output=True,
+            keep_col_names=True, passthrough_cols=['location_id'], complete_output=True,
             passthrough_agg={
-                'id': lambda values: values.mode().iat[0] if values.notna().any() else None,
+                'location_id': lambda values: values.mode().iat[0] if values.notna().any() else None,
             },
         )
 
