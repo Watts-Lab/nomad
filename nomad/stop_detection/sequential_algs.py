@@ -837,34 +837,32 @@ def grid_based_labels(data, time_thresh=np.inf, min_cluster_size=1, dur_min=0, t
     ts = to_timestamp(data[traj_cols[t_key]]) if use_datetime else data[traj_cols[t_key]]
     loc = data[traj_cols['location_id']]
         
-    labels = pd.Series(-1, index=data.index)
+    gaps = ts.diff().fillna(0) // 60
+    run_start = loc.isna() | loc.shift().isna() | loc.ne(loc.shift()) | (gaps > time_thresh)
+    runs = run_start.cumsum()
+    positions = pd.Series(np.arange(len(data)), index=data.index)
+    run_stats = pd.DataFrame({"time": ts, "location": loc, "position": positions}).groupby(
+        runs, sort=False
+    ).agg(
+        first_time=("time", "first"),
+        last_time=("time", "last"),
+        location=("location", "first"),
+        first_position=("position", "first"),
+        n_pings=("position", "size"),
+    )
+    run_stats["duration"] = (run_stats["last_time"] - run_stats["first_time"]) // 60
+    valid = (
+        run_stats["location"].notna()
+        & (run_stats["n_pings"] >= min_cluster_size)
+        & (run_stats["duration"] >= dur_min)
+        & (run_stats["first_position"] < len(data) - 1)
+    )
+    cluster_ids = pd.Series(
+        np.arange(valid.sum(), dtype=int), index=run_stats.index[valid]
+    )
+    labels = runs.map(cluster_ids).fillna(-1).astype(int)
+    labels.index = data.index
     labels.name = 'cluster'
-    
-    i= 0 # index to traverse data
-    c = 0 # cluster label counter
-    n = len(data)
-
-    while i < n - 1:
-        t_i, loc_i = ts.iloc[i], loc.iloc[i]
-        
-        if pd.isna(loc.iloc[i]):
-            i += 1
-            continue
-        
-        # find first index where location changes or gap exceeds threshold
-        j = i + 1
-        while j < n:
-            gap = (ts.iloc[j] - ts.iloc[j-1]) // 60
-            if pd.isna(loc.iloc[j]) or loc.iloc[j] != loc_i or gap > time_thresh:
-                break
-            j += 1
-
-        if j - i >= min_cluster_size:
-            if (ts.iloc[j-1] - t_i) // 60 >= dur_min:
-                labels.iloc[i:j] = c
-                c += 1
-        i = j
-    
     return labels
 
 def grid_based(
