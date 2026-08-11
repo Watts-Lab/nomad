@@ -89,7 +89,10 @@ def detect_stops_labels(
 
     # Extract coordinates and time
     coords = data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy(dtype='float64')
-    times = to_timestamp(data[traj_cols[t_key]]) if use_datetime else data[traj_cols[t_key]]
+    times = (
+        to_timestamp(data[traj_cols[t_key]]).to_numpy()
+        if use_datetime else data[traj_cols[t_key]].to_numpy()
+    )
     
     # Initialize all labels as noise (-1)
     n = len(data)
@@ -100,12 +103,12 @@ def detect_stops_labels(
     while i < n:
         j = i + 1
         anchor_coords = coords[i]
-        start_time = times.iloc[i]
+        start_time = times[i]
         
         # Slide window forward
         while j < n:
             # Check for temporal gap
-            time_gap = (times.iloc[j] - times.iloc[j-1]) / 60  # Convert to minutes
+            time_gap = (times[j] - times[j-1]) / 60  # Convert to minutes
             if time_gap > dt_max:
                 break
 
@@ -130,14 +133,14 @@ def detect_stops_labels(
             j += 1
         
         # Check if we have a valid stop (enough time spent)
-        time_spent = (times.iloc[j-1] - start_time) / 60  # Convert to minutes
+        time_spent = (times[j-1] - start_time) / 60  # Convert to minutes
         
         if time_spent >= dur_min:
             # Assign cluster label to all points in this stop
             labels[i:j] = cluster_id
             if collect_anchor_points:
                 stop_coords = coords[i:j]
-                stop_times = times.iloc[i:j].to_numpy()
+                stop_times = times[i:j]
                 if method == 'centroid':
                     anchors = np.cumsum(stop_coords, axis=0) / np.arange(1, len(stop_coords) + 1).reshape(-1, 1)
                 else:
@@ -183,7 +186,7 @@ def detect_stops_labels(
                 traj_cols[coord_key2],
             ]
         ).reset_index(drop=True)
-        existing_columns[traj_cols[t_key]] = times.iloc[point_indices].to_numpy()
+        existing_columns[traj_cols[t_key]] = times[point_indices]
         if anchor_coordinates:
             existing_columns.loc[
                 roles == 1, [traj_cols[coord_key1], traj_cols[coord_key2]]
@@ -469,7 +472,10 @@ def lachesis_labels(data, dt_max, delta_roam, dur_min=5, traj_cols=None, **kwarg
     coords = data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy(dtype='float64')
     
     # Parse if necessary
-    time_series = to_timestamp(data[traj_cols[t_key]]) if use_datetime else data[traj_cols[t_key]]
+    time_series = (
+        to_timestamp(data[traj_cols[t_key]]).to_numpy()
+        if use_datetime else data[traj_cols[t_key]].to_numpy()
+    )
 
     i = 0
     n = len(data)
@@ -478,13 +484,12 @@ def lachesis_labels(data, dt_max, delta_roam, dur_min=5, traj_cols=None, **kwarg
     labels = np.full(n, -1, dtype=int)
     cluster_id = 0
     while i < n - 1:
-        t_i = time_series.iloc[i]
-        j_star = next((j for j in range(i, n) if (time_series.iloc[j] - t_i) >= dur_min * 60), -1)
-        if j_star == -1:
+        j_star = np.searchsorted(time_series, time_series[i] + dur_min * 60, side='left')
+        if j_star == n:
             break
 
         d_start = utils._diameter(coords[i:j_star + 1], metric=metric)
-        time_diffs = np.diff(time_series.iloc[i:j_star + 1].values)
+        time_diffs = np.diff(time_series[i:j_star + 1])
         if (time_diffs >= dt_max * 60).any() or d_start > delta_roam:
             i += 1
             continue
@@ -492,7 +497,7 @@ def lachesis_labels(data, dt_max, delta_roam, dur_min=5, traj_cols=None, **kwarg
         j_final = j_star
         for j in range(j_star, n):
             d_update = utils._update_diameter(coords[j], coords[i:j], d_start, metric=metric)
-            cc_diff = time_series.iloc[j] - time_series.iloc[j - 1]
+            cc_diff = time_series[j] - time_series[j - 1]
             if d_update > delta_roam or cc_diff > dt_max * 60:
                 j_final = j - 1
                 break
@@ -500,7 +505,7 @@ def lachesis_labels(data, dt_max, delta_roam, dur_min=5, traj_cols=None, **kwarg
         else:
             j_final = n - 1
 
-        duration = (time_series.iloc[j_final] - time_series.iloc[i]) // 60
+        duration = (time_series[j_final] - time_series[i]) // 60
         if duration >= dur_min:
             labels[i : j_final + 1] = cluster_id
             cluster_id += 1
