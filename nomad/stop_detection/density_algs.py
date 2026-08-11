@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import nomad.constants as constants
 import nomad.io.base as loader
+from nomad.filters import to_timestamp
 from nomad.stop_detection import utils
 from nomad.stop_detection.preprocessing import _find_neighbors
 
@@ -73,8 +74,16 @@ def _format_density_points(
         traj_cols[start_t_key], traj_cols["label"], traj_cols[coord_key1],
         traj_cols[coord_key2], "value", "value_name", "cluster", "core",
     ]
-    timestamps = pd.Series(list(graph), index=data.index)
-    neighbor_counts = pd.Series([len(graph[t]) for t in graph], index=data.index)
+    nodes = np.asarray(list(graph))
+    if np.array_equal(nodes, np.arange(len(data))):
+        timestamps = (
+            pd.Series(data[traj_cols[t_key]].to_numpy(), index=data.index)
+            if not use_datetime else
+            pd.Series(to_timestamp(data[traj_cols[t_key]]).to_numpy(), index=data.index)
+        )
+    else:
+        timestamps = pd.Series(nodes, index=data.index)
+    neighbor_counts = pd.Series([len(graph[node]) for node in nodes], index=data.index)
     roles = pd.Series(0, index=data.index, dtype="int8")
     clustered = output["cluster"] >= 0
     roles.loc[clustered] = -1
@@ -159,7 +168,7 @@ def ta_dbscan_labels(data,
     loader._has_time_cols(data.columns, traj_cols)
     
     G = _find_neighbors(data, time_thresh, traj_cols, dist_thresh,
-                False, use_datetime, use_lon_lat, return_trees=False, relabel_nodes=True)
+                False, use_datetime, use_lon_lat, return_trees=False, relabel_nodes=False)
     
     cluster_df = pd.Series(-2, index=G, name='cluster')
     core_df = pd.Series(-2, index=G, name='core')

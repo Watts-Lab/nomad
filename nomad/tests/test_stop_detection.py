@@ -1028,6 +1028,36 @@ def test_compact_density_diagnostics_are_lossless(simple_traj_ts, label_fn, kwar
     assert compact["neighbor_count"].equals(legacy["value"])
 
 
+def test_tadbscan_keeps_duplicate_timestamp_pings():
+    data = pd.DataFrame(
+        {
+            "timestamp": [0, 0, 300],
+            "x": [0.0, 0.0, 0.0],
+            "y": [0.0, 0.0, 0.0],
+        }
+    )
+    labels = DBSCAN.ta_dbscan_labels(
+        data,
+        dist_thresh=1,
+        min_pts=2,
+        time_thresh=10,
+        traj_cols={"timestamp": "timestamp", "x": "x", "y": "y"},
+    )
+    diagnostics = DBSCAN.ta_dbscan_labels(
+        data,
+        dist_thresh=1,
+        min_pts=2,
+        time_thresh=10,
+        return_cores=True,
+        traj_cols={"timestamp": "timestamp", "x": "x", "y": "y"},
+    )
+
+    assert len(labels) == len(data)
+    assert labels.index.equals(data.index)
+    assert len(diagnostics) == len(data)
+    assert diagnostics["timestamp"].tolist() == data["timestamp"].tolist()
+
+
 @pytest.mark.parametrize(
     "algo_name",
     [
