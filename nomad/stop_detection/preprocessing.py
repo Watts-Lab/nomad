@@ -104,7 +104,7 @@ def _find_spatial_neighbors(coords, dist_thresh=None, weighted=False,
 def _find_neighbors(data, time_thresh, traj_cols, dist_thresh=None,
                     weighted=False, use_datetime=False, use_lon_lat=False,
                     return_trees=False, relabel_nodes=True):
-    """Combine time and spatial neighbors into the final graph."""
+    """Build the final spatiotemporal neighbor graph from temporal candidates."""
     if use_lon_lat:
         # Internal haversine convention for sklearn BallTree is [latitude, longitude] in radians.
         # Public-facing APIs may accept lon/lat columns, but tree/query inputs must follow this order.
@@ -119,47 +119,46 @@ def _find_neighbors(data, time_thresh, traj_cols, dist_thresh=None,
     else:
         times = data[traj_cols["timestamp"]].values
 
-    temp_result = _find_temp_neighbors(times, time_thresh, return_tree=return_trees, relabel_nodes=False)
-    time_graph, t_tree = temp_result if return_trees else (temp_result, None)
+    t_tree = KDTree(times[:, None])
+    temporal_neighbors = t_tree.query_radius(times[:, None], r=time_thresh * 60)
+    counts = np.fromiter((len(items) for items in temporal_neighbors), dtype=int)
+    row = np.repeat(np.arange(len(times)), counts)
+    col = np.concatenate(temporal_neighbors)
+    candidate_mask = row < col
+    row = row[candidate_mask]
+    col = col[candidate_mask]
 
-    spatial_graph = None
-    s_tree = None
-
-    if dist_thresh is not None or weighted or return_trees:
-        spatial_result = _find_spatial_neighbors(
-            coords,
-            dist_thresh=dist_thresh,
-            weighted=weighted,
-            use_lon_lat=use_lon_lat,
-            return_tree=return_trees,
-            relabel_nodes=False,
-        )
-        spatial_graph, s_tree = spatial_result if return_trees else (spatial_result, None)
-
-    if spatial_graph is None:
-        G = time_graph.copy()
-
-    elif dist_thresh is None:
-        if weighted:
-            G = nx.create_empty_copy(time_graph)
-            good_edges = time_graph.edges & spatial_graph.edges
-            G.add_weighted_edges_from(
-                (u, v, spatial_graph[u][v]["weight"])
-                for u, v in good_edges
+    distances = None
+    if dist_thresh is not None or weighted:
+        if use_lon_lat:
+            delta_lat = coords[row, 0] - coords[col, 0]
+            delta_lon = coords[row, 1] - coords[col, 1]
+            a = (
+                np.sin(delta_lat / 2.0) ** 2
+                + np.cos(coords[row, 0]) * np.cos(coords[col, 0]) * np.sin(delta_lon / 2.0) ** 2
+            )
+            distances = constants.EARTH_RADIUS_METERS * 2 * np.arctan2(
+                np.sqrt(a), np.sqrt(1 - a)
             )
         else:
-            G = time_graph.copy()
+            distances = np.linalg.norm(coords[row] - coords[col], axis=1)
 
+        if dist_thresh is not None:
+            spatial_mask = distances <= dist_thresh
+            row = row[spatial_mask]
+            col = col[spatial_mask]
+            distances = distances[spatial_mask]
+
+    G = nx.Graph()
+    G.add_nodes_from(range(len(times)))
+    if weighted:
+        G.add_weighted_edges_from(np.column_stack((row, col, distances)))
     else:
-        G = nx.create_empty_copy(time_graph)
-        good_edges = time_graph.edges & spatial_graph.edges
-        if weighted:
-            G.add_weighted_edges_from(
-                (u, v, spatial_graph[u][v]["weight"])
-                for u, v in good_edges
-            )
-        else:
-            G.add_edges_from(good_edges)
+        G.add_edges_from(np.column_stack((row, col)))
+
+    s_tree = None
+    if return_trees:
+        s_tree = BallTree(coords, metric="haversine") if use_lon_lat else KDTree(coords)
 
     if relabel_nodes:
         G = nx.relabel_nodes(G, dict(enumerate(times)))
