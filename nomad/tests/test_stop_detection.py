@@ -997,6 +997,38 @@ def test_label_concat_with_empty_input_preserves_integer_schema(
 
 
 @pytest.mark.parametrize(
+    "label_fn,kwargs",
+    [
+        (DBSCAN.ta_dbscan_labels, {"dist_thresh": 30, "min_pts": 2, "time_thresh": 9}),
+        (DBSTOP.dbstop_labels, {"dist_thresh": 30, "min_pts": 2, "time_thresh": 9}),
+        (DENSITY_BASED.seqscan_labels, {"dist_thresh": 30, "min_pts": 2, "time_thresh": 9, "dur_min": 5}),
+    ],
+)
+def test_compact_density_diagnostics_are_lossless(simple_traj_ts, label_fn, kwargs):
+    traj_cols = {"timestamp": "timestamp", "x": "x", "y": "y"}
+    legacy = label_fn(
+        simple_traj_ts,
+        return_cores=True,
+        diagnostic_format="legacy",
+        traj_cols=traj_cols,
+        **kwargs,
+    )
+    compact = label_fn(
+        simple_traj_ts,
+        return_cores=True,
+        diagnostic_format="compact",
+        traj_cols=traj_cols,
+        **kwargs,
+    )
+
+    assert {"cluster", "core", "neighbor_count"} <= set(compact.columns)
+    assert {"role", "label", "value", "value_name"}.isdisjoint(compact.columns)
+    assert compact["cluster"].equals(legacy["cluster"])
+    assert compact["core"].equals(legacy["core"])
+    assert compact["neighbor_count"].equals(legacy["value"])
+
+
+@pytest.mark.parametrize(
     "algo_name",
     [
         pytest.param("tadbscan", id="tadbscan"),

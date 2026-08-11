@@ -41,6 +41,8 @@ def _format_density_points(
     coord_key1,
     coord_key2,
     use_datetime,
+    diagnostic_format="legacy",
+    value_name="neighbor_count",
 ):
     """
     Convert completed density labels into core, border, and noise-point records.
@@ -103,7 +105,7 @@ def _format_density_points(
             traj_cols[start_t_key]: source_timestamps,
             traj_cols["label"]: output["cluster"],
             "value": neighbor_counts,
-            "value_name": "neighbor_count",
+            "value_name": value_name,
         },
         index=data.index,
     )
@@ -116,9 +118,17 @@ def _format_density_points(
         ]
     ).copy()
     existing_columns[traj_cols[t_key]] = timestamps
-    return pd.concat(
+    legacy = pd.concat(
         [existing_columns, extra_columns, output[["cluster", "core"]]], axis=1
     ).loc[:, point_columns]
+    if diagnostic_format == "legacy":
+        return legacy
+    if diagnostic_format != "compact":
+        raise ValueError("diagnostic_format must be 'legacy' or 'compact'")
+
+    compact = legacy.drop(columns=["role", traj_cols["label"], "value", "value_name"])
+    compact[value_name] = neighbor_counts
+    return compact
 
 
 ##########################################
@@ -130,6 +140,7 @@ def ta_dbscan_labels(data,
                      min_pts,
                      time_thresh,
                      return_cores=False,
+                     diagnostic_format="legacy",
                      remove_overlaps=True,
                      traj_cols=None,
                      **kwargs):
@@ -271,6 +282,7 @@ def ta_dbscan_labels(data,
             coord_key1,
             coord_key2,
             use_datetime,
+            diagnostic_format=diagnostic_format,
         )
     return output.cluster
        
@@ -461,6 +473,7 @@ def dbstop_labels(data,
                  min_pts,
                  time_thresh,
                  return_cores=False,
+                 diagnostic_format="legacy",
                  traj_cols=None,
                  **kwargs):
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
@@ -578,6 +591,7 @@ def dbstop_labels(data,
             coord_key1,
             coord_key2,
             use_datetime,
+            diagnostic_format=diagnostic_format,
         )
     return output.cluster
        
@@ -773,6 +787,7 @@ def seqscan_labels(
     min_pts=3,
     user_id=None,
     return_cores=False,
+    diagnostic_format="legacy",
     traj_cols=None,
     back_merge=False,
     **kwargs
@@ -963,6 +978,7 @@ def seqscan_labels(
             coord_key1,
             coord_key2,
             use_datetime,
+            diagnostic_format=diagnostic_format,
         )
     return output.cluster
     
@@ -1788,6 +1804,7 @@ def hdbscan_labels(data,
                    delta_roam=None,
                    dist_thresh=None,
                    return_cores=False,
+                   diagnostic_format="legacy",
                    traj_cols=None, **kwargs):
     """
     Compute HDBSCAN cluster labels for trajectory data, with core/border assignment.
@@ -1961,6 +1978,12 @@ def hdbscan_labels(data,
         )
         core_points = core_points.loc[:, point_columns]
         core_points["role"] = core_points["role"].astype("int8")
+        if diagnostic_format == "compact":
+            value_name = "core_distance"
+            core_points = core_points.drop(columns=["role", traj_cols["label"], "value", "value_name"])
+            core_points[value_name] = aligned_distances.loc[retained]
+        elif diagnostic_format != "legacy":
+            raise ValueError("diagnostic_format must be 'legacy' or 'compact'")
     final_labels.index = data.index
     if return_cores:
         return core_points
