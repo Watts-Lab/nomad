@@ -135,10 +135,7 @@ def _diameter(coords, metric='euclidean'):
         return 0
    
     if metric == 'haversine':
-        coords = np.radians(coords)
-        pairwise_dists = pdist(coords,
-                               metric=lambda u, v: _haversine_distance(u, v))
-        return np.max(pairwise_dists)
+        return np.max(_pairwise_haversine(np.radians(coords)))
     else:
         return np.max(pdist(coords, metric=metric))
 
@@ -215,13 +212,19 @@ def _pairwise_haversine(coords):
         A symmetric 2D array where the element at [i, j] represents the Haversine 
         distance between the i-th and j-th points.
     """
-    n = len(coords)
-    distances = np.zeros((n, n))
-    for i in range(n):
-        for j in range(i + 1, n):
-            distances[i, j] = _haversine_distance(coords[i], coords[j])
-            distances[j, i] = distances[i, j]
-    return distances
+    latitudes = coords[:, 0]
+    longitudes = coords[:, 1]
+    delta_lat = latitudes[:, None] - latitudes
+    delta_lon = longitudes[:, None] - longitudes
+    a = (
+        np.sin(delta_lat / 2.0) ** 2
+        + np.cos(latitudes[:, None])
+        * np.cos(latitudes)
+        * np.sin(delta_lon / 2.0) ** 2
+    )
+    return constants.EARTH_RADIUS_METERS * 2 * np.arctan2(
+        np.sqrt(a), np.sqrt(1 - a)
+    )
 
     
 def _update_diameter(c_j, coords_prev, D_prev, metric='euclidean'):
