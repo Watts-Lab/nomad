@@ -308,13 +308,12 @@ def applyParallel(groups, func, n_jobs=1, print_progress=False, **kwargs):
             return [func(group, **kwargs) for group in tqdm(groups, desc="Processing users")]
         return [func(group, **kwargs) for group in groups]
 
-    group_list = list(groups)
     if print_progress:
         return Parallel(n_jobs=n_jobs)(
-            delayed(func)(group, **kwargs) for group in tqdm(group_list, desc="Processing users")
+            delayed(func)(group, **kwargs) for group in tqdm(groups, desc="Processing users")
         )
     return Parallel(n_jobs=n_jobs)(
-        delayed(func)(group, **kwargs) for group in group_list
+        delayed(func)(group, **kwargs) for group in groups
     )
 
 def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_col_names = True, passthrough_cols=None, traj_cols=None, **kwargs):
