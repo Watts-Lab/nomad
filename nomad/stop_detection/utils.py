@@ -411,8 +411,10 @@ def summarize_stops(
     if passthrough_cols is None:
         passthrough_cols = []
 
-    merged = data.join(labels)
-    merged = merged[merged.cluster != -1]
+    labels = labels.reindex(data.index)
+    keep = labels != -1
+    merged = data.loc[keep].copy()
+    merged['cluster'] = labels.loc[keep].to_numpy()
     if merged.empty:
         return _get_empty_stop_df(
             data.columns,
@@ -424,17 +426,57 @@ def summarize_stops(
             **kwargs,
         )
 
-    stops = merged.groupby('cluster', as_index=False, sort=False).apply(
-        lambda group: summarize_stop(
-            group,
-            complete_output=complete_output,
-            traj_cols=traj_cols,
-            keep_col_names=keep_col_names,
-            passthrough_cols=passthrough_cols,
-            **kwargs,
-        ),
+    t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = _fallback_st_cols(
+        data.columns, traj_cols, kwargs
+    )
+    cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
+    start_t_key = 'start_datetime' if use_datetime else 'start_timestamp'
+    end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
+    output_coord1 = constants.DEFAULT_SCHEMA[coord_key1] if not keep_col_names else cols[coord_key1]
+    output_coord2 = constants.DEFAULT_SCHEMA[coord_key2] if not keep_col_names else cols[coord_key2]
+    output_start = cols[t_key] if keep_col_names else cols[start_t_key]
+    output_end = cols[end_t_key]
+    metric = 'haversine' if use_lon_lat else 'euclidean'
+    grouped = merged.groupby('cluster', sort=False)
+    bounds = grouped[cols[t_key]].agg(['first', 'last', 'size'])
+    medoids = grouped[[cols[coord_key1], cols[coord_key2]]].apply(
+        lambda group: _medoid(group.to_numpy(), metric=metric),
         include_groups=False,
-    ).reset_index(drop=True)
+    )
+
+    stops = pd.DataFrame({'cluster': bounds.index})
+    stops[output_coord1] = [point[0] for point in medoids]
+    stops[output_coord2] = [point[1] for point in medoids]
+    stops[output_start] = bounds['first'].to_numpy()
+
+    if complete_output:
+        if cols['ha'] in merged.columns:
+            stops[cols['ha']] = grouped[cols['ha']].mean().to_numpy()
+        stops['diameter'] = grouped[[cols[coord_key1], cols[coord_key2]]].apply(
+            lambda group: _diameter(group.to_numpy(), metric=metric),
+            include_groups=False,
+        ).to_numpy()
+        stops['n_pings'] = bounds['size'].to_numpy()
+        stops[output_end] = bounds['last'].to_numpy()
+
+    if use_datetime:
+        durations = (bounds['last'] - bounds['first']).dt.total_seconds().astype(int) // 60
+    else:
+        durations = (bounds['last'] - bounds['first']) // 60
+    stops['duration'] = durations.to_numpy()
+
+    if complete_output:
+        gaps = merged.groupby('cluster', sort=False)[cols[t_key]].diff()
+        max_gaps = gaps.groupby(merged['cluster'], sort=False).max().reindex(bounds.index)
+        if use_datetime:
+            stops['max_gap'] = max_gaps.fillna(pd.Timedelta(0)).dt.total_seconds().astype(int).to_numpy() // 60
+        else:
+            stops['max_gap'] = max_gaps.fillna(0).to_numpy() // 60
+
+    for col in passthrough_cols:
+        if col in merged.columns:
+            stops[col] = grouped[col].first().to_numpy()
+
     if dur_min is not None:
         stops = stops.loc[stops['duration'] >= dur_min]
     return stops
