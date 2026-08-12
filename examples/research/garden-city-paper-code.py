@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.3
+#       jupytext_version: 1.19.3
 #   kernelspec:
 #     display_name: nomad_env
 #     language: python
@@ -386,16 +386,16 @@ if produce_animation:
 
 # %%
 # Sample sparse trajectory and latent variables for Bob
-burst_info = Bob.sample_trajectory(
+Bob.set_beta_params(
     beta_start=300, # a burst every 300 mins on average
     beta_durations=60, # average burst duration is 60 mins
-    beta_ping=10, # a ping every 10 mins within a burst
-    seed=2,
-    output_bursts=True)
+    beta_ping=10) # a ping every 10 mins within a burst
+burst_info = Bob.sample_trajectory(
+    seed=2)
 Bob.sparse_traj.head()
 
 # %% [markdown]
-# To visualize the distribution of the sparsified pings, set `output_bursts=True` when calling `Agent.sample_traj_hier_nhpp` to obtain information about the start time and duration of bursts. These can then be graphed alongside the sampled pings to visualize the sparsification. The start times are indicated by the red lines and the duration of bursts are shown by grey rectangles. The sampled pings are the black lines.
+# `Agent.sample_trajectory` returns information about the start time and duration of bursts. These can be graphed alongside the sampled pings to visualize the sparsification. The start times are indicated by the red lines and the duration of bursts are shown by grey rectangles. The sampled pings are the black lines.
 
 # %%
 fig, axes = plt.subplots(nrows=3,figsize=(10, 3))
@@ -444,10 +444,10 @@ for i, agent_id in enumerate(population.roster):
     agent.generate_trajectory(end_time=pd.Timestamp('2025-01-08 00:00', tz='America/New_York'),
                               datetime=pd.Timestamp('2025-01-01 00:00', tz='America/New_York'),
                               seed=100+i)
-    agent.sample_trajectory(beta_start=300,
-                            beta_durations=60,
-                            beta_ping=10,
-                            seed=100+i)
+    agent.set_beta_params(beta_start=300,
+                          beta_durations=60,
+                          beta_ping=10)
+    agent.sample_trajectory(seed=100+i)
 
 population.roster
 
@@ -535,7 +535,16 @@ seed = 819
 
 for j in range(2):
     ax = axes[j]
-    Charlie.sample_trajectory(*hier_nhpp_params[j], seed=seed, replace_sparse_traj=True)
+    beta_start, beta_durations, beta_ping = hier_nhpp_params[j]
+    Charlie.set_beta_params(
+        beta_start=beta_start,
+        beta_durations=beta_durations,
+        beta_ping=beta_ping
+    )
+    Charlie.sample_trajectory(
+        seed=seed,
+        replace_sparse_traj=True
+    )
 
     ax.scatter(Charlie.sparse_traj.x, Charlie.sparse_traj.y, s=6, color='black', alpha=1, zorder=2)
     city.plot_city(ax, doors=True, address=False, zorder=1)
@@ -571,10 +580,14 @@ for j in range(2):
     [spine.set_visible(False) for name, spine in ax.spines.items() if name != 'bottom']
     ax.yaxis.set_visible(False)
 
+    beta_start, beta_durations, beta_ping = hier_nhpp_params[j]
+    Charlie.set_beta_params(
+        beta_start=beta_start,
+        beta_durations=beta_durations,
+        beta_ping=beta_ping
+    )
     burst_info = Charlie.sample_trajectory(
-        *hier_nhpp_params[j], 
         seed=seed, 
-        output_bursts=True,
         replace_sparse_traj=True)
 
     #ax.vlines(burst_info['start_time'], 0.95, 1.05, color='red', linewidth=1.2, alpha=1)
@@ -620,7 +633,16 @@ traj_cols = {
 for i in range(2):
     for j in range(2):
         ax = axes[i, j]
-        Charlie.sample_trajectory(*hier_nhpp_params[j], seed=seed, replace_sparse_traj=True)
+        beta_start, beta_durations, beta_ping = hier_nhpp_params[j]
+        Charlie.set_beta_params(
+            beta_start=beta_start,
+            beta_durations=beta_durations,
+            beta_ping=beta_ping
+        )
+        Charlie.sample_trajectory(
+            seed=seed,
+            replace_sparse_traj=True
+        )
 
         # dbscan_out IS the cluster labels
         dbscan_out = DBSCAN.ta_dbscan_labels(
@@ -786,7 +808,17 @@ for j in range(2):
     ax = axes[j]
     agent = [Daniel, Elaine][j]
 
-    agent.sample_trajectory(*hier_nhpp_params, seed=seed, ha=ha[j], replace_sparse_traj=True)
+    beta_start, beta_durations, beta_ping = hier_nhpp_params
+    agent.set_beta_params(
+        beta_start=beta_start,
+        beta_durations=beta_durations,
+        beta_ping=beta_ping
+    )
+    agent.sample_trajectory(
+        seed=seed,
+        ha=ha[j],
+        replace_sparse_traj=True
+    )
 
     lachesis_out = Lachesis.lachesis_labels(
         agent.sparse_traj,

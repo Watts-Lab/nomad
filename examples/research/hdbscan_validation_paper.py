@@ -104,10 +104,13 @@ def generate_agent_trajectory(params, city):
         workplace=params.workplace,
     )
     agent.generate_trajectory(datetime=_GEN_START, end_time=_GEN_END, seed=params.seed)
+    agent.set_beta_params({
+        'beta_start': params.beta_start,
+        'beta_durations': params.beta_durations,
+        'beta_ping': params.beta_ping,
+        'q': params.q,
+    })
     agent.sample_trajectory(
-        beta_ping=params.beta_ping,
-        beta_start=params.beta_start,
-        beta_durations=params.beta_durations,
         ha=params.ha,
         seed=params.seed,
         replace_sparse_traj=True,
