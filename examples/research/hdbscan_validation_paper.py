@@ -6,9 +6,9 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.3
+#       jupytext_version: 1.19.3
 #   kernelspec:
-#     display_name: Python 3
+#     display_name: css-nomad
 #     language: python
 #     name: python3
 # ---
@@ -27,6 +27,9 @@ from tqdm import tqdm
 import nomad.data as data_folder
 import nomad.io.base as loader
 import nomad.stop_detection.utils as utils
+# Beware: The stop detection algorithms will need to be imported
+# differently after merging PR #380 (cores_refactor)
+# TO DO: import directly from modules stop_detection.sequential_algs and stop_detection.density_algs
 import nomad.stop_detection.dbscan as TADBSCAN
 import nomad.stop_detection.hdbscan as HDBSCAN
 import nomad.stop_detection.grid_based as GRID_BASED
@@ -229,7 +232,6 @@ sparse_df['location_id'] = visits.poi_map(
     x='x', y='y', data_crs='EPSG:3857',
 )
 
-
 # %%
 # ── STOP SUMMARIZATION AND ALGORITHM CONFIGURATION ────────────────────────────
 
@@ -298,6 +300,7 @@ for user in tqdm(diaries_df.user_id.unique()[:10], desc='Processing users'):
     for algo in registry:
         algorithm = algo["family"]
         sparse_for_algo = user_sparse
+
         if algorithm == 'oracle':
             sparse_for_algo = user_sparse.drop(columns='location_id')
             sparse_for_algo['location_id'] = visits.oracle_map(
