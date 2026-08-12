@@ -56,7 +56,6 @@ def sample_bursts_gaps(traj,
                      ha=3/4,
                      pareto_prior=True,
                      seed=None,
-                     output_bursts=False,
                      deduplicate=True):
     """
     Sample from simulated trajectory, drawn using hierarchical Poisson processes.
@@ -82,43 +81,28 @@ def sample_bursts_gaps(traj,
         abs(epsilon) <= HA with 68 percent probability.
     seed : int
         The seed for random number generation.
-    output_bursts : bool
-        If True, outputs the latent variables on when bursts start and end.
     deduplicate : bool
         If True, sampled times are also discretized to be in ticks
 
     Returns
     -------
     tuple
-        Sparse trajectory indexed by timestamp and burst information. Burst
-        information is None unless output_bursts is True.
+        Sparse trajectory indexed by timestamp and burst information.
     """
-    if beta_ping is None:
-        raise ValueError("beta_ping must be provided.")
-
     # absolute window
     t0   = int(traj['timestamp'].iloc[0])
     t_end = int(traj['timestamp'].iloc[-1])
-    # Step 1: generate ping_times (and bursts if requested)
     tz = traj['datetime'].dt.tz
-    if output_bursts:
-        ping_times, bursts = generate_ping_times(
-            t0, t_end,
-            beta_start=beta_start,
-            beta_durations=beta_durations,
-            beta_ping=beta_ping,
-            seed=seed,
-            return_bursts=True,
-            tz=tz,
-        )
-    else:
-        ping_times = generate_ping_times(
-            t0, t_end,
-            beta_start=beta_start,
-            beta_durations=beta_durations,
-            beta_ping=beta_ping,
-            seed=seed,
-        )
+    # TODO: return_bursts may be unnecessary and could always be True.
+    ping_times, bursts = generate_ping_times(
+        t0, t_end,
+        beta_start=beta_start,
+        beta_durations=beta_durations,
+        beta_ping=beta_ping,
+        seed=seed,
+        return_bursts=True,
+        tz=tz,
+    )
 
     # Step 2: thin trajectory
     sampled_traj = thin_traj_by_times(
@@ -126,7 +110,7 @@ def sample_bursts_gaps(traj,
         ping_times,
         deduplicate=deduplicate
     ).set_index('timestamp', drop=False)
-    burst_info = pd.DataFrame(bursts, columns=['start_time','end_time']) if output_bursts else None
+    burst_info = pd.DataFrame(bursts, columns=['start_time','end_time'])
     if sampled_traj.empty:
         return sampled_traj, burst_info
 
@@ -962,10 +946,9 @@ class Agent:
                           seed=0,
                           ha=3/4,
                           pareto_prior=True,
-                          output_bursts=False,
                           deduplicate=True,
                           replace_sparse_traj=False,
-                          cache_traj=False,
+                          flush_traj_cache=False,
                           debug_mode=False):
         """
         Samples a sparse trajectory using a hierarchical inhomogeneous Poisson process.
@@ -976,13 +959,11 @@ class Agent:
             Random seed for reproducibility.
         ha : float
             Horizontal accuracy
-        output_bursts : bool
-            If True, outputs the latent variables on when bursts start and end.
         replace_sparse_traj : bool
             if True, replaces existing sparse_traj field with the new sparsified trajectory
             rather than appending.
-        cache_traj : bool
-            if True, empties the Agent's trajectory DataFrame.
+        flush_traj_cache : bool
+            If True, discards the dense trajectory except for its final ping.
         debug_mode : bool
             If True, validates that dense and sparse trajectories are sorted
             chronologically.
@@ -996,6 +977,8 @@ class Agent:
                 "Agent.sparsity_params must contain beta_start, beta_durations, and beta_ping. "
                 "Set them with Agent.set_beta_params()."
             )
+        if self.sparsity_params['beta_ping'] is None:
+            raise ValueError("beta_ping must be provided.")
 
         # TODO: Remove beta parameters from sample_bursts_gaps's signature.
         sparse_traj, burst_info = sample_bursts_gaps(
@@ -1005,8 +988,7 @@ class Agent:
             beta_ping=self.sparsity_params['beta_ping'],
             ha=ha,
             pareto_prior=pareto_prior,
-            seed=seed, 
-            output_bursts=output_bursts,
+            seed=seed,
             deduplicate=deduplicate
         )
 
@@ -1017,14 +999,10 @@ class Agent:
         if debug_mode and not self.sparse_traj.timestamp.is_monotonic_increasing:
             raise ValueError("The sparse trajectory is not sorted chronologically.")
 
-        # TODO: Rename and extract cache_traj; it flushes dense trajectory data
-        # and should preserve a valid starting point for chunked generation.
-        if cache_traj:
-            self.last_ping = self.trajectory.iloc[-1]
-            self.trajectory = self.trajectory.loc[[]]  # empty df
+        if flush_traj_cache:
+            self.trajectory = self.trajectory.iloc[[-1]]
 
-        if output_bursts:
-            return burst_info
+        return burst_info
 
 
 def condense_destinations(destination_diary, *, time_cols=None):

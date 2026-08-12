@@ -391,12 +391,11 @@ Bob.set_beta_params(
     beta_durations=60, # average burst duration is 60 mins
     beta_ping=10) # a ping every 10 mins within a burst
 burst_info = Bob.sample_trajectory(
-    seed=2,
-    output_bursts=True)
+    seed=2)
 Bob.sparse_traj.head()
 
 # %% [markdown]
-# To visualize the distribution of the sparsified pings, set `output_bursts=True` when calling `Agent.sample_traj_hier_nhpp` to obtain information about the start time and duration of bursts. These can then be graphed alongside the sampled pings to visualize the sparsification. The start times are indicated by the red lines and the duration of bursts are shown by grey rectangles. The sampled pings are the black lines.
+# `Agent.sample_trajectory` returns information about the start time and duration of bursts. These can be graphed alongside the sampled pings to visualize the sparsification. The start times are indicated by the red lines and the duration of bursts are shown by grey rectangles. The sampled pings are the black lines.
 
 # %%
 fig, axes = plt.subplots(nrows=3,figsize=(10, 3))
@@ -589,7 +588,6 @@ for j in range(2):
     )
     burst_info = Charlie.sample_trajectory(
         seed=seed, 
-        output_bursts=True,
         replace_sparse_traj=True)
 
     #ax.vlines(burst_info['start_time'], 0.95, 1.05, color='red', linewidth=1.2, alpha=1)

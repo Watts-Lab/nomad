@@ -555,8 +555,7 @@ Charlie.set_beta_params(beta_start=90, beta_durations=45, beta_ping=4)
 burst_info = Charlie.sample_trajectory(seed=3351,
                                        ha=3/5,
                                        replace_sparse_traj=True,
-                                       deduplicate=True,
-                                       output_bursts=True)
+                                       deduplicate=True)
 labels = TADBSCAN._temporal_dbscan_labels(
     data=Charlie.sparse_traj,
     time_thresh=600,
@@ -588,8 +587,7 @@ Charlie.set_beta_params(beta_start=90, beta_durations=45, beta_ping=12)
 burst_info = Charlie.sample_trajectory(seed=8758,
                                        ha=3/5,
                                        replace_sparse_traj=True,
-                                       deduplicate=True,
-                                       output_bursts=True)
+                                       deduplicate=True)
 labels = TADBSCAN._temporal_dbscan_labels(
     data=Charlie.sparse_traj,
     time_thresh=600,

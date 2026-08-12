@@ -299,7 +299,7 @@ def test_trajectory_monotonicity_and_data_quality(garden_city, simple_dest_diary
 def test_agent_state_management(garden_city, simple_dest_diary, default_ids):
     """
     Test agent state management: reset, trajectory replacement, caching.
-    Tests: reset_trajectory, replace_sparse_traj, cache_traj.
+    Tests: reset_trajectory, replace_sparse_traj, flush_traj_cache.
     """
     agent = Agent(
         identifier="test_agent",
@@ -327,11 +327,17 @@ def test_agent_state_management(garden_city, simple_dest_diary, default_ids):
     agent.sample_trajectory(seed=43, ha=0.75, replace_sparse_traj=True)
     assert agent.sparse_traj is not None
     
-    # Test cache_traj (empties full trajectory but keeps last_ping)
-    agent.sample_trajectory(seed=44, ha=0.75, cache_traj=True, replace_sparse_traj=True)
-    assert agent.trajectory.empty
-    assert agent.last_ping is not None
+    # Test flush_traj_cache (keeps only the final ping for chunked generation)
+    agent.sample_trajectory(seed=44, ha=0.75, flush_traj_cache=True, replace_sparse_traj=True)
+    assert len(agent.trajectory) == 1
+    assert agent.trajectory.iloc[-1].to_dict() == agent.last_ping
     assert agent.sparse_traj is not None
+
+    flushed_timestamp = agent.trajectory.timestamp.iloc[-1]
+    agent.destination_diary = simple_dest_diary.iloc[[-1]].assign(duration=1)
+    agent.generate_trajectory(dt=1, seed=45)
+    assert len(agent.trajectory) == 2
+    assert agent.trajectory.timestamp.iloc[-1] > flushed_timestamp
     
     # Test full reset
     agent.reset_trajectory()
@@ -408,9 +414,10 @@ def test_agent_sample_trajectory_uses_sparsity_params(garden_city, simple_dest_d
     )
 
     agent.generate_trajectory(destination_diary=simple_dest_diary, dt=1, seed=42)
-    agent.sample_trajectory(seed=42, ha=0.75)
+    burst_info = agent.sample_trajectory(seed=42, ha=0.75)
 
     assert agent.sparse_traj is not None
+    assert list(burst_info.columns) == ['start_time', 'end_time']
     assert agent.sparsity_params['beta_ping'] == 7
     assert agent.sparsity_params['q'] == 0.5
     assert agent.sparsity_params['f'] == 0.02
@@ -427,6 +434,14 @@ def test_agent_sample_trajectory_uses_sparsity_params(garden_city, simple_dest_d
 
     agent_without_params.sparsity_params = {'beta_ping': 5}
     with pytest.raises(ValueError, match="Set them with Agent.set_beta_params"):
+        agent_without_params.sample_trajectory(seed=42, ha=0.75)
+
+    agent_without_params.sparsity_params = {
+        'beta_start': None,
+        'beta_durations': None,
+        'beta_ping': None
+    }
+    with pytest.raises(ValueError, match="beta_ping must be provided"):
         agent_without_params.sample_trajectory(seed=42, ha=0.75)
 
 
@@ -661,8 +676,7 @@ def test_sample_hier_nhpp_edge_cases():
         beta_durations=20,
         beta_ping=5,
         seed=42,
-        ha=0.75,
-        output_bursts=True
+        ha=0.75
     )
     assert 'start_time' in bursts.columns
     assert 'end_time' in bursts.columns
@@ -728,8 +742,7 @@ def test_bursts_info_nonempty_and_tz():
         beta_durations=0.1,  # durations ~6s
         beta_ping=0.1,       # ping mean ~6s
         seed=123,
-        ha=0.75,
-        output_bursts=True
+        ha=0.75
     )
 
     assert 'start_time' in bursts.columns and 'end_time' in bursts.columns
