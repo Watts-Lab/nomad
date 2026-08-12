@@ -164,10 +164,12 @@ def ta_dbscan_labels(data,
                 cid += 1
                 cluster_df[i] = cid  # Assign new cluster label
                 core_df[i] = cid  # Assign new core label
+                # TO DO: also populate promotion time. A promotion to core just happened!
                 S = list(G[i])  # Initialize stack with neighbors
                 while S:
                     j = S.pop()
                     if cluster_df[j] < 0:  # Process if not yet in a cluster
+                        # TO DO: populate promotion to border point time, which would be i. A promotion time in the past should be ok.
                         cluster_df[j] = cid
                         if len(G[j]) >= min_pts:
                             core_df[j] = cid  # Assign core label
@@ -456,6 +458,7 @@ def ta_dbscan_labels_per_user(
     if return_cores:
         return pd.concat(results).reindex(data.index)
     return pd.concat(results).reindex(data.index)
+
 def dbstop_labels(data,
                  dist_thresh,
                  min_pts,
@@ -567,6 +570,13 @@ def dbstop_labels(data,
                     core_df.at[curr_time] = -1
                     cluster_df.at[curr_time] = -1
 
+    # TO DO: only three columns are sufficient, cluster_df, core_df, promotion_time
+    # promotion time is both, the timestamp of the core point that promoted a noise point to border
+    # as well as the timestamp at which a point became a core point. These are not ambiguous.
+    # e.g. to recover the associated core point that promotes a noise point to a border point,
+    # we need only to find the promotion_time inside the original ping table.
+    # e.g. 2: what if a ping is first promoted to border, and then it has a second promotion time to core? for now,
+    # just record the last. 
     output = pd.DataFrame({'cluster': cluster_df, 'core': core_df}).set_axis(data.index)
     if return_cores:
         return _format_density_points(
