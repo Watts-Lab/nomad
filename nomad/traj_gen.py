@@ -52,7 +52,7 @@ def parse_agent_attr(attr, N, name):
 def sample_bursts_gaps(traj,
                      beta_start=None,
                      beta_durations=None,
-                     beta_ping=5,
+                     beta_ping=None,
                      ha=3/4,
                      pareto_prior=True,
                      seed=None,
@@ -87,6 +87,9 @@ def sample_bursts_gaps(traj,
     deduplicate : bool
         If True, sampled times are also discretized to be in ticks
     """
+    if beta_ping is None:
+        raise ValueError("beta_ping must be provided.")
+
     rng = npr.default_rng(seed)
 
     # absolute window
@@ -170,7 +173,7 @@ class Agent:
     diary : pandas.DataFrame
         Travel diary produced from trajectory generation.
     sparsity_params : dict
-        Default sparse trajectory sampling parameters.
+        Sparse trajectory sampling metadata and defaults.
     last_ping : pandas.Series or None
         Most recent known agent state.
     dt : float
@@ -218,8 +221,8 @@ class Agent:
             If provided, a DataFrame with columns ['datetime','timestamp','duration','location'].
         sparsity_params : dict, optional
             Optional defaults for sparse trajectory sampling. Valid keys are
-            'beta_start', 'beta_durations', and 'beta_ping'. Values passed to
-            sample_trajectory override these defaults.
+            'beta_start', 'beta_durations', 'beta_ping', 'q', and 'f'. Values
+            passed to sample_trajectory override these defaults.
         seed : int, optional
             RNG seed used for sampling fallback home/work locations.
         x, y : float, optional
@@ -299,7 +302,7 @@ class Agent:
         if sparsity_params is not None:
             if not isinstance(sparsity_params, dict):
                 raise ValueError("sparsity_params must be a dictionary.")
-            allowed_keys = {'beta_start', 'beta_durations', 'beta_ping'}
+            allowed_keys = {'beta_start', 'beta_durations', 'beta_ping', 'q', 'f'}
             unknown_keys = set(sparsity_params) - allowed_keys
             if unknown_keys:
                 raise ValueError(f"sparsity_params contains unknown keys: {unknown_keys}.")
@@ -920,15 +923,17 @@ class Agent:
         beta_start : float
             The rate parameter governing the Poisson Process controlling 
             the start of the trajectory. If not provided, uses
-            self.sparsity_params['beta_start'] when present.
+            self.sparsity_params['beta_start'] when present. Pass 0 to clear
+            a stored beta_start and use one full-trajectory burst.
         beta_durations : float
             The rate parameter governing the Exponential controlling 
             for the durations of the trajectory. If not provided, uses
-            self.sparsity_params['beta_durations'] when present.
+            self.sparsity_params['beta_durations'] when present. Pass np.inf
+            to clear a stored beta_durations and use one full-trajectory burst.
         beta_ping : float, optional
             The rate parameter governing the Poisson Process controlling
             which pings are sampled. If not provided, uses
-            self.sparsity_params['beta_ping'] when present, otherwise 5.
+            self.sparsity_params['beta_ping'] when present.
         seed : int
             Random seed for reproducibility.
         ha : float
@@ -945,10 +950,18 @@ class Agent:
             raise ValueError("The input trajectory is not sorted chronologically.")
 
         resolved_beta_start = beta_start if beta_start is not None else self.sparsity_params.get('beta_start')
+        if resolved_beta_start == 0:
+            resolved_beta_start = None
+
         resolved_beta_durations = (
             beta_durations if beta_durations is not None else self.sparsity_params.get('beta_durations')
         )
-        resolved_beta_ping = beta_ping if beta_ping is not None else self.sparsity_params.get('beta_ping', 5)
+        if resolved_beta_durations is not None and np.isinf(resolved_beta_durations):
+            resolved_beta_durations = None
+
+        resolved_beta_ping = beta_ping if beta_ping is not None else self.sparsity_params.get('beta_ping')
+        if resolved_beta_ping is None:
+            raise ValueError("beta_ping must be provided directly or in sparsity_params.")
 
         if (resolved_beta_start is None) != (resolved_beta_durations is None):
             raise ValueError(
@@ -960,7 +973,7 @@ class Agent:
             self.sparsity_params['beta_start'] = resolved_beta_start
         if beta_durations is not None:
             self.sparsity_params['beta_durations'] = resolved_beta_durations
-        if beta_ping is not None or 'beta_ping' not in self.sparsity_params:
+        if beta_ping is not None:
             self.sparsity_params['beta_ping'] = resolved_beta_ping
             
         result = sample_bursts_gaps(
@@ -1065,7 +1078,7 @@ def generate_ping_times(t0,
                         *,
                         beta_start=None,
                         beta_durations=None,
-                        beta_ping=5,
+                        beta_ping=None,
                         seed=None,
                         return_bursts=False,
                         tz=None):
@@ -1075,6 +1088,9 @@ def generate_ping_times(t0,
     for bursts that produced at least one ping. If tz is provided, start/end
     are timezone-aware pandas Timestamps; otherwise they are Unix seconds (int).
     """
+    if beta_ping is None:
+        raise ValueError("beta_ping must be provided.")
+
     rng = npr.default_rng(seed)
 
     # convert minutes→seconds

@@ -341,7 +341,7 @@ def test_agent_sample_trajectory_uses_sparsity_params(garden_city, simple_dest_d
         city=garden_city,
         home=default_ids['home'],
         workplace=default_ids['work'],
-        sparsity_params={'beta_ping': 7}
+        sparsity_params={'beta_ping': 7, 'q': 0.5, 'f': 0.02}
     )
 
     agent.generate_trajectory(destination_diary=simple_dest_diary, dt=1, seed=42)
@@ -349,9 +349,39 @@ def test_agent_sample_trajectory_uses_sparsity_params(garden_city, simple_dest_d
 
     assert agent.sparse_traj is not None
     assert agent.sparsity_params['beta_ping'] == 7
+    assert agent.sparsity_params['q'] == 0.5
+    assert agent.sparsity_params['f'] == 0.02
 
     with pytest.raises(ValueError, match="beta_start and beta_durations must either both be provided"):
         agent.sample_trajectory(beta_start=30, beta_ping=5, seed=42, ha=0.75, replace_sparse_traj=True)
+
+    agent_without_beta_ping = Agent(
+        identifier="no_beta_ping",
+        city=garden_city,
+        home=default_ids['home'],
+        workplace=default_ids['work']
+    )
+    agent_without_beta_ping.generate_trajectory(destination_diary=simple_dest_diary, dt=1, seed=42)
+    with pytest.raises(ValueError, match="beta_ping must be provided"):
+        agent_without_beta_ping.sample_trajectory(seed=42, ha=0.75)
+
+
+def test_agent_sample_trajectory_clears_stored_burst_params(garden_city, simple_dest_diary, default_ids):
+    agent = Agent(
+        identifier="test_agent",
+        city=garden_city,
+        home=default_ids['home'],
+        workplace=default_ids['work'],
+        sparsity_params={'beta_start': 30, 'beta_durations': 10, 'beta_ping': 5}
+    )
+
+    agent.generate_trajectory(destination_diary=simple_dest_diary, dt=1, seed=42)
+    agent.sample_trajectory(beta_start=0, beta_durations=np.inf, seed=42, ha=0.75)
+
+    assert agent.sparse_traj is not None
+    assert agent.sparsity_params['beta_start'] is None
+    assert agent.sparsity_params['beta_durations'] is None
+    assert agent.sparsity_params['beta_ping'] == 5
 
 
 def test_parse_agent_attr_validation():
