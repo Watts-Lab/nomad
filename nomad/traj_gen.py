@@ -49,81 +49,6 @@ def parse_agent_attr(attr, N, name):
     else:
         raise ValueError(f"{name} must be a string, pd.Timestamp, list of length {N}, or None")
 
-def sample_bursts_gaps(traj,
-                     beta_start=None,
-                     beta_durations=None,
-                     beta_ping=None,
-                     ha=3/4,
-                     pareto_prior=True,
-                     seed=None,
-                     deduplicate=True):
-    """
-    Sample from simulated trajectory, drawn using hierarchical Poisson processes.
-
-    Parameters
-    ----------
-    traj: numpy array
-        simulated trajectory from simulate_traj
-    beta_start: float
-        scale parameter (mean) of Exponential distribution modeling burst inter-arrival times
-        where 1/beta_start is the rate of events (bursts) per minute.
-    beta_durations: float
-        scale parameter (mean) of Exponential distribution modeling burst durations.
-        if beta_start and beta_durations are None, a single burst covering the whole trajectory is used.
-    beta_ping: float
-        scale parameter (mean) of Exponential distribution modeling ping inter-arrival times
-        within a burst, where 1/beta_ping is the rate of events (pings) per minute.
-    ha: float
-        Mean horizontal-accuracy radius in 15 m blocks. The actual per-ping
-        accuracy is random: ha >= 8 m / 15 m and follows a Pareto distribution
-        with that mean. For each ping the spatial noise (epsilon_x, epsilon_y)
-        is drawn i.i.d. from N(0, sigma^2), with sigma = HA / 1.515 so that
-        abs(epsilon) <= HA with 68 percent probability.
-    seed : int
-        The seed for random number generation.
-    deduplicate : bool
-        If True, sampled times are also discretized to be in ticks
-
-    Returns
-    -------
-    tuple
-        Sparse trajectory indexed by timestamp and burst information.
-    """
-    # absolute window
-    t0   = int(traj['timestamp'].iloc[0])
-    t_end = int(traj['timestamp'].iloc[-1])
-    tz = traj['datetime'].dt.tz
-    # TODO: return_bursts may be unnecessary and could always be True.
-    ping_times, bursts = generate_ping_times(
-        t0, t_end,
-        beta_start=beta_start,
-        beta_durations=beta_durations,
-        beta_ping=beta_ping,
-        seed=seed,
-        return_bursts=True,
-        tz=tz,
-    )
-
-    # Step 2: thin trajectory
-    sampled_traj = thin_traj_by_times(
-        traj,
-        ping_times,
-        deduplicate=deduplicate
-    ).set_index('timestamp', drop=False)
-    burst_info = pd.DataFrame(bursts, columns=['start_time','end_time'])
-    if sampled_traj.empty:
-        return sampled_traj, burst_info
-
-    # Step 3: add horizontal noise
-    rng = npr.default_rng(seed)
-    n = len(sampled_traj)
-    ha_realized, noise = _sample_horizontal_noise(n, ha=ha, rng=rng, pareto_prior=pareto_prior)
-    sampled_traj['ha'] = ha_realized
-    sampled_traj[['x', 'y']] += noise
-
-    return sampled_traj, burst_info
-
-
 # =============================================================================
 # AGENT CLASS
 # =============================================================================
@@ -967,6 +892,11 @@ class Agent:
         debug_mode : bool
             If True, validates that dense and sparse trajectories are sorted
             chronologically.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Start and end times for bursts that produced at least one ping.
         """
         if debug_mode and not self.trajectory.timestamp.is_monotonic_increasing:
             raise ValueError("The input trajectory is not sorted chronologically.")
@@ -980,17 +910,30 @@ class Agent:
         if self.sparsity_params['beta_ping'] is None:
             raise ValueError("beta_ping must be provided.")
 
-        # TODO: Remove beta parameters from sample_bursts_gaps's signature.
-        sparse_traj, burst_info = sample_bursts_gaps(
-            self.trajectory,
+        ping_times, burst_info = generate_ping_times(
+            int(self.trajectory['timestamp'].iloc[0]),
+            int(self.trajectory['timestamp'].iloc[-1]),
             beta_start=self.sparsity_params['beta_start'],
             beta_durations=self.sparsity_params['beta_durations'],
             beta_ping=self.sparsity_params['beta_ping'],
-            ha=ha,
-            pareto_prior=pareto_prior,
             seed=seed,
-            deduplicate=deduplicate
+            tz=self.trajectory['datetime'].dt.tz
         )
+        sparse_traj = thin_traj_by_times(
+            self.trajectory,
+            ping_times,
+            deduplicate=deduplicate
+        ).set_index('timestamp', drop=False)
+
+        if not sparse_traj.empty:
+            ha_realized, noise = _sample_horizontal_noise(
+                len(sparse_traj),
+                ha=ha,
+                rng=npr.default_rng(seed),
+                pareto_prior=pareto_prior
+            )
+            sparse_traj['ha'] = ha_realized
+            sparse_traj[['x', 'y']] += noise
 
         if self.sparse_traj is None or replace_sparse_traj:
             self.sparse_traj = sparse_traj
@@ -1072,17 +1015,8 @@ def generate_ping_times(t0,
                         beta_durations=None,
                         beta_ping=None,
                         seed=None,
-                        return_bursts=False,
                         tz=None):
-    """Generate absolute ping timestamps (seconds) within [t0, t_end].
-
-    If return_bursts is True, also returns a list of (start_time, end_time)
-    for bursts that produced at least one ping. If tz is provided, start/end
-    are timezone-aware pandas Timestamps; otherwise they are Unix seconds (int).
-    """
-    if beta_ping is None:
-        raise ValueError("beta_ping must be provided.")
-
+    """Generate ping timestamps and burst information within [t0, t_end]."""
     rng = npr.default_rng(seed)
 
     # convert minutes→seconds
@@ -1105,7 +1039,7 @@ def generate_ping_times(t0,
             burst_end_points[-1] = min(burst_end_points[-1], t_end - t0)
 
     ping_times_chunks: list[np.ndarray] = []
-    bursts_out = [] if return_bursts else None
+    bursts_out = []
     for start, end in zip(burst_start_points, burst_end_points):
         dur = end - start
         if dur <= 0:
@@ -1116,23 +1050,18 @@ def generate_ping_times(t0,
         times_rel = times_rel[times_rel < dur]
         if times_rel.size:
             ping_times_chunks.append(t0 + start + times_rel)
-            if return_bursts:
-                if tz is not None:
-                    sdt = pd.to_datetime(t0 + start, unit='s', utc=True).tz_convert(tz)
-                    edt = pd.to_datetime(t0 + end, unit='s', utc=True).tz_convert(tz)
-                else:
-                    sdt = int(t0 + start)
-                    edt = int(t0 + end)
-                bursts_out.append([sdt, edt])
+            if tz is not None:
+                sdt = pd.to_datetime(t0 + start, unit='s', utc=True).tz_convert(tz)
+                edt = pd.to_datetime(t0 + end, unit='s', utc=True).tz_convert(tz)
+            else:
+                sdt = int(t0 + start)
+                edt = int(t0 + end)
+            bursts_out.append([sdt, edt])
 
+    burst_info = pd.DataFrame(bursts_out, columns=['start_time', 'end_time'])
     if not ping_times_chunks:
-        if return_bursts:
-            return np.array([], dtype=int), []
-        return np.array([], dtype=int)
-    ping = np.concatenate(ping_times_chunks).astype(int)
-    if return_bursts:
-        return ping, bursts_out
-    return ping
+        return np.array([], dtype=int), burst_info
+    return np.concatenate(ping_times_chunks).astype(int), burst_info
 
 
 def thin_traj_by_times(traj,

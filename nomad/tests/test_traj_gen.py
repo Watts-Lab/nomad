@@ -11,7 +11,6 @@ from nomad.traj_gen import (
     Agent, 
     Population, 
     condense_destinations,
-    sample_bursts_gaps,
     parse_agent_attr,
     generate_ping_times,
     thin_traj_by_times,
@@ -240,18 +239,17 @@ def test_empty_and_edge_case_trajectories(garden_city, default_ids):
         'timestamp': [1717214400, 1717214401]
     })
     
-    result, _ = sample_bursts_gaps(
-        short_traj,
+    agent.trajectory = short_traj
+    agent.set_beta_params(
         beta_start=1000,  # Very low probability
         beta_durations=0.1,
-        beta_ping=1000,
-        seed=42,
-        ha=0.75
+        beta_ping=1000
     )
+    agent.sample_trajectory(seed=42, ha=0.75, replace_sparse_traj=True)
     
     # Should return DataFrame with correct columns even if empty
-    assert isinstance(result, pd.DataFrame)
-    assert all(col in result.columns for col in short_traj.columns)
+    assert isinstance(agent.sparse_traj, pd.DataFrame)
+    assert all(col in agent.sparse_traj.columns for col in short_traj.columns)
 
 
 def test_trajectory_monotonicity_and_data_quality(garden_city, simple_dest_diary, default_ids):
@@ -648,9 +646,9 @@ def test_population_param_sampling_validates_inputs():
         Population.gen_params_target_q(q=None, beta_start=100, beta_ping=5)
 
 
-def test_sample_hier_nhpp_edge_cases():
+def test_agent_sample_trajectory_edge_cases(garden_city, default_ids):
     """
-    Test sample_hier_nhpp function with edge cases and parameters.
+    Test sample_trajectory with edge cases and parameters.
     Tests: Burst sampling, deduplication, ha validation, empty results.
     """
     tz = ZoneInfo("America/New_York")
@@ -661,33 +659,40 @@ def test_sample_hier_nhpp_edge_cases():
         'datetime': times,
         'timestamp': [int(t.timestamp()) for t in times]
     })
+    agent = Agent(
+        identifier="test_agent",
+        city=garden_city,
+        home=default_ids['home'],
+        workplace=default_ids['work'],
+        trajectory=traj
+    )
     
     # Test basic sampling
-    result, _ = sample_bursts_gaps(traj, beta_ping=5, seed=42, ha=0.75)
-    assert len(result) > 0
-    assert len(result) <= len(traj)
-    assert 'ha' in result.columns
-    assert result.index.name == 'timestamp'
+    agent.set_beta_params(beta_start=None, beta_durations=None, beta_ping=5)
+    agent.sample_trajectory(seed=42, ha=0.75)
+    assert len(agent.sparse_traj) > 0
+    assert len(agent.sparse_traj) <= len(traj)
+    assert 'ha' in agent.sparse_traj.columns
+    assert agent.sparse_traj.index.name == 'timestamp'
     
     # Test with bursts
-    sampled, bursts = sample_bursts_gaps(
-        traj,
+    agent.set_beta_params(
         beta_start=30,
         beta_durations=20,
-        beta_ping=5,
-        seed=42,
-        ha=0.75
+        beta_ping=5
     )
+    bursts = agent.sample_trajectory(seed=42, ha=0.75, replace_sparse_traj=True)
     assert 'start_time' in bursts.columns
     assert 'end_time' in bursts.columns
     
     # Test deduplication
-    result_dedup, _ = sample_bursts_gaps(traj, beta_ping=1, seed=42, ha=0.75, deduplicate=True)
-    assert len(result_dedup['timestamp'].unique()) == len(result_dedup)
+    agent.set_beta_params(beta_start=None, beta_durations=None, beta_ping=1)
+    agent.sample_trajectory(seed=42, ha=0.75, deduplicate=True, replace_sparse_traj=True)
+    assert len(agent.sparse_traj['timestamp'].unique()) == len(agent.sparse_traj)
     
     # Test ha validation
     with pytest.raises(ValueError, match="ha must exceed"):
-        sample_bursts_gaps(traj, beta_ping=5, ha=0.4, seed=42)
+        agent.sample_trajectory(ha=0.4, seed=42, replace_sparse_traj=True)
 
 
 def test_generate_ping_times_and_thinning():
@@ -703,8 +708,9 @@ def test_generate_ping_times_and_thinning():
     t0 = int(traj['timestamp'].iloc[0])
     t_end = int(traj['timestamp'].iloc[-1])
 
-    pts = generate_ping_times(t0, t_end, beta_ping=0.1, seed=123)
+    pts, burst_info = generate_ping_times(t0, t_end, beta_ping=0.1, seed=123)
     assert isinstance(pts, np.ndarray)
+    assert list(burst_info.columns) == ['start_time', 'end_time']
     assert np.all((pts >= t0) & (pts <= t_end)) or pts.size == 0
     if pts.size:
         assert np.all(np.diff(pts) >= 0)
@@ -726,7 +732,7 @@ def test_sample_horizontal_noise_basic():
     assert (noise >= -250).all() and (noise <= 250).all()
 
 
-def test_bursts_info_nonempty_and_tz():
+def test_bursts_info_nonempty_and_tz(garden_city, default_ids):
     tz = ZoneInfo("America/New_York")
     times = pd.date_range(start='2024-06-01 00:00', periods=600, freq='1s', tz=tz)
     traj = pd.DataFrame({
@@ -735,15 +741,19 @@ def test_bursts_info_nonempty_and_tz():
         'datetime': times,
         'timestamp': [int(t.timestamp()) for t in times]
     })
-
-    sampled, bursts = sample_bursts_gaps(
-        traj,
+    agent = Agent(
+        identifier="test_agent",
+        city=garden_city,
+        home=default_ids['home'],
+        workplace=default_ids['work'],
+        trajectory=traj
+    )
+    agent.set_beta_params(
         beta_start=0.2,      # bursts every ~12s on average
         beta_durations=0.1,  # durations ~6s
-        beta_ping=0.1,       # ping mean ~6s
-        seed=123,
-        ha=0.75
+        beta_ping=0.1        # ping mean ~6s
     )
+    bursts = agent.sample_trajectory(seed=123, ha=0.75)
 
     assert 'start_time' in bursts.columns and 'end_time' in bursts.columns
     assert not bursts.empty
