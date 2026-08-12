@@ -871,7 +871,6 @@ class Agent:
                           seed=0,
                           ha=3/4,
                           pareto_prior=True,
-                          deduplicate=True,
                           replace_sparse_traj=False,
                           flush_traj_cache=False,
                           debug_mode=False):
@@ -921,8 +920,7 @@ class Agent:
         )
         sparse_traj = thin_traj_by_times(
             self.trajectory,
-            ping_times,
-            deduplicate=deduplicate
+            ping_times
         ).set_index('timestamp', drop=False)
 
         if not sparse_traj.empty:
@@ -1064,34 +1062,15 @@ def generate_ping_times(t0,
     return np.concatenate(ping_times_chunks).astype(int), burst_info
 
 
-def thin_traj_by_times(traj,
-                       ping_times,
-                       *,
-                       deduplicate=True):
+def thin_traj_by_times(traj, ping_times):
     """Apply ping_times to a dense traj via searchsorted thinning."""
     if ping_times.size == 0:
         return pd.DataFrame(columns=traj.columns)
 
     traj_ts = traj['timestamp'].to_numpy()
-    tz = traj['datetime'].dt.tz
-
     idx = np.searchsorted(traj_ts, ping_times, side='right') - 1
-    valid = idx >= 0
-    idx = idx[valid]
-    ping_times = ping_times[valid]
-
-    if deduplicate:
-        _, keep = np.unique(idx, return_index=True)
-        idx = idx[keep]
-        ping_times = ping_times[keep]
-
-    sampled_traj = traj.iloc[idx].copy()
-    sampled_traj['timestamp'] = ping_times
-    sampled_traj['datetime'] = (
-        pd.to_datetime(ping_times, unit='s', utc=True)
-          .tz_convert(tz)
-    )
-    return sampled_traj
+    idx = idx[(idx >= 0) & np.r_[True, idx[1:] != idx[:-1]]]
+    return traj.iloc[idx].copy()
 
 
 def _sample_horizontal_noise(n,

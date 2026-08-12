@@ -255,7 +255,7 @@ def test_empty_and_edge_case_trajectories(garden_city, default_ids):
 def test_trajectory_monotonicity_and_data_quality(garden_city, simple_dest_diary, default_ids):
     """
     Test that generated and sampled trajectories maintain data quality.
-    Tests: Monotonic timestamps, proper deduplication, timestamp integrity.
+    Tests: Monotonic timestamps, unique sampled timestamps, timestamp integrity.
     """
     agent = Agent(
         identifier="test_agent",
@@ -274,12 +274,11 @@ def test_trajectory_monotonicity_and_data_quality(garden_city, simple_dest_diary
     # Check monotonicity
     assert agent.trajectory['timestamp'].is_monotonic_increasing
 
-    # Sample trajectory with deduplication
+    # Sample trajectory
     agent.set_beta_params(beta_start=None, beta_durations=None, beta_ping=2)
     agent.sample_trajectory(
         seed=42,
-        ha=0.75,
-        deduplicate=True
+        ha=0.75
     )
     
     # Check sampled trajectory quality
@@ -342,6 +341,45 @@ def test_agent_state_management(garden_city, simple_dest_diary, default_ids):
     assert agent.trajectory is None
     assert agent.sparse_traj is None
     assert agent.last_ping is None
+
+
+def test_chunked_trajectory_generation_with_cache_flushing(garden_city, default_ids):
+    garden_city.compute_gravity(callable_only=True)
+    start = pd.Timestamp('2024-06-01', tz='America/New_York')
+    agents = [
+        Agent(
+            identifier="test_agent",
+            city=garden_city,
+            home=default_ids['home'],
+            workplace=default_ids['work'],
+            datetime=start
+        )
+        for _ in range(2)
+    ]
+    for agent in agents:
+        agent.set_beta_params(beta_start=None, beta_durations=None, beta_ping=5)
+
+    flushed_agent, unflushed_agent = agents
+    chunks = []
+    for day in range(1, 4):
+        end_time = start + pd.Timedelta(days=day)
+        flushed_agent.generate_trajectory(end_time=end_time, seed=day)
+        unflushed_agent.generate_trajectory(end_time=end_time, seed=day)
+        chunks.append(flushed_agent.trajectory)
+        flushed_agent.sample_trajectory(seed=day, ha=0, flush_traj_cache=True)
+        unflushed_agent.sample_trajectory(
+            seed=day,
+            ha=0,
+            replace_sparse_traj=True,
+            flush_traj_cache=False
+        )
+
+    chunked_trajectory = pd.concat(
+        [chunks[0]] + [chunk.iloc[1:] for chunk in chunks[1:]],
+        ignore_index=True
+    )
+    assert chunked_trajectory.timestamp.is_monotonic_increasing
+    pd.testing.assert_frame_equal(chunked_trajectory, unflushed_agent.trajectory)
 
 
 def test_agent_set_beta_params(garden_city, default_ids):
@@ -649,7 +687,7 @@ def test_population_param_sampling_validates_inputs():
 def test_agent_sample_trajectory_edge_cases(garden_city, default_ids):
     """
     Test sample_trajectory with edge cases and parameters.
-    Tests: Burst sampling, deduplication, ha validation, empty results.
+    Tests: Burst sampling, ha validation, empty results.
     """
     tz = ZoneInfo("America/New_York")
     times = pd.date_range(start='2024-06-01 00:00', periods=100, freq='1min', tz=tz)
@@ -685,11 +723,6 @@ def test_agent_sample_trajectory_edge_cases(garden_city, default_ids):
     assert 'start_time' in bursts.columns
     assert 'end_time' in bursts.columns
     
-    # Test deduplication
-    agent.set_beta_params(beta_start=None, beta_durations=None, beta_ping=1)
-    agent.sample_trajectory(seed=42, ha=0.75, deduplicate=True, replace_sparse_traj=True)
-    assert len(agent.sparse_traj['timestamp'].unique()) == len(agent.sparse_traj)
-    
     # Test ha validation
     with pytest.raises(ValueError, match="ha must exceed"):
         agent.sample_trajectory(ha=0.4, seed=42, replace_sparse_traj=True)
@@ -715,11 +748,8 @@ def test_generate_ping_times_and_thinning():
     if pts.size:
         assert np.all(np.diff(pts) >= 0)
 
-    thinned = thin_traj_by_times(traj, pts, deduplicate=True)
+    thinned = thin_traj_by_times(traj, pts)
     assert set(['x','y','datetime','timestamp']).issubset(set(thinned.columns))
-    if pts.size:
-        # After thinning with dedup, timestamps align one-to-one with rows
-        assert len(thinned) == len(np.unique(np.searchsorted(traj['timestamp'].to_numpy(), pts, side='right') - 1))
 
 
 def test_sample_horizontal_noise_basic():

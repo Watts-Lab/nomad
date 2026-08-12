@@ -497,8 +497,7 @@ Charlie.generate_trajectory(destination_diary=destinations, seed=2025, dt=0.25)
 Charlie.set_beta_params(beta_start=None, beta_durations=None, beta_ping=4)
 Charlie.sample_trajectory(seed=2311,
                           ha=3/5,
-                          replace_sparse_traj=True,
-                          deduplicate=True)
+                          replace_sparse_traj=True)
 labels = TADBSCAN._temporal_dbscan_labels(
     data=Charlie.sparse_traj,
     time_thresh=600,
@@ -526,8 +525,7 @@ axes[1, 0].set_title('Mean Time Between Pings = 4 min (No Bursts)', fontsize=10,
 Charlie.set_beta_params(beta_start=None, beta_durations=None, beta_ping=12)
 Charlie.sample_trajectory(seed=7617,
                           ha=3/5,
-                          replace_sparse_traj=True,
-                          deduplicate=True)
+                          replace_sparse_traj=True)
 labels = LACHESIS._lachesis_labels(
     traj=Charlie.sparse_traj,
     dt_max=600,
@@ -554,8 +552,7 @@ axes[1, 1].set_title('Mean Time Between Pings = 12 min (No Bursts)', fontsize=10
 Charlie.set_beta_params(beta_start=90, beta_durations=45, beta_ping=4)
 burst_info = Charlie.sample_trajectory(seed=3351,
                                        ha=3/5,
-                                       replace_sparse_traj=True,
-                                       deduplicate=True)
+                                       replace_sparse_traj=True)
 labels = TADBSCAN._temporal_dbscan_labels(
     data=Charlie.sparse_traj,
     time_thresh=600,
@@ -586,8 +583,7 @@ axes[3, 0].set_title('Mean Time Between Pings = 4 min (With Bursts)', fontsize=1
 Charlie.set_beta_params(beta_start=90, beta_durations=45, beta_ping=12)
 burst_info = Charlie.sample_trajectory(seed=8758,
                                        ha=3/5,
-                                       replace_sparse_traj=True,
-                                       deduplicate=True)
+                                       replace_sparse_traj=True)
 labels = TADBSCAN._temporal_dbscan_labels(
     data=Charlie.sparse_traj,
     time_thresh=600,
@@ -657,8 +653,7 @@ Charlie.generate_trajectory(destination_diary=destinations, seed=234, dt=0.25)
 Charlie.set_beta_params(beta_start=None, beta_durations=None, beta_ping=6)
 Charlie.sample_trajectory(seed=2,
                           ha=3/4,
-                          replace_sparse_traj=True,
-                          deduplicate=True)
+                          replace_sparse_traj=True)
 
 dbscan_labels = TADBSCAN._temporal_dbscan_labels(
     data=Charlie.sparse_traj,
