@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.3
+#       jupytext_version: 1.19.3
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -216,10 +216,12 @@ def run_simulation_for_single_seed(
         ha = config['ha']
 
         # Sample sparse trajectory
+        agent.set_beta_params(
+            beta_start=beta_start,
+            beta_durations=beta_dur,
+            beta_ping=beta_ping
+        )
         agent.sample_trajectory(
-            beta_start,
-            beta_dur,
-            beta_ping,
             seed=seed*100+i,
             ha=ha,
             replace_sparse_traj=True)
@@ -492,10 +494,8 @@ Charlie = Agent(identifier="Charlie",
 Charlie.generate_trajectory(destination_diary=destinations, seed=2025, dt=0.25)
 
 # --- Top Left Subplot: Correct ---
-Charlie.sample_trajectory(beta_start=None,
-                          beta_durations=None,
-                          beta_ping=4,
-                          seed=2311,
+Charlie.set_beta_params(beta_start=None, beta_durations=None, beta_ping=4)
+Charlie.sample_trajectory(seed=2311,
                           ha=3/5,
                           replace_sparse_traj=True,
                           deduplicate=True)
@@ -523,10 +523,8 @@ axes[1, 0].set_yticklabels([])
 axes[1, 0].set_title('Mean Time Between Pings = 4 min (No Bursts)', fontsize=10, pad=10, loc='left')
 
 # --- Top Right Subplot: Splitting ---
-Charlie.sample_trajectory(beta_start=None,
-                          beta_durations=None,
-                          beta_ping=12,
-                          seed=7617,
+Charlie.set_beta_params(beta_start=None, beta_durations=None, beta_ping=12)
+Charlie.sample_trajectory(seed=7617,
                           ha=3/5,
                           replace_sparse_traj=True,
                           deduplicate=True)
@@ -553,10 +551,8 @@ axes[1, 1].set_yticklabels([])
 axes[1, 1].set_title('Mean Time Between Pings = 12 min (No Bursts)', fontsize=10, pad=10, loc='left')
 
 # --- Bottom Left Subplot: Merging ---
-burst_info = Charlie.sample_trajectory(beta_start=90,
-                                       beta_durations=45,
-                                       beta_ping=4,
-                                       seed=3351,
+Charlie.set_beta_params(beta_start=90, beta_durations=45, beta_ping=4)
+burst_info = Charlie.sample_trajectory(seed=3351,
                                        ha=3/5,
                                        replace_sparse_traj=True,
                                        deduplicate=True,
@@ -588,10 +584,8 @@ axes[3, 0].set_yticklabels([])
 axes[3, 0].set_title('Mean Time Between Pings = 4 min (With Bursts)', fontsize=10, pad=10, loc='left')
 
 # --- Bottom Right Subplot: Missing ---
-burst_info = Charlie.sample_trajectory(beta_start=90,
-                                       beta_durations=45,
-                                       beta_ping=12,
-                                       seed=8758,
+Charlie.set_beta_params(beta_start=90, beta_durations=45, beta_ping=12)
+burst_info = Charlie.sample_trajectory(seed=8758,
                                        ha=3/5,
                                        replace_sparse_traj=True,
                                        deduplicate=True,
@@ -662,10 +656,8 @@ Charlie = Agent(identifier="Charlie",
                 city=city)
 
 Charlie.generate_trajectory(destination_diary=destinations, seed=234, dt=0.25)
-Charlie.sample_trajectory(beta_start=None,
-                          beta_durations=None,
-                          beta_ping=6,
-                          seed=2,
+Charlie.set_beta_params(beta_start=None, beta_durations=None, beta_ping=6)
+Charlie.sample_trajectory(seed=2,
                           ha=3/4,
                           replace_sparse_traj=True,
                           deduplicate=True)
@@ -885,10 +877,12 @@ Charlie = Agent(identifier="Charlie",
                 city=city)
 
 Charlie.generate_trajectory(destination_diary=destinations, dt=0.25, seed=300)
-Charlie.sample_trajectory(
+Charlie.set_beta_params(
     beta_start=20,
     beta_durations=45,
-    beta_ping=10,
+    beta_ping=10
+)
+Charlie.sample_trajectory(
     seed=300,
     replace_sparse_traj=True
 )
@@ -1248,10 +1242,12 @@ def run_simulation_for_single_agent(
             ha = ha
 
             # Sample sparse trajectory
+            agent.set_beta_params(
+                beta_start=beta_start,
+                beta_durations=beta_dur,
+                beta_ping=beta_ping
+            )
             agent.sample_trajectory(
-                beta_start,
-                beta_dur,
-                beta_ping,
                 seed=i,
                 ha=ha,
                 replace_sparse_traj=True)

@@ -86,11 +86,15 @@ def sample_bursts_gaps(traj,
         If True, outputs the latent variables on when bursts start and end.
     deduplicate : bool
         If True, sampled times are also discretized to be in ticks
+
+    Returns
+    -------
+    tuple
+        Sparse trajectory indexed by timestamp and burst information. Burst
+        information is None unless output_bursts is True.
     """
     if beta_ping is None:
         raise ValueError("beta_ping must be provided.")
-
-    rng = npr.default_rng(seed)
 
     # absolute window
     t0   = int(traj['timestamp'].iloc[0])
@@ -117,12 +121,14 @@ def sample_bursts_gaps(traj,
         )
 
     # Step 2: thin trajectory
-    sampled_traj = thin_traj_by_times(traj, ping_times, deduplicate=deduplicate)
+    sampled_traj = thin_traj_by_times(
+        traj,
+        ping_times,
+        deduplicate=deduplicate
+    ).set_index('timestamp', drop=False)
+    burst_info = pd.DataFrame(bursts, columns=['start_time','end_time']) if output_bursts else None
     if sampled_traj.empty:
-        empty = sampled_traj
-        if output_bursts:
-            return empty, pd.DataFrame(columns=['start_time','end_time'])
-        return empty
+        return sampled_traj, burst_info
 
     # Step 3: add horizontal noise
     rng = npr.default_rng(seed)
@@ -131,11 +137,7 @@ def sample_bursts_gaps(traj,
     sampled_traj['ha'] = ha_realized
     sampled_traj[['x', 'y']] += noise
 
-    if output_bursts:
-        burst_df = pd.DataFrame(bursts, columns=['start_time','end_time'])
-        return sampled_traj, burst_df
-
-    return sampled_traj
+    return sampled_traj, burst_info
 
 
 # =============================================================================
@@ -173,7 +175,7 @@ class Agent:
     diary : pandas.DataFrame
         Travel diary produced from trajectory generation.
     sparsity_params : dict
-        Sparse trajectory sampling metadata and defaults.
+        Sparse trajectory sampling parameters and metadata.
     last_ping : pandas.Series or None
         Most recent known agent state.
     dt : float
@@ -220,9 +222,8 @@ class Agent:
         diary : pandas.DataFrame, optional
             If provided, a DataFrame with columns ['datetime','timestamp','duration','location'].
         sparsity_params : dict, optional
-            Optional defaults for sparse trajectory sampling. Valid keys are
-            'beta_start', 'beta_durations', 'beta_ping', 'q', and 'f'. Values
-            passed to sample_trajectory override these defaults.
+            Parameters for sparse trajectory sampling. Valid keys are
+            'beta_start', 'beta_durations', 'beta_ping', 'q', and 'f'.
         seed : int, optional
             RNG seed used for sampling fallback home/work locations.
         x, y : float, optional
@@ -955,39 +956,22 @@ class Agent:
                 "or indicate one full-trajectory burst."
             )
 
-        self.beta_params = beta_params
+        self.sparsity_params = beta_params
 
     def sample_trajectory(self,
-                          beta_start=None,
-                          beta_durations=None,
-                          beta_ping=None,
                           seed=0,
                           ha=3/4,
                           pareto_prior=True,
-                          dt=None,
                           output_bursts=False,
                           deduplicate=True,
                           replace_sparse_traj=False,
-                          cache_traj=False):
+                          cache_traj=False,
+                          debug_mode=False):
         """
         Samples a sparse trajectory using a hierarchical inhomogeneous Poisson process.
 
         Parameters
         ----------
-        beta_start : float
-            The rate parameter governing the Poisson Process controlling 
-            the start of the trajectory. If not provided, uses
-            self.sparsity_params['beta_start'] when present. Pass 0 to clear
-            a stored beta_start and use one full-trajectory burst.
-        beta_durations : float
-            The rate parameter governing the Exponential controlling 
-            for the durations of the trajectory. If not provided, uses
-            self.sparsity_params['beta_durations'] when present. Pass np.inf
-            to clear a stored beta_durations and use one full-trajectory burst.
-        beta_ping : float, optional
-            The rate parameter governing the Poisson Process controlling
-            which pings are sampled. If not provided, uses
-            self.sparsity_params['beta_ping'] when present.
         seed : int
             Random seed for reproducibility.
         ha : float
@@ -999,42 +983,26 @@ class Agent:
             rather than appending.
         cache_traj : bool
             if True, empties the Agent's trajectory DataFrame.
+        debug_mode : bool
+            If True, validates that dense and sparse trajectories are sorted
+            chronologically.
         """
-        if not self.trajectory.timestamp.is_monotonic_increasing:
+        if debug_mode and not self.trajectory.timestamp.is_monotonic_increasing:
             raise ValueError("The input trajectory is not sorted chronologically.")
 
-        resolved_beta_start = beta_start if beta_start is not None else self.sparsity_params.get('beta_start')
-        if resolved_beta_start == 0:
-            resolved_beta_start = None
-
-        resolved_beta_durations = (
-            beta_durations if beta_durations is not None else self.sparsity_params.get('beta_durations')
-        )
-        if resolved_beta_durations is not None and np.isinf(resolved_beta_durations):
-            resolved_beta_durations = None
-
-        resolved_beta_ping = beta_ping if beta_ping is not None else self.sparsity_params.get('beta_ping')
-        if resolved_beta_ping is None:
-            raise ValueError("beta_ping must be provided directly or in sparsity_params.")
-
-        if (resolved_beta_start is None) != (resolved_beta_durations is None):
+        required_params = {'beta_start', 'beta_durations', 'beta_ping'}
+        if not self.sparsity_params or not required_params.issubset(self.sparsity_params):
             raise ValueError(
-                "beta_start and beta_durations must either both be provided "
-                "or both be None for one full-trajectory burst."
+                "Agent.sparsity_params must contain beta_start, beta_durations, and beta_ping. "
+                "Set them with Agent.set_beta_params()."
             )
 
-        if beta_start is not None:
-            self.sparsity_params['beta_start'] = resolved_beta_start
-        if beta_durations is not None:
-            self.sparsity_params['beta_durations'] = resolved_beta_durations
-        if beta_ping is not None:
-            self.sparsity_params['beta_ping'] = resolved_beta_ping
-            
-        result = sample_bursts_gaps(
-            self.trajectory, 
-            resolved_beta_start, 
-            resolved_beta_durations, 
-            resolved_beta_ping,
+        # TODO: Remove beta parameters from sample_bursts_gaps's signature.
+        sparse_traj, burst_info = sample_bursts_gaps(
+            self.trajectory,
+            beta_start=self.sparsity_params['beta_start'],
+            beta_durations=self.sparsity_params['beta_durations'],
+            beta_ping=self.sparsity_params['beta_ping'],
             ha=ha,
             pareto_prior=pareto_prior,
             seed=seed, 
@@ -1042,23 +1010,15 @@ class Agent:
             deduplicate=deduplicate
         )
 
-        if output_bursts:
-            sparse_traj, burst_info = result
-        else:
-            sparse_traj = result
-
-        if not sparse_traj.timestamp.is_monotonic_increasing:
-            raise ValueError("The sampled trajectory is not sorted chronologically.")
-            
-        sparse_traj = sparse_traj.set_index('timestamp', drop=False)
-
         if self.sparse_traj is None or replace_sparse_traj:
             self.sparse_traj = sparse_traj
         else:
             self.sparse_traj = pd.concat([self.sparse_traj, sparse_traj], ignore_index=False)
-            if not self.sparse_traj.timestamp.is_monotonic_increasing:
-                raise ValueError("The aggregated sampled trajectory is not sorted chronologically.")
+        if debug_mode and not self.sparse_traj.timestamp.is_monotonic_increasing:
+            raise ValueError("The sparse trajectory is not sorted chronologically.")
 
+        # TODO: Rename and extract cache_traj; it flushes dense trajectory data
+        # and should preserve a valid starting point for chunked generation.
         if cache_traj:
             self.last_ping = self.trajectory.iloc[-1]
             self.trajectory = self.trajectory.loc[[]]  # empty df

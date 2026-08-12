@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.3
+#       jupytext_version: 1.19.3
 #   kernelspec:
 #     display_name: nomad_env
 #     language: python
@@ -386,10 +386,11 @@ if produce_animation:
 
 # %%
 # Sample sparse trajectory and latent variables for Bob
-burst_info = Bob.sample_trajectory(
+Bob.set_beta_params(
     beta_start=300, # a burst every 300 mins on average
     beta_durations=60, # average burst duration is 60 mins
-    beta_ping=10, # a ping every 10 mins within a burst
+    beta_ping=10) # a ping every 10 mins within a burst
+burst_info = Bob.sample_trajectory(
     seed=2,
     output_bursts=True)
 Bob.sparse_traj.head()
@@ -444,10 +445,10 @@ for i, agent_id in enumerate(population.roster):
     agent.generate_trajectory(end_time=pd.Timestamp('2025-01-08 00:00', tz='America/New_York'),
                               datetime=pd.Timestamp('2025-01-01 00:00', tz='America/New_York'),
                               seed=100+i)
-    agent.sample_trajectory(beta_start=300,
-                            beta_durations=60,
-                            beta_ping=10,
-                            seed=100+i)
+    agent.set_beta_params(beta_start=300,
+                          beta_durations=60,
+                          beta_ping=10)
+    agent.sample_trajectory(seed=100+i)
 
 population.roster
 
@@ -536,10 +537,12 @@ seed = 819
 for j in range(2):
     ax = axes[j]
     beta_start, beta_durations, beta_ping = hier_nhpp_params[j]
-    Charlie.sample_trajectory(
+    Charlie.set_beta_params(
         beta_start=beta_start,
         beta_durations=beta_durations,
-        beta_ping=beta_ping,
+        beta_ping=beta_ping
+    )
+    Charlie.sample_trajectory(
         seed=seed,
         replace_sparse_traj=True
     )
@@ -579,10 +582,12 @@ for j in range(2):
     ax.yaxis.set_visible(False)
 
     beta_start, beta_durations, beta_ping = hier_nhpp_params[j]
-    burst_info = Charlie.sample_trajectory(
+    Charlie.set_beta_params(
         beta_start=beta_start,
         beta_durations=beta_durations,
-        beta_ping=beta_ping,
+        beta_ping=beta_ping
+    )
+    burst_info = Charlie.sample_trajectory(
         seed=seed, 
         output_bursts=True,
         replace_sparse_traj=True)
@@ -631,10 +636,12 @@ for i in range(2):
     for j in range(2):
         ax = axes[i, j]
         beta_start, beta_durations, beta_ping = hier_nhpp_params[j]
-        Charlie.sample_trajectory(
+        Charlie.set_beta_params(
             beta_start=beta_start,
             beta_durations=beta_durations,
-            beta_ping=beta_ping,
+            beta_ping=beta_ping
+        )
+        Charlie.sample_trajectory(
             seed=seed,
             replace_sparse_traj=True
         )
@@ -804,10 +811,12 @@ for j in range(2):
     agent = [Daniel, Elaine][j]
 
     beta_start, beta_durations, beta_ping = hier_nhpp_params
-    agent.sample_trajectory(
+    agent.set_beta_params(
         beta_start=beta_start,
         beta_durations=beta_durations,
-        beta_ping=beta_ping,
+        beta_ping=beta_ping
+    )
+    agent.sample_trajectory(
         seed=seed,
         ha=ha[j],
         replace_sparse_traj=True
