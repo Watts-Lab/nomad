@@ -1231,6 +1231,83 @@ def _borders_from_cores(scale, core_set, core_distances, G, parent_borders=None)
         result[c].add(b)
     return result
 
+
+class _SparseLabelHistory:
+    """Store HDBSCAN label changes instead of one full snapshot per scale."""
+
+    def __init__(self, nodes):
+        self.nodes = pd.Index(nodes, name="time")
+        self.scales = []
+        self.events = []
+        self.birth_scales = {}
+        self._labels = np.zeros(len(nodes), dtype=int)
+
+    def record(self, scale, labels):
+        labels = np.asarray(labels, dtype=int)
+        changed = np.flatnonzero(labels != self._labels)
+        self.scales.append(scale)
+        self.events.append((changed, labels[changed].copy()))
+        for cluster_id in np.unique(labels[changed]):
+            if cluster_id > 0 and cluster_id not in self.birth_scales:
+                self.birth_scales[cluster_id] = scale
+        self._labels = labels
+
+    def labels_at(self, scale):
+        labels = np.zeros(len(self.nodes), dtype=int)
+        for event_scale, (positions, values) in zip(self.scales, self.events):
+            labels[positions] = values
+            if event_scale == scale:
+                return labels
+        raise KeyError(f"Unknown hierarchy scale: {scale}")
+
+    def members_at(self, cluster_id, scale):
+        return self.nodes[self.labels_at(scale) == cluster_id]
+
+    def clusters_at_epsilon(self, epsilon):
+        scales = np.asarray(self.scales, dtype=float)
+        candidates = scales[scales <= epsilon]
+        if candidates.size == 0:
+            return set()
+        labels = self.labels_at(candidates.max())
+        return set(labels[labels > 0])
+
+    def stability(self, cdf_function):
+        labels = np.zeros(len(self.nodes), dtype=int)
+        totals = defaultdict(float)
+        for position, (scale, (changed, values)) in enumerate(zip(self.scales, self.events)):
+            if position:
+                previous_scale = self.scales[position - 1]
+                old_labels = labels[changed]
+                for cluster_id in old_labels[old_labels > 0]:
+                    totals[cluster_id] += (
+                        cdf_function(np.asarray([self.birth_scales[cluster_id]]))[0]
+                        - cdf_function(np.asarray([previous_scale]))[0]
+                    )
+            labels[changed] = values
+        if self.scales:
+            final_scale = self.scales[-1]
+            for cluster_id in labels[labels > 0]:
+                totals[cluster_id] += (
+                    cdf_function(np.asarray([self.birth_scales[cluster_id]]))[0]
+                    - cdf_function(np.asarray([final_scale]))[0]
+                )
+        return pd.DataFrame(
+            {"cluster_id": list(totals), "cluster_stability": list(totals.values())}
+        )
+
+    def to_dataframe(self):
+        """Reconstruct the former snapshot table for debugging and parity tests."""
+        labels = np.zeros(len(self.nodes), dtype=int)
+        snapshots = [
+            pd.DataFrame({"time": self.nodes, "cluster_id": labels, "dendogram_scale": np.nan})
+        ]
+        for scale, (positions, values) in zip(self.scales, self.events):
+            labels[positions] = values
+            snapshots.append(
+                pd.DataFrame({"time": self.nodes, "cluster_id": labels, "dendogram_scale": scale})
+            )
+        return pd.concat(snapshots, ignore_index=True)
+
 def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
                       data, coord_col1, coord_col2, use_lon_lat, s_tree, node_times,
                       dist_thresh, dur_min=5, min_pts=2):
@@ -1263,19 +1340,10 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
         (label_history_df, hierarchy_df)
     """
     hierarchy = []
-    label_history = []
-
-    # Build full ping index once and reuse it for label snapshots.
     all_pings = pd.Index(G.nodes(), name='time')
+    label_history = _SparseLabelHistory(all_pings)
     nx.set_node_attributes(H, 0, 'cluster_id')
     nx.set_node_attributes(H, -1, 'temp_cluster_id')
-
-    # Initial state is known: all nodes belong to cluster 0.
-    label_history.append(pd.DataFrame({
-        'time': all_pings,
-        'cluster_id': 0,
-        'dendogram_scale': np.nan,
-    }))
 
     current_label_id = 1
 
@@ -1322,13 +1390,10 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
         if new_ids:
             hierarchy.append((np.inf, 0, new_ids))
 
-        cluster_ids = pd.Series(nx.get_node_attributes(H, 'cluster_id'))
-        cluster_ids = cluster_ids.reindex(all_pings, fill_value=-1)
-        label_history.append(pd.DataFrame({
-            'time': cluster_ids.index,
-            'cluster_id': cluster_ids.values,
-            'dendogram_scale': np.inf,
-        }))
+        label_history.record(
+            np.inf,
+            [H.nodes[node]['cluster_id'] if H.has_node(node) else -1 for node in all_pings],
+        )
  
     # Iteratively process pruning events grouped by weight (scale)
     for scale, edges_to_remove in edges_sorted.groupby(edges_sorted, sort=False):
@@ -1531,21 +1596,14 @@ def cluster_hierarchy(edges_sorted, core_distances, G, H, min_cluster_size,
 
             hierarchy.append((scale, parent_id, new_ids))
 
-        # O(N) per scale: get_node_attributes returns {node: cluster_id}.
-        cluster_ids = pd.Series(nx.get_node_attributes(H, 'cluster_id'))
-        cluster_ids = cluster_ids.reindex(all_pings, fill_value=-1)
+        label_history.record(
+            scale,
+            [H.nodes[node]['cluster_id'] if H.has_node(node) else -1 for node in all_pings],
+        )
 
-        label_history.append(pd.DataFrame({
-            'time': cluster_ids.index,
-            'cluster_id': cluster_ids.values,
-            'dendogram_scale': scale,
-        }))
-
-    # combine label history into one DataFrame
-    label_history_df = pd.concat(label_history, ignore_index=True)
     # build cluster lineage for all clusters
     hierarchy_df = _build_cluster_lineage(hierarchy)
-    return label_history_df, hierarchy_df
+    return label_history, hierarchy_df
 
 
 def _build_cluster_lineage(hierarchy):
@@ -1882,7 +1940,7 @@ def hdbscan_labels(data,
 
     H, edges_sorted = _build_hdbscan_graphs(G, core_distances)
 
-    label_history_df, hierarchy_df = cluster_hierarchy(
+    label_history, hierarchy_df = cluster_hierarchy(
         edges_sorted=edges_sorted,
         core_distances=core_distances,
         G=G,
@@ -1900,10 +1958,10 @@ def hdbscan_labels(data,
     )
 
     if delta_roam is None:
-        cluster_stability_df = compute_cluster_stability(label_history_df)
+        cluster_stability_df = label_history.stability(_base_cdf)
         selected_clusters = select_most_stable_clusters(hierarchy_df, cluster_stability_df)
     else:
-        selected_clusters = select_clusters_by_epsilon(hierarchy_df, label_history_df, epsilon=delta_roam)
+        selected_clusters = label_history.clusters_at_epsilon(delta_roam)
 
     final_labels = pd.Series(-1, index=core_distances.index, name='cluster', dtype=int)
     collect_core_points = return_cores
@@ -1912,9 +1970,12 @@ def hdbscan_labels(data,
         source_timestamps = pd.Series(np.nan, index=core_distances.index, name=traj_cols[start_t_key])
         
     # keep only info of selected clusters and their birthscales, sort from denser to less dense
-    cluster_info_df = label_history_df[label_history_df['cluster_id'].isin(selected_clusters)]
-    birth_scales = cluster_info_df.groupby('cluster_id')['dendogram_scale'].max()
-    cluster_info = birth_scales.sort_values(ascending=True).reset_index().rename(columns={'dendogram_scale': 'scale'})
+    cluster_info = pd.DataFrame(
+        {
+            'cluster_id': list(selected_clusters),
+            'scale': [label_history.birth_scales[cluster_id] for cluster_id in selected_clusters],
+        }
+    ).sort_values('scale', ascending=True)
 
     claimed_points = set()
     for _, row in cluster_info.iterrows():
@@ -1922,9 +1983,7 @@ def hdbscan_labels(data,
         
         # 1. Identify core members for this cluster at its birth scale
         # These are points that are part of the cluster and have not been claimed by a denser cluster
-        core_mask = (label_history_df['cluster_id'] == cid) & \
-                    (label_history_df['dendogram_scale'] == scale)
-        core_members = set(label_history_df.loc[core_mask, 'time'].unique())
+        core_members = set(label_history.members_at(cid, scale))
         
         # Exclude points already claimed by a denser cluster (should be rare for cores, but good practice)
         unclaimed_cores = core_members - claimed_points

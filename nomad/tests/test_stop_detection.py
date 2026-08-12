@@ -1505,6 +1505,44 @@ def test_hdbscan_labels_single_stop(hdbscan_traj):
     assert (labels >= 0).any(), "Expected at least one cluster"
 
 
+def test_sparse_hdbscan_history_matches_snapshot_stability(hdbscan_traj):
+    traj_cols = {'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
+    cols = loader._parse_traj_cols(hdbscan_traj.columns, traj_cols, {})
+    graph, _, spatial_tree = PREPROCESSING._find_neighbors(
+        hdbscan_traj,
+        5,
+        cols,
+        weighted=True,
+        return_trees=True,
+        relabel_nodes=True,
+    )
+    core_distances = HDBSCAN._compute_core_distance(graph, 3)
+    hierarchy_graph, edges = HDBSCAN._build_hdbscan_graphs(graph, core_distances)
+    history, _ = HDBSCAN.cluster_hierarchy(
+        edges,
+        core_distances,
+        graph,
+        hierarchy_graph,
+        3,
+        hdbscan_traj,
+        'x',
+        'y',
+        False,
+        spatial_tree,
+        np.asarray(list(graph)),
+        None,
+        dur_min=5,
+        min_pts=3,
+    )
+
+    snapshot_stability = HDBSCAN.compute_cluster_stability(history.to_dataframe())
+    sparse_stability = history.stability(HDBSCAN._base_cdf)
+    pd.testing.assert_frame_equal(
+        snapshot_stability.sort_values('cluster_id').reset_index(drop=True),
+        sparse_stability.sort_values('cluster_id').reset_index(drop=True),
+    )
+
+
 def test_hdbscan_labels_no_cluster_when_sparse(hdbscan_traj):
     """No cluster forms when min_pts exceeds the number of temporal neighbors."""
     labels = HDBSCAN.hdbscan_labels(
