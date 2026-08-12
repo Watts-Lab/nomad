@@ -335,6 +335,58 @@ def test_agent_state_management(garden_city, simple_dest_diary, default_ids):
     assert agent.last_ping is None
 
 
+def test_agent_set_beta_params(garden_city, default_ids):
+    agent = Agent(
+        identifier="test_agent",
+        city=garden_city,
+        home=default_ids['home'],
+        workplace=default_ids['work']
+    )
+
+    agent.set_beta_params(beta_start=30, beta_durations=10, beta_ping=5)
+    assert agent.beta_params == {
+        'beta_start': 30,
+        'beta_durations': 10,
+        'beta_ping': 5
+    }
+
+    agent.set_beta_params(beta_start=0, beta_durations=np.inf, beta_ping=5)
+    assert agent.beta_params == {
+        'beta_start': None,
+        'beta_durations': None,
+        'beta_ping': 5
+    }
+
+    params = Population.gen_params_target_q(
+        q=0.4,
+        beta_start=100,
+        beta_ping=5,
+        seed=42
+    )
+    agent.set_beta_params(params, beta_start=30, beta_durations=10, beta_ping=5)
+    assert agent.beta_params == {
+        'beta_start': 100,
+        'beta_durations': 40,
+        'beta_ping': 5,
+        'q': 0.4
+    }
+
+    with pytest.raises(ValueError, match="beta_ping must be provided"):
+        agent.set_beta_params(beta_start=None, beta_durations=None)
+
+    with pytest.raises(ValueError, match="beta_start and beta_durations must either both be provided"):
+        agent.set_beta_params(beta_start=30, beta_durations=None, beta_ping=5)
+
+    with pytest.raises(ValueError, match="beta_start and beta_durations must either both be provided"):
+        agent.set_beta_params(beta_start=0, beta_durations=10, beta_ping=5)
+
+    with pytest.raises(ValueError, match="beta_start and beta_durations must either both be provided"):
+        agent.set_beta_params(beta_start=30, beta_durations=np.inf, beta_ping=5)
+
+    with pytest.raises(ValueError, match="missing required keys"):
+        agent.set_beta_params({'beta_start': 30, 'beta_durations': 10, 'q': 0.4})
+
+
 def test_agent_sample_trajectory_uses_sparsity_params(garden_city, simple_dest_diary, default_ids):
     agent = Agent(
         identifier="test_agent",

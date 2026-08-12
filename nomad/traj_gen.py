@@ -903,6 +903,60 @@ class Agent:
 
         return None
 
+    def set_beta_params(self,
+                        beta_params=None,
+                        *,
+                        beta_start=None,
+                        beta_durations=None,
+                        beta_ping=None):
+        """
+        Set the parameters used to sample sparse trajectories.
+
+        Parameters
+        ----------
+        beta_params : dict, optional
+            Parameter dictionary containing 'beta_start', 'beta_durations',
+            and 'beta_ping'. Additional values are retained. If provided,
+            this dictionary takes precedence over the explicit parameters.
+        beta_start : float or None
+            The rate parameter governing burst starts. Use 0 together with
+            beta_durations=np.inf for one full-trajectory burst. A value of 0
+            is stored as None.
+        beta_durations : float or None
+            The rate parameter governing burst durations. Use np.inf together
+            with beta_start=0 for one full-trajectory burst. A value of np.inf
+            is stored as None.
+        beta_ping : float
+            The rate parameter governing ping sampling.
+        """
+        if beta_params is None:
+            beta_params = {
+                'beta_start': beta_start,
+                'beta_durations': beta_durations,
+                'beta_ping': beta_ping
+            }
+        else:
+            required_params = {'beta_start', 'beta_durations', 'beta_ping'}
+            missing_params = required_params - beta_params.keys()
+            if missing_params:
+                raise ValueError(f"beta_params is missing required keys: {missing_params}.")
+
+        beta_params = beta_params.copy()
+        if beta_params['beta_start'] == 0:
+            beta_params['beta_start'] = None
+        if beta_params['beta_durations'] is not None and np.isinf(beta_params['beta_durations']):
+            beta_params['beta_durations'] = None
+
+        if beta_params['beta_ping'] is None:
+            raise ValueError("beta_ping must be provided.")
+        if (beta_params['beta_start'] is None) != (beta_params['beta_durations'] is None):
+            raise ValueError(
+                "beta_start and beta_durations must either both be provided "
+                "or indicate one full-trajectory burst."
+            )
+
+        self.beta_params = beta_params
+
     def sample_trajectory(self,
                           beta_start=None,
                           beta_durations=None,
