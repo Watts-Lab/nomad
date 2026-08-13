@@ -711,6 +711,7 @@ def completeness(data,
     ----------
     data : pandas.Series or pandas.DataFrame
         Trajectory data containing timestamps, either as:
+
         - A pandas Series of Unix-second integers or datetime64 values.
         - A DataFrame, from which timestamp and user columns are identified
           via `traj_cols` or default column naming conventions.

@@ -27,6 +27,7 @@ examples/research/**/*.json
 
 # OSM cache and large outputs
 cache/
+nomad/tests/tmp_osm_cache/
 examples/output/
 examples/research/virtual_philadelphia/*.gpkg
 
@@ -42,6 +43,7 @@ pip
 tutorials/IC2S2-2025/tutorial-sample/*
 
 # Development environment configurations (personal/local only)
+AGENTS.md
 .vscode/
 .idea/
 *.code-workspace

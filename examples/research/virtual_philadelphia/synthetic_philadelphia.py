@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.3
+#       jupytext_version: 1.19.3
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -377,10 +377,12 @@ t1 = time.time()
 for i, agent in tqdm(enumerate(population.roster.values()), total=config["N"], desc="Sampling trajectories"):
     if agent.trajectory is None:
         continue
-    agent.sample_trajectory(
+    agent.set_beta_params(
         beta_ping=config["sampling_params"]["beta_ping"],
         beta_durations=config["sampling_params"]["beta_durations"],
-        beta_start=config["sampling_params"]["beta_start"],
+        beta_start=config["sampling_params"]["beta_start"]
+    )
+    agent.sample_trajectory(
         ha=config["sampling_params"]["ha"],
         seed=config["sampling_params"]["seed_base"] + i,
         replace_sparse_traj=True

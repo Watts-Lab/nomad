@@ -14,7 +14,7 @@ Overview of stop-detection methods
 
 A comparison of the stop-detection algorithms in NOMAD is shown below.
 
-.. figure:: _images/source_benchmarking_of_stop_detection_algorithms_10_0.png
+.. figure:: _static/stop_detection/benchmarking_runtime.png
    :target: source/benchmarking_of_stop_detection_algorithms.html
    :align: center
    :width: 80%
@@ -62,7 +62,7 @@ Notice that this method also works with **geographic coordinates** (lon, lat), u
 
 **Source:** Ester, M., Kriegel, H. P., Sander, J., & Xu, X. (1996). A density-based algorithm for discovering clusters in large spatial databases with noise. *Proceedings of the Second International Conference on Knowledge Discovery and Data Mining (KDD-96)*, 226-231.
 
-.. figure:: _images/source_tadbscan_demo_3_0.png
+.. figure:: _static/stop_detection/tadbscan_demo.png
    :target: source/tadbscan_demo.html
    :align: center
    :width: 80%
@@ -79,7 +79,7 @@ The HDBSCAN algorithm constructs a hierarchy of non-overlapping clusters from di
 
 **Source:** Campello, R. J., Moulavi, D., & Sander, J. (2013). Density-based clustering based on hierarchical density estimates. *Pacific-Asia Conference on Knowledge Discovery and Data Mining (PAKDD)*, 160-172.
 
-.. figure:: _images/source_hdbscan_demo_3_0.png
+.. figure:: _static/stop_detection/hdbscan_demo.png
    :target: source/hdbscan_demo.html
    :align: center
    :width: 80%
@@ -102,7 +102,7 @@ The algorithms work with the same call, provided there is at least a pair of coo
 
 **Source:** NOMAD implementation using spatial tessellation (H3, S2) for trajectory segmentation.
 
-.. figure:: _images/source_grid_based_demo_3_0.png
+.. figure:: _static/stop_detection/grid_based_demo.png
    :target: source/grid_based_demo.html
    :align: center
    :width: 80%
@@ -130,7 +130,7 @@ This algorithm has the following parameters, which determine the size of the res
 
 **Source:** Hariharan, R., & Toyama, K. (2004). Project Lachesis: Parsing and modeling location histories. *International Conference on Geographic Information Science*, 106-124.
 
-.. figure:: _images/source_lachesis_demo_3_0.png
+.. figure:: _static/stop_detection/lachesis_demo.png
    :target: source/lachesis_demo.html
    :align: center
    :width: 80%
