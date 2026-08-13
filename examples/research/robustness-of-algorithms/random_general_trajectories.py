@@ -81,8 +81,12 @@ def main():
             seed=par["seed_trajectory"][i],
         )
 
-        agent.sample_trajectory(
+        agent.set_beta_params(
+            beta_start=None,
+            beta_durations=None,
             beta_ping=beta_ping[i] if isinstance(beta_ping, list) else beta_ping,
+        )
+        agent.sample_trajectory(
             ha=par["ha"],
             seed=par["seed_sparsity"][i],
             replace_sparse_traj=True,
