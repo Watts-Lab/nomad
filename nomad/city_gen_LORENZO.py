@@ -174,10 +174,12 @@ class City:
         # Convenience properties are defined below for GDF-first access
         # Precomputed building-to-building gravity (optional, built on demand)
         self.grav = None
+        self.grav_for_candidates = None
         self.door_dist = None
         # Precomputed shortest paths (optional, built on demand via compute_shortest_paths)
         self.shortest_paths = None
         self.street_graph = None
+        self._street_coord_set = None
         # Hub network for efficient gravity computation (optional, built on demand)
         self.hubs = None
         self.hub_df = None
@@ -549,6 +551,7 @@ class City:
         Stores result in self.shortest_paths as dict or callable
         """
         G = self.get_street_graph()
+        self._street_coord_set = set(G.nodes)
         
         if callable_only:
             # TODO: Replace with hub-based routing for production use
@@ -562,6 +565,13 @@ class City:
         else:
             # Dense storage for small cities only
             self.shortest_paths = dict(nx.all_pairs_shortest_path(G))
+
+    def _get_street_coord_set(self):
+        if self._street_coord_set is None:
+            self._street_coord_set = set(
+                map(tuple, self.streets_gdf[['coord_x', 'coord_y']].to_numpy(dtype=int))
+            )
+        return self._street_coord_set
 
     # ---------------------------------------------------------------------
     # Shortcut ("highway") network for fast on-demand routing
@@ -636,6 +646,96 @@ class City:
         dx = np.abs(x1[:, None] - x2[None, :])
         dy = np.abs(y1[:, None] - y2[None, :])
         return dx + dy
+
+    def _build_nearby_adj(self, bid_to_idx, n):
+        nearby_adj = [[] for _ in range(n)]
+        if hasattr(self, 'mh_dist_nearby_doors') and len(self.mh_dist_nearby_doors) > 0:
+            for (bid_i, bid_j), d in self.mh_dist_nearby_doors.items():
+                i, j = bid_to_idx[bid_i], bid_to_idx[bid_j]
+                nearby_adj[i].append((j, int(d)))
+                nearby_adj[j].append((i, int(d)))
+        return nearby_adj
+
+    def _install_gravity_callables(
+        self,
+        building_ids,
+        exponent,
+        bid_to_idx,
+        closest_hub_idx=None,
+        dist_to_closest_hub=None,
+        hub_to_hub=None,
+        nearby_adj=None,
+        gravity_matrix=None,
+        callable_only=True,
+    ):
+        n = len(building_ids)
+        self._grav_exponent = exponent
+        self._grav_bid_to_idx = bid_to_idx
+
+        if gravity_matrix is not None:
+            def grav_for_candidates(origin_idx, sorted_candidate_idxs):
+                return gravity_matrix[origin_idx, sorted_candidate_idxs]
+        else:
+            def grav_for_candidates(origin_idx, sorted_candidate_idxs):
+                hub_i = closest_hub_idx[origin_idx]
+                dist_i = dist_to_closest_hub[origin_idx]
+                cand_hub = closest_hub_idx[sorted_candidate_idxs]
+                dist_j = dist_to_closest_hub[sorted_candidate_idxs]
+                distances = dist_i + hub_to_hub[hub_i, cand_hub] + dist_j
+                for neighbor_idx, d in nearby_adj[origin_idx]:
+                    pos = np.searchsorted(sorted_candidate_idxs, neighbor_idx)
+                    if pos < sorted_candidate_idxs.size and sorted_candidate_idxs[pos] == neighbor_idx:
+                        distances[pos] = d
+                return 1.0 / (distances.astype(np.float64) ** exponent)
+
+        self.grav_for_candidates = grav_for_candidates
+
+        if callable_only:
+            def compute_gravity_row(building_id):
+                idx = bid_to_idx[building_id]
+                row = grav_for_candidates(idx, np.arange(n, dtype=np.int64))
+                row = row.copy()
+                row[idx] = 0.0
+                return pd.Series(row, index=building_ids)
+
+            self.grav = compute_gravity_row
+        elif gravity_matrix is not None:
+            self.grav = pd.DataFrame(gravity_matrix, index=building_ids, columns=building_ids)
+
+    def restore_gravity(self, exponent=2.0, callable_only=True):
+        """Reinstall gravity callables from persisted hub/nearby-door data.
+
+        Parameters
+        ----------
+        exponent : float
+            Gravity decay exponent.
+        callable_only : bool
+            If True, store row-wise callable in self.grav.
+
+        Notes
+        -----
+        Requires grav_hub_info, mh_dist_nearby_doors, hub_df, and hubs from a
+        prior compute_gravity() call or geopackage load. Used after unpickling
+        a city cache without serializable gravity callables.
+        """
+        if self.grav_hub_info is None or self.mh_dist_nearby_doors is None:
+            raise ValueError("Gravity data not available. Call compute_gravity() first.")
+        if self.hub_df is None or self.hubs is None:
+            raise ValueError("Hub network not available.")
+
+        building_ids = self.buildings_gdf['id'].to_numpy()
+        bid_to_idx = {bid: i for i, bid in enumerate(building_ids)}
+        nearby_adj = self._build_nearby_adj(bid_to_idx, len(building_ids))
+        self._install_gravity_callables(
+            building_ids,
+            exponent,
+            bid_to_idx,
+            closest_hub_idx=self.grav_hub_info['closest_hub_idx'].to_numpy(),
+            dist_to_closest_hub=self.grav_hub_info['dist_to_hub'].to_numpy(),
+            hub_to_hub=self.hub_df.values,
+            nearby_adj=nearby_adj,
+            callable_only=callable_only,
+        )
 
     def compute_gravity(self, exponent=2.0, callable_only=False, n_chunks=10, use_proxy_hub_distance=True):
         """Precompute building-to-building gravity from door-to-door distances.
@@ -747,27 +847,17 @@ class City:
             if callable_only:
                 bid_to_idx = {bid: i for i, bid in enumerate(building_ids)}
                 hub_to_hub = self.hub_df.values
-                
-                def compute_gravity_row(building_id):
-                    idx = bid_to_idx[building_id]
-                    hub_i = closest_hub_idx[idx]
-                    dist_to_hub_i = dist_to_closest_hub[idx]
-                    
-                    distances = dist_to_hub_i + hub_to_hub[hub_i, closest_hub_idx] + dist_to_closest_hub
-                    
-                    for (bid_i, bid_j), d in self.mh_dist_nearby_doors.items():
-                        if bid_i == building_id:
-                            distances[bid_to_idx[bid_j]] = d
-                        elif bid_j == building_id:
-                            distances[bid_to_idx[bid_i]] = d
-                    
-                    distances[idx] = 1
-                    gravity_row = 1.0 / (distances ** exponent)
-                    gravity_row[idx] = 0.0
-                    
-                    return pd.Series(gravity_row, index=building_ids)
-                
-                self.grav = compute_gravity_row
+                nearby_adj = self._build_nearby_adj(bid_to_idx, len(building_ids))
+                self._install_gravity_callables(
+                    building_ids,
+                    exponent,
+                    bid_to_idx,
+                    closest_hub_idx=closest_hub_idx,
+                    dist_to_closest_hub=dist_to_closest_hub,
+                    hub_to_hub=hub_to_hub,
+                    nearby_adj=nearby_adj,
+                    callable_only=True,
+                )
             else:
                 hub_to_hub = self.hub_df.values
                 dist_matrix = dist_to_closest_hub[:, None] + hub_to_hub[closest_hub_idx[:, None], closest_hub_idx[None, :]] + dist_to_closest_hub[None, :]
@@ -781,7 +871,13 @@ class City:
                 gravity = 1.0 / (dist_matrix ** exponent)
                 np.fill_diagonal(gravity, 0.0)
                 
-                self.grav = pd.DataFrame(gravity, index=building_ids, columns=building_ids)
+                self._install_gravity_callables(
+                    building_ids,
+                    exponent,
+                    bid_to_idx,
+                    gravity_matrix=gravity,
+                    callable_only=False,
+                )
         else:
             G = self.get_street_graph()
             door_coords = list(zip(door_x, door_y))
@@ -813,12 +909,21 @@ class City:
             np.fill_diagonal(gravity, 0.0)
             
             if callable_only:
-                grav_df = pd.DataFrame(gravity, index=building_ids, columns=building_ids)
-                def compute_gravity_row(building_id):
-                    return grav_df.loc[building_id]
-                self.grav = compute_gravity_row
+                self._install_gravity_callables(
+                    building_ids,
+                    exponent,
+                    bid_to_idx,
+                    gravity_matrix=gravity,
+                    callable_only=True,
+                )
             else:
-                self.grav = pd.DataFrame(gravity, index=building_ids, columns=building_ids)
+                self._install_gravity_callables(
+                    building_ids,
+                    exponent,
+                    bid_to_idx,
+                    gravity_matrix=gravity,
+                    callable_only=False,
+                )
 
     def save(self, filename):
         """
@@ -1325,27 +1430,17 @@ class City:
                 hub_to_hub = city.hub_df.values
                 closest_hub_idx = city.grav_hub_info['closest_hub_idx'].to_numpy()
                 dist_to_closest_hub = city.grav_hub_info['dist_to_hub'].to_numpy()
-                
-                def compute_gravity_row(building_id, exponent=2.0):
-                    idx = bid_to_idx[building_id]
-                    hub_i = closest_hub_idx[idx]
-                    dist_to_hub_i = dist_to_closest_hub[idx]
-                    
-                    distances = dist_to_hub_i + hub_to_hub[hub_i, closest_hub_idx] + dist_to_closest_hub
-                    
-                    for (bid_i, bid_j), d in city.mh_dist_nearby_doors.items():
-                        if bid_i == building_id:
-                            distances[bid_to_idx[bid_j]] = d
-                        elif bid_j == building_id:
-                            distances[bid_to_idx[bid_i]] = d
-                    
-                    distances[idx] = 1  # Temporary non-zero to avoid divide-by-zero warning
-                    gravity_row = 1.0 / (distances ** exponent)
-                    gravity_row[idx] = 0.0  # Self-gravity is always 0
-                    
-                    return pd.Series(gravity_row, index=building_ids)
-                
-                city.grav = compute_gravity_row
+                nearby_adj = city._build_nearby_adj(bid_to_idx, len(building_ids))
+                city._install_gravity_callables(
+                    building_ids,
+                    2.0,
+                    bid_to_idx,
+                    closest_hub_idx=closest_hub_idx,
+                    dist_to_closest_hub=dist_to_closest_hub,
+                    hub_to_hub=hub_to_hub,
+                    nearby_adj=nearby_adj,
+                    callable_only=True,
+                )
                 
             except Exception:
                 pass
@@ -1556,10 +1651,10 @@ class City:
         Requires compute_shortest_paths() to be called first. Uses precomputed
         paths (dict) or on-demand callable depending on mode.
         """
-        # Check if coordinates are street blocks
-        if not ((self.streets_gdf['coord_x'] == start_coord[0]) & (self.streets_gdf['coord_y'] == start_coord[1])).any():
+        street_coords = self._get_street_coord_set()
+        if start_coord not in street_coords:
             raise ValueError(f"Start coordinate {start_coord} must be a street block.")
-        if not ((self.streets_gdf['coord_x'] == end_coord[0]) & (self.streets_gdf['coord_y'] == end_coord[1])).any():
+        if end_coord not in street_coords:
             raise ValueError(f"End coordinate {end_coord} must be a street block.")
 
         # Auto-initialize callable if not set (lazy initialization for convenience)

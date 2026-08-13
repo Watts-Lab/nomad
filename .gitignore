@@ -30,6 +30,7 @@ cache/
 nomad/tests/tmp_osm_cache/
 examples/output/
 examples/research/virtual_philadelphia/*.gpkg
+tutorials/SICSS_2026/data/
 
 # macOS system file
 .DS_Store
