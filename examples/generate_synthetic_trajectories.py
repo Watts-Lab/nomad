@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.3
+#       jupytext_version: 1.19.3
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -67,8 +67,8 @@ for i, (agent_id, agent) in enumerate(population.roster.items()):
         seed=i
     )
 
+    agent.set_beta_params(sampling_params[i])
     agent.sample_trajectory(
-        **sampling_params[i],
         replace_sparse_traj=True,
         seed=i
     )
@@ -124,8 +124,8 @@ def generate_agent_trajectory(args):
         end_time=pd.Timestamp("2024-01-08T07:00-04:00"),
         seed=seed
     )
+    agent.set_beta_params(beta_start=None, beta_durations=None, beta_ping=5)
     agent.sample_trajectory(
-        beta_ping=5,
         replace_sparse_traj=True,
         seed=seed
     )
