@@ -1,9 +1,7 @@
 import pandas as pd
 import numpy as np
 import numpy.random as npr
-from shapely.geometry import box, Point, MultiLineString
-from shapely.ops import unary_union, linemerge
-from shapely import distance as shp_distance
+from shapely.geometry import LineString, Point
 from datetime import timedelta
 import warnings
 import funkybob
@@ -220,8 +218,9 @@ class Agent:
         else:
             self.sparsity_params = {}
         # Trajectory simulation parameters (caching for performance)
-        self._cached_bound_poly = None
-        self._cached_path_ml = None
+        self._cached_path = None
+        self._cached_dest_id = None
+        self._cached_path_blocks = None
         self._previous_dest_building_row = None
         self._current_dest_building_row = None
 
@@ -235,10 +234,9 @@ class Agent:
         self.destination_diary = pd.DataFrame(columns=self.destination_diary.columns)
         self.dt = None
         # null cache for trajectory generation
-        self._cached_path_ml = None
-        self._cached_bound_poly = None
+        self._cached_path = None
         self._cached_dest_id = None
-        self._cached_bound_poly_blocks_set = None
+        self._cached_path_blocks = None
         self._previous_dest_building_row = None
         self._current_dest_building_row = None
         
@@ -299,122 +297,103 @@ class Agent:
         Returns
         -------
         coord : numpy.ndarray
-            A numpy array of floats with shape (1, 2) representing the new coordinates.
+            A numpy array of floats with shape (2,) representing the new coordinates.
         location : str or None
             The building ID if the step is a stay, or `None` if the step is a move.
         """
-        city = self.city
+        destination = self._current_dest_building_row
+        previous_destination = self._previous_dest_building_row
+        dest_type = destination['building_type']
 
-        # Resolve destination building geometry and attributes from cache
-        brow = self._current_dest_building_row
-        dest_type = brow['building_type']
-
-        # Determine start block and geometry
-        start_block = tuple(np.floor(start_point).astype(int))
         start_point_arr = np.asarray(start_point, dtype=float)
+        start_block = tuple(np.floor(start_point_arr).astype(int))
         
-        # Check if agent is in building using integer truncation
-        in_current_dest = False
-        if self._current_dest_building_row is not None:
-            in_current_dest = _point_in_blocks(start_point_arr, self._current_dest_building_row['blocks_set'])
-        in_previous_dest = False
-        if self._previous_dest_building_row is not None:
-            in_previous_dest = _point_in_blocks(start_point_arr, self._previous_dest_building_row['blocks_set'])
+        in_previous_dest = (
+            previous_destination is not None
+            and _point_in_blocks(start_point_arr, previous_destination['blocks_set'])
+        )
 
         # If already at destination building area, stay-within-building dynamics
-        if in_current_dest:
-            # Clear cache when arriving at destination (bound_poly only for inter-building movement)
-            self._cached_path_ml = None
-            self._cached_bound_poly = None
+        if _point_in_blocks(start_point_arr, destination['blocks_set']):
+            # Clear route cache when arriving at the destination.
+            self._cached_path = None
             self._cached_dest_id = None
-            location = brow['id']
-            p = self.still_probs.get(dest_type, 0.5)
-            sigma = self.speeds.get(dest_type, 0.5)
+            self._cached_path_blocks = None
 
-            if rng.uniform() < p:
+            if rng.uniform() < self.still_probs.get(dest_type, 1-((1/0.5)/4)):
                 coord = start_point_arr
             else:
                 # Draw until coord falls inside building
                 while True:
-                    coord = rng.normal(loc=start_point_arr, scale=sigma*np.sqrt(dt), size=2)
-                    if _point_in_blocks(coord, brow['blocks_set']):
+                    coord = rng.normal(
+                        loc=start_point_arr,
+                        scale=self.speeds.get(dest_type, 0.75/1.96)*np.sqrt(dt),
+                        size=2
+                    )
+                    if _point_in_blocks(coord, destination['blocks_set']):
                         break
 
-            return coord, location
+            return coord, destination['id']
 
         # Otherwise, move along streets toward destination door cell
-        location = None
-        start_segment = []
         # If currently inside previous destination building, first move towards its door
         if in_previous_dest:
-            prev_door_point = self._previous_dest_building_row['door_point']
-            start_segment = [tuple(start_point), prev_door_point]
-            start_node = (int(self._previous_dest_building_row['door_cell_x']), int(self._previous_dest_building_row['door_cell_y']))
+            start_segment = [start_point]
+            if start_point != previous_destination['door_point']:
+                start_segment.append(previous_destination['door_point'])
+            start_node = (
+                int(previous_destination['door_cell_x']),
+                int(previous_destination['door_cell_y'])
+            )
         else:
+            start_segment = []
             start_node = start_block
 
-        # Resolve destination door coordinates for path computation
-        dest_cell = (int(brow['door_cell_x']), int(brow['door_cell_y']))
-
-        # Check if cached geometry is valid for current destination
-        use_cache = False
-        if self._cached_bound_poly is not None and self._cached_dest_id == brow['id']:
-            use_cache = True
-
-        if use_cache:
-            path_ml = self._cached_path_ml
-            bound_poly = self._cached_bound_poly
-            bound_poly_blocks_set = self._cached_bound_poly_blocks_set
+        if self._cached_path is not None and self._cached_dest_id == destination['id']:
+            path = self._cached_path
+            path_blocks = self._cached_path_blocks
         else:
-            # Shortest path between street blocks (door cells)
-            street_path = city.get_shortest_path(start_node, dest_cell)
-            street_blocks = city.blocks_gdf.loc[street_path]
-
-            # Build continuous path through block centers, include start/end segments
-            centroids = street_blocks['geometry'].centroid
-            path_segments = [start_segment + [(pt.x, pt.y) for pt in centroids] + [brow['door_point']]]
-            path_ml = MultiLineString([linemerge(MultiLineString(path_segments))])
-            street_geom = unary_union(street_blocks['geometry'])
-            # Use previous destination building geometry if agent is departing from it, otherwise use start block geometry
-            if in_previous_dest and self._previous_dest_building_row is not None:
-                start_geom = self._previous_dest_building_row['geometry']
-            else:
-                start_geom = city.blocks_gdf.loc[start_block]['geometry']
-            bound_poly = unary_union([start_geom, street_geom])
+            street_path = self.city.get_shortest_path(
+                start_node,
+                (int(destination['door_cell_x']), int(destination['door_cell_y']))
+            )
+            path = LineString(
+                start_segment
+                + [(x + 0.5, y + 0.5) for x, y in street_path]
+                + [destination['door_point']]
+            )
+            path_blocks = (
+                previous_destination['blocks_set'] if in_previous_dest else {start_block}
+            ) | set(street_path)
             
-            # Build bound_poly_blocks_set from components
-            if in_previous_dest and self._previous_dest_building_row is not None:
-                start_blocks = self._previous_dest_building_row['blocks_set']
-            else:
-                start_blocks = {start_block}
-            bound_poly_blocks_set = start_blocks | set(street_path)
-            
-            # Cache the results
-            self._cached_path_ml = path_ml
-            self._cached_bound_poly = bound_poly
-            self._cached_dest_id = brow['id']
-            self._cached_bound_poly_blocks_set = bound_poly_blocks_set
+            self._cached_path = path
+            self._cached_dest_id = destination['id']
+            self._cached_path_blocks = path_blocks
 
         # Transformed coordinates of current position along the path
-        path_coord = _path_coords(path_ml, start_point_arr)
-
-        heading_drift = 3.33 * dt
-        sigma = 0.5 * dt / 1.96
+        path_coord = _path_coords(path, start_point_arr)
+        # TO DO: Check these parameters for realism, make them dependent on block size
+        heading_drift = 3.33 * dt # 50m/min; blocks are 15m x 15m
+        sigma = 0.5 * dt / 1.96 # 95% prob of moving 0.5
 
         while True:
             # Step in transformed (path-based) space
-            step = rng.normal(loc=[heading_drift, 0], scale=sigma * np.sqrt(dt), size=2)
+            step = rng.normal(
+                loc=[heading_drift, 0],
+                scale=sigma * np.sqrt(dt),
+                size=2
+            )
             path_coord = (path_coord[0] + step[0], 0.7 * path_coord[1] + step[1])
 
-            if path_coord[0] > path_ml.length:
-                coord = np.array(brow['door_point'])
+            if path_coord[0] > path.length:
+                coord = np.array(destination['door_point'])
             else:
-                coord = _cartesian_coords(path_ml, *path_coord)
+                coord = _cartesian_coords(path, *path_coord)
 
-            if _point_in_blocks(coord, bound_poly_blocks_set) or _point_in_blocks(coord, self._current_dest_building_row.get('blocks_set')):
+            if _point_in_blocks(coord, path_blocks) or _point_in_blocks(coord, destination['blocks_set']):
                 break
 
-        return coord, location
+        return coord, None
 
     def _traj_from_dest_diary(self, dt, seed=0):
         """
@@ -447,11 +426,6 @@ class Agent:
         else:
             self._previous_dest_building_row = None
 
-        # Initialize current destination building to first entry
-        first_building_id = destination_diary.iloc[0]['location']
-        building_dict = city.buildings_gdf.loc[first_building_id].to_dict()
-        building_dict['blocks_set'] = set(building_dict['blocks'])
-        self._current_dest_building_row = building_dict
         entry_update = []
         for i in range(destination_diary.shape[0]):
             building_id = destination_diary.iloc[i]['location']
@@ -461,7 +435,7 @@ class Agent:
                 self._previous_dest_building_row = self._current_dest_building_row
 
             building_dict = city.buildings_gdf.loc[building_id].to_dict()
-            building_dict['blocks_set'] = set(building_dict.get('blocks', []))
+            building_dict['blocks_set'] = set(building_dict['blocks'])
             self._current_dest_building_row = building_dict
 
             duration_in_ticks = int(destination_diary.iloc[i]['duration'] / dt)
@@ -637,55 +611,61 @@ class Agent:
                 f"Agent {self.identifier}: last_ping timestamp ({start_time}) is at or beyond end_time ({end_time}). "
                 "No destinations will be generated. Consider providing an earlier last_ping or later end_time."
             )
-            return
         
+        building_ids = visit_freqs.index.to_numpy()
+        building_types = visit_freqs['building_type'].to_numpy()
+        frequencies = visit_freqs['freq'].to_numpy(copy=True)
+        allowed_idx_by_hour = [
+            np.flatnonzero(np.isin(building_types, ALLOWED_BUILDINGS[hour]))
+            for hour in range(24)
+        ]
+        curr_idx = visit_freqs.index.get_loc(curr)
+
         dest_update = []
         # verbosity
         if verbose:
             print(f"Generating destination diary via EPR (rho={rho}, gamma={gamma}, epr_time_res={epr_time_res} min, seed={seed})")
         while start_time < end_time:
-            curr_type = visit_freqs.loc[curr, 'building_type'] if curr in visit_freqs.index else 'home'
-            allowed = allowed_buildings(start_time_local)
-            x = visit_freqs.loc[(visit_freqs['building_type'].isin(allowed)) & (visit_freqs.freq > 0)]
-
-            S = len(x) if len(x) > 0 else 1
-
-            # probability of exploring
-            p_exp = rho*(S**(-gamma))
+            hour = start_time_local.hour
+            allowed_idx = allowed_idx_by_hour[hour]
+            allowed_frequencies = frequencies[allowed_idx]
+            visited_idx = allowed_idx[allowed_frequencies > 0]
 
             # Stay
-            if (curr_type in allowed) & (rng.uniform() < stay_probs.get(curr_type, 0.5)):
+            curr_type = building_types[curr_idx]
+            if rng.uniform() < stay_probs[curr_type] and curr_type in ALLOWED_BUILDINGS[hour]:
                 pass
 
-            # Exploration
-            elif rng.uniform() < p_exp:
-                # Compute gravity probs from current door cell to unexplored candidates
-                y = visit_freqs.loc[(visit_freqs['building_type'].isin(allowed)) & (visit_freqs.freq == 0)]
-                if not y.empty:
-                    if callable(self.city.grav):
-                        probs = self.city.grav(curr).loc[y.index].values
-                    else:
-                        probs = self.city.grav.loc[curr, y.index].values
-                    
-                    probs = probs / probs.sum()
-                    curr = rng.choice(y.index, p=probs)
-                else:
-                    # Preferential return
-                    curr = _choose_destination(visit_freqs, x, rng)
-
-                visit_freqs.loc[curr, 'freq'] += 1
-
-            # Preferential return
             else:
-                curr = _choose_destination(visit_freqs, x, rng)
-                visit_freqs.loc[curr, 'freq'] += 1
+                # Exploration
+                S=max(visited_idx.size, 1)
+                p_exp = rho*S**(-gamma)
+
+                if rng.uniform() < p_exp:
+                    unvisited_idx = allowed_idx[allowed_frequencies == 0]
+                    if unvisited_idx.size:
+                        candidate_ids = building_ids[unvisited_idx]
+                        if callable(self.city.grav):
+                            probs = self.city.grav(building_ids[curr_idx], candidate_ids).values
+                        else:
+                            probs = self.city.grav.loc[building_ids[curr_idx], candidate_ids].values
+
+                        probs = probs / probs.sum()
+                        curr_idx = int(rng.choice(unvisited_idx, p=probs))
+                    else:
+                        curr_idx = _preferential_return_idx(visited_idx, frequencies, rng)
+                else:
+                    curr_idx = _preferential_return_idx(visited_idx, frequencies, rng)
+
+                frequencies[curr_idx] += 1
 
             # Update destination diary
-            entry = {'datetime': start_time_local,
-                     'timestamp': start_time,
-                     'duration': epr_time_res,
-                     'location': curr}
-            dest_update.append(entry)
+            dest_update.append({
+                'datetime': start_time_local,
+                'timestamp': start_time,
+                'duration': epr_time_res,
+                'location': building_ids[curr_idx]
+            })
 
             start_time_local = start_time_local + timedelta(minutes=int(epr_time_res))
             start_time = start_time + epr_time_res*60  # because start_time in seconds
@@ -697,6 +677,7 @@ class Agent:
                 [self.destination_diary, pd.DataFrame(dest_update)], ignore_index=True)
         self.destination_diary = condense_destinations(self.destination_diary)
 
+        visit_freqs['freq'] = frequencies
         self.visit_freqs = visit_freqs
 
         return None
@@ -1125,15 +1106,15 @@ def _point_in_blocks(point_arr, blocks_set):
     return False
 
 
-def _cartesian_coords(multilines, distance, offset, eps=0.001):
+def _cartesian_coords(path, distance, offset, eps=0.001):
     """
     Converts path-based coordinates (distance along path, signed perpendicular offset)
     into cartesian coordinates on the plane.
 
     Parameters
     ----------
-    multilines : shapely.geometry.MultiLineString
-        MultiLineString representing the street path.
+    path : shapely.geometry.LineString or MultiLineString
+        Line geometry representing the street path.
     distance : float
         Distance along the path.
     offset : float
@@ -1146,8 +1127,8 @@ def _cartesian_coords(multilines, distance, offset, eps=0.001):
     tuple
         Cartesian coordinates (x, y) corresponding to the input path-based coordinates.
     """
-    point_on_path = multilines.interpolate(distance)
-    offset_point = multilines.interpolate(distance - eps)
+    point_on_path = path.interpolate(distance)
+    offset_point = path.interpolate(distance - eps)
 
     p = np.array([point_on_path.x, point_on_path.y])
     q = np.array([offset_point.x, offset_point.y])
@@ -1159,15 +1140,15 @@ def _cartesian_coords(multilines, distance, offset, eps=0.001):
 
     return tuple(p + offset * normal)
 
-def _path_coords(multilines, point, eps=0.001):
+def _path_coords(path, point, eps=0.001):
     """
-    Given a MultiLineString and a cartesian point, returns the transformed coordinates:
+    Given a line geometry and a cartesian point, returns the transformed coordinates:
     distance along the path and signed perpendicular offset.
 
     Parameters
     ----------
-    multilines : shapely.geometry.MultiLineString
-        MultiLineString representing the street path.
+    path : shapely.geometry.LineString or MultiLineString
+        Line geometry representing the street path.
     point : shapely.geometry.Point or tuple
         The cartesian point to transform.
     eps : float, optional
@@ -1181,9 +1162,9 @@ def _path_coords(multilines, point, eps=0.001):
     if not isinstance(point, Point):
         point = Point(point)
 
-    distance = multilines.project(point)
-    point_on_path = multilines.interpolate(distance)
-    offset_point = multilines.interpolate(distance - eps)
+    distance = path.project(point)
+    point_on_path = path.interpolate(distance)
+    offset_point = path.interpolate(distance - eps)
 
     p = np.array([point_on_path.x, point_on_path.y])
     q = np.array([offset_point.x, offset_point.y])
@@ -1674,33 +1655,9 @@ class Population:
 # AUXILIARY METHODS
 # =============================================================================
 
-def _choose_destination(visit_freqs, x, rng):
-    """
-    Select destination using preferential return from allowed, visited buildings.
-    Falls back to uniform random selection if no visited buildings are available.
-    
-    Parameters
-    ----------
-    visit_freqs : pandas.DataFrame
-        DataFrame with building IDs as index and 'freq' column
-    x : pandas.DataFrame
-        Subset of visit_freqs with allowed, visited buildings (freq > 0)
-    rng : numpy.random.Generator
-        Random number generator
-        
-    Returns
-    -------
-    str
-        Building ID of selected destination
-    """
-    if not x.empty and x['freq'].sum() > 0:
-        return rng.choice(x.index, p=x['freq']/x['freq'].sum())
-    else:
-        return rng.choice(visit_freqs.index)
-
-def allowed_buildings(local_ts):
-    """
-    Finds allowed buildings for the timestamp
-    """
-    hour = local_ts.hour
-    return ALLOWED_BUILDINGS[hour]
+def _preferential_return_idx(visited_idx, frequencies, rng):
+    """Choose a visited destination in proportion to its visit frequency."""
+    if visited_idx.size:
+        weights = frequencies[visited_idx]
+        return int(rng.choice(visited_idx, p=weights / weights.sum()))
+    return int(rng.choice(frequencies.size))
