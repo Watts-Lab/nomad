@@ -225,11 +225,11 @@ def test_estimate_contacts_requires_end_or_duration():
         contact.estimate_contacts(stops)
 
 
-def test_linear_distance_weight_clips_at_zero():
+def test_linear_distance_weight_uses_column_mappings_and_clips_at_zero():
     contacts = pd.DataFrame(
         {
             "minutes": [30, 30],
-            "meters": [10, 15],
+            "meters": [5, 15],
         }
     )
 
@@ -240,7 +240,7 @@ def test_linear_distance_weight_clips_at_zero():
         traj_cols={"duration": "minutes", "distance": "meters"},
     )
 
-    assert weights.tolist() == [0, 0]
+    assert weights.tolist() == [15, 0]
 
 
 @pytest.fixture

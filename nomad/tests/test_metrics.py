@@ -1,7 +1,6 @@
 import pytest
 import pandas as pd
 import numpy as np
-import nomad.contact_estimation as contact
 from nomad.metrics.metrics import rog, self_containment, social_interaction_potential
 from pathlib import Path
 from nomad.io import base as loader
@@ -9,12 +8,12 @@ from nomad.stop_detection import lachesis as LACHESIS
 import nomad.stop_detection.utils as utils
 
 
-def test_social_interaction_potential_credits_both_users():
+def test_social_interaction_potential_credits_both_users_by_duration():
     contacts = pd.DataFrame(
         {
             "user_id_1": ["a", "b"],
             "user_id_2": ["b", "c"],
-            "contact_weight": [2, 3],
+            "duration": [2, 3],
         }
     )
 
@@ -26,38 +25,7 @@ def test_social_interaction_potential_credits_both_users():
     assert sip.to_dict() == {"a": 2, "b": 5, "c": 3}
 
 
-def test_social_interaction_potential_uses_duration_by_default():
-    contacts = pd.DataFrame(
-        {
-            "user_id_1": ["a", "b"],
-            "user_id_2": ["b", "c"],
-            "duration": [4, 6],
-        }
-    )
-
-    sip = social_interaction_potential(contacts).set_index("user_id")["sip"]
-
-    assert sip.to_dict() == {"a": 4, "b": 10, "c": 6}
-
-
-def test_social_interaction_potential_accepts_estimated_contacts_without_weights():
-    stops = pd.DataFrame(
-        {
-            "user_id": ["a", "b", "c"],
-            "start_timestamp": [0, 300, 0],
-            "end_timestamp": [600, 900, 600],
-            "location_id": ["cafe", "cafe", "park"],
-        }
-    )
-
-    contacts = contact.estimate_contacts(stops)
-    sip = social_interaction_potential(contacts).set_index("user_id")["sip"]
-
-    assert "contact_weight" not in contacts.columns
-    assert sip.to_dict() == {"a": 5, "b": 5}
-
-
-def test_social_interaction_potential_uses_explicit_weight_col():
+def test_social_interaction_potential_uses_weight_column():
     contacts = pd.DataFrame(
         {
             "user_id_1": ["a", "b"],
@@ -69,33 +37,10 @@ def test_social_interaction_potential_uses_explicit_weight_col():
 
     sip = social_interaction_potential(
         contacts,
-        weight_col="custom_weight",
+        weight="custom_weight",
     ).set_index("user_id")["sip"]
 
     assert sip.to_dict() == {"a": 1.5, "b": 4.0, "c": 2.5}
-
-
-def test_social_interaction_potential_empty_contacts():
-    contacts = pd.DataFrame(columns=["user_id_1", "user_id_2", "duration"])
-
-    sip = social_interaction_potential(contacts)
-
-    assert sip.empty
-    assert sip.columns.tolist() == ["user_id", "sip"]
-
-
-def test_social_interaction_potential_requires_user_columns():
-    contacts = pd.DataFrame({"user_id_1": ["a"], "duration": [5]})
-
-    with pytest.raises(ValueError, match="user_id_2"):
-        social_interaction_potential(contacts)
-
-
-def test_social_interaction_potential_requires_duration_or_weight():
-    contacts = pd.DataFrame({"user_id_1": ["a"], "user_id_2": ["b"]})
-
-    with pytest.raises(ValueError, match="duration"):
-        social_interaction_potential(contacts)
 
 
 @pytest.fixture

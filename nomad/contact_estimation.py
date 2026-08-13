@@ -87,8 +87,7 @@ def _radius_candidates(
         )
     else:
         distance = np.linalg.norm(query_coords[stop_1] - query_coords[stop_2], axis=1)
-    keep = distance <= distance_threshold
-    return stop_1[keep], stop_2[keep], distance[keep]
+    return stop_1, stop_2, distance
 
 
 def estimate_contacts(
@@ -137,7 +136,7 @@ def estimate_contacts(
         kwargs,
     )
     if distance_threshold is not None:
-        _, _, use_lon_lat = loader._fallback_spatial_cols(
+        coord_key1, coord_key2, use_lon_lat = loader._fallback_spatial_cols(
             stops.columns,
             traj_cols,
             kwargs,
@@ -159,14 +158,9 @@ def estimate_contacts(
                 "Exact-location contact estimation requires non-missing location_id values."
             )
 
-    duration_col_present = loader._has_duration_cols(stops.columns, traj_cols)
-    if not loader._has_end_cols(stops.columns, traj_cols) and not duration_col_present:
-        raise ValueError(
-            "Contact estimation requires an end time or duration column."
-        )
     if traj_cols[end_key] in stops.columns:
         end_time = stops[traj_cols[end_key]]
-    elif duration_col_present:
+    elif loader._has_duration_cols(stops.columns, traj_cols):
         if use_datetime:
             end_time = stops[traj_cols[t_key]] + pd.to_timedelta(
                 stops[traj_cols["duration"]],
@@ -175,20 +169,15 @@ def estimate_contacts(
         else:
             end_time = stops[traj_cols[t_key]] + stops[traj_cols["duration"]] * 60
     else:
-        raise ValueError(
-            f"Contact estimation requires a matching '{end_key}' or duration column."
-        )
+        raise ValueError("Contact estimation requires an end time or duration column.")
 
     output_cols = ["user_id_1", "user_id_2", traj_cols[start_key], "duration"]
     if complete_output:
-        output_cols.extend(
-            [
-                traj_cols[end_key],
-                traj_cols["location_id"]
-                if distance_threshold is None
-                else traj_cols["distance"],
-            ]
-        )
+        output_cols.append(traj_cols[end_key])
+        if distance_threshold is None:
+            output_cols.append(traj_cols["location_id"])
+        else:
+            output_cols.append(traj_cols["distance"])
     if stops.empty:
         return pd.DataFrame(columns=output_cols)
 
@@ -226,10 +215,10 @@ def estimate_contacts(
     else:
         query_coords = (
             np.radians(
-                stops[[traj_cols["latitude"], traj_cols["longitude"]]].to_numpy()
+                stops[[traj_cols[coord_key2], traj_cols[coord_key1]]].to_numpy()
             )
             if use_lon_lat
-            else stops[[traj_cols["x"], traj_cols["y"]]].to_numpy()
+            else stops[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
         )
         stop_1, stop_2, distance = _radius_candidates(
             query_coords,
@@ -260,15 +249,10 @@ def estimate_contacts(
     }
     if complete_output:
         output[traj_cols[end_key]] = contact_end
-        output[
-            traj_cols["location_id"]
-            if distance_threshold is None
-            else traj_cols["distance"]
-        ] = (
-            stops[traj_cols["location_id"]].iloc[stop_1].reset_index(drop=True)
-            if distance_threshold is None
-            else distance
-        )
+        if distance_threshold is None:
+            output[traj_cols["location_id"]] = stops[traj_cols["location_id"]].iloc[stop_1].reset_index(drop=True)
+        else:
+            output[traj_cols["distance"]] = distance
     return pd.DataFrame(output, columns=output_cols)
 
 
