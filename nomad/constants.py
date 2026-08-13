@@ -17,6 +17,7 @@ DEFAULT_SCHEMA = {
     "geohash": "geohash",
     "tz_offset": "tz_offset",
     "duration" : "duration",
+    "distance": "distance",
     "ha":"ha",
     "h3_cell":"h3_cell",
     "location_id" : "location_id"}

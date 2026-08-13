@@ -26,12 +26,12 @@ def test_social_interaction_potential_credits_both_users():
     assert sip.to_dict() == {"a": 2, "b": 5, "c": 3}
 
 
-def test_social_interaction_potential_uses_overlap_duration_by_default():
+def test_social_interaction_potential_uses_duration_by_default():
     contacts = pd.DataFrame(
         {
             "user_id_1": ["a", "b"],
             "user_id_2": ["b", "c"],
-            "overlap_duration": [4, 6],
+            "duration": [4, 6],
         }
     )
 
@@ -63,7 +63,7 @@ def test_social_interaction_potential_uses_explicit_weight_col():
             "user_id_1": ["a", "b"],
             "user_id_2": ["b", "c"],
             "custom_weight": [1.5, 2.5],
-            "overlap_duration": [100, 100],
+            "duration": [100, 100],
         }
     )
 
@@ -76,7 +76,7 @@ def test_social_interaction_potential_uses_explicit_weight_col():
 
 
 def test_social_interaction_potential_empty_contacts():
-    contacts = pd.DataFrame(columns=["user_id_1", "user_id_2", "overlap_duration"])
+    contacts = pd.DataFrame(columns=["user_id_1", "user_id_2", "duration"])
 
     sip = social_interaction_potential(contacts)
 
@@ -85,16 +85,16 @@ def test_social_interaction_potential_empty_contacts():
 
 
 def test_social_interaction_potential_requires_user_columns():
-    contacts = pd.DataFrame({"user_id_1": ["a"], "overlap_duration": [5]})
+    contacts = pd.DataFrame({"user_id_1": ["a"], "duration": [5]})
 
     with pytest.raises(ValueError, match="user_id_2"):
         social_interaction_potential(contacts)
 
 
-def test_social_interaction_potential_requires_overlap_or_weight():
+def test_social_interaction_potential_requires_duration_or_weight():
     contacts = pd.DataFrame({"user_id_1": ["a"], "user_id_2": ["b"]})
 
-    with pytest.raises(ValueError, match="overlap_duration"):
+    with pytest.raises(ValueError, match="duration"):
         social_interaction_potential(contacts)
 
 
@@ -435,4 +435,3 @@ def test_self_containment_with_time_weights():
     # Expected: 60/120 = 0.5
     assert len(result) == 1
     assert np.allclose(result['self_containment'].values[0], 60/120)
-

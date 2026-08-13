@@ -62,17 +62,17 @@ def social_interaction_potential(
 
     Each contact contributes its weight to both users. If ``weight_col`` is not
     supplied, the function uses ``contact_weight`` when present and otherwise
-    computes duration weights from ``overlap_duration``.
+    computes duration weights from ``duration``.
 
     Parameters
     ----------
     contacts : pandas.DataFrame
         Contact event table with one row per undirected contact. By default,
         the function expects ``user_id_1`` and ``user_id_2`` columns and either
-        ``contact_weight`` or ``overlap_duration``.
+        ``contact_weight`` or ``duration``.
     weight_col : str, optional
         Column to sum as SIP. Defaults to ``contact_weight`` if present, then
-        ``overlap_duration``.
+        ``duration``.
     user_id_cols : tuple of str, optional
         Two columns identifying the users on either side of each contact row.
 

@@ -28,35 +28,18 @@ def _temporal_blocks(start, end):
 
 
 def _radius_candidates(
-    stops,
-    traj_cols,
-    input_traj_cols,
-    kwargs,
+    query_coords,
     distance_threshold,
     start,
     end,
     users,
+    use_lon_lat,
 ):
     """Return stop row pairs within distance_threshold and their distances."""
-    coord_key1, coord_key2, use_lon_lat = loader._fallback_spatial_cols(
-        stops.columns,
-        input_traj_cols,
-        kwargs,
-    )
-
     if use_lon_lat:
-        # Haversine uses (lat, lon) in radians.
-        query_coords = np.radians(
-            stops[[traj_cols["latitude"], traj_cols["longitude"]]].to_numpy()
-        )
         radius = distance_threshold / EARTH_RADIUS_METERS
-        tree_class = BallTree
-        tree_kwargs = {"metric": "haversine"}
     else:
-        query_coords = stops[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
         radius = distance_threshold
-        tree_class = KDTree
-        tree_kwargs = {}
 
     blocks = _temporal_blocks(start, end)
     rows = []
@@ -66,7 +49,11 @@ def _radius_candidates(
         if len(block_stops) < 2:
             continue
 
-        tree = tree_class(query_coords[block_stops], **tree_kwargs)
+        tree = (
+            BallTree(query_coords[block_stops], metric="haversine")
+            if use_lon_lat
+            else KDTree(query_coords[block_stops])
+        )
         indices = tree.query_radius(
             query_coords[block_stops],
             r=radius,
@@ -83,11 +70,10 @@ def _radius_candidates(
     if not rows:
         return np.empty(0, dtype=int), np.empty(0, dtype=int), np.empty(0, dtype=float)
 
-    pairs = pd.DataFrame(
-        {"stop_1": np.concatenate(rows), "stop_2": np.concatenate(cols)}
-    ).drop_duplicates()
-    stop_1 = pairs["stop_1"].to_numpy()
-    stop_2 = pairs["stop_2"].to_numpy()
+    stop_1, stop_2 = np.unique(
+        np.column_stack((np.concatenate(rows), np.concatenate(cols))),
+        axis=0,
+    ).T
     keep = (
         (users[stop_1] != users[stop_2])
         & (start[stop_1] < end[stop_2])
@@ -104,7 +90,14 @@ def _radius_candidates(
     keep = distance <= distance_threshold
     return stop_1[keep], stop_2[keep], distance[keep]
 
-def estimate_contacts(stops, distance_threshold=None, traj_cols=None, **kwargs):
+
+def estimate_contacts(
+    stops,
+    distance_threshold=None,
+    complete_output=False,
+    traj_cols=None,
+    **kwargs,
+):
     """
     Estimate undirected co-location/contact events from a stop table.
 
@@ -123,6 +116,8 @@ def estimate_contacts(stops, distance_threshold=None, traj_cols=None, **kwargs):
     distance_threshold : float, optional
         Contact radius. None selects exact-location mode. Meters for lat/lon,
         coordinate units for projected x/y.
+    complete_output : bool, default False
+        Include the contact end time and location_id or distance.
     traj_cols : dict, optional
         Mapping for user_id, time, duration, location_id, and coordinates.
     **kwargs
@@ -131,77 +126,94 @@ def estimate_contacts(stops, distance_threshold=None, traj_cols=None, **kwargs):
     Returns
     -------
     pd.DataFrame
-        Columns = [user_id_1, user_id_2, contact_start, contact_end,
-        overlap_duration, location_id or distance]. overlap_duration is in
-        minutes. Contact times are returned as datetime for datetime input and
-        as Unix seconds for timestamp input; timezone metadata on datetime
-        input is not preserved (output is timezone-naive).
+        Contact events with user_id_1, user_id_2, start time, and duration.
+        With complete_output=True, also includes end time and location_id or
+        distance. Time columns preserve the input representation and duration
+        is in minutes.
     """
-    contact_col = "location_id" if distance_threshold is None else "distance"
-    output_cols = [
-        "user_id_1",
-        "user_id_2",
-        "contact_start",
-        "contact_end",
-        "overlap_duration",
-        contact_col,
-    ]
-    if len(stops) == 0:
-        return pd.DataFrame(columns=output_cols)
-
-    input_traj_cols = traj_cols
-    traj_cols = loader._parse_traj_cols(stops.columns, traj_cols, kwargs)
-
-    uid_col = traj_cols["user_id"]
-    if uid_col not in stops.columns:
-        raise ValueError(f"Missing required user_id column '{uid_col}'.")
-
     t_key, use_datetime = loader._fallback_time_cols_dt(
         stops.columns,
-        input_traj_cols,
+        traj_cols,
         kwargs,
     )
-    start_col = traj_cols[t_key]
+    if distance_threshold is not None:
+        _, _, use_lon_lat = loader._fallback_spatial_cols(
+            stops.columns,
+            traj_cols,
+            kwargs,
+        )
+    traj_cols = loader._parse_traj_cols(stops.columns, traj_cols, kwargs, warn=False)
+    loader._has_user_cols(stops.columns, traj_cols)
+
+    start_key = "start_datetime" if use_datetime else "start_timestamp"
     end_key = "end_datetime" if use_datetime else "end_timestamp"
-    end_col = traj_cols[end_key]
-    if end_col in stops.columns:
-        end_time = stops[end_col]
-    elif loader._has_duration_cols(stops.columns, traj_cols):
+    traj_cols[start_key] = traj_cols[t_key]
+
+    if distance_threshold is None:
+        if traj_cols["location_id"] not in stops.columns:
+            raise ValueError(
+                "Exact-location contact estimation requires a location_id column."
+            )
+        if stops[traj_cols["location_id"]].isna().any():
+            raise ValueError(
+                "Exact-location contact estimation requires non-missing location_id values."
+            )
+
+    duration_col_present = loader._has_duration_cols(stops.columns, traj_cols)
+    if not loader._has_end_cols(stops.columns, traj_cols) and not duration_col_present:
+        raise ValueError(
+            "Contact estimation requires an end time or duration column."
+        )
+    if traj_cols[end_key] in stops.columns:
+        end_time = stops[traj_cols[end_key]]
+    elif duration_col_present:
         if use_datetime:
-            end_time = stops[start_col] + pd.to_timedelta(
+            end_time = stops[traj_cols[t_key]] + pd.to_timedelta(
                 stops[traj_cols["duration"]],
                 unit="m",
             )
         else:
-            end_time = stops[start_col] + stops[traj_cols["duration"]] * 60
+            end_time = stops[traj_cols[t_key]] + stops[traj_cols["duration"]] * 60
     else:
         raise ValueError(
-            "Contact estimation requires an end time or duration column."
+            f"Contact estimation requires a matching '{end_key}' or duration column."
         )
 
+    output_cols = ["user_id_1", "user_id_2", traj_cols[start_key], "duration"]
+    if complete_output:
+        output_cols.extend(
+            [
+                traj_cols[end_key],
+                traj_cols["location_id"]
+                if distance_threshold is None
+                else traj_cols["distance"],
+            ]
+        )
+    if stops.empty:
+        return pd.DataFrame(columns=output_cols)
+
     if use_datetime:
-        start = filters.to_timestamp(stops[start_col]).to_numpy()
+        start = filters.to_timestamp(stops[traj_cols[t_key]]).to_numpy()
         end = filters.to_timestamp(end_time).to_numpy()
     else:
-        start = stops[start_col].to_numpy()
+        start = stops[traj_cols[t_key]].to_numpy()
         end = end_time.to_numpy()
 
-    users = stops[uid_col].to_numpy()
+    users = stops[traj_cols["user_id"]].to_numpy()
 
     if distance_threshold is None:
-        loc_col = traj_cols["location_id"]
-        if loc_col not in stops.columns:
-            raise ValueError(
-                "Exact-location contact estimation requires a location_id column."
-            )
-        if stops[loc_col].isna().any():
-            raise ValueError(
-                "Exact-location contact estimation requires non-missing location_id values."
-            )
-        location = stops[loc_col].to_numpy()
         # Pair stops sharing a location, then keep distinct users with overlap.
-        candidates = pd.DataFrame({"stop": np.arange(len(stops)), "loc": location})
-        pairs = candidates.merge(candidates, on="loc", suffixes=("_1", "_2"))
+        candidates = (
+            stops[[traj_cols["location_id"]]]
+            .reset_index(drop=True)
+            .rename_axis("stop")
+            .reset_index()
+        )
+        pairs = candidates.merge(
+            candidates,
+            on=traj_cols["location_id"],
+            suffixes=("_1", "_2"),
+        )
         stop_1 = pairs["stop_1"].to_numpy()
         stop_2 = pairs["stop_2"].to_numpy()
         keep = (
@@ -211,51 +223,67 @@ def estimate_contacts(stops, distance_threshold=None, traj_cols=None, **kwargs):
             & (start[stop_2] < end[stop_1])
         )
         stop_1, stop_2 = stop_1[keep], stop_2[keep]
-        contact_values = location[stop_1]
     else:
+        query_coords = (
+            np.radians(
+                stops[[traj_cols["latitude"], traj_cols["longitude"]]].to_numpy()
+            )
+            if use_lon_lat
+            else stops[[traj_cols["x"], traj_cols["y"]]].to_numpy()
+        )
         stop_1, stop_2, distance = _radius_candidates(
-            stops,
-            traj_cols,
-            input_traj_cols,
-            kwargs,
+            query_coords,
             distance_threshold,
             start,
             end,
             users,
+            use_lon_lat,
         )
-        contact_values = distance
 
-    contact_start = np.maximum(start[stop_1], start[stop_2])
-    contact_end = np.minimum(end[stop_1], end[stop_2])
-    return pd.DataFrame(
-        {
-            "user_id_1": users[stop_1],
-            "user_id_2": users[stop_2],
-            "contact_start": (
-                pd.to_datetime(contact_start, unit="s") if use_datetime else contact_start
-            ),
-            "contact_end": (
-                pd.to_datetime(contact_end, unit="s") if use_datetime else contact_end
-            ),
-            "overlap_duration": ((contact_end - contact_start) // 60).astype(int),
-            contact_col: contact_values,
-        },
-        columns=output_cols,
+    contact_start = np.maximum(
+        stops[traj_cols[t_key]].iloc[stop_1].reset_index(drop=True),
+        stops[traj_cols[t_key]].iloc[stop_2].reset_index(drop=True),
     )
+    contact_end = np.minimum(
+        end_time.iloc[stop_1].reset_index(drop=True),
+        end_time.iloc[stop_2].reset_index(drop=True),
+    )
+    duration = contact_end - contact_start
+    if use_datetime:
+        duration = duration.dt.total_seconds()
+
+    output = {
+        "user_id_1": users[stop_1],
+        "user_id_2": users[stop_2],
+        traj_cols[start_key]: contact_start,
+        "duration": (duration // 60).astype(int),
+    }
+    if complete_output:
+        output[traj_cols[end_key]] = contact_end
+        output[
+            traj_cols["location_id"]
+            if distance_threshold is None
+            else traj_cols["distance"]
+        ] = (
+            stops[traj_cols["location_id"]].iloc[stop_1].reset_index(drop=True)
+            if distance_threshold is None
+            else distance
+        )
+    return pd.DataFrame(output, columns=output_cols)
 
 
 def compute_contact_weights(
     contacts,
     method="duration",
     distance_threshold=None,
-    overlap_duration_col="overlap_duration",
-    distance_col="distance",
+    traj_cols=None,
+    **kwargs,
 ):
     """
     Compute contact weights from a contact event table.
 
     Supported methods are ``"duration"`` and ``"linear_distance"``. Linear
-    distance weighting uses ``overlap_duration * max(0, 1 - distance / threshold)``.
+    distance weighting uses ``duration * max(0, 1 - distance / threshold)``.
 
     Parameters
     ----------
@@ -265,41 +293,44 @@ def compute_contact_weights(
         Either 'duration' or 'linear_distance'.
     distance_threshold : float, optional
         Contact radius used by 'linear_distance'; required for that method.
-    overlap_duration_col : str
-        Column holding overlap duration in minutes.
-    distance_col : str
-        Column holding contact distance; required for 'linear_distance'.
+        Linear-distance weights require contacts generated with
+        complete_output=True.
+    traj_cols : dict, optional
+        Mapping for duration and distance.
+    **kwargs
+        Column-name overrides forwarded to the traj_cols resolver.
 
     Returns
     -------
     pandas.Series
         Series named ``contact_weight`` and indexed like ``contacts``.
     """
-    if overlap_duration_col not in contacts.columns:
+    traj_cols = loader._parse_traj_cols(contacts.columns, traj_cols, kwargs)
+    if not loader._has_duration_cols(contacts.columns, traj_cols):
         raise ValueError(
-            f"Missing required overlap duration column '{overlap_duration_col}'."
+            f"Missing required duration column '{traj_cols['duration']}'."
         )
 
     method = method.lower()
 
     if method == "duration":
-        return contacts[overlap_duration_col].rename("contact_weight")
+        return contacts[traj_cols["duration"]].rename("contact_weight")
 
     if method != "linear_distance":
         raise ValueError("method must be one of 'duration' or 'linear_distance'.")
 
-    if distance_col not in contacts.columns:
-        raise ValueError(
-            f"method='linear_distance' requires a '{distance_col}' column."
-        )
     if distance_threshold is None:
         raise ValueError(
             "method='linear_distance' requires an explicit distance_threshold."
         )
+    if traj_cols["distance"] not in contacts.columns:
+        raise ValueError(
+            f"method='linear_distance' requires a '{traj_cols['distance']}' column."
+        )
 
     return (
-        contacts[overlap_duration_col]
-        * np.maximum(0, 1 - contacts[distance_col] / distance_threshold)
+        contacts[traj_cols["duration"]]
+        * np.maximum(0, 1 - contacts[traj_cols["distance"]] / distance_threshold)
     ).rename("contact_weight")
 
 
