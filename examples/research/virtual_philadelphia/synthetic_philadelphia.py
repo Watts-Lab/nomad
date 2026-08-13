@@ -25,13 +25,10 @@ import json
 import geopandas as gpd
 import pandas as pd
 from shapely.geometry import box
-import matplotlib.pyplot as plt
-import contextily as cx
 
 import nomad.map_utils as nm
 from nomad.city_gen import RasterCity
 from nomad.traj_gen import Population
-from nomad.io.base import from_file
 from tqdm import tqdm
 
 # %% [markdown]
@@ -39,7 +36,6 @@ from tqdm import tqdm
 
 # %%
 LARGE_BOX = box(-75.212193, 39.940800, -75.136933, 39.962847)
-MEDIUM_BOX = box(-75.1665, 39.9385, -75.1425, 39.9535)
 
 USE_FULL_CITY = False
 OUTPUT_DIR = Path("output")
@@ -78,7 +74,7 @@ config = {
         "beta_ping": 7,
         "beta_start": 300,
         "beta_durations": 55,
-        "ha": 11.5/15,
+        "ha": 11.5 / 15,
         "seed_base": 1
     }
 }
@@ -89,11 +85,7 @@ config = {
 
 # %%
 if REGENERATE_DATA or not SANDBOX_GPKG.exists():
-    print("="*50)
-    print("DATA GENERATION")
-    print("="*50)
-    
-    t0 = time.time()
+    data_start = time.time()
     buildings = nm.download_osm_buildings(
         POLY,
         crs="EPSG:3857",
@@ -102,7 +94,7 @@ if REGENERATE_DATA or not SANDBOX_GPKG.exists():
         infer_building_types=True,
         explode=True,
     )
-    download_buildings_time = time.time() - t0
+    download_buildings_time = time.time() - data_start
     print(f"Buildings download: {download_buildings_time:>6.2f}s ({len(buildings):,} buildings)")
     
     if USE_FULL_CITY:
@@ -111,8 +103,7 @@ if REGENERATE_DATA or not SANDBOX_GPKG.exists():
     else:
         boundary_polygon = gpd.GeoDataFrame(geometry=[POLY], crs="EPSG:4326").to_crs("EPSG:3857").geometry.iloc[0]
     
-    outside_mask = ~buildings.geometry.within(boundary_polygon)
-    if outside_mask.any():
+    if (~buildings.geometry.within(boundary_polygon)).any():
         buildings = gpd.clip(buildings, gpd.GeoDataFrame(geometry=[boundary_polygon], crs="EPSG:3857"))
     buildings = nm.remove_overlaps(buildings).reset_index(drop=True)
     
@@ -153,17 +144,14 @@ if REGENERATE_DATA or not SANDBOX_GPKG.exists():
     rotated_boundary.to_file(SANDBOX_GPKG, layer="boundary", driver="GPKG", mode="a")
     
     # Store rotation_deg and rotation_origin in metadata JSON for later retrieval
-    rotation_metadata_path = OUTPUT_DIR / f"rotation_metadata_{BOX_NAME}.json"
-    with open(rotation_metadata_path, 'w') as f:
+    with open(OUTPUT_DIR / f"rotation_metadata_{BOX_NAME}.json", 'w') as f:
         json.dump({
             'rotation_deg': rotation_deg,
             'rotation_origin': rotation_origin
         }, f)
     
-    data_gen_time = download_buildings_time + download_streets_time + rotation_time
-    print("-"*50)
+    data_gen_time = time.time() - data_start
     print(f"Data generation:    {data_gen_time:>6.2f}s")
-    print("="*50 + "\n")
 else:
     print(f"Loading existing data from {SANDBOX_GPKG}")
     data_gen_time = 0.0
@@ -172,29 +160,15 @@ buildings = gpd.read_file(SANDBOX_GPKG, layer="buildings")
 streets = gpd.read_file(SANDBOX_GPKG, layer="streets")
 boundary = gpd.read_file(SANDBOX_GPKG, layer="boundary")
 
-# Load rotation_deg and rotation_origin from metadata if available
-rotation_metadata_path = OUTPUT_DIR / f"rotation_metadata_{BOX_NAME}.json"
-if rotation_metadata_path.exists():
-    with open(rotation_metadata_path, 'r') as f:
-        rotation_metadata = json.load(f)
-        rotation_deg = rotation_metadata.get('rotation_deg', 0.0)
-        rotation_origin = rotation_metadata.get('rotation_origin', None)
-else:
-    # Fallback: try to compute from streets (will be ~0 if already rotated)
-    _, rotation_deg = nm.rotate_streets_to_align(streets, k=200)
-    if abs(rotation_deg) < 0.1:
-        rotation_deg = 0.0
-    # Use boundary centroid as fallback rotation origin
-    rotation_origin = (boundary.geometry.iloc[0].centroid.x, boundary.geometry.iloc[0].centroid.y)
+with open(OUTPUT_DIR / f"rotation_metadata_{BOX_NAME}.json", 'r') as f:
+    rotation_metadata = json.load(f)
+rotation_deg = rotation_metadata['rotation_deg']
+rotation_origin = rotation_metadata['rotation_origin']
 
 # %% [markdown]
 # ## Rasterization Pipeline
 
 # %%
-print("="*50)
-print("RASTERIZATION PIPELINE")
-print("="*50)
-
 t0 = time.time()
 city = RasterCity(
     boundary.geometry.iloc[0],
@@ -230,62 +204,30 @@ paths_time = time.time() - t4
 print(f"Shortest paths:     {paths_time:>6.2f}s")
 
 raster_time = gen_time + graph_time + hub_time + grav_time + paths_time
-print("-"*50)
 print(f"Rasterization:      {raster_time:>6.2f}s")
-print("="*50)
 
 if data_gen_time > 0:
-    total_time = data_gen_time + raster_time
-    print(f"\nTotal (with data):  {total_time:>6.2f}s")
+    print(f"\nTotal (with data):  {data_gen_time + raster_time:>6.2f}s")
 
 # %% [markdown]
 # ## Summary: City Structure
 
 # %%
-def get_size_mb(obj):
-    if isinstance(obj, (pd.DataFrame, gpd.GeoDataFrame)):
-        return obj.memory_usage(deep=True).sum() / 1024**2
-    elif hasattr(obj, 'nodes') and hasattr(obj, 'edges'):
-        return (len(obj.nodes) * 64 + len(obj.edges) * 96) / 1024**2
-    else:
-        return 0.0
-
-summary_df = pd.DataFrame({
-    'Component': ['Blocks', 'Streets', 'Buildings', 'Graph Nodes', 'Graph Edges', 'Hub Network', 'Hub Info', 'Nearby Doors', 'Gravity (callable)'],
-    'Count/Shape': [
-        f"{len(city.blocks_gdf):,}",
-        f"{len(city.streets_gdf):,}",
-        f"{len(city.buildings_gdf):,}",
-        f"{len(G.nodes):,}",
-        f"{len(G.edges):,}",
-        f"{city.hub_df.shape[0]}×{city.hub_df.shape[1]}",
-        f"{city.grav_hub_info.shape[0]}×{city.grav_hub_info.shape[1]}",
-        f"{len(city.mh_dist_nearby_doors):,} pairs",
-        "function"
-    ],
-    'Memory (MB)': [
-        f"{get_size_mb(city.blocks_gdf):.1f}",
-        f"{get_size_mb(city.streets_gdf):.1f}",
-        f"{get_size_mb(city.buildings_gdf):.1f}",
-        f"{get_size_mb(G):.1f}",
-        "-",
-        f"{get_size_mb(city.hub_df):.1f}",
-        f"{get_size_mb(city.grav_hub_info):.1f}",
-        f"{get_size_mb(city.mh_dist_nearby_doors):.1f}",
-        "<0.1"
-    ]
-})
-print("\n" + summary_df.to_string(index=False))
+print(pd.Series({
+    'Blocks': len(city.blocks_gdf),
+    'Streets': len(city.streets_gdf),
+    'Buildings': len(city.buildings_gdf),
+    'Graph nodes': len(G.nodes),
+    'Graph edges': len(G.edges),
+    'Hubs': len(city.hubs),
+    'Nearby door pairs': len(city.mh_dist_nearby_doors)
+}, name='Count').to_string())
 print(city.buildings_gdf.building_type.value_counts())
 
 # %% [markdown]
 # ## Generate Population and Destination Diaries
 
 # %%
-print("\n" + "="*50)
-print("DESTINATION DIARY GENERATION")
-print("="*50)
-
 config_path = OUTPUT_DIR / f"config_{BOX_NAME}.json"
 with open(config_path, 'w') as f:
     json.dump(config, f, indent=2)
@@ -313,70 +255,34 @@ for i, agent in tqdm(enumerate(population.roster.values()), total=config["N"]):
 diary_gen_time = time.time() - t1
 print(f"Diary generation:   {diary_gen_time:>6.2f}s")
 
-total_entries = sum(len(agent.destination_diary) for agent in population.roster.values())
-print(f"Total entries:      {total_entries:,}")
+print(f"Total entries:      {sum(len(agent.destination_diary) for agent in population.roster.values()):,}")
 
 dest_diaries_path = OUTPUT_DIR / f"dest_diaries_{BOX_NAME}"
 t2 = time.time()
 population.save_pop(
     dest_diaries_path=dest_diaries_path,
     partition_cols=["date"],
-    fmt='parquet',
-    traj_cols={'geohash': 'location'}
+    traj_cols={'user_id': 'identifier', 'geohash': 'location'}
 )
 persist_time = time.time() - t2
 print(f"Persistence:        {persist_time:>6.2f}s")
-print("-"*50)
-print(f"Total EPR:          {diary_gen_time:>6.2f}s")
-print("="*50)
 
 print(f"\nConfig saved to {config_path}")
 print(f"Destination diaries saved to {dest_diaries_path}")
 
 # %% [markdown]
-# ## Generate Full Trajectories from Destination Diaries
+# ## Generate and Sample Trajectories
 
 # %%
-print("\n" + "="*50)
-print("TRAJECTORY GENERATION")
-print("="*50)
-
 t1 = time.time()
-failed_agents = []
-for i, agent in tqdm(enumerate(population.roster.values()), total=config["N"], desc="Generating trajectories"):
-    try:
-        agent.generate_trajectory(
-            dt=config["traj_params"]["dt"],
-            seed=config["traj_params"]["seed_base"] + i
-        )
-    except ValueError as e:
-        failed_agents.append((agent.identifier, str(e)))
-        continue
-
-traj_gen_time = time.time() - t1
-print(f"Trajectory generation: {traj_gen_time:>6.2f}s")
-if failed_agents:
-    print(f"Warning: {len(failed_agents)} agents failed trajectory generation")
-
-total_points = sum(len(agent.trajectory) for agent in population.roster.values() if agent.trajectory is not None)
-print(f"Total trajectory points: {total_points:,}")
-print(f"Points per second: {total_points/traj_gen_time:.1f}")
-print("-"*50)
-print(f"Total trajectory:   {traj_gen_time:>6.2f}s")
-print("="*50)
-
-# %% [markdown]
-# ## Sample Sparse Trajectories
-
-# %%
-print("\n" + "="*50)
-print("SPARSE TRAJECTORY SAMPLING")
-print("="*50)
-
-t1 = time.time()
-for i, agent in tqdm(enumerate(population.roster.values()), total=config["N"], desc="Sampling trajectories"):
-    if agent.trajectory is None:
-        continue
+total_points = 0
+total_sparse_points = 0
+for i, agent in tqdm(enumerate(population.roster.values()), total=config["N"]):
+    agent.generate_trajectory(
+        dt=config["traj_params"]["dt"],
+        seed=config["traj_params"]["seed_base"] + i
+    )
+    total_points += len(agent.trajectory)
     agent.set_beta_params(
         beta_ping=config["sampling_params"]["beta_ping"],
         beta_durations=config["sampling_params"]["beta_durations"],
@@ -385,115 +291,28 @@ for i, agent in tqdm(enumerate(population.roster.values()), total=config["N"], d
     agent.sample_trajectory(
         ha=config["sampling_params"]["ha"],
         seed=config["sampling_params"]["seed_base"] + i,
-        replace_sparse_traj=True
+        flush_traj_cache=True
     )
+    total_sparse_points += len(agent.sparse_traj)
 
-sampling_time = time.time() - t1
-print(f"Sparse sampling:    {sampling_time:>6.2f}s")
-
-total_sparse_points = sum(len(agent.sparse_traj) for agent in population.roster.values() if agent.sparse_traj is not None)
+generation_time = time.time() - t1
+print(f"Generation:         {generation_time:>6.2f}s")
+print(f"Dense points:       {total_points:,}")
+print(f"Points per second:  {total_points/generation_time:.1f}")
 print(f"Total sparse points: {total_sparse_points:,}")
 print(f"Sparsity ratio: {total_sparse_points/total_points:.2%}")
-print("-"*50)
-print(f"Total sampling:     {sampling_time:>6.2f}s")
-print("="*50)
 
 # %% [markdown]
 # ## Reproject to Mercator and Persist
 
 # %%
-print("\n" + "="*50)
-print("REPROJECTION AND PERSISTENCE")
-print("="*50)
-
-# Build POI data for diary reprojection
-cent = city.buildings_gdf['door_point'] if 'door_point' in city.buildings_gdf.columns else city.buildings_gdf.geometry.centroid
-poi_data = pd.DataFrame({
-    'building_id': city.buildings_gdf['id'].values,
-    'x': (city.buildings_gdf['door_cell_x'].astype(float) + 0.5).values if 'door_cell_x' in city.buildings_gdf.columns else cent.x.values,
-    'y': (city.buildings_gdf['door_cell_y'].astype(float) + 0.5).values if 'door_cell_y' in city.buildings_gdf.columns else cent.y.values
-})
-
 print("Reprojecting sparse trajectories to Web Mercator...")
-population.reproject_to_mercator(sparse_traj=True, full_traj=False, diaries=True, poi_data=poi_data)
+population.reproject_to_mercator(diaries=True)
 
 print("Saving sparse trajectories and diaries...")
 population.save_pop(
-    sparse_path=OUTPUT_DIR / f"sparse_traj_{BOX_NAME}",
-    diaries_path=OUTPUT_DIR / f"diaries_{BOX_NAME}",
+    sparse_path=OUTPUT_DIR / "device_level",
+    diaries_path=OUTPUT_DIR / "travel_diaries",
     homes_path=OUTPUT_DIR / f"homes_{BOX_NAME}",
-    partition_cols=["date"],
-    fmt='parquet'
+    partition_cols=["date"]
 )
-print("-"*50)
-print("="*50)
-
-# %% [markdown]
-# ## Visualize Sparse Trajectories
-
-# %%
-import pyarrow as pa
-import pyarrow.dataset as ds
-
-# %%
-sparse_traj_df = from_file(OUTPUT_DIR / f"sparse_traj_{BOX_NAME}", format="parquet")
-sparse_traj_df["date"] = pd.to_datetime(sparse_traj_df["timestamp"], unit='s').dt.date.astype(str)
-sparse_traj_df
-
-# %%
-table = pa.Table.from_pandas(sparse_traj_df, preserve_index=False)
-ds.write_dataset(
-    table,
-    base_dir="output/device_level",
-    format="parquet",
-    partitioning=["date"],
-    max_rows_per_group=1_000,
-    max_rows_per_file=2_000   # adjust so each date naturally spills to multiple files
-)
-
-# %%
-diaries = from_file(OUTPUT_DIR / f"diaries_{BOX_NAME}", format="parquet")
-diaries["date"] = pd.to_datetime(diaries["timestamp"], unit='s').dt.date.astype(str)
-diaries
-
-# %%
-table = pa.Table.from_pandas(diaries, preserve_index=False)
-ds.write_dataset(
-    table,
-    base_dir="output/travel_diaries/",
-    format="parquet",
-    partitioning=["date"],
-    max_rows_per_group=1_000,
-    max_rows_per_file=2_000   # adjust so each date naturally spills to multiple files
-)
-
-# %%
-# print("\n" + "="*50)
-# print("VISUALIZATION")
-# print("="*50)
-
-# # Read sparse trajectories
-# sparse_traj_df = from_file(OUTPUT_DIR / f"sparse_traj_{BOX_NAME}", format="parquet")
-# print(f"Loaded {len(sparse_traj_df):,} sparse trajectory points for {config['N']} agents")
-
-# # Plot with contextily basemap
-# fig, ax = plt.subplots(figsize=(12, 10))
-
-# # Plot each agent with different color
-# for agent_id in sparse_traj_df['user_id'].unique():
-#     agent_traj = sparse_traj_df[sparse_traj_df['user_id'] == agent_id]
-#     ax.scatter(agent_traj['x'], agent_traj['y'], s=1, alpha=0.5, label=agent_id)
-
-# # Add basemap
-# cx.add_basemap(ax, crs="EPSG:3857", source=cx.providers.CartoDB.Positron)
-
-# ax.set_xlabel('X (Web Mercator)')
-# ax.set_ylabel('Y (Web Mercator)')
-# ax.set_title(f'Sparse Trajectories - {config["N"]} Agents, 7 Days')
-# ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', markerscale=10)
-# plt.tight_layout()
-# plt.savefig(OUTPUT_DIR / f"sparse_trajectories_{BOX_NAME}.png", dpi=150, bbox_inches='tight')
-# print(f"Saved plot to {OUTPUT_DIR / f'sparse_trajectories_{BOX_NAME}.png'}")
-# plt.show()
-
-# %%
