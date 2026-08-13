@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import nomad.io.base as loader
 import geopandas as gpd
+from nomad.constants import EARTH_RADIUS_METERS
 from nomad.stop_detection import utils
 from nomad.stop_detection.preprocessing import _find_neighbors
 
@@ -85,7 +86,7 @@ def dbstop_labels(data,
                         spatial_nb_idx = s_tree.query_radius(
                             # _find_neighbors builds BallTree in [lat, lon] radians.
                             np.radians(counterfactual_coords[[1, 0]]).reshape(1, -1),
-                            r=dist_thresh / 6_371_000,
+                            r=dist_thresh / EARTH_RADIUS_METERS,
                         )[0]
                     else:
                         spatial_nb_idx = s_tree.query_radius(

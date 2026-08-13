@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from collections import defaultdict
+from nomad.constants import EARTH_RADIUS_METERS
 from nomad.stop_detection import utils
 from nomad.filters import to_timestamp
 from sklearn.neighbors import KDTree, BallTree # BallTree for haversine distance case
@@ -33,10 +34,9 @@ def _find_spatial_neighbors(coords, dist_thresh=None, weighted=False,
     G.add_nodes_from(range(len(coords)))
 
     if use_lon_lat:
-        earth_radius = 6_371_000
         s_tree = BallTree(coords, metric="haversine")
         
-        radius = np.pi if dist_thresh is None else dist_thresh / earth_radius
+        radius = np.pi if dist_thresh is None else dist_thresh / EARTH_RADIUS_METERS
         if weighted:
             indices, distances = s_tree.query_radius(coords, r=radius, return_distance=True, sort_results=True)
 
@@ -44,7 +44,7 @@ def _find_spatial_neighbors(coords, dist_thresh=None, weighted=False,
             row = np.repeat(np.arange(len(coords)), counts)
             col = np.concatenate(indices)
             dist = np.concatenate(distances)
-            dist = dist * earth_radius
+            dist = dist * EARTH_RADIUS_METERS
 
             mask = row < col
             G.add_weighted_edges_from(
