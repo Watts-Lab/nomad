@@ -6,9 +6,9 @@ import nomad.filters as filters
 import nomad.io.base as loader
 import numpy as np
 import pandas as pd
+from nomad.constants import EARTH_RADIUS_METERS
 from nomad.stop_detection.utils import _haversine_distance
 from sklearn.neighbors import BallTree, KDTree
-from constants import _EARTH_RADIUS_M
 
 _TEMPORAL_BLOCK_SECONDS = 60 * 60
 
@@ -49,7 +49,7 @@ def _radius_candidates(
         query_coords = np.radians(
             stops[[traj_cols["latitude"], traj_cols["longitude"]]].to_numpy()
         )
-        radius = distance_threshold / _EARTH_RADIUS_M
+        radius = distance_threshold / EARTH_RADIUS_METERS
         tree_class = BallTree
         tree_kwargs = {"metric": "haversine"}
     else:
