@@ -5,7 +5,7 @@ import datetime as dt
 import itertools
 import os
 import nomad.io.base as loader
-import nomad.constants as constants
+from nomad.constants import DEFAULT_SCHEMA, EARTH_RADIUS_METERS
 import h3
 #import dtoolkit.geoaccessor
 import warnings
@@ -163,7 +163,6 @@ def _haversine_distance(coord1, coord2, radians=True):
     Returns:
         Distance in meters.
     """
-    earth_radius_meters = 6371000  # Earth's radius in meters
     if not radians:
         coord1 = np.radians(coord1)
         coord2 = np.radians(coord2)
@@ -175,36 +174,7 @@ def _haversine_distance(coord1, coord2, radians=True):
     a = np.sin(delta_lat / 2.0) ** 2 + np.cos(coord1[0]) * np.cos(
         coord2[0]) * np.sin(delta_lon / 2.0) ** 2
     c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
-    return earth_radius_meters * c  # Distance in meters
-
-# def haversine_dist(lat1, lon1, lat2, lon2):
-#     # remove this and use what's in utils.py 
-#     """
-#     Calculate haversine distance between two points in meters.
-
-#     Parameters
-#     ----------
-#     lat1, lon1 : float or array-like
-#         Latitude and longitude of first point(s)
-#     lat2, lon2 : float or array-like
-#         Latitude and longitude of second point(s)
-
-#     Returns
-#     -------
-#     float or array-like
-#         Distance in meters
-#     """
-#     R = 6371000  # Earth radius in meters
-
-#     lat1_rad = np.radians(lat1)
-#     lat2_rad = np.radians(lat2)
-#     dlat = np.radians(lat2 - lat1)
-#     dlon = np.radians(lon2 - lon1)
-
-#     a = np.sin(dlat/2)**2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(dlon/2)**2
-#     c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1-a))
-
-#     return R * c
+    return EARTH_RADIUS_METERS * c  # Distance in meters
 
 
 def _pairwise_haversine(coords):
@@ -330,8 +300,8 @@ def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_
     end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
     
     if not keep_col_names:
-       traj_cols[coord_key1] = constants.DEFAULT_SCHEMA[coord_key1]
-       traj_cols[coord_key2] = constants.DEFAULT_SCHEMA[coord_key2]
+       traj_cols[coord_key1] = DEFAULT_SCHEMA[coord_key1]
+       traj_cols[coord_key2] = DEFAULT_SCHEMA[coord_key2]
        # traj_cols[start_t_key] holds default or user provided value
     else:
         # use same time column key for start time
@@ -527,8 +497,8 @@ def _get_empty_stop_df(input_columns, complete_output, passthrough_cols, traj_co
         end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
 
         if not keep_col_names:
-            cols[coord_key1] = constants.DEFAULT_SCHEMA[coord_key1]
-            cols[coord_key2] = constants.DEFAULT_SCHEMA[coord_key2]
+            cols[coord_key1] = DEFAULT_SCHEMA[coord_key1]
+            cols[coord_key2] = DEFAULT_SCHEMA[coord_key2]
         else:
             cols[start_t_key] = cols[t_key]
 

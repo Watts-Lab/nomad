@@ -13,6 +13,9 @@
 #     name: python3
 # ---
 
+# %% [markdown]
+# # Synthetic POI Generation
+
 # %%
 import time
 import matplotlib.pyplot as plt
