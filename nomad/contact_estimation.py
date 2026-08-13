@@ -8,11 +8,9 @@ import numpy as np
 import pandas as pd
 from nomad.stop_detection.utils import _haversine_distance
 from sklearn.neighbors import BallTree, KDTree
+from constants import _EARTH_RADIUS_M
 
-
-_EARTH_RADIUS_M = 6_371_000
 _TEMPORAL_BLOCK_SECONDS = 60 * 60
-
 
 def _temporal_blocks(start, end):
     """Return stop-to-hour block memberships for non-empty intervals."""
@@ -105,7 +103,6 @@ def _radius_candidates(
         distance = np.linalg.norm(query_coords[stop_1] - query_coords[stop_2], axis=1)
     keep = distance <= distance_threshold
     return stop_1[keep], stop_2[keep], distance[keep]
-
 
 def estimate_contacts(stops, distance_threshold=None, traj_cols=None, **kwargs):
     """
