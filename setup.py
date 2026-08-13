@@ -44,7 +44,7 @@ setup(
         ]
     },
 
-    package_data={'nomad': ['data/*', 'data/**/*']},
+    package_data={'nomad': ['data/*', 'data/*/*', 'data/*/*/*']},
     classifiers=[
         'Programming Language :: Python :: 3',
         'License :: OSI Approved :: MIT License',
