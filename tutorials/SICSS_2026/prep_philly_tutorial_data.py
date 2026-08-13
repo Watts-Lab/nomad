@@ -16,23 +16,6 @@ SICSS_DATA = REPO_ROOT / "tutorials" / "SICSS_2026" / "data"
 OUT_DIR = SICSS_DATA / "philly"
 CBG_PATH = REPO_ROOT / "tutorials" / "IC2S2-2025" / "Census_Block_Groups_2010.geojson"
 
-
-# Convert NOMAD location ids into readable activity labels.
-def activity_type_from_location(location):
-    """Map NOMAD synthetic building ids to the activity labels used in SICSS."""
-    if pd.isna(location):
-        return "Travel"
-
-    # NOMAD location ids are prefixed by land-use type, e.g. h-x343-y121.
-    prefix = str(location).split("-", 1)[0]
-    return {
-        "h": "Home",
-        "w": "Work",
-        "r": "Retail",
-        "p": "Park",
-    }.get(prefix, "Other")
-
-
 # Load the generated synthetic Philly travel diaries.
 def load_travel_diaries():
     """Load the already-generated synthetic Philly activity diary parquet files."""
@@ -86,11 +69,13 @@ def main():
     # zero duration are instantaneous diary transitions rather than true stops.
     # This tutorial operates on observed stops/activities, so keep only located
     # rows with positive duration.
-    raw = raw.dropna(subset=["x", "y"]).copy()
-    raw = raw[raw["duration"] > 0].copy()
+    raw = raw[raw[["x", "y"]].notna().all(axis=1) & raw["duration"].gt(0)].copy()
 
     # Convert NOMAD output into SICSS activity columns (with start and stop)
-    raw["activity_type"] = raw["location"].apply(activity_type_from_location)
+    raw["activity_type"] = raw["location"].str[0].replace(
+        ["h", "w", "r", "p", "o"],
+        ["Home", "Work", "Retail", "Park", "Other"],
+    ).fillna("Travel")
     raw["start_time"] = pd.to_datetime(raw["datetime"])
     raw["end_time"] = raw["start_time"] + pd.to_timedelta(raw["duration"], unit="m")
 

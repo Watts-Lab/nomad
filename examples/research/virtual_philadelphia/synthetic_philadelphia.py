@@ -421,6 +421,7 @@ print("Saving sparse trajectories and diaries...")
 population.save_pop(
     sparse_path=OUTPUT_DIR / f"sparse_traj_{BOX_NAME}",
     diaries_path=OUTPUT_DIR / f"diaries_{BOX_NAME}",
+    homes_path=OUTPUT_DIR / f"homes_{BOX_NAME}",
     partition_cols=["date"],
     fmt='parquet'
 )
