@@ -10,28 +10,6 @@ from nomad.stop_detection import utils
 from nomad.stop_detection.preprocessing import _find_neighbors
 
 
-def _empty_density_output(columns=None):
-    if columns is None:
-        columns = [
-            constants.DEFAULT_SCHEMA["user_id"],
-            constants.DEFAULT_SCHEMA["timestamp"],
-            "role",
-            constants.DEFAULT_SCHEMA["start_timestamp"],
-            constants.DEFAULT_SCHEMA["label"],
-            constants.DEFAULT_SCHEMA["x"],
-            constants.DEFAULT_SCHEMA["y"],
-            "value",
-            "value_name",
-            "cluster",
-            "core",
-        ]
-    output = utils.empty_point_output(columns)
-    output[columns[4]] = pd.Series(dtype="int64")
-    output["cluster"] = pd.Series(dtype="int64")
-    output["core"] = pd.Series(dtype="int64")
-    return output
-
-
 def _empty_density_labels_output():
     return pd.DataFrame(
         {
@@ -1760,9 +1738,7 @@ def hdbscan_labels(data,
     dur_min : int, optional
         Minimum duration (minutes) for a stop (default: 5).
     return_cores : bool, default False
-        Return core, border, noise, and plotting records instead of labels.
-    passthrough_cols : list, optional
-        Columns to propagate for later stop summarization.
+        Return cluster, core, and promotion-time metadata instead of labels.
     traj_cols : dict, optional
         Mapping for key columns.
     **kwargs
@@ -1771,23 +1747,18 @@ def hdbscan_labels(data,
     Returns
     -------
     pd.Series or pd.DataFrame
-        Cluster labels, or complete point records when ``return_cores`` is true.
+        Cluster labels, or ``cluster``, ``core``, and ``promotion_time`` when
+        ``return_cores`` is true.
     """
     # Check if user wants long and lat and datetime
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)
     # Load default col names
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
-    start_t_key = "start_datetime" if use_datetime else "start_timestamp"
-    point_columns = [
-        traj_cols["user_id"], traj_cols[t_key], "role",
-        traj_cols[start_t_key], traj_cols["label"], traj_cols[coord_key1],
-        traj_cols[coord_key2], "value", "value_name", "cluster", "core",
-    ]
     
     # Handle empty data
     if data.empty:
         if return_cores:
-            return _empty_density_output(point_columns)
+            return _empty_density_labels_output()
         return pd.Series(dtype='int64', name='cluster')
     
     if traj_cols['user_id'] in data.columns:
@@ -1835,10 +1806,8 @@ def hdbscan_labels(data,
         selected_clusters = select_clusters_by_epsilon(hierarchy_df, label_history_df, epsilon=delta_roam)
 
     final_labels = pd.Series(-1, index=core_distances.index, name='cluster', dtype=int)
-    collect_core_points = return_cores
-    if collect_core_points:
-        roles = pd.Series(0, index=core_distances.index, dtype="Int8")
-        source_timestamps = pd.Series(np.nan, index=core_distances.index, name=traj_cols[start_t_key])
+    core_labels = pd.Series(-1, index=core_distances.index, name='core', dtype=int)
+    promotion_time = pd.Series(np.nan, index=core_distances.index, name='promotion_time')
         
     # keep only info of selected clusters and their birthscales, sort from denser to less dense
     cluster_info_df = label_history_df[label_history_df['cluster_id'].isin(selected_clusters)]
@@ -1868,58 +1837,33 @@ def hdbscan_labels(data,
         all_new_members = unclaimed_cores.union(unclaimed_borders)
         
         if all_new_members:
-            if collect_core_points:
-                roles.loc[list(unclaimed_cores)] = 1
-                source_timestamps.loc[list(unclaimed_cores)] = list(unclaimed_cores)
-                for core_ts in unclaimed_cores:
-                    borders = list(border_map.get(core_ts, set()) & unclaimed_borders)
-                    if borders:
-                        roles.loc[borders] = -1
-                        source_timestamps.loc[borders] = core_ts
+            sorted_cores = sorted(unclaimed_cores)
+            core_labels.loc[sorted_cores] = cid
+            promotion_time.loc[sorted_cores] = sorted_cores
+            for core_ts in sorted_cores:
+                borders = sorted(border_map.get(core_ts, set()) & unclaimed_borders)
+                if borders:
+                    promotion_time.loc[borders] = core_ts
             final_labels.loc[list(all_new_members)] = cid
             claimed_points.update(all_new_members)
 
-    # Align index with original dataframe before returning
-    if collect_core_points:
-        timestamps = pd.Series(core_distances.index.to_numpy(), index=data.index)
-        labels = final_labels.set_axis(data.index)
-        aligned_roles = roles.reindex(timestamps.to_numpy()).set_axis(data.index)
-        retained = pd.Series(True, index=data.index)
-        aligned_sources = source_timestamps.reindex(
-            timestamps.to_numpy()
-        ).set_axis(data.index)
-        aligned_distances = core_distances.reindex(
-            timestamps.to_numpy()
-        ).set_axis(data.index)
-        core_points = pd.DataFrame(
-            {
-                traj_cols["user_id"]: (
-                    data.loc[retained, traj_cols["user_id"]]
-                    if traj_cols["user_id"] in data.columns
-                    else None
-                ),
-                traj_cols[t_key]: timestamps.loc[retained],
-                "role": aligned_roles.loc[retained],
-                traj_cols[start_t_key]: aligned_sources.loc[retained],
-                traj_cols["label"]: labels.loc[retained],
-                traj_cols[coord_key1]: data.loc[retained, traj_cols[coord_key1]],
-                traj_cols[coord_key2]: data.loc[retained, traj_cols[coord_key2]],
-                "value": aligned_distances.loc[retained],
-                "value_name": "core_distance",
-                "cluster": labels.loc[retained],
-                "core": labels.loc[retained].where(
-                    aligned_roles.loc[retained] == 1,
-                    -1,
-                ),
-            },
-            index=data.index[retained.to_numpy()],
-        )
-        core_points = core_points.loc[:, point_columns]
-        core_points["role"] = core_points["role"].astype("int8")
-    final_labels.index = data.index
+    original_times = pd.Series(data[traj_cols[t_key]].to_numpy(), index=G)
+    promotion_time = promotion_time.map(original_times)
+    output = pd.DataFrame(
+        {
+            'cluster': final_labels,
+            'core': core_labels,
+            'promotion_time': promotion_time,
+        }
+    ).set_axis(data.index)
+
     if return_cores:
-        return core_points
-    return final_labels
+        # cluster: selected cluster ID, or -1 for noise.
+        # core: cluster ID for core points, or -1 for border/noise points.
+        # promotion_time: own time for cores, claiming-core time for borders, null for noise.
+        return output
+    # Without core metadata, return only the selected cluster ID (or -1 for noise).
+    return output.cluster
 
 def st_hdbscan(
     data,
@@ -2088,8 +2032,7 @@ def hdbscan_labels_per_user(
         print_progress=print_progress,
     )
 
-    if return_cores:
-        return pd.concat(results).reindex(data.index)
+    # With return_cores, columns retain the cluster/core/promotion_time semantics above.
     return pd.concat(results).reindex(data.index)
 
 

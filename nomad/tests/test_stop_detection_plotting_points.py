@@ -237,6 +237,15 @@ def test_algorithm_parameters_remain_editable(label_function, editable_parameter
             density_algs.seqscan_labels,
             {"dist_thresh": 10, "min_pts": 2, "time_thresh": 5},
         ),
+        (
+            density_algs.hdbscan_labels,
+            {
+                "time_thresh": 5,
+                "min_pts": 2,
+                "min_cluster_size": 2,
+                "dur_min": 5,
+            },
+        ),
     ],
 )
 def test_density_return_cores_returns_label_metadata(
@@ -265,43 +274,6 @@ def test_density_return_cores_returns_label_metadata(
         core_points["cluster"],
         labels,
     )
-
-
-def test_hdbscan_return_cores_retains_complete_point_schema(single_user_trajectory):
-    data, traj_cols = single_user_trajectory
-    traj_cols = {
-        **traj_cols,
-        "start_timestamp": "core_timestamp",
-        "label": "stop_label",
-    }
-    data = data.assign(core_timestamp=pd.NA, stop_label=pd.NA)
-
-    core_points = density_algs.hdbscan_labels(
-        data,
-        time_thresh=5,
-        min_pts=2,
-        min_cluster_size=2,
-        dur_min=5,
-        return_cores=True,
-        traj_cols=traj_cols,
-    )
-
-    assert len(core_points) == len(data)
-    assert list(core_points.columns) == [
-        "uid",
-        "timestamp",
-        "role",
-        "core_timestamp",
-        "stop_label",
-        "x",
-        "y",
-        "value",
-        "value_name",
-        "cluster",
-        "core",
-    ]
-    assert is_integer_dtype(core_points["role"])
-    assert set(core_points["role"]) <= {-1, 0, 1}
 
 
 @pytest.mark.parametrize(
@@ -347,6 +319,75 @@ def test_density_promotion_time_identifies_promoting_core(
     assert output.loc[1, "core"] == 0
     assert output.loc[2, "core"] < 0
     assert output["promotion_time"].tolist() == [expected_promotion_time] * 3
+
+
+@pytest.mark.parametrize("use_datetime", [False, True])
+def test_hdbscan_promotion_time_identifies_claiming_core(monkeypatch, use_datetime):
+    input_times = (
+        pd.to_datetime([0, 120, 240], unit="s", utc=True)
+        if use_datetime
+        else [0, 120, 240]
+    )
+    time_column = "datetime" if use_datetime else "timestamp"
+    data = pd.DataFrame(
+        {
+            "uid": ["user-1"] * 3,
+            time_column: input_times,
+            "x": [0.0, 0.1, 0.2],
+            "y": [0.0] * 3,
+        }
+    )
+    traj_cols = {
+        "user_id": "uid",
+        time_column: time_column,
+        "x": "x",
+        "y": "y",
+    }
+    core_distances = pd.Series([2.0, 1.0, 2.0], index=[0, 120, 240])
+    label_history = pd.DataFrame(
+        {"cluster_id": [7], "dendogram_scale": [1.0], "time": [120]}
+    )
+
+    monkeypatch.setattr(density_algs, "_compute_core_distance", lambda *_: core_distances)
+    monkeypatch.setattr(
+        density_algs,
+        "_build_hdbscan_graphs",
+        lambda *_: (None, pd.Series(dtype="float64")),
+    )
+    monkeypatch.setattr(
+        density_algs,
+        "cluster_hierarchy",
+        lambda **_: (label_history, pd.DataFrame()),
+    )
+    monkeypatch.setattr(
+        density_algs,
+        "compute_cluster_stability",
+        lambda *_: pd.DataFrame(),
+    )
+    monkeypatch.setattr(
+        density_algs,
+        "select_most_stable_clusters",
+        lambda *_: [7],
+    )
+    monkeypatch.setattr(
+        density_algs,
+        "_borders_from_cores",
+        lambda *_: {120: {0, 240}},
+    )
+
+    output = density_algs.hdbscan_labels(
+        data,
+        time_thresh=5,
+        min_pts=2,
+        min_cluster_size=2,
+        dur_min=0,
+        return_cores=True,
+        traj_cols=traj_cols,
+    )
+
+    assert output["cluster"].tolist() == [7, 7, 7]
+    assert output["core"].tolist() == [-1, 7, -1]
+    assert output["promotion_time"].tolist() == [input_times[1]] * 3
 
 
 def test_density_promotion_time_uses_original_datetime_values():
@@ -476,6 +517,15 @@ def test_sequential_per_user_return_anchors_is_aligned(single_user_trajectory):
             density_algs.seqscan_labels_per_user,
             {"dist_thresh": 10, "min_pts": 2, "time_thresh": 5},
         ),
+        (
+            density_algs.hdbscan_labels_per_user,
+            {
+                "time_thresh": 5,
+                "min_pts": 2,
+                "min_cluster_size": 2,
+                "dur_min": 5,
+            },
+        ),
     ],
 )
 def test_density_per_user_return_cores_has_label_metadata(
@@ -502,27 +552,3 @@ def test_density_per_user_return_cores_has_label_metadata(
     assert list(core_points.columns) == ["cluster", "core", "promotion_time"]
     assert is_integer_dtype(core_points["cluster"])
     assert is_integer_dtype(core_points["core"])
-
-
-def test_hdbscan_per_user_return_cores_retains_point_schema(single_user_trajectory):
-    data, traj_cols = single_user_trajectory
-    second_user = data.assign(
-        uid="user-2",
-        timestamp=data["timestamp"] + 10_000,
-    )
-    multi_user = pd.concat([data, second_user], ignore_index=True)
-
-    core_points = density_algs.hdbscan_labels_per_user(
-        multi_user,
-        time_thresh=5,
-        min_pts=2,
-        min_cluster_size=2,
-        dur_min=5,
-        return_cores=True,
-        traj_cols=traj_cols,
-        n_jobs=1,
-    )
-
-    assert len(core_points) == len(multi_user)
-    assert is_integer_dtype(core_points["role"])
-    assert set(core_points["role"]) <= {-1, 0, 1}

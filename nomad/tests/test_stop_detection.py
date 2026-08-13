@@ -985,10 +985,7 @@ def test_label_concat_with_empty_input_preserves_integer_schema(
         assert isinstance(labels_empty, pd.DataFrame)
         assert isinstance(concatenated, pd.DataFrame)
         assert list(labels_empty.columns) == list(labels_non_empty.columns)
-        if algo_name == "hdbscan":
-            assert {"cluster", "core", "role", "value", "value_name"} <= set(concatenated.columns)
-        else:
-            assert list(concatenated.columns) == ["cluster", "core", "promotion_time"]
+        assert list(concatenated.columns) == ["cluster", "core", "promotion_time"]
         assert is_integer_dtype(concatenated["cluster"].dtype)
         assert is_integer_dtype(concatenated["core"].dtype)
     else:
