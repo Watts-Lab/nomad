@@ -373,14 +373,14 @@ def simple_traj(stop_test_params):
     df["tz_offset"] = 0
     return df
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def agent_traj_ground_truth():
     test_dir = Path(__file__).resolve().parent
     traj_path = test_dir.parent / "data" / "gc_3_stops.csv"
     df = loader.from_file(traj_path, timestamp='unix_timestamp', datetime='local_timestamp', user_id='identifier')
     return df
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def base_df():
     test_dir = Path(__file__).resolve().parent
     data_path = test_dir.parent / "data" / "gc_sample.csv"
@@ -407,7 +407,7 @@ def base_df():
     return df
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def per_user_test_data(base_df):
     traj_cols = {
         "user_id": "uid",
@@ -415,15 +415,21 @@ def per_user_test_data(base_df):
         "x": "x",
         "y": "y",
     }
-    selected_users = base_df[traj_cols["user_id"]].drop_duplicates().head(4)
-    sample_df = base_df[base_df[traj_cols["user_id"]].isin(selected_users)].copy()
+    local_dates = loader.naive_datetime_from_unix_and_offset(
+        base_df[traj_cols["timestamp"]], base_df["tz_offset"]
+    ).dt.date
+    selected_users = base_df[traj_cols["user_id"]].drop_duplicates().iloc[1:4]
+    sample_df = base_df[
+        base_df[traj_cols["user_id"]].isin(selected_users)
+        & (local_dates == local_dates.min())
+    ]
     data = loader.from_df(sample_df, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior="utc")
     return data, traj_cols
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def single_user_df(base_df):
-    uid = base_df.uid.iloc[0]
-    return base_df[base_df.uid == uid].copy().drop(columns=['uid'])
+    uid = base_df.uid.drop_duplicates().iloc[5]
+    return base_df[base_df.uid == uid].drop(columns=['uid'])
 
 @pytest.fixture
 def column_variations():
@@ -510,7 +516,7 @@ def test_stop_output_is_valid_stop_df(base_df, stop_df_schema_case_registry, sto
     input_cfg = stop_df_schema_input_case_registry[input_case]
 
     first_user = base_df["uid"].iloc[0]
-    single_user = base_df[base_df["uid"] == first_user].head(1500).copy()
+    single_user = base_df[base_df["uid"] == first_user].head(1500)
     input_df = single_user[input_cfg["cols"]].copy()
 
     if "datetime" in input_cfg["traj_cols"]:
@@ -875,7 +881,7 @@ def test_stop_detection_latlon_vs_xy_consistency(base_df, latlon_xy_consistency_
     """Test that algorithms run with both lat/lon and x/y coordinates without errors."""
     # Get single user data
     first_user = base_df['uid'].iloc[0]
-    single_user = base_df[base_df['uid'] == first_user].head(1500).copy()
+    single_user = base_df[base_df['uid'] == first_user].head(1500)
     case = latlon_xy_consistency_case_registry[algo_name]
     
     # Test with lat/lon
@@ -922,7 +928,7 @@ def test_stop_detection_latlon_vs_xy_consistency(base_df, latlon_xy_consistency_
 )
 def test_density_label_algorithms_latlon_vs_xy_consistency(base_df, latlon_xy_label_consistency_case_registry, algo_name):
     first_user = base_df['uid'].iloc[0]
-    single_user = base_df[base_df['uid'] == first_user].head(1500).copy()
+    single_user = base_df[base_df['uid'] == first_user].head(1500)
     case = latlon_xy_label_consistency_case_registry[algo_name]
 
     labels_latlon = case["fn"](
@@ -966,8 +972,8 @@ def test_label_concat_with_empty_input_preserves_integer_schema(
     if return_cores and not case["supports_return_cores"]:
         pytest.skip("Algorithm does not expose return_cores.")
 
-    non_empty = simple_traj_ts.copy()
-    empty = non_empty.iloc[:0].copy()
+    non_empty = simple_traj_ts
+    empty = non_empty.iloc[:0]
 
     kwargs = dict(case["kwargs"])
     if case["supports_return_cores"]:
@@ -1490,7 +1496,7 @@ def test_st_hdbscan_output_is_valid_stop_df(base_df):
     traj_cols = {'user_id': 'uid', 'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
     df = loader.from_df(base_df, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior='utc')
     first_user = df[traj_cols['user_id']].iloc[0]
-    single = df[df[traj_cols['user_id']] == first_user].copy()
+    single = df[df[traj_cols['user_id']] == first_user]
 
     stops = HDBSCAN.st_hdbscan(
         single, time_thresh=10, min_pts=2, min_cluster_size=2, dur_min=5,
@@ -1526,10 +1532,9 @@ def test_st_hdbscan_multiuser_raises(base_df):
         HDBSCAN.st_hdbscan(df, time_thresh=10, traj_cols=traj_cols)
 
 
-def test_st_hdbscan_per_user_basic(base_df):
+def test_st_hdbscan_per_user_basic(per_user_test_data):
     """st_hdbscan_per_user runs on multi-user data and returns stops for multiple users."""
-    traj_cols = {'user_id': 'uid', 'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
-    df = loader.from_df(base_df, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior='utc')
+    df, traj_cols = per_user_test_data
     stops = HDBSCAN.st_hdbscan_per_user(
         df, time_thresh=10, min_pts=2, min_cluster_size=2, dur_min=5,
         traj_cols=traj_cols
