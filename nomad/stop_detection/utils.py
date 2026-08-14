@@ -5,7 +5,7 @@ import datetime as dt
 import itertools
 import os
 import nomad.io.base as loader
-from nomad.constants import DEFAULT_SCHEMA, EARTH_RADIUS_METERS
+from nomad.constants import DEFAULT_SCHEMA, EARTH_RADIUS_METERS, SCHEMA_DTYPES
 import h3
 #import dtoolkit.geoaccessor
 import warnings
@@ -14,6 +14,28 @@ from datetime import datetime, time, timedelta
 from nomad.filters import to_timestamp
 from joblib import Parallel, delayed
 from tqdm import tqdm
+
+
+def empty_point_output(columns=None):
+    if columns is None:
+        columns = [
+            constants.DEFAULT_SCHEMA["user_id"],
+            constants.DEFAULT_SCHEMA["timestamp"],
+            "role",
+            constants.DEFAULT_SCHEMA["start_timestamp"],
+            constants.DEFAULT_SCHEMA["label"],
+            constants.DEFAULT_SCHEMA["x"],
+            constants.DEFAULT_SCHEMA["y"],
+            "value",
+            "value_name",
+        ]
+    return pd.DataFrame(
+        {
+            column: pd.Series(dtype="int8" if column == "role" else "object")
+            for column in columns
+        }
+    )
+
 
 def clip_stops_datetime(stops, start_datetime, end_datetime, traj_cols=None, **kwargs):
     """
@@ -91,7 +113,7 @@ def clip_stops_datetime(stops, start_datetime, end_datetime, traj_cols=None, **k
     # Return only stops that have positive duration after clipping
     return stops[stops['duration'] > 0]
 
-def _diameter(coords, metric='euclidean'):
+def _diameter(coords, metric='euclidean', witness=False):
     """
     Calculate the diameter of a set of coordinates, defined as the maximum pairwise distance.
     
@@ -102,23 +124,32 @@ def _diameter(coords, metric='euclidean'):
     metric : str, optional
         Distance metric to use. Supported metrics include 'euclidean' (default) 
         and 'haversine'. If 'haversine' is used, coordinates should be in degrees.
+    witness : bool, default False
+        Return the earliest endpoint of a maximum-diameter pair.
     
     Returns
     -------
-    float
-        The diameter of the coordinate set, i.e., the maximum pairwise distance.
-        Returns 0 if there are fewer than two coordinates.
+    float or tuple
+        The diameter, or the diameter and witness row offset.
     """
     if len(coords) < 2:
-        return 0
+        return (0, None) if witness else 0
    
     if metric == 'haversine':
-        coords = np.radians(coords)
-        pairwise_dists = pdist(coords,
-                               metric=lambda u, v: _haversine_distance(u, v))
-        return np.max(pairwise_dists)
+        radians = np.radians(coords)
+        pairwise_dists = pdist(
+            radians, metric=lambda u, v: _haversine_distance(u, v)
+        )
     else:
-        return np.max(pdist(coords, metric=metric))
+        pairwise_dists = pdist(coords, metric=metric)
+
+    diameter = np.max(pairwise_dists)
+    if not witness:
+        return diameter
+
+    left, right = np.triu_indices(len(coords), k=1)
+    diameter_pairs = np.flatnonzero(pairwise_dists == diameter)
+    return diameter, min(left[diameter_pairs].min(), right[diameter_pairs].min())
 
 def _medoid(coords, metric='euclidean'):
     """
@@ -202,7 +233,7 @@ def _pairwise_haversine(coords):
     return distances
 
     
-def _update_diameter(c_j, coords_prev, D_prev, metric='euclidean'):
+def _update_diameter(c_j, coords_prev, D_prev, metric='euclidean', witness=False, witness_index=None):
     """
     Update the diameter of a set of coordinates when a new point is added.
     
@@ -217,11 +248,15 @@ def _update_diameter(c_j, coords_prev, D_prev, metric='euclidean'):
     metric : str, optional
         Distance metric to use. Supported metrics are 'euclidean' (default) and 'haversine'.
         If 'haversine' is used, coordinates should be in degrees.
+    witness_index : int, optional
+        Earliest endpoint of a previous maximum-diameter pair.
+    witness : bool, default False
+        Return the updated witness with the diameter.
     
     Returns
     -------
-    float
-        The updated diameter of the coordinate set, considering the new point.
+    float or tuple
+        The updated diameter, or the diameter and witness row offset.
     """
     if metric == 'euclidean':
         X_prev = coords_prev[:, 0]
@@ -242,7 +277,16 @@ def _update_diameter(c_j, coords_prev, D_prev, metric='euclidean'):
     else:
         raise ValueError("metric must be 'euclidean' or 'haversine'")
 
-    D_i_jp1 = np.max([D_prev, np.max(new_dists)])
+    new_diameter = np.max(new_dists)
+    D_i_jp1 = np.max([D_prev, new_diameter])
+
+    if witness:
+        new_witness = np.flatnonzero(new_dists == new_diameter).min()
+        if witness_index is None or new_diameter > D_prev:
+            witness_index = new_witness
+        elif new_diameter == D_prev:
+            witness_index = min(witness_index, new_witness)
+        return D_i_jp1, witness_index
 
     return D_i_jp1
 
@@ -292,7 +336,9 @@ def applyParallel(groups, func, n_jobs=1, print_progress=False, **kwargs):
         delayed(func)(group, **kwargs) for group in group_list
     )
 
-def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_col_names = True, passthrough_cols= [], traj_cols=None, **kwargs):
+def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_col_names = True, passthrough_cols=None, traj_cols=None, **kwargs):
+    if passthrough_cols is None:
+        passthrough_cols = []
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = _fallback_st_cols(grouped_data.columns, traj_cols, kwargs)
     traj_cols = loader._parse_traj_cols(grouped_data.columns, traj_cols, kwargs, warn=False)
     metric = 'haversine' if use_lon_lat else 'euclidean'    
@@ -314,8 +360,8 @@ def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_
     end_time = grouped_data[traj_cols[t_key]].iloc[-1]
 
     stop_attr = {} # the pandas series for the output
-    stop_attr[coord_key1] = medoid[0]
-    stop_attr[coord_key2] = medoid[1]
+    stop_attr[traj_cols[coord_key1]] = medoid[0]
+    stop_attr[traj_cols[coord_key2]] = medoid[1]
     stop_attr[traj_cols[start_t_key]]  = grouped_data[traj_cols[t_key]].iloc[0]
 
     if complete_output:
@@ -326,7 +372,8 @@ def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_
         stop_attr[traj_cols[end_t_key]] = end_time
         
         time_diffs = grouped_data[traj_cols[t_key]].diff().dropna()
-        max_gap = time_diffs.max() if len(time_diffs) > 0 else 0
+        # postprocessing can split a cluster down to a single ping, which has no gap to measure
+        max_gap = time_diffs.max() if len(time_diffs) > 0 else (pd.Timedelta(0) if use_datetime else 0)
 
     if use_datetime:
         stop_attr['duration'] = int((end_time - stop_attr[traj_cols[start_t_key]]).total_seconds())//60
@@ -342,6 +389,77 @@ def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_
         if col in grouped_data.columns:
             stop_attr[col] = grouped_data[col].iloc[0]
     return pd.Series(stop_attr, dtype="object")
+
+
+def summarize_stops(
+    data,
+    labels,
+    complete_output=False,
+    dur_min=None,
+    passthrough_cols=None,
+    keep_col_names=True,
+    traj_cols=None,
+    **kwargs,
+):
+    """
+    Summarize non-noise point labels into one row per stop.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Input trajectory.
+    labels : pd.Series
+        Cluster label for each trajectory row, with ``-1`` denoting noise.
+    complete_output : bool
+        Whether to include extended stop statistics.
+    dur_min : number, optional
+        Minimum summarized stop duration to retain.
+    passthrough_cols : list, optional
+        Columns copied into each stop summary.
+    keep_col_names : bool
+        Whether to retain input coordinate and time column names.
+    traj_cols : dict, optional
+        Canonical-to-actual column mapping.
+    **kwargs
+        Additional column mappings.
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per non-noise cluster.
+    """
+    if passthrough_cols is None:
+        passthrough_cols = []
+
+    empty_stops = _get_empty_stop_df(
+        data,
+        complete_output,
+        passthrough_cols,
+        traj_cols,
+        keep_col_names,
+        is_grid_based=False,
+        **kwargs,
+    )
+
+    merged = data.join(labels)
+    merged = merged[merged.cluster != -1]
+    if merged.empty:
+        return empty_stops
+
+    stops = merged.groupby('cluster', as_index=False, sort=False).apply(
+        lambda group: summarize_stop(
+            group,
+            complete_output=complete_output,
+            traj_cols=traj_cols,
+            keep_col_names=keep_col_names,
+            passthrough_cols=passthrough_cols,
+            **kwargs,
+        ),
+        include_groups=False,
+    ).reset_index(drop=True)
+    if dur_min is not None:
+        stops = stops.loc[stops['duration'] >= dur_min]
+    return _cast_to_stop_schema(stops, empty_stops)
 
 def summarize_stop_grid(
     grouped_data,
@@ -437,125 +555,141 @@ def summarize_stop_grid(
 
     return pd.Series(out, dtype='object')
 
-def _get_empty_stop_df(input_columns, complete_output, passthrough_cols, traj_cols, keep_col_names, is_grid_based=False, **kwargs):
+def _get_empty_aux_df(time_col=None, return_cores=False, return_anchors=False):
     """
-    Build an empty stop DataFrame with the exact expected columns and dtypes.
+    Build the empty output of a stop detection labeling algorithm.
 
     Parameters
     ----------
-    input_columns : pd.Index or list
-        Column names from the source trajectory data.
+    time_col : pd.Series, optional
+        Time column the auxiliary times are aligned to. Needed for auxiliary output.
+    return_cores : bool
+        Whether to include the core metadata of density-based algorithms.
+    return_anchors : bool
+        Whether to include Lachesis diameter-witness metadata.
+
+    Returns
+    -------
+    pd.Series or pd.DataFrame
+        Empty cluster labels, with auxiliary columns when requested.
+    """
+    cluster = pd.Series(dtype='int64', name='cluster')
+    if not (return_cores or return_anchors):
+        return cluster
+
+    # unix timestamps widen so that noise points can hold a missing time
+    time_dtype = 'Int64' if pd.api.types.is_integer_dtype(time_col) else time_col.dtype
+
+    output = {'cluster': cluster}
+    if return_cores:
+        output['core'] = pd.Series(dtype='int64')
+        output['promotion_time'] = pd.Series(dtype=time_dtype)
+    if return_anchors:
+        output['anchor_time'] = pd.Series(dtype=time_dtype)
+
+    return pd.DataFrame(output)
+
+
+def _get_empty_stop_df(data, complete_output, passthrough_cols, traj_cols, keep_col_names, is_grid_based=False, **kwargs):
+    """
+    Build the empty stop table declaring the columns, their order and their dtypes.
+
+    Both the summarized and the no-cluster paths are built from this, so the two
+    cannot disagree.
+
+    Parameters
+    ----------
+    data : pd.DataFrame or gpd.GeoDataFrame
+        Source trajectory, supplying the time dtype and the passthrough dtypes.
     complete_output : bool
-        Whether complete output columns should be included.
+        Whether extended stop statistics are included.
     passthrough_cols : list
-        Additional columns to passthrough.
+        Columns copied into each stop summary.
     traj_cols : dict
         Column mapping dictionary.
     keep_col_names : bool
-        Whether to keep original column names.
+        Whether to keep original coordinate and time column names.
     is_grid_based : bool, optional
         Whether this is for grid-based summarization.
     **kwargs
-        Additional arguments passed through trajectory-column parsing helpers.
+        Additional column mappings.
 
     Returns
     -------
     pd.DataFrame
-        Empty stop table with schema-aligned dtypes.
+        Zero-row stop table with schema-aligned dtypes.
     """
     if passthrough_cols is None:
         passthrough_cols = []
 
+    cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
+
     if is_grid_based:
-        t_key, use_datetime = loader._fallback_time_cols_dt(input_columns, traj_cols, kwargs)
-        cols = loader._parse_traj_cols(input_columns, traj_cols, kwargs, warn=False)
-
-        start_key = 'start_datetime' if use_datetime else 'start_timestamp'
-        end_key = 'end_datetime' if use_datetime else 'end_timestamp'
-
-        if keep_col_names:
-            cols[start_key] = cols[t_key]
-            cols[end_key] = cols.get(end_key, end_key)
-        else:
-            cols[start_key] = start_key
-            cols[end_key] = end_key
-
-        column_list = [cols[start_key], 'duration']
-        if complete_output:
-            column_list.extend([cols[end_key], 'n_pings', 'max_gap'])
-
-        column_list.append(cols['location_id'])
-        if 'geometry' in input_columns:
-            column_list.append('geometry')
-
-        column_list.extend(passthrough_cols)
+        t_key, use_datetime = loader._fallback_time_cols_dt(data.columns, traj_cols, kwargs)
     else:
-        t_key, coord_key1, coord_key2, use_datetime, _ = _fallback_st_cols(input_columns, traj_cols, kwargs)
-        cols = loader._parse_traj_cols(input_columns, traj_cols, kwargs, warn=False)
+        t_key, coord_key1, coord_key2, use_datetime, _ = _fallback_st_cols(data.columns, traj_cols, kwargs)
 
-        start_t_key = 'start_datetime' if use_datetime else 'start_timestamp'
-        end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
+    start_t_key = 'start_datetime' if use_datetime else 'start_timestamp'
+    end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
 
-        if not keep_col_names:
-            cols[coord_key1] = DEFAULT_SCHEMA[coord_key1]
-            cols[coord_key2] = DEFAULT_SCHEMA[coord_key2]
-        else:
-            cols[start_t_key] = cols[t_key]
+    if keep_col_names:
+        cols[start_t_key] = cols[t_key]
+    elif not is_grid_based:
+        cols[coord_key1] = DEFAULT_SCHEMA[coord_key1]
+        cols[coord_key2] = DEFAULT_SCHEMA[coord_key2]
 
-        column_list = [cols[coord_key1], cols[coord_key2], cols[start_t_key]]
+    # start and end times mirror the input column, so a timezone survives summarization
+    time_dtype = data[cols[t_key]].dtype if use_datetime else SCHEMA_DTYPES[start_t_key]
+
+    # the per-ping cluster label, kept so stops can be reconciled with labeled pings
+    schema = {'cluster': SCHEMA_DTYPES['label']}
+
+    if not is_grid_based:
+        schema[cols[coord_key1]] = SCHEMA_DTYPES[coord_key1]
+        schema[cols[coord_key2]] = SCHEMA_DTYPES[coord_key2]
+
+    schema[cols[start_t_key]] = time_dtype
+
+    if is_grid_based:
+        schema['duration'] = SCHEMA_DTYPES['duration']
         if complete_output:
-            if cols['ha'] in input_columns:
-                column_list.append(cols['ha'])
-            column_list.extend(['diameter', 'n_pings', cols[end_t_key]])
-
-        column_list.append('duration')
-
+            schema[cols[end_t_key]] = time_dtype
+            schema['n_pings'] = SCHEMA_DTYPES['n_pings']
+            schema['max_gap'] = SCHEMA_DTYPES['max_gap']
+        loc_col = cols['location_id']
+        schema[loc_col] = data[loc_col].dtype if loc_col in data.columns else SCHEMA_DTYPES['location_id']
+        if 'geometry' in data.columns:
+            schema['geometry'] = 'object'
+    else:
         if complete_output:
-            column_list.append('max_gap')
+            if cols['ha'] in data.columns:
+                schema[cols['ha']] = SCHEMA_DTYPES['ha']
+            schema['diameter'] = SCHEMA_DTYPES['diameter']
+            schema['n_pings'] = SCHEMA_DTYPES['n_pings']
+            schema[cols[end_t_key]] = time_dtype
+        schema['duration'] = SCHEMA_DTYPES['duration']
+        if complete_output:
+            schema['max_gap'] = SCHEMA_DTYPES['max_gap']
 
-        column_list.extend(passthrough_cols)
+    for col in passthrough_cols:
+        if col in data.columns and col not in schema:
+            schema[col] = data[col].dtype
 
-    dtype_map = {}
+    return pd.DataFrame({col: pd.Series(dtype=dtype) for col, dtype in schema.items()})
 
-    datetime_keys = ['datetime', 'start_datetime', 'end_datetime']
-    for key in datetime_keys:
-        col = cols.get(key)
-        if col in column_list:
-            dtype_map[col] = 'datetime64[ns, UTC]'
 
-    integer_keys = ['timestamp', 'start_timestamp', 'end_timestamp', 'tz_offset', 'duration']
-    for key in integer_keys:
-        col = cols.get(key)
-        if col in column_list:
-            dtype_map[col] = 'Int64'
+def _cast_to_stop_schema(stops, empty_stops):
+    """Order and cast a summarized stop table to the schema of its empty counterpart."""
+    for col, dtype in empty_stops.dtypes.items():
+        # summarize_stop returns object Series, and diameters and gaps arrive as floats
+        stops[col] = (
+            pd.to_numeric(stops[col]).round().astype(dtype)
+            if dtype == 'Int64'
+            else stops[col].astype(dtype)
+        )
 
-    float_keys = ['latitude', 'longitude', 'x', 'y', 'ha']
-    for key in float_keys:
-        col = cols.get(key)
-        if col in column_list:
-            dtype_map[col] = 'Float64'
-
-    string_keys = ['user_id', 'geohash', 'location_id', 'date', 'utc_date', 'h3_cell']
-    for key in string_keys:
-        col = cols.get(key)
-        if col in column_list:
-            dtype_map[col] = 'string'
-
-    if 'duration' in column_list:
-        dtype_map['duration'] = 'Int64'
-    if 'n_pings' in column_list:
-        dtype_map['n_pings'] = 'Int64'
-    if 'max_gap' in column_list:
-        dtype_map['max_gap'] = 'Int64'
-    if 'diameter' in column_list:
-        dtype_map['diameter'] = 'Float64'
-    if 'geometry' in column_list:
-        dtype_map['geometry'] = 'object'
-
-    for col in column_list:
-        dtype_map.setdefault(col, 'object')
-
-    return pd.DataFrame({col: pd.Series(dtype=dtype_map[col]) for col in column_list})
+    extra_cols = [col for col in stops.columns if col not in empty_stops.columns]
+    return stops[list(empty_stops.columns) + extra_cols]
 
 
 def has_overlapping_stops(stop_data, traj_cols=None, **kwargs):

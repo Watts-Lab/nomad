@@ -1,18 +1,14 @@
 import pytest
-import warnings
 from pathlib import Path
 import pandas as pd
 from pandas.testing import assert_series_equal, assert_frame_equal
 import numpy as np
 import geopandas as gpd
 import pygeohash as gh
-from shapely.geometry import Polygon
 from shapely import wkt
 import pyarrow.dataset as ds
-import pdb
 from nomad.io import base as loader
 from nomad.filters import to_timestamp
-from nomad import constants
 
 # Define the keys explicitly for parametrization
 _col_variation_keys = [

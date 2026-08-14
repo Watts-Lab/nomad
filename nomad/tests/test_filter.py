@@ -1,10 +1,9 @@
 import pytest
 import pandas as pd
 import numpy as np
-import pdb
 import geopandas as gpd
 import pygeohash as gh
-from pandas.testing import assert_frame_equal, assert_series_equal
+from pandas.testing import assert_series_equal
 from shapely.geometry import Polygon
 from pyspark.sql import SparkSession
 from pathlib import Path

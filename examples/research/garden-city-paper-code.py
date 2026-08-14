@@ -1,6 +1,7 @@
 # ---
 # jupyter:
 #   jupytext:
+#     cell_metadata_filter: all
 #     formats: ipynb,py:percent
 #     text_representation:
 #       extension: .py
@@ -16,7 +17,7 @@
 # %% [markdown]
 # # Garden city: A synthetic dataset and sandbox environment for analysis of pre-processing algorithms for GPS human mobility data
 
-# %%
+# %% tags=[]
 import pandas as pd
 from zoneinfo import ZoneInfo
 import numpy as np
@@ -33,8 +34,8 @@ import nomad.city_gen as cg
 from nomad.city_gen import City
 import nomad.traj_gen as tg
 from nomad.traj_gen import Agent, Population
-import nomad.stop_detection.dbscan as DBSCAN
-import nomad.stop_detection.lachesis as Lachesis
+from nomad.stop_detection.density_algs import ta_dbscan_labels
+from nomad.stop_detection.sequential_algs import lachesis, lachesis_labels
 
 from nomad.constants import DEFAULT_SPEEDS, FAST_SPEEDS, SLOW_SPEEDS, DEFAULT_STILL_PROBS
 from nomad.constants import FAST_STILL_PROBS, SLOW_STILL_PROBS, ALLOWED_BUILDINGS
@@ -53,7 +54,7 @@ city.add_building(building_type='park', door=(13, 11), geom=box(9, 9, 13, 13))
 # add a home
 city.add_building(building_type='home', door=(8, 8), blocks=[(7, 7), (7, 8)])
 
-# %%
+# %% tags=[]
 # add remaining homes
 city.add_building('home', (9, 8), [(8, 7), (9, 7)])
 city.add_building('home', (10, 8), [(10, 7)])
@@ -173,7 +174,7 @@ city.save_geopackage('../garden-city.gpkg')
 # %% [markdown]
 # For future uses, we can simply load the city gpkg file. 
 
-# %%
+# %% tags=[]
 city = City.from_geopackage('../garden-city.gpkg')
 
 city.compute_gravity(exponent=2.0, use_proxy_hub_distance=False)
@@ -184,7 +185,7 @@ city.compute_gravity(exponent=2.0, use_proxy_hub_distance=False)
 # %% [markdown]
 # To visualize the city, we can call the `plot_city` method of the `City` class. Doors are plotted as gaps in the boundary of their building.
 
-# %%
+# %% tags=[]
 # %matplotlib inline
 
 fig, ax = plt.subplots(figsize=(6, 6))
@@ -205,7 +206,7 @@ plt.close(fig)
 # %% [markdown]
 # Each building row is indexed by a unique identifier formed from its type initial and an occupied building block adjacent to its door. For example, the retail building with door cell (12, 3) occupies block (12, 2) and has identifier `r-x12-y2`.
 
-# %%
+# %% tags=[]
 print("Blocks for 'r-x12-y2':")
 print(city.blocks_gdf.loc[city.blocks_gdf['building_id']== 'r-x12-y2', ['coord_x','coord_y']].values.tolist())
 building = city.get_building(identifier='r-x12-y2')
@@ -219,7 +220,7 @@ print("Door centroid for 'r-x12-y2':", (x, y))
 # Instantiate population to collect all agents
 population = Population(city)
 
-# %% [markdown]
+# %% [markdown] tags=[]
 # ## Agents and trajectories
 
 # %% [markdown]
@@ -235,7 +236,7 @@ population = Population(city)
 # %% [markdown]
 # Initializing in this way simply requires passing a `DataFrame` object with appropriate diary columns to the `Agent` constructor. 
 
-# %%
+# %% tags=[]
 # Initialization with custom diary
 tz = ZoneInfo("America/New_York")
 start_time = pd.date_range(start='2024-01-01 00:00', periods=22, freq='15min', tz=tz)
@@ -281,7 +282,7 @@ Alice.__dict__
 import pandas as pd
 pd.to_datetime(1763439982, unit='s')
 
-# %%
+# %% tags=[]
 # Initialization and diary generation
 Bob = Agent(identifier="Bob",
             home='h-x7-y8',
@@ -303,7 +304,7 @@ Bob.trajectory
 # %% [markdown]
 # To visualize an `Agent`'s trajectory, we can call the `plot_city` method of the `City` class and overlay the points of the trajectory using the `ax.scatter` method of matplotlib.
 
-# %%
+# %% tags=[]
 fig, ax = plt.subplots(figsize=(5, 5))
 city.plot_city(ax, doors=True, address=False, zorder=1)
 
@@ -326,7 +327,7 @@ plt.close(fig)
 # %% [markdown]
 # The following code produces an animation of Bob's movement. We limit the animation to the 24 hours between midnight January 4 to midnight January 5 for speed and tractability of the output.
 
-# %%
+# %% tags=[]
 produce_animation = False
 
 if produce_animation:
@@ -397,7 +398,7 @@ Bob.sparse_traj.head()
 # %% [markdown]
 # `Agent.sample_trajectory` returns information about the start time and duration of bursts. These can be graphed alongside the sampled pings to visualize the sparsification. The start times are indicated by the red lines and the duration of bursts are shown by grey rectangles. The sampled pings are the black lines.
 
-# %%
+# %% tags=[]
 fig, axes = plt.subplots(nrows=3,figsize=(10, 3))
 for ax in axes:
     ax.set(xlim=(pd.Timestamp('2025-01-01 05:00', tz='America/New_York'), 
@@ -434,7 +435,7 @@ plt.show()
 #
 # _Note: if using a seed, make sure that each agent's seed is different to avoid all agents having the same trajectory._
 
-# %%
+# %% tags=[]
 population = Population(city)
 population.generate_agents(N=5,
                             seed=100)
@@ -468,7 +469,7 @@ print("\nSparse Trajectory:\n", nifty_saha.sparse_traj.head())
 #
 # We first initialize an `Agent` (Charlie) and generate a complete ground-truth trajectory. The destination diary is manually initialized as consecutive 1-hour visits to two homes followed by a 3-hour visit at a larger retail building.
 
-# %%
+# %% tags=[]
 tz = ZoneInfo("America/New_York")
 start_time = pd.date_range(start='2024-06-01 00:00', periods=5, freq='60min', tz=tz)
 tz_offset = loader._offset_seconds_from_ts(start_time[0])
@@ -496,7 +497,7 @@ Charlie.diary
 # %% [markdown]
 # Charlie's ground-truth trajectory is plotted below.
 
-# %%
+# %% tags=[]
 fig, ax = plt.subplots(figsize=(9, 5))
 ax.scatter(x=Charlie.trajectory.x, 
            y=Charlie.trajectory.y, 
@@ -528,7 +529,7 @@ plt.close(fig)
 #
 # Note that both sparsity levels expect 20 pings over the 5-hour duration. We deliberately choose these parameters to hold overall ping frequency fixed in order to isolate the effect of the burstiness pattern.
 
-# %%
+# %% tags=[]
 fig, axes = plt.subplots(1, 2, figsize=(11, 4))
 hier_nhpp_params = [(150, 20, 2), (60, 40, 10)]
 seed = 819
@@ -620,7 +621,7 @@ plt.show()
 # %% [markdown]
 # ## TO-DO: UPDATE THE STOP DETECTION LOGIC 
 
-# %%
+# %% tags=[]
 fig, axes = plt.subplots(2, 2, figsize=(9, 6))
 dbscan_params = [(120, 2.25, 2), (45, 1, 3)]
 traj_cols = {
@@ -644,19 +645,17 @@ for i in range(2):
             replace_sparse_traj=True
         )
 
-        # dbscan_out IS the cluster labels
-        dbscan_out = DBSCAN.ta_dbscan_labels(
+        dbscan_labels = ta_dbscan_labels(
             Charlie.sparse_traj,
             dist_thresh=dbscan_params[i][1],
             min_pts=dbscan_params[i][2],
             time_thresh=dbscan_params[i][0],
             traj_cols=traj_cols,
-            return_cores=True
         )
 
-        num_clusters = int((dbscan_out.cluster.unique() > -1).sum())
+        num_clusters = int((dbscan_labels.unique() > -1).sum())
         for cid in range(num_clusters):
-            cpings = dbscan_out[dbscan_out.cluster == cid]
+            cpings = dbscan_labels[dbscan_labels == cid]
             cdata = Charlie.sparse_traj.loc[cpings.index]
             col = cm.tab20c(cid/(num_clusters+1))
             ax.scatter(cdata.x, cdata.y, s=80, color=col, alpha=1, zorder=2)
@@ -820,14 +819,14 @@ for j in range(2):
         replace_sparse_traj=True
     )
 
-    lachesis_out = Lachesis.lachesis_labels(
+    lachesis_out = lachesis_labels(
         agent.sparse_traj,
         dt_max=lachesis_params[1],
         delta_roam=lachesis_params[0],
         dur_min=lachesis_params[2],
         traj_cols=traj_cols
     )
-    lachesis_stays = Lachesis.lachesis(
+    lachesis_stays = lachesis(
         agent.sparse_traj,
         delta_roam=lachesis_params[0],
         dt_max=lachesis_params[1],
