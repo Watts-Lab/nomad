@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 
 import nomad.io.base as loader
+from nomad.stop_detection.sequential_algs import grid_based
 
 
 def fill_timestamp_gaps(first_time, last_time, stop_table):
@@ -45,7 +46,8 @@ def merge_stops(
     Parameters
     ----------
     stops : pd.DataFrame
-        Stop table containing start time, end time or duration, and location.
+        Ping or stop table containing time and location columns. Stop tables
+        additionally contain an end time or duration.
     max_time_gap : str or pd.Timedelta, default "10min"
         Largest gap between one stop's end and the next stop's start that can
         belong to the same visit.
@@ -53,7 +55,7 @@ def merge_stops(
         Location identifier column. Defaults to the ``location_id`` mapping in
         ``traj_cols``.
     agg : dict, optional
-        Additional column aggregations for each merged visit.
+        Additional column aggregations for each merged visit in a stop table.
     traj_cols : dict, optional
         Trajectory-column mappings.
     **kwargs
@@ -62,8 +64,8 @@ def merge_stops(
     Returns
     -------
     pd.DataFrame
-        One row per uninterrupted visit. Its index is the first input index in
-        each merged visit.
+        One row per uninterrupted visit. Ping tables are summarized through the
+        grid-based algorithm; stop tables are merged using their intervals.
     """
     if isinstance(max_time_gap, str):
         max_time_gap = pd.to_timedelta(max_time_gap)
@@ -76,34 +78,56 @@ def merge_stops(
         stops.columns, traj_cols, kwargs, warn=False
     )
     location_col = location_col or traj_cols['location_id']
+    traj_cols['location_id'] = location_col
     if location_col not in stops.columns:
         raise ValueError(f"Location column '{location_col}' not found in stops DataFrame")
     if stops.empty:
         return stops.copy()
 
-    # Resolve the configured start, end, duration, and user columns.
+    # must be one user
+    user_col = traj_cols['user_id'] if traj_cols['user_id'] in stops.columns else None
+    if user_col is not None and stops[user_col].nunique(dropna=False) > 1:
+        raise ValueError(
+            "merge_stops expects one user per call; group the input by user_id "
+            "and call merge_stops for each group."
+        )
+
+    # determine if pings or stops
+    end_col_present = loader._has_end_cols(stops.columns, traj_cols)
+    duration_col_present = loader._has_duration_cols(stops.columns, traj_cols)
+    if not end_col_present and not duration_col_present:
+        t_key, _ = loader._fallback_time_cols_dt(
+            stops.columns, traj_cols, kwargs
+        )
+        if t_key in ('start_timestamp', 'start_datetime'):
+            raise ValueError("Stops must contain either end time or duration columns")
+         # if ping table, call grid_based essentially
+        return grid_based(
+            stops,
+            time_thresh=max_time_gap.total_seconds() / 60,
+            min_cluster_size=1,
+            dur_min=0,
+            traj_cols=traj_cols,
+            **kwargs,
+        )
+
+    # continue when the input already contains detected stops
     t_key, use_datetime = loader._fallback_time_cols_dt(
         stops.columns, traj_cols, kwargs
     )
     start_col = traj_cols[t_key]
     end_key = 'end_datetime' if use_datetime else 'end_timestamp'
-    end_col_present = loader._has_end_cols(stops.columns, traj_cols)
-    duration_col_present = loader._has_duration_cols(stops.columns, traj_cols)
-    if not (end_col_present or duration_col_present):
-        raise ValueError("Stops must contain either end time or duration columns")
 
-    # Process stops chronologically within each user while retaining original indices.
-    user_col = traj_cols['user_id'] if traj_cols['user_id'] in stops.columns else None
-    sort_cols = [start_col] if user_col is None else [user_col, start_col]
+    # sort stops chronologically
     order = (
         stops.reset_index(drop=True)
-        .sort_values(sort_cols, kind='stable')
+        .sort_values(start_col, kind='stable')
         .index.to_numpy()
     )
     input_index = stops.index.take(order)
     ordered = stops.iloc[order].reset_index(drop=True)
 
-    # Construct a temporary end time when the input only supplies duration.
+    # if duration provided find end time for each stop
     if end_col_present:
         end_col = traj_cols[end_key]
     else:
@@ -117,22 +141,21 @@ def merge_stops(
                 ordered[start_col] + ordered[traj_cols['duration']] * 60
             )
 
-    # A location or user change, or an excessive time gap, starts a new visit.
+    # standardize gap threshold
     max_gap = max_time_gap if use_datetime else max_time_gap.total_seconds()
     location_codes = pd.Series(pd.factorize(ordered[location_col], sort=False)[0])
     same_location = location_codes.eq(location_codes.shift()) & location_codes.ne(-1)
-    new_visit = ~same_location | (
-        ordered[start_col] - ordered[end_col].shift() > max_gap
-    )
-    if user_col is not None:
-        user_codes = pd.Series(pd.factorize(ordered[user_col], sort=False)[0])
-        new_visit |= user_codes.ne(user_codes.shift())
+    #identify sequence of same destination
+    sequence_id = (~same_location).cumsum() 
+    previous_end = ordered.groupby(sequence_id, sort=False)[end_col].cummax().shift()
+    # determine when new visit starts
+    new_visit = ~same_location | ordered[start_col].sub(previous_end).gt(max_gap)
     visit_id = new_visit.fillna(True).cumsum()
 
-    # Collapse each consecutive visit group into one interval.
+    # collapse each consecutive visit group into one interval
     agg_dict = {
         start_col: 'first',
-        end_col: 'last',
+        end_col: 'max',
         location_col: 'first',
     }
     if user_col is not None:

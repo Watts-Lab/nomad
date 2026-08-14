@@ -1,7 +1,8 @@
 import pandas as pd
 import pytest
 
-from nomad.stop_detection.sequential_algs import lachesis, lachesis_per_user
+from nomad.stop_detection.sequential_algs import lachesis
+from nomad.visit_attribution.visit_attribution import lachesis_visits
 
 
 @pytest.fixture
@@ -25,7 +26,7 @@ def test_lachesis_none_preserves_existing_output(interrupted_destination_traject
         **lachesis_options(),
     )
 
-    result = lachesis(
+    result = lachesis_visits(
         interrupted_destination_trajectory,
         postprocessing='none',
         **lachesis_options(),
@@ -37,7 +38,7 @@ def test_lachesis_none_preserves_existing_output(interrupted_destination_traject
 def test_lachesis_dbscan_clusters_and_merges_interrupted_visits(
     interrupted_destination_trajectory,
 ):
-    result = lachesis(
+    result = lachesis_visits(
         interrupted_destination_trajectory,
         postprocessing='dbscan',
         postprocessing_kwargs={'epsilon': 5},
@@ -55,7 +56,7 @@ def test_lachesis_dbscan_clusters_and_merges_interrupted_visits(
 def test_lachesis_dbscan_respects_merge_threshold(
     interrupted_destination_trajectory,
 ):
-    result = lachesis(
+    result = lachesis_visits(
         interrupted_destination_trajectory,
         postprocessing='dbscan',
         postprocessing_kwargs={'epsilon': 5},
@@ -67,23 +68,31 @@ def test_lachesis_dbscan_respects_merge_threshold(
     assert result['location_id'].tolist() == [0, 0]
 
 
-def test_lachesis_per_user_assigns_disjoint_location_ids(
+def test_lachesis_visits_rejects_multiple_users(
     interrupted_destination_trajectory,
 ):
     first = interrupted_destination_trajectory.assign(user_id='a')
     second = interrupted_destination_trajectory.assign(user_id='b')
     data = pd.concat([first, second], ignore_index=True)
 
-    result = lachesis_per_user(
+    with pytest.raises(ValueError, match='one user per call'):
+        lachesis_visits(data, **lachesis_options())
+
+
+def test_lachesis_visits_preserves_single_user_id(
+    interrupted_destination_trajectory,
+):
+    data = interrupted_destination_trajectory.assign(user_id='a')
+
+    result = lachesis_visits(
         data,
-        postprocessing='dbscan',
         postprocessing_kwargs={'epsilon': 5},
         merge_kwargs={'max_time_gap': '25min'},
         **lachesis_options(),
     )
 
-    assert result['user_id'].tolist() == ['a', 'b']
-    assert result['location_id'].tolist() == [0, 1]
+    assert result['user_id'].tolist() == ['a']
+    assert result['location_id'].tolist() == [0]
 
 
 def test_lachesis_dbscan_supports_custom_columns():
@@ -101,7 +110,7 @@ def test_lachesis_dbscan_supports_custom_columns():
         'location_id': 'destination_id',
     }
 
-    result = lachesis(
+    result = lachesis_visits(
         data,
         postprocessing='dbscan',
         postprocessing_kwargs={'epsilon': 5},
@@ -124,7 +133,7 @@ def test_lachesis_dbscan_handles_no_detected_stops():
         }
     )
 
-    result = lachesis(
+    result = lachesis_visits(
         data,
         postprocessing='dbscan',
         **lachesis_options(),
@@ -138,7 +147,7 @@ def test_lachesis_infomap_reports_unimplemented(
     interrupted_destination_trajectory,
 ):
     with pytest.raises(NotImplementedError, match='infomap'):
-        lachesis(
+        lachesis_visits(
             interrupted_destination_trajectory,
             postprocessing='infomap',
             **lachesis_options(),
@@ -149,7 +158,7 @@ def test_lachesis_rejects_unknown_postprocessing(
     interrupted_destination_trajectory,
 ):
     with pytest.raises(ValueError, match='postprocessing must be'):
-        lachesis(
+        lachesis_visits(
             interrupted_destination_trajectory,
             postprocessing='kmeans',
             **lachesis_options(),

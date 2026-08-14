@@ -3,10 +3,8 @@ import numpy as np
 import pandas as pd
 import nomad.io.base as loader
 from nomad.filters import to_timestamp
-from nomad.stop_detection.postprocessing import merge_stops
 from nomad.stop_detection import utils
 from nomad.stop_detection.utils import _haversine_distance
-from nomad.visit_attribution.visit_attribution import cluster_locations_dbscan
 
 from .core_points import (
     _empty_anchor_points,
@@ -519,9 +517,6 @@ def lachesis(
     complete_output=False,
     passthrough_cols=[],
     keep_col_names=True,
-    postprocessing=None,
-    postprocessing_kwargs=None,
-    merge_kwargs=None,
     traj_cols=None,
     **kwargs
 ):
@@ -544,12 +539,6 @@ def lachesis(
         Passed along to the column‐detection helper.
     passthrough_cols : list, optional
         Columns to retain (and summarize/propagate) per stop.
-    postprocessing : {None, 'none', 'dbscan', 'infomap'}, optional
-        Destination-detection method applied after sequential stop detection.
-    postprocessing_kwargs : dict, optional
-        Arguments passed to DBSCAN destination detection.
-    merge_kwargs : dict, optional
-        Arguments passed to visit merging after destination detection.
 
     Returns
     -------
@@ -609,66 +598,7 @@ def lachesis(
             include_groups=False
         ).reset_index(drop=True)
 
-    return _postprocess_lachesis_stops(
-        stop_table,
-        postprocessing=postprocessing,
-        postprocessing_kwargs=postprocessing_kwargs,
-        merge_kwargs=merge_kwargs,
-        traj_cols=traj_cols,
-        **kwargs
-    )
-
-
-def _postprocess_lachesis_stops(
-    stops,
-    postprocessing=None,
-    postprocessing_kwargs=None,
-    merge_kwargs=None,
-    traj_cols=None,
-    **kwargs
-):
-    """Apply destination detection and visit merging to Lachesis stops."""
-    if postprocessing in (None, 'none'):
-        return stops
-    if postprocessing == 'infomap':
-        raise NotImplementedError("Lachesis postprocessing method 'infomap' is not implemented")
-    if postprocessing != 'dbscan':
-        raise ValueError("postprocessing must be one of: None, 'none', 'dbscan', 'infomap'")
-
-    traj_cols_temp = loader._parse_traj_cols(
-        stops.columns, traj_cols, kwargs, warn=False
-    )
-    user_col = traj_cols_temp['user_id']
-    cluster_options = dict(postprocessing_kwargs or {})
-    cluster_options.setdefault(
-        'agg_level', 'user' if user_col in stops.columns else 'dataset'
-    )
-
-    # Recognize recurring destinations, then combine interrupted visits to them.
-    labeled_stops, locations = cluster_locations_dbscan(
-        stops,
-        traj_cols=traj_cols,
-        **kwargs,
-        **cluster_options
-    )
-    location_col = traj_cols_temp['location_id']
-    merge_options = dict(merge_kwargs or {})
-    merge_options.setdefault('location_col', location_col)
-    visits = merge_stops(
-        labeled_stops,
-        traj_cols=traj_cols,
-        **kwargs,
-        **merge_options
-    )
-
-    # Report each visit at its recurring destination's center.
-    coord_key1, coord_key2, _ = loader._fallback_spatial_cols(
-        labeled_stops.columns, traj_cols_temp, kwargs
-    )
-    centers = locations.set_index(location_col).center
-    visits[traj_cols_temp[coord_key1]] = visits[location_col].map(centers.x)
-    visits[traj_cols_temp[coord_key2]] = visits[location_col].map(centers.y)
-    return visits
+    return stop_table
 
 def lachesis_per_user(
     data,
@@ -677,9 +607,6 @@ def lachesis_per_user(
     dur_min=5,
     complete_output=False,
     passthrough_cols=[],
-    postprocessing=None,
-    postprocessing_kwargs=None,
-    merge_kwargs=None,
     traj_cols=None,
     n_jobs=1,
     print_progress=False,
@@ -702,12 +629,6 @@ def lachesis_per_user(
         If True, include additional summary statistics in output.
     passthrough_cols : list, optional
         Columns to retain (and summarize/propagate) per stop.
-    postprocessing : {None, 'none', 'dbscan', 'infomap'}, optional
-        Destination-detection method applied after all users' stops are detected.
-    postprocessing_kwargs : dict, optional
-        Arguments passed to DBSCAN destination detection.
-    merge_kwargs : dict, optional
-        Arguments passed to visit merging after destination detection.
     traj_cols : dict, optional
         Mapping for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'.
     n_jobs : int, default 1
@@ -744,7 +665,6 @@ def lachesis_per_user(
             dur_min=dur_min,
             complete_output=complete_output,
             passthrough_cols=pt_cols,
-            postprocessing=None,
             traj_cols=traj_cols,
             **kwargs
         )
@@ -758,15 +678,7 @@ def lachesis_per_user(
         print_progress=print_progress
     )
     
-    stops = pd.concat(results, ignore_index=True)
-    return _postprocess_lachesis_stops(
-        stops,
-        postprocessing=postprocessing,
-        postprocessing_kwargs=postprocessing_kwargs,
-        merge_kwargs=merge_kwargs,
-        traj_cols=traj_cols,
-        **kwargs
-    )
+    return pd.concat(results, ignore_index=True)
 
 
 def lachesis_labels_per_user(
@@ -835,52 +747,60 @@ def grid_based_labels(data, time_thresh=np.inf, min_cluster_size=1, dur_min=0, t
         raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
     if data.empty:
         return pd.Series(dtype='int64', name='cluster')
-    # Decide on temporal column to use
-    t_key, use_datetime = loader._fallback_time_cols_dt(data.columns, traj_cols, kwargs)
-    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs) # load defaults
 
-    if traj_cols['location_id'] not in data.columns:
-            raise ValueError(f"Missing {traj_cols['location_id']} column in {data.columns}."
-                            "pass `location_id` as keyword argument or in traj_cols."
-                            )
+    t_key, use_datetime = loader._fallback_time_cols_dt(
+        data.columns, traj_cols, kwargs
+    )
+    traj_cols = loader._parse_traj_cols(
+        data.columns, traj_cols, kwargs, warn=False
+    )
+    location_col = traj_cols['location_id']
+    if location_col not in data.columns:
+        raise ValueError(
+            f"Missing {location_col} column in {data.columns}."
+            "pass `location_id` as keyword argument or in traj_cols."
+        )
 
-    if traj_cols['user_id'] in data.columns:
-        arr = data[traj_cols['user_id']].values
-        first = arr[0]
-        if any(x != first for x in arr[1:]):
-            raise ValueError("grid_based cannot be run on multi-user data. Use grid_based_per_user instead.")
+    user_col = traj_cols['user_id']
+    if user_col in data.columns and data[user_col].nunique(dropna=False) > 1:
+        raise ValueError(
+            "grid_based cannot be run on multi-user data. "
+            "Use grid_based_per_user instead."
+        )
 
-    ts = to_timestamp(data[traj_cols[t_key]]) if use_datetime else data[traj_cols[t_key]]
-    loc = data[traj_cols['location_id']]
-        
-    labels = pd.Series(-1, index=data.index)
-    labels.name = 'cluster'
-    
-    i= 0 # index to traverse data
-    c = 0 # cluster label counter
-    n = len(data)
+    times = (
+        to_timestamp(data[traj_cols[t_key]])
+        if use_datetime else data[traj_cols[t_key]]
+    )
+    locations = data[location_col]
+    labels = pd.Series(-1, index=data.index, name='cluster')
+    start = 0
+    cluster = 0
 
-    while i < n - 1:
-        t_i, loc_i = ts.iloc[i], loc.iloc[i]
-        
-        if pd.isna(loc.iloc[i]):
-            i += 1
+    while start < len(data):
+        if pd.isna(locations.iloc[start]):
+            start += 1
             continue
-        
-        # find first index where location changes or gap exceeds threshold
-        j = i + 1
-        while j < n:
-            gap = (ts.iloc[j] - ts.iloc[j-1]) // 60
-            if pd.isna(loc.iloc[j]) or loc.iloc[j] != loc_i or gap > time_thresh:
-                break
-            j += 1
 
-        if j - i >= min_cluster_size:
-            if (ts.iloc[j-1] - t_i) // 60 >= dur_min:
-                labels.iloc[i:j] = c
-                c += 1
-        i = j
-    
+        end = start + 1
+        while end < len(data):
+            gap = (times.iloc[end] - times.iloc[end - 1]) // 60
+            if (
+                pd.isna(locations.iloc[end])
+                or locations.iloc[end] != locations.iloc[start]
+                or gap > time_thresh
+            ):
+                break
+            end += 1
+
+        if (
+            end - start >= min_cluster_size
+            and (times.iloc[end - 1] - times.iloc[start]) // 60 >= dur_min
+        ):
+            labels.iloc[start:end] = cluster
+            cluster += 1
+        start = end
+
     return labels
 
 def grid_based(
@@ -926,7 +846,6 @@ def grid_based(
         traj_cols=traj_cols,
         **kwargs
     )
-       
     merged = data.join(labels)
     merged = merged[merged.cluster != -1]
 
@@ -941,22 +860,17 @@ def grid_based(
             **kwargs,
         )
 
-    stop_table = merged.groupby('cluster', as_index=False, sort=False).apply(
-        lambda grp: utils.summarize_stop_grid(
-            grp,
+    return merged.groupby('cluster', as_index=False, sort=False).apply(
+        lambda group: utils.summarize_stop_grid(
+            group,
             complete_output=complete_output,
             traj_cols=traj_cols,
             keep_col_names=True,
             passthrough_cols=passthrough_cols,
             **kwargs
         ),
-        include_groups=False
+        include_groups=False,
     ).reset_index(drop=True)
-
-    if complete_output:
-        pass #implement diameter, centroid for location_id being an h3_cell
-        
-    return stop_table
 
 def grid_based_per_user(
     data,

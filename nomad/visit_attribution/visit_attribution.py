@@ -7,6 +7,8 @@ import numpy as np
 from sklearn.cluster import DBSCAN
 import nomad.io.base as loader
 import nomad.constants as constants
+from nomad.stop_detection.postprocessing import merge_stops
+from nomad.stop_detection.sequential_algs import lachesis
 from nomad.stop_detection import utils
 
 # TO DO: change to stops_to_poi
@@ -477,75 +479,61 @@ def _get_location_center(coords, metric='euclidean'):
 
 
 def cluster_locations_dbscan(
-    stops,
+    data,
     epsilon=100,
     min_pts=1,
-    distance_metric='euclidean',
-    agg_level='user',
+    return_locations=False,
     traj_cols=None,
     **kwargs
 ):
     """
-    Cluster coordinate points or detected stops into locations using DBSCAN.
+    Assign recurring-location IDs to coordinate points using DBSCAN.
 
     Parameters
     ----------
-    stops : pd.DataFrame or gpd.GeoDataFrame
-        Coordinate points or stop rows. DataFrames require x/y or
-        longitude/latitude columns. GeoDataFrames require point geometry.
+    data : pd.DataFrame
+        Coordinate points or stop rows with x/y or longitude/latitude columns.
     epsilon : float, default 100
         Maximum distance between rows in the same location. Units match projected
         coordinates or are meters for longitude/latitude coordinates.
     min_pts : int, default 1
         Minimum number of stops required to form a location
-    distance_metric : str, default 'euclidean'
-        Distance metric for projected coordinates. Geographic coordinates always
-        use haversine distance.
-    agg_level : str, default 'user'
-        'user' = separate locations per user, 'dataset' = shared locations across users
+    return_locations : bool, default False
+        If True, also return a GeoDataFrame summarizing each location.
     traj_cols : dict, optional
-        Column name mappings for coordinates and user_id
+        Column name mappings for coordinates and location_id.
     **kwargs
         Additional arguments passed to column detection
 
     Returns
     -------
-    tuple of (pd.DataFrame, gpd.GeoDataFrame)
-        - input rows with a nonnegative location ID for every row
-        - locations GeoDataFrame with cluster centers and extents
+    pd.Series or tuple of (pd.Series, gpd.GeoDataFrame)
+        Location IDs aligned with ``data.index`` and, when requested, location
+        centers, extents, and row counts.
 
     Notes
     -----
-    Each DBSCAN noise row is retained as its own singleton location.
+    Each DBSCAN noise row is retained with a unique negative location ID.
+    Geographic coordinates use haversine distance; projected coordinates use
+    Euclidean.
     """
-    traj_cols = loader._parse_traj_cols(stops.columns, traj_cols, kwargs, warn=False)
+    # check for pandas dataframe w/at least one row of data
+    if isinstance(data, gpd.GeoDataFrame):
+        raise NotImplementedError("GeoDataFrame location clustering is not implemented")
+    if not isinstance(data, pd.DataFrame):
+        raise TypeError("data must be a pandas DataFrame")
+    if data.empty:
+        raise ValueError("data must contain at least one row")
+
+    # convert data to correct coordinate system
+    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
     location_col = traj_cols['location_id']
-    crs = stops.crs if isinstance(stops, gpd.GeoDataFrame) else None
-
-    # Return the expected output schema when there are no rows to cluster.
-    if stops.empty:
-        stops_out = stops.copy()
-        stops_out[location_col] = pd.Series(index=stops.index, dtype='int64')
-        locations = gpd.GeoDataFrame(
-            columns=[location_col, 'center', 'extent', 'n_stops'],
-            geometry='center',
-            crs=crs,
-        )
-        return stops_out, locations
-
-    # Extract coordinates from point geometry or configured DataFrame columns.
-    if isinstance(stops, gpd.GeoDataFrame):
-        coords = np.column_stack((stops.geometry.x, stops.geometry.y))
-        use_lon_lat = crs is not None and pyproj.CRS(crs).is_geographic
-    else:
-        coord_key1, coord_key2, use_lon_lat = loader._fallback_spatial_cols(
-            stops.columns, traj_cols, kwargs
-        )
-        coords = stops[
-            [traj_cols[coord_key1], traj_cols[coord_key2]]
-        ].to_numpy(dtype='float64')
-        if use_lon_lat:
-            crs = 'EPSG:4326'
+    coord_key1, coord_key2, use_lon_lat = loader._fallback_spatial_cols(
+        data.columns, traj_cols, kwargs
+    )
+    coords = data[
+        [traj_cols[coord_key1], traj_cols[coord_key2]]
+    ].to_numpy(dtype='float64')
 
     # DBSCAN expects geographic coordinates in radians and latitude-first order.
     if use_lon_lat:
@@ -555,59 +543,55 @@ def cluster_locations_dbscan(
     else:
         cluster_coords = coords
         cluster_epsilon = epsilon
-        metric = distance_metric
+        metric = 'euclidean'
 
-    # Cluster each user independently, or treat the entire dataset as one group.
-    if agg_level == 'user':
-        user_col = traj_cols['user_id']
-        if user_col not in stops.columns:
-            raise ValueError(
-                "agg_level='user' requires a user_id column specified in traj_cols or kwargs"
-            )
-        group_positions = stops.groupby(
-            user_col, sort=False, dropna=False
-        ).indices.values()
-    elif agg_level == 'dataset':
-        user_col = None
-        group_positions = [np.arange(len(stops))]
-    else:
-        raise ValueError("agg_level must be 'user' or 'dataset'")
+    # use built in DBSCAN for labels
+    labels = DBSCAN(
+        eps=cluster_epsilon,
+        min_samples=min_pts,
+        metric=metric,
+        algorithm='ball_tree',
+    ).fit_predict(cluster_coords)
+    # all non-noise stops are labeled from 0 up
+    # label all noise stops starting at -1 and going down
+    non_noise = labels >= 0
+    location_ids = np.empty(len(labels), dtype='int64')
+    location_ids[non_noise] = pd.factorize(labels[non_noise], sort=False)[0]
+    location_ids[~non_noise] = -np.arange(1, (~non_noise).sum() + 1)
+    location_ids = pd.Series(location_ids, index=data.index, name=location_col)
 
-    location_ids = np.empty(len(stops), dtype='int64')
-    next_location_id = 0
+    if not return_locations:
+        return location_ids
 
-    # Offset each group's labels and turn every noise row into a unique location.
-    for positions in group_positions:
-        labels = DBSCAN(
-            eps=cluster_epsilon,
-            min_samples=min_pts,
-            metric=metric,
-            algorithm='ball_tree',
-        ).fit_predict(cluster_coords[positions])
+    locations = _summarize_locations(
+        data, location_ids, traj_cols=traj_cols, **kwargs
+    )
+    return location_ids, locations
 
-        non_noise = labels >= 0
-        cluster_codes = pd.factorize(labels[non_noise], sort=False)[0]
-        n_clusters = cluster_codes.max() + 1 if cluster_codes.size else 0
-        group_location_ids = np.empty(len(labels), dtype='int64')
-        group_location_ids[non_noise] = next_location_id + cluster_codes
-        group_location_ids[~non_noise] = np.arange(
-            next_location_id + n_clusters,
-            next_location_id + n_clusters + (~non_noise).sum(),
-        )
-        location_ids[positions] = group_location_ids
-        next_location_id += n_clusters + (~non_noise).sum()
 
-    stops_out = stops.copy()
-    stops_out[location_col] = location_ids
-
-    # Build one summary row for every assigned location.
+def _summarize_locations(data, location_ids, traj_cols=None, **kwargs):
+    """Build center and extent geometries for assigned location IDs."""
+    # resolve column names
+    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
+    location_col = location_ids.name
+    # identify spatial columns
+    coord_key1, coord_key2, use_lon_lat = loader._fallback_spatial_cols(
+        data.columns, traj_cols, kwargs
+    )
+    # get coordinates + choose output coord system
+    coords = data[
+        [traj_cols[coord_key1], traj_cols[coord_key2]]
+    ].to_numpy(dtype='float64')
+    crs = 'EPSG:4326' if use_lon_lat else None
     location_rows = pd.DataFrame(
         {
-            location_col: location_ids,
+            # combine labels with coordinates
+            location_col: location_ids.to_numpy(),
             '_coord1': coords[:, 0],
             '_coord2': coords[:, 1],
         }
     )
+    # group by desination
     grouped_locations = location_rows.groupby(location_col, sort=True)
     center_values = grouped_locations[['_coord1', '_coord2']].apply(
         lambda group: _get_location_center(
@@ -615,7 +599,9 @@ def cluster_locations_dbscan(
         ),
         include_groups=False,
     )
+    # calculate 1 center per destination
     center_coords = np.vstack(center_values.to_numpy())
+    # build locations GeoDataFrame
     locations = gpd.GeoDataFrame(
         {
             location_col: center_values.index.to_numpy(),
@@ -640,68 +626,116 @@ def cluster_locations_dbscan(
         crs=crs,
     )
 
-    if user_col is not None:
-        location_rows[user_col] = stops[user_col].to_numpy()
-        location_users = location_rows.groupby(location_col, sort=True)[user_col].first()
-        locations[user_col] = locations[location_col].map(location_users)
-
-    return stops_out, locations
+    return locations
 
 
-def cluster_locations_per_user(
-    stops,
-    epsilon=100,
-    min_pts=1,
-    distance_metric='euclidean',
+# Per-user clustering is intentionally inactive: callers should group their data
+# and invoke lachesis_visits once per user. Retained as a reference if an explicit
+# multi-user wrapper is added in the future.
+# def _cluster_locations_by_user(data, user_col, traj_cols=None, **kwargs):
+#     location_ids = np.empty(len(data), dtype='int64')
+#     next_location_id = 0
+#     groups = data.groupby(user_col, sort=False, dropna=False).indices.values()
+#     for positions in groups:
+#         group_ids = cluster_locations_dbscan(
+#             data.iloc[positions], traj_cols=traj_cols, **kwargs
+#         ).to_numpy()
+#         location_ids[positions] = group_ids + next_location_id
+#         next_location_id += group_ids.max() + 1
+#
+#     location_col = loader._parse_traj_cols(
+#         data.columns, traj_cols, kwargs, warn=False
+#     )['location_id']
+#     return pd.Series(location_ids, index=data.index, name=location_col)
+
+
+def lachesis_visits(
+    data, # single user pings
+    delta_roam, # max roaming dist
+    dt_max=60, # max time gap between pings
+    dur_min=5, # min duration to be a stop
+    complete_output=False,
+    passthrough_cols=[],
+    keep_col_names=True,
+    postprocessing='dbscan',
+    postprocessing_kwargs=None,
+    merge_kwargs=None,
     traj_cols=None,
     **kwargs
 ):
-    """
-    Convenience function to cluster locations per user.
-
-    This is equivalent to calling cluster_locations_dbscan with agg_level='user'.
-
-    Parameters
-    ----------
-    stops : pd.DataFrame or gpd.GeoDataFrame
-        Stop data with user_id column
-    epsilon : float, default 100
-        Maximum distance between stops in same location (meters)
-    min_pts : int, default 1
-        Minimum stops required to form a location
-    distance_metric : str, default 'euclidean'
-        'euclidean' or 'haversine'
-    traj_cols : dict, optional
-        Column name mappings
-    **kwargs
-        Additional arguments
-
-    Returns
-    -------
-    tuple of (pd.DataFrame, gpd.GeoDataFrame)
-        Stops with location_id and locations table
-
-    Raises
-    ------
-    ValueError
-        If user_id column is not found
-    """
-    traj_cols_temp = loader._parse_traj_cols(stops.columns, traj_cols, kwargs)
-    if 'user_id' not in traj_cols_temp or traj_cols_temp['user_id'] not in stops.columns:
+    """Detect and attribute visits for one user's trajectory."""
+    traj_cols_temp = loader._parse_traj_cols(
+        data.columns, traj_cols, kwargs, warn=False
+    )
+    # Data must be for ONE user
+    user_col = traj_cols_temp['user_id']
+    if user_col in data.columns and data[user_col].nunique(dropna=False) > 1:
         raise ValueError(
-            "cluster_locations_per_user requires a 'user_id' column "
-            "specified in traj_cols or kwargs"
+            "lachesis_visits expects one user per call; group the input by "
+            "user_id and call lachesis_visits for each group."
         )
 
-    return cluster_locations_dbscan(
-        stops,
-        epsilon=epsilon,
-        min_pts=min_pts,
-        distance_metric=distance_metric,
-        agg_level='user',
+    # detect stops with lachesis
+    stops = lachesis(
+        data,
+        delta_roam=delta_roam,
+        dt_max=dt_max,
+        dur_min=dur_min,
+        complete_output=complete_output,
+        passthrough_cols=passthrough_cols,
+        keep_col_names=keep_col_names,
         traj_cols=traj_cols,
-        **kwargs
+        **kwargs,
     )
+
+    # handle postprocessing version
+    if postprocessing in (None, 'none'):
+        return stops
+    if postprocessing == 'infomap':
+        raise NotImplementedError("Lachesis postprocessing method 'infomap' is not implemented")
+    if postprocessing != 'dbscan':
+        raise ValueError("postprocessing must be one of: None, 'none', 'dbscan', 'infomap'")
+
+    # if no stops, do not call dbscan
+    location_col = traj_cols_temp['location_id']
+    if stops.empty:
+        stops[location_col] = pd.Series(index=stops.index, dtype='int64')
+        return stops
+
+    # call DBSCAN
+    cluster_options = dict(postprocessing_kwargs or {})
+    location_ids = cluster_locations_dbscan(
+        stops,
+        traj_cols=traj_cols,
+        **kwargs,
+        **cluster_options,
+    )
+
+    # call summarize locations
+    labeled_stops = stops.copy()
+    labeled_stops[location_col] = location_ids.to_numpy()
+    locations = _summarize_locations(
+        labeled_stops, location_ids, traj_cols=traj_cols, **kwargs
+    )
+    # call merge stops
+    merge_options = dict(merge_kwargs or {})
+    merge_options.setdefault('location_col', location_col)
+    visits = merge_stops(
+        labeled_stops,
+        traj_cols=traj_cols,
+        **kwargs,
+        **merge_options,
+    )
+
+    # after merge stops assign each visit the standardized center of its destination
+    coord_key1, coord_key2, _ = loader._fallback_spatial_cols(
+        labeled_stops.columns, traj_cols_temp, kwargs
+    )
+    # Create a location-ID-to-center lookup
+    centers = locations.set_index(location_col).center
+    visits[traj_cols_temp[coord_key1]] = visits[location_col].map(centers.x)
+    visits[traj_cols_temp[coord_key2]] = visits[location_col].map(centers.y)
+    return visits
 
 
 # Alias for convenience
