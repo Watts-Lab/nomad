@@ -87,10 +87,11 @@ for i, agent_id in enumerate(population.roster):
     agent.generate_trajectory(datetime=pd.Timestamp(2025, 1, 1, hour=7, minute=0),
                               end_time=pd.Timestamp(2025, 1, 8, hour=0, minute=0),
                               seed=100+i)
-    agent.sample_trajectory(
+    agent.set_beta_params(
         beta_start=300,
         beta_durations=60,
-        beta_ping=10,
+        beta_ping=10)
+    agent.sample_trajectory(
         seed=100+i)
     sampled_traj = agent.sparse_traj
 

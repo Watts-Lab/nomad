@@ -11,7 +11,6 @@ from nomad.traj_gen import (
     Agent, 
     Population, 
     condense_destinations,
-    sample_bursts_gaps,
     parse_agent_attr,
     generate_ping_times,
     thin_traj_by_times,
@@ -109,9 +108,13 @@ def test_complete_workflow(garden_city, simple_dest_diary, temp_output_dir, defa
         assert agent.trajectory is not None
         assert len(agent.trajectory) > 0
         assert agent.trajectory['timestamp'].is_monotonic_increasing
-        
+
+        agent.set_beta_params(
+            beta_start=None,
+            beta_durations=None,
+            beta_ping=beta_pings[i]
+        )
         agent.sample_trajectory(
-            beta_ping=beta_pings[i],
             seed=42 + i,
             ha=0.75,
             replace_sparse_traj=True
@@ -236,24 +239,23 @@ def test_empty_and_edge_case_trajectories(garden_city, default_ids):
         'timestamp': [1717214400, 1717214401]
     })
     
-    result = sample_bursts_gaps(
-        short_traj,
+    agent.trajectory = short_traj
+    agent.set_beta_params(
         beta_start=1000,  # Very low probability
         beta_durations=0.1,
-        beta_ping=1000,
-        seed=42,
-        ha=0.75
+        beta_ping=1000
     )
+    agent.sample_trajectory(seed=42, ha=0.75, replace_sparse_traj=True)
     
     # Should return DataFrame with correct columns even if empty
-    assert isinstance(result, pd.DataFrame)
-    assert all(col in result.columns for col in short_traj.columns)
+    assert isinstance(agent.sparse_traj, pd.DataFrame)
+    assert all(col in agent.sparse_traj.columns for col in short_traj.columns)
 
 
 def test_trajectory_monotonicity_and_data_quality(garden_city, simple_dest_diary, default_ids):
     """
     Test that generated and sampled trajectories maintain data quality.
-    Tests: Monotonic timestamps, proper deduplication, timestamp integrity.
+    Tests: Monotonic timestamps, unique sampled timestamps, timestamp integrity.
     """
     agent = Agent(
         identifier="test_agent",
@@ -271,13 +273,12 @@ def test_trajectory_monotonicity_and_data_quality(garden_city, simple_dest_diary
     
     # Check monotonicity
     assert agent.trajectory['timestamp'].is_monotonic_increasing
-    
-    # Sample trajectory with deduplication
+
+    # Sample trajectory
+    agent.set_beta_params(beta_start=None, beta_durations=None, beta_ping=2)
     agent.sample_trajectory(
-        beta_ping=2,
         seed=42,
-        ha=0.75,
-        deduplicate=True
+        ha=0.75
     )
     
     # Check sampled trajectory quality
@@ -295,7 +296,7 @@ def test_trajectory_monotonicity_and_data_quality(garden_city, simple_dest_diary
 def test_agent_state_management(garden_city, simple_dest_diary, default_ids):
     """
     Test agent state management: reset, trajectory replacement, caching.
-    Tests: reset_trajectory, replace_sparse_traj, cache_traj.
+    Tests: reset_trajectory, replace_sparse_traj, flush_traj_cache.
     """
     agent = Agent(
         identifier="test_agent",
@@ -307,9 +308,10 @@ def test_agent_state_management(garden_city, simple_dest_diary, default_ids):
     # Generate initial trajectory
     agent.generate_trajectory(destination_diary=simple_dest_diary, dt=1, seed=42)
     initial_traj_len = len(agent.trajectory)
-    
+
     # Sample trajectory
-    agent.sample_trajectory(beta_ping=5, seed=42, ha=0.75)
+    agent.set_beta_params(beta_start=None, beta_durations=None, beta_ping=5)
+    agent.sample_trajectory(seed=42, ha=0.75)
     initial_sparse_len = len(agent.sparse_traj)
     
     # Test partial reset (keep trajectory, reset sparse)
@@ -319,20 +321,202 @@ def test_agent_state_management(garden_city, simple_dest_diary, default_ids):
     assert agent.sparse_traj is None
     
     # Regenerate sparse
-    agent.sample_trajectory(beta_ping=5, seed=43, ha=0.75, replace_sparse_traj=True)
+    agent.sample_trajectory(seed=43, ha=0.75, replace_sparse_traj=True)
     assert agent.sparse_traj is not None
     
-    # Test cache_traj (empties full trajectory but keeps last_ping)
-    agent.sample_trajectory(beta_ping=5, seed=44, ha=0.75, cache_traj=True, replace_sparse_traj=True)
-    assert agent.trajectory.empty
-    assert agent.last_ping is not None
+    # Test flush_traj_cache (keeps only the final ping for chunked generation)
+    agent.sample_trajectory(seed=44, ha=0.75, flush_traj_cache=True, replace_sparse_traj=True)
+    assert len(agent.trajectory) == 1
+    assert agent.trajectory.iloc[-1].to_dict() == agent.last_ping
     assert agent.sparse_traj is not None
+
+    flushed_timestamp = agent.trajectory.timestamp.iloc[-1]
+    agent.destination_diary = simple_dest_diary.iloc[[-1]].assign(duration=1)
+    agent.generate_trajectory(dt=1, seed=45)
+    assert len(agent.trajectory) == 2
+    assert agent.trajectory.timestamp.iloc[-1] > flushed_timestamp
     
     # Test full reset
     agent.reset_trajectory()
     assert agent.trajectory is None
     assert agent.sparse_traj is None
     assert agent.last_ping is None
+
+
+def test_chunked_trajectory_generation_with_cache_flushing(garden_city, default_ids):
+    garden_city.compute_gravity(callable_only=True)
+    start = pd.Timestamp('2024-06-01', tz='America/New_York')
+    agents = [
+        Agent(
+            identifier="test_agent",
+            city=garden_city,
+            home=default_ids['home'],
+            workplace=default_ids['work'],
+            datetime=start
+        )
+        for _ in range(2)
+    ]
+    for agent in agents:
+        agent.set_beta_params(beta_start=None, beta_durations=None, beta_ping=5)
+
+    flushed_agent, unflushed_agent = agents
+    chunks = []
+    for day in range(1, 4):
+        end_time = start + pd.Timedelta(days=day)
+        flushed_agent.generate_trajectory(end_time=end_time, seed=day)
+        unflushed_agent.generate_trajectory(end_time=end_time, seed=day)
+        chunks.append(flushed_agent.trajectory)
+        flushed_agent.sample_trajectory(seed=day, ha=0, flush_traj_cache=True)
+        unflushed_agent.sample_trajectory(
+            seed=day,
+            ha=0,
+            replace_sparse_traj=True,
+            flush_traj_cache=False
+        )
+
+    chunked_trajectory = pd.concat(
+        [chunks[0]] + [chunk.iloc[1:] for chunk in chunks[1:]],
+        ignore_index=True
+    )
+    assert chunked_trajectory.timestamp.is_monotonic_increasing
+    pd.testing.assert_frame_equal(chunked_trajectory, unflushed_agent.trajectory)
+
+
+def test_agent_set_beta_params(garden_city, default_ids):
+    agent = Agent(
+        identifier="test_agent",
+        city=garden_city,
+        home=default_ids['home'],
+        workplace=default_ids['work']
+    )
+
+    agent.set_beta_params(beta_start=30, beta_durations=10, beta_ping=5)
+    assert agent.sparsity_params == {
+        'beta_start': 30,
+        'beta_durations': 10,
+        'beta_ping': 5
+    }
+
+    agent.set_beta_params(beta_start=0, beta_durations=np.inf, beta_ping=5)
+    assert agent.sparsity_params == {
+        'beta_start': None,
+        'beta_durations': None,
+        'beta_ping': 5
+    }
+
+    params = Population.gen_params_target_q(
+        q=0.4,
+        beta_start=100,
+        beta_ping=5,
+        seed=42
+    )
+    agent.set_beta_params(params, beta_start=30, beta_durations=10, beta_ping=5)
+    assert agent.sparsity_params == {
+        'beta_start': 100,
+        'beta_durations': 40,
+        'beta_ping': 5,
+        'q': 0.4
+    }
+
+    with pytest.raises(ValueError, match="beta_ping must be provided"):
+        agent.set_beta_params(beta_start=None, beta_durations=None)
+
+    with pytest.raises(ValueError, match="beta_start and beta_durations must either both be provided"):
+        agent.set_beta_params(beta_start=30, beta_durations=None, beta_ping=5)
+
+    with pytest.raises(ValueError, match="beta_start and beta_durations must either both be provided"):
+        agent.set_beta_params(beta_start=0, beta_durations=10, beta_ping=5)
+
+    with pytest.raises(ValueError, match="beta_start and beta_durations must either both be provided"):
+        agent.set_beta_params(beta_start=30, beta_durations=np.inf, beta_ping=5)
+
+    with pytest.raises(ValueError, match="missing required keys"):
+        agent.set_beta_params({'beta_start': 30, 'beta_durations': 10, 'q': 0.4})
+
+
+def test_agent_sample_trajectory_uses_sparsity_params(garden_city, simple_dest_diary, default_ids):
+    agent = Agent(
+        identifier="test_agent",
+        city=garden_city,
+        home=default_ids['home'],
+        workplace=default_ids['work'],
+        sparsity_params={
+            'beta_start': None,
+            'beta_durations': None,
+            'beta_ping': 7,
+            'q': 0.5,
+            'f': 0.02
+        }
+    )
+
+    agent.generate_trajectory(destination_diary=simple_dest_diary, dt=1, seed=42)
+    burst_info = agent.sample_trajectory(seed=42, ha=0.75)
+
+    assert agent.sparse_traj is not None
+    assert list(burst_info.columns) == ['start_time', 'end_time']
+    assert agent.sparsity_params['beta_ping'] == 7
+    assert agent.sparsity_params['q'] == 0.5
+    assert agent.sparsity_params['f'] == 0.02
+
+    agent_without_params = Agent(
+        identifier="no_params",
+        city=garden_city,
+        home=default_ids['home'],
+        workplace=default_ids['work']
+    )
+    agent_without_params.generate_trajectory(destination_diary=simple_dest_diary, dt=1, seed=42)
+    with pytest.raises(ValueError, match="Set them with Agent.set_beta_params"):
+        agent_without_params.sample_trajectory(seed=42, ha=0.75)
+
+    agent_without_params.sparsity_params = {'beta_ping': 5}
+    with pytest.raises(ValueError, match="Set them with Agent.set_beta_params"):
+        agent_without_params.sample_trajectory(seed=42, ha=0.75)
+
+    agent_without_params.sparsity_params = {
+        'beta_start': None,
+        'beta_durations': None,
+        'beta_ping': None
+    }
+    with pytest.raises(ValueError, match="beta_ping must be provided"):
+        agent_without_params.sample_trajectory(seed=42, ha=0.75)
+
+
+def test_agent_sample_trajectory_clears_stored_burst_params(garden_city, simple_dest_diary, default_ids):
+    agent = Agent(
+        identifier="test_agent",
+        city=garden_city,
+        home=default_ids['home'],
+        workplace=default_ids['work']
+    )
+
+    agent.generate_trajectory(destination_diary=simple_dest_diary, dt=1, seed=42)
+    agent.set_beta_params(beta_start=0, beta_durations=np.inf, beta_ping=5)
+    agent.sample_trajectory(seed=42, ha=0.75)
+
+    assert agent.sparse_traj is not None
+    assert agent.sparsity_params['beta_start'] is None
+    assert agent.sparsity_params['beta_durations'] is None
+    assert agent.sparsity_params['beta_ping'] == 5
+
+
+def test_agent_sample_trajectory_debug_mode(garden_city, simple_dest_diary, default_ids):
+    agent = Agent(
+        identifier="test_agent",
+        city=garden_city,
+        home=default_ids['home'],
+        workplace=default_ids['work']
+    )
+    agent.generate_trajectory(destination_diary=simple_dest_diary, dt=1, seed=42)
+    agent.set_beta_params(beta_start=None, beta_durations=None, beta_ping=5)
+
+    agent.trajectory = agent.trajectory.iloc[::-1].reset_index(drop=True)
+    with pytest.raises(ValueError, match="input trajectory is not sorted"):
+        agent.sample_trajectory(seed=42, ha=0.75, debug_mode=True)
+
+    agent.trajectory = agent.trajectory.sort_values('timestamp').reset_index(drop=True)
+    agent.sparse_traj = agent.trajectory.iloc[[-1]].set_index('timestamp', drop=False)
+    with pytest.raises(ValueError, match="sparse trajectory is not sorted"):
+        agent.sample_trajectory(seed=42, ha=0.75, debug_mode=True)
 
 
 def test_parse_agent_attr_validation():
@@ -484,11 +668,14 @@ def test_population_param_sampling_validates_inputs():
         "beta_ping": 5
     }
 
-    with pytest.raises(ValueError, match="Provide exactly two"):
+    with pytest.raises(ValueError, match="Provide exactly one"):
         Population.gen_params_target_q(q=0.5, beta_start=100, beta_ping=5, beta_durations=40)
 
-    with pytest.raises(ValueError, match="Provide only one of beta_start and beta_durations"):
+    with pytest.raises(ValueError, match="beta_ping must be provided"):
         Population.gen_params_target_q(q=0.5, beta_start=100, beta_durations=40)
+
+    with pytest.raises(ValueError, match="Provide exactly one"):
+        Population.gen_params_target_q(q=0.5, beta_ping=5)
 
     with pytest.raises(ValueError, match="Provide exactly two"):
         Population.gen_params_target_f(f=0.02, beta_start=100, beta_ping=5, beta_durations=20)
@@ -497,10 +684,10 @@ def test_population_param_sampling_validates_inputs():
         Population.gen_params_target_q(q=None, beta_start=100, beta_ping=5)
 
 
-def test_sample_hier_nhpp_edge_cases():
+def test_agent_sample_trajectory_edge_cases(garden_city, default_ids):
     """
-    Test sample_hier_nhpp function with edge cases and parameters.
-    Tests: Burst sampling, deduplication, ha validation, empty results.
+    Test sample_trajectory with edge cases and parameters.
+    Tests: Burst sampling, ha validation, empty results.
     """
     tz = ZoneInfo("America/New_York")
     times = pd.date_range(start='2024-06-01 00:00', periods=100, freq='1min', tz=tz)
@@ -510,33 +697,35 @@ def test_sample_hier_nhpp_edge_cases():
         'datetime': times,
         'timestamp': [int(t.timestamp()) for t in times]
     })
+    agent = Agent(
+        identifier="test_agent",
+        city=garden_city,
+        home=default_ids['home'],
+        workplace=default_ids['work'],
+        trajectory=traj
+    )
     
     # Test basic sampling
-    result = sample_bursts_gaps(traj, beta_ping=5, seed=42, ha=0.75)
-    assert len(result) > 0
-    assert len(result) <= len(traj)
-    assert 'ha' in result.columns
+    agent.set_beta_params(beta_start=None, beta_durations=None, beta_ping=5)
+    agent.sample_trajectory(seed=42, ha=0.75)
+    assert len(agent.sparse_traj) > 0
+    assert len(agent.sparse_traj) <= len(traj)
+    assert 'ha' in agent.sparse_traj.columns
+    assert agent.sparse_traj.index.name == 'timestamp'
     
     # Test with bursts
-    sampled, bursts = sample_bursts_gaps(
-        traj,
+    agent.set_beta_params(
         beta_start=30,
         beta_durations=20,
-        beta_ping=5,
-        seed=42,
-        ha=0.75,
-        output_bursts=True
+        beta_ping=5
     )
+    bursts = agent.sample_trajectory(seed=42, ha=0.75, replace_sparse_traj=True)
     assert 'start_time' in bursts.columns
     assert 'end_time' in bursts.columns
     
-    # Test deduplication
-    result_dedup = sample_bursts_gaps(traj, beta_ping=1, seed=42, ha=0.75, deduplicate=True)
-    assert len(result_dedup['timestamp'].unique()) == len(result_dedup)
-    
     # Test ha validation
     with pytest.raises(ValueError, match="ha must exceed"):
-        sample_bursts_gaps(traj, beta_ping=5, ha=0.4, seed=42)
+        agent.sample_trajectory(ha=0.4, seed=42, replace_sparse_traj=True)
 
 
 def test_generate_ping_times_and_thinning():
@@ -552,17 +741,15 @@ def test_generate_ping_times_and_thinning():
     t0 = int(traj['timestamp'].iloc[0])
     t_end = int(traj['timestamp'].iloc[-1])
 
-    pts = generate_ping_times(t0, t_end, beta_ping=0.1, seed=123)
+    pts, burst_info = generate_ping_times(t0, t_end, beta_ping=0.1, seed=123)
     assert isinstance(pts, np.ndarray)
+    assert list(burst_info.columns) == ['start_time', 'end_time']
     assert np.all((pts >= t0) & (pts <= t_end)) or pts.size == 0
     if pts.size:
         assert np.all(np.diff(pts) >= 0)
 
-    thinned = thin_traj_by_times(traj, pts, deduplicate=True)
+    thinned = thin_traj_by_times(traj, pts)
     assert set(['x','y','datetime','timestamp']).issubset(set(thinned.columns))
-    if pts.size:
-        # After thinning with dedup, timestamps align one-to-one with rows
-        assert len(thinned) == len(np.unique(np.searchsorted(traj['timestamp'].to_numpy(), pts, side='right') - 1))
 
 
 def test_sample_horizontal_noise_basic():
@@ -575,7 +762,7 @@ def test_sample_horizontal_noise_basic():
     assert (noise >= -250).all() and (noise <= 250).all()
 
 
-def test_bursts_info_nonempty_and_tz():
+def test_bursts_info_nonempty_and_tz(garden_city, default_ids):
     tz = ZoneInfo("America/New_York")
     times = pd.date_range(start='2024-06-01 00:00', periods=600, freq='1s', tz=tz)
     traj = pd.DataFrame({
@@ -584,16 +771,19 @@ def test_bursts_info_nonempty_and_tz():
         'datetime': times,
         'timestamp': [int(t.timestamp()) for t in times]
     })
-
-    sampled, bursts = sample_bursts_gaps(
-        traj,
+    agent = Agent(
+        identifier="test_agent",
+        city=garden_city,
+        home=default_ids['home'],
+        workplace=default_ids['work'],
+        trajectory=traj
+    )
+    agent.set_beta_params(
         beta_start=0.2,      # bursts every ~12s on average
         beta_durations=0.1,  # durations ~6s
-        beta_ping=0.1,       # ping mean ~6s
-        seed=123,
-        ha=0.75,
-        output_bursts=True
+        beta_ping=0.1        # ping mean ~6s
     )
+    bursts = agent.sample_trajectory(seed=123, ha=0.75)
 
     assert 'start_time' in bursts.columns and 'end_time' in bursts.columns
     assert not bursts.empty
@@ -648,7 +838,8 @@ def test_coordinate_reprojection(garden_city, simple_dest_diary, default_ids):
     
     agent = list(pop.roster.values())[0]
     agent.generate_trajectory(destination_diary=simple_dest_diary, dt=0.5, seed=42)
-    agent.sample_trajectory(beta_ping=5, seed=42, ha=0.75)
+    agent.set_beta_params(beta_start=None, beta_durations=None, beta_ping=5)
+    agent.sample_trajectory(seed=42, ha=0.75)
     
     # Record original coordinates
     original_x = agent.sparse_traj['x'].iloc[0]

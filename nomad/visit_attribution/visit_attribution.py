@@ -7,7 +7,7 @@ import numpy as np
 from sklearn.cluster import DBSCAN
 from shapely.geometry import Point, MultiPoint
 import nomad.io.base as loader
-import nomad.constants as constants
+from nomad.constants import EARTH_RADIUS_METERS
 from nomad.stop_detection import utils
 
 # TO DO: change to stops_to_poi
@@ -609,8 +609,7 @@ def cluster_locations_dbscan(
         # For haversine, convert to radians
         if distance_metric == 'haversine':
             # Convert epsilon from meters to radians (approximate)
-            # Earth radius in meters
-            epsilon_rad = epsilon / 6371000.0
+            epsilon_rad = epsilon / EARTH_RADIUS_METERS
             coords_for_clustering = np.radians(coords)
         else:
             epsilon_rad = epsilon
@@ -757,4 +756,3 @@ def cluster_locations_per_user(
 
 # Alias for convenience
 generate_locations = cluster_locations_dbscan
-

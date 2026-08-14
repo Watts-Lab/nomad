@@ -104,10 +104,12 @@ def generate_agent_trajectory(params, city):
         workplace=params.workplace,
     )
     agent.generate_trajectory(datetime=_GEN_START, end_time=_GEN_END, seed=params.seed)
-    agent.sample_trajectory(
+    agent.set_beta_params(
         beta_ping=params.beta_ping,
         beta_start=params.beta_start,
         beta_durations=params.beta_durations,
+    )
+    agent.sample_trajectory(
         ha=params.ha,
         seed=params.seed,
         replace_sparse_traj=True,
@@ -129,7 +131,6 @@ def generate_agent_batch(params_batch):
     city.compute_gravity(exponent=2.0)
     city.compute_shortest_paths(callable_only=True)
     return [generate_agent_trajectory(params, city) for params in params_batch]
-
 
 if _sparse_path.exists() and _diaries_path.exists():
     print("Data already exists — skipping generation.")
