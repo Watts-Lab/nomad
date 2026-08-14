@@ -277,17 +277,17 @@ def test_density_return_cores_returns_label_metadata(
 
 
 @pytest.mark.parametrize(
-    ("label_function", "kwargs", "expected_promotion_time"),
+    ("label_function", "kwargs", "expected_promotion_times"),
     [
-        (density_algs.ta_dbscan_labels, {}, 120),
-        (density_algs.dbstop_labels, {}, 120),
-        (density_algs.seqscan_labels, {"dur_min": 0}, 240),
+        (density_algs.ta_dbscan_labels, {}, [120, 120, 120]),
+        (density_algs.dbstop_labels, {}, [120, 120, 240]),
+        (density_algs.seqscan_labels, {"dur_min": 0}, [240, 240, 240]),
     ],
 )
-def test_density_promotion_time_identifies_promoting_core(
+def test_density_promotion_time_records_propagation(
     label_function,
     kwargs,
-    expected_promotion_time,
+    expected_promotion_times,
 ):
     data = pd.DataFrame(
         {
@@ -318,7 +318,7 @@ def test_density_promotion_time_identifies_promoting_core(
     assert output.loc[0, "core"] < 0
     assert output.loc[1, "core"] == 0
     assert output.loc[2, "core"] < 0
-    assert output["promotion_time"].tolist() == [expected_promotion_time] * 3
+    assert output["promotion_time"].tolist() == expected_promotion_times
 
 
 @pytest.mark.parametrize("use_datetime", [False, True])
@@ -418,8 +418,11 @@ def test_density_promotion_time_uses_original_datetime_values():
         traj_cols=traj_cols,
     )
 
-    expected = data.loc[1, "datetime"]
-    assert output["promotion_time"].tolist() == [expected, expected, expected]
+    assert output["promotion_time"].tolist() == [
+        data.loc[1, "datetime"],
+        data.loc[1, "datetime"],
+        data.loc[2, "datetime"],
+    ]
 
 
 def test_seqscan_retains_border_points_as_non_core():

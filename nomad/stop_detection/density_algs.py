@@ -22,6 +22,21 @@ def ta_dbscan_labels(data,
                      remove_overlaps=True,
                      traj_cols=None,
                      **kwargs):
+    """
+    Return temporal DBSCAN labels.
+
+    Parameters
+    ----------
+    return_cores : bool, default False
+        Return core labels and ``promotion_time`` with cluster labels. Core
+        pings use their own time; border pings use their propagating core time.
+
+    Notes
+    -----
+    ``promotion_time`` records approximate final-membership propagation time.
+    For plotting, accent a ping at ``max(ping_time, promotion_time)``. Its raw
+    value can show propagation edges from cores, including to later pings.
+    """
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
          raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
 
@@ -40,7 +55,8 @@ def ta_dbscan_labels(data,
     
     cluster_df = pd.Series(-2, index=G, name='cluster')
     core_df = pd.Series(-2, index=G, name='core')
-    promotion_time = pd.Series(np.nan, index=G, name='promotion_time')
+    if return_cores:
+        promotion_time = pd.Series(np.nan, index=G, name='promotion_time')
     # Initialize cluster label
     cid = -1
 
@@ -53,16 +69,19 @@ def ta_dbscan_labels(data,
                 cid += 1
                 cluster_df[i] = cid  # Assign new cluster label
                 core_df[i] = cid  # Assign new core label
-                promotion_time[i] = i
+                if return_cores:
+                    promotion_time[i] = i
                 S = [(neighbor, i) for neighbor in G[i]]
                 while S:
                     j, promoting_core = S.pop()
                     if cluster_df[j] < 0:  # Process if not yet in a cluster
                         cluster_df[j] = cid
-                        promotion_time[j] = promoting_core
+                        if return_cores:
+                            promotion_time[j] = promoting_core
                         if len(G[j]) >= min_pts:
                             core_df[j] = cid  # Assign core label
-                            promotion_time[j] = j
+                            if return_cores:
+                                promotion_time[j] = j
                             for k in G[j]:
                                 if cluster_df[k] < 0:
                                     S.append((k, j))
@@ -96,7 +115,8 @@ def ta_dbscan_labels(data,
         ### Reassign border points to non-overlapping core points
         border_mask = core_df < 0
         cluster_df.loc[border_mask] = -1
-        promotion_time.loc[border_mask] = np.nan
+        if return_cores:
+            promotion_time.loc[border_mask] = np.nan
         prev_run_end = -np.inf                           # left bound (exclusive)
         
         run_label = None
@@ -129,7 +149,8 @@ def ta_dbscan_labels(data,
             for nb in run_neighbors:
                 if prev_run_end < nb < next_run_start and cluster_df.at[nb] == -1:
                     cluster_df.at[nb] = run_label
-                    promotion_time.at[nb] = run_neighbor_promoters[nb]
+                    if return_cores:
+                        promotion_time.at[nb] = run_neighbor_promoters[nb]
                     if nb > max_assigned:
                         max_assigned = nb
         
@@ -153,7 +174,8 @@ def ta_dbscan_labels(data,
         for nb in run_neighbors:
             if prev_run_end < nb < next_run_start and cluster_df.at[nb] == -1:
                 cluster_df.at[nb] = run_label
-                promotion_time.at[nb] = run_neighbor_promoters[nb]
+                if return_cores:
+                    promotion_time.at[nb] = run_neighbor_promoters[nb]
                 if nb > max_assigned:
                     max_assigned = nb
         
@@ -161,6 +183,9 @@ def ta_dbscan_labels(data,
             max_assigned = run_end
         prev_run_end = max_assigned
             
+    if not return_cores:
+        return cluster_df.set_axis(data.index)
+
     original_times = pd.Series(data[traj_cols[t_key]].to_numpy(), index=G)
     promotion_time = promotion_time.map(original_times)
     if not use_datetime:
@@ -168,9 +193,7 @@ def ta_dbscan_labels(data,
     output = pd.DataFrame(
         {'cluster': cluster_df, 'core': core_df, 'promotion_time': promotion_time}
     ).set_axis(data.index)
-    if return_cores:
-        return output
-    return output.cluster
+    return output
        
 def ta_dbscan(
     data,
@@ -362,6 +385,21 @@ def dbstop_labels(data,
                  return_cores=False,
                  traj_cols=None,
                  **kwargs):
+    """
+    Return density-based stop labels.
+
+    Parameters
+    ----------
+    return_cores : bool, default False
+        Return core labels and ``promotion_time`` with cluster labels.
+        ``promotion_time`` is the sweep time that propagates final membership.
+
+    Notes
+    -----
+    ``promotion_time`` records approximate final-membership propagation time.
+    For plotting, accent a ping at ``max(ping_time, promotion_time)``. Its raw
+    value can show propagation edges from cores, including to later pings.
+    """
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
          raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
 
@@ -380,7 +418,8 @@ def dbstop_labels(data,
 
     cluster_df = pd.Series(-2, index=G, name='cluster')
     core_df = pd.Series(-2, index=G, name='core')
-    promotion_time = pd.Series(np.nan, index=G, name='promotion_time')
+    if return_cores:
+        promotion_time = pd.Series(np.nan, index=G, name='promotion_time')
     past_cutoff = next(iter(G))  # for querying and relabeling neighbors
     candidate_cutoff = past_cutoff  # useful for splitting border points when a new cluster is formed
     prev_core = -1
@@ -391,19 +430,19 @@ def dbstop_labels(data,
         cluster_df.at[seed_time] = active_cid
         core_df.at[seed_time] = active_cid
         if not seed_was_core:
-            promotion_time.at[seed_time] = seed_time
-        seed_promotion_time = promotion_time.at[seed_time]
+            if return_cores:
+                promotion_time.at[seed_time] = seed_time
         for nb in G[seed_time]:
             if cutoff_time <= nb:
                 was_clustered = cluster_df.at[nb] >= 0
                 was_core = core_df.at[nb] >= 0
                 cluster_df.at[nb] = active_cid
-                if not was_clustered:
-                    promotion_time.at[nb] = seed_promotion_time
+                if return_cores and not was_clustered:
+                    promotion_time.at[nb] = max(nb, seed_time)
                 if len(G[nb]) >= min_pts:
                     core_df.at[nb] = active_cid
-                    if not was_core:
-                        promotion_time.at[nb] = seed_promotion_time
+                    if return_cores and not was_core:
+                        promotion_time.at[nb] = max(nb, seed_time)
 
     for curr_time in G:
         curr_is_core = (core_df.at[curr_time] >= 0) or (len(G[curr_time]) >= min_pts)
@@ -414,7 +453,8 @@ def dbstop_labels(data,
                 candidate_cutoff = curr_time
             else:  # previous labels not reachable, so it is noise
                 cluster_df.at[curr_time] = -1
-                promotion_time.at[curr_time] = np.nan
+                if return_cores:
+                    promotion_time.at[curr_time] = np.nan
         else:
             # Future-labeled neighbors can keep continuity for A-C-B style orderings.
             reachable = (active_cid >= 0 and core_df.at[curr_time] == active_cid)
@@ -476,7 +516,11 @@ def dbstop_labels(data,
                 if not reachable:
                     core_df.at[curr_time] = -1
                     cluster_df.at[curr_time] = -1
-                    promotion_time.at[curr_time] = np.nan
+                    if return_cores:
+                        promotion_time.at[curr_time] = np.nan
+
+    if not return_cores:
+        return cluster_df.set_axis(data.index)
 
     original_times = pd.Series(data[traj_cols[t_key]].to_numpy(), index=G)
     promotion_time = promotion_time.map(original_times)
@@ -485,9 +529,7 @@ def dbstop_labels(data,
     output = pd.DataFrame(
         {'cluster': cluster_df, 'core': core_df, 'promotion_time': promotion_time}
     ).set_axis(data.index)
-    if return_cores:
-        return output
-    return output.cluster
+    return output
        
 def dbstop(
     data,
@@ -685,6 +727,21 @@ def seqscan_labels(
     back_merge=False,
     **kwargs
 ):
+    """
+    Return SeqScan labels.
+
+    Parameters
+    ----------
+    return_cores : bool, default False
+        Return core labels and ``promotion_time`` with cluster labels.
+        ``promotion_time`` is the scan time when final membership is retained.
+
+    Notes
+    -----
+    ``promotion_time`` records approximate final-membership propagation time.
+    For plotting, accent a ping at ``max(ping_time, promotion_time)``. Its raw
+    value can show propagation edges from cores, including to later pings.
+    """
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
          raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
 
@@ -707,7 +764,8 @@ def seqscan_labels(
                 False, use_datetime, use_lon_lat, return_trees=False, relabel_nodes=True)
     cluster_df = pd.Series(-2, index=G, name='cluster')
     core_df = pd.Series(-2, index=G, name='core')
-    promotion_time = pd.Series(np.nan, index=G, name='promotion_time')
+    if return_cores:
+        promotion_time = pd.Series(np.nan, index=G, name='promotion_time')
 
     # SeqScan main loop start
     start = next(iter(G))      # current time context start
@@ -729,7 +787,8 @@ def seqscan_labels(
             temp_cid += 1
             core_df[t] = temp_cid
             cluster_df[t] = temp_cid
-            promotion_time[t] = t
+            if return_cores:
+                promotion_time[t] = t
 
         for s in temp_G[t]:
             if len(temp_G[s]) >= min_pts:
@@ -744,7 +803,8 @@ def seqscan_labels(
                     
                 elif cluster_df[s] >= 0:
                     core_df[s] = cluster_df[s]
-                    promotion_time[s] = t
+                    if return_cores:
+                        promotion_time[s] = t
                     if curr_is_core:
                         core_win = core_df.loc[window]
                         relabel_idxs = core_win.index[core_win.isin([core_df[s], core_df[t]])]
@@ -761,8 +821,8 @@ def seqscan_labels(
                         else:
                             was_clustered = cluster_df[nb] >= 0
                             cluster_df[nb] = core_df[s]
-                            if not was_clustered:
-                                promotion_time[nb] = promotion_time[s]
+                            if return_cores and not was_clustered:
+                                promotion_time[nb] = t
 
                     merged_label = min(nb_labs)
                     core_win = core_df.loc[window]
@@ -775,23 +835,26 @@ def seqscan_labels(
                     if curr_is_core:
                         core_df[s] = core_df[t]
                         cluster_df[s] = cluster_df[t]
-                        promotion_time[s] = t
+                        if return_cores:
+                            promotion_time[s] = t
                     else:
                         temp_cid += 1
                         core_df[s] = temp_cid
                         cluster_df[s] = temp_cid
-                        promotion_time[s] = t
+                        if return_cores:
+                            promotion_time[s] = t
 
                         for nb in temp_G[s]:
                             was_clustered = cluster_df[nb] >= 0
                             cluster_df[nb] = core_df[s]
-                            if not was_clustered:
-                                promotion_time[nb] = promotion_time[s]
+                            if return_cores and not was_clustered:
+                                promotion_time[nb] = t
             else:
                 for nb in reversed(list(temp_G[s])):
                     if core_df[nb] >= 0:
                         cluster_df[t] = core_df[nb]
-                        promotion_time[t] = promotion_time[nb]
+                        if return_cores:
+                            promotion_time[t] = t
                         break
 
         clu_win = cluster_df.loc[window]
@@ -812,7 +875,8 @@ def seqscan_labels(
                 # indices in the window that belong to label c
                 keep_idx = clu_win.index[clu_win == c]
                 keep_core_idx = keep_idx[core_df.loc[keep_idx] >= 0]
-                keep_promotion_time = promotion_time.loc[keep_idx].copy()
+                if return_cores:
+                    keep_promotion_time = promotion_time.loc[keep_idx].copy()
                 
                 end = spans.at[c, "last"]
                 new_cluster = (c != active_cid)
@@ -821,7 +885,8 @@ def seqscan_labels(
                     if active_cid != -1:
                         first = spans.at[c, "first"]
                         prev_border_idx = clu_win.index[(clu_win == active_cid) & (clu_win.index <= first)]
-                        prev_border_promotion_time = promotion_time.loc[prev_border_idx].copy()
+                        if return_cores:
+                            prev_border_promotion_time = promotion_time.loc[prev_border_idx].copy()
                             
                     active_cid += 1
                     start = start_time
@@ -829,15 +894,18 @@ def seqscan_labels(
                 # cleanup of labels in (start_time, t); then restore the new active cluster labels
                 cluster_df.loc[window] = -1
                 core_df.loc[window] = -1
-                promotion_time.loc[window] = np.nan
+                if return_cores:
+                    promotion_time.loc[window] = np.nan
                 
                 if new_cluster and active_cid>0:
                     cluster_df.loc[prev_border_idx] = active_cid - 1
-                    promotion_time.loc[prev_border_idx] = prev_border_promotion_time
+                    if return_cores:
+                        promotion_time.loc[prev_border_idx] = prev_border_promotion_time
                 
                 cluster_df.loc[keep_idx] = active_cid
                 core_df.loc[keep_core_idx] = active_cid
-                promotion_time.loc[keep_idx] = keep_promotion_time
+                if return_cores:
+                    promotion_time.loc[keep_idx] = keep_promotion_time
 
                 temp_cid = active_cid
                 return True
@@ -848,7 +916,8 @@ def seqscan_labels(
         # mark as visited. core relabeling happens later.
         cluster_df.at[curr_time] = -1
         core_df.at[curr_time] = -1
-        promotion_time.at[curr_time] = np.nan
+        if return_cores:
+            promotion_time.at[curr_time] = np.nan
         if active_cid == -1:
             findCluster(start, curr_time)
         else:
@@ -859,12 +928,14 @@ def seqscan_labels(
                 if core_df[nb] == active_cid:
                     is_reachable = True
                     cluster_df[curr_time] = active_cid
-                    promotion_time[curr_time] = promotion_time[nb]
+                    if return_cores:
+                        promotion_time[curr_time] = curr_time
                     break
                     
             if curr_is_core and is_reachable:
                 core_df[curr_time] = active_cid
-                promotion_time[curr_time] = curr_time
+                if return_cores:
+                    promotion_time[curr_time] = curr_time
                 end = curr_time
                 if back_merge and active_cid > 0:
                     prev_lab = active_cid - 1
@@ -880,7 +951,12 @@ def seqscan_labels(
     temporary_mask = cluster_df > active_cid
     cluster_df.loc[temporary_mask] = -1
     core_df.loc[core_df > active_cid] = -1
-    promotion_time.loc[temporary_mask] = np.nan
+    if return_cores:
+        promotion_time.loc[temporary_mask] = np.nan
+
+    if not return_cores:
+        return cluster_df.set_axis(data.index)
+
     original_times = pd.Series(data[traj_cols[t_key]].to_numpy(), index=G)
     promotion_time = promotion_time.map(original_times)
     if not use_datetime:
@@ -888,9 +964,7 @@ def seqscan_labels(
     output = pd.DataFrame(
         {'cluster': cluster_df, 'core': core_df, 'promotion_time': promotion_time}
     ).set_axis(data.index)
-    if return_cores:
-        return output
-    return output.cluster
+    return output
     
 def seqscan(
     data,
@@ -1731,7 +1805,8 @@ def hdbscan_labels(data,
     dur_min : int, optional
         Minimum duration (minutes) for a stop (default: 5).
     return_cores : bool, default False
-        Return cluster, core, and promotion-time metadata instead of labels.
+        Return core labels and ``promotion_time`` with cluster labels. Core
+        pings use their own time; border pings use their propagating core time.
     traj_cols : dict, optional
         Mapping for key columns.
     **kwargs
@@ -1742,6 +1817,12 @@ def hdbscan_labels(data,
     pd.Series or pd.DataFrame
         Cluster labels, or ``cluster``, ``core``, and ``promotion_time`` when
         ``return_cores`` is true.
+
+    Notes
+    -----
+    ``promotion_time`` records approximate final-membership propagation time.
+    For plotting, accent a ping at ``max(ping_time, promotion_time)``. Its raw
+    value can show propagation edges from cores, including to later pings.
     """
     # Check if user wants long and lat and datetime
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)
@@ -1796,8 +1877,9 @@ def hdbscan_labels(data,
         selected_clusters = select_clusters_by_epsilon(hierarchy_df, label_history_df, epsilon=delta_roam)
 
     final_labels = pd.Series(-1, index=core_distances.index, name='cluster', dtype=int)
-    core_labels = pd.Series(-1, index=core_distances.index, name='core', dtype=int)
-    promotion_time = pd.Series(np.nan, index=core_distances.index, name='promotion_time')
+    if return_cores:
+        core_labels = pd.Series(-1, index=core_distances.index, name='core', dtype=int)
+        promotion_time = pd.Series(np.nan, index=core_distances.index, name='promotion_time')
         
     # keep only info of selected clusters and their birthscales, sort from denser to less dense
     cluster_info_df = label_history_df[label_history_df['cluster_id'].isin(selected_clusters)]
@@ -1828,14 +1910,18 @@ def hdbscan_labels(data,
         
         if all_new_members:
             sorted_cores = sorted(unclaimed_cores)
-            core_labels.loc[sorted_cores] = cid
-            promotion_time.loc[sorted_cores] = sorted_cores
-            for core_ts in sorted_cores:
-                borders = sorted(border_map.get(core_ts, set()) & unclaimed_borders)
-                if borders:
-                    promotion_time.loc[borders] = core_ts
+            if return_cores:
+                core_labels.loc[sorted_cores] = cid
+                promotion_time.loc[sorted_cores] = sorted_cores
+                for core_ts in sorted_cores:
+                    borders = sorted(border_map.get(core_ts, set()) & unclaimed_borders)
+                    if borders:
+                        promotion_time.loc[borders] = core_ts
             final_labels.loc[list(all_new_members)] = cid
             claimed_points.update(all_new_members)
+
+    if not return_cores:
+        return final_labels.set_axis(data.index)
 
     original_times = pd.Series(data[traj_cols[t_key]].to_numpy(), index=G)
     promotion_time = promotion_time.map(original_times)
@@ -1849,13 +1935,7 @@ def hdbscan_labels(data,
         }
     ).set_axis(data.index)
 
-    if return_cores:
-        # cluster: selected cluster ID, or -1 for noise.
-        # core: cluster ID for core points, or -1 for border/noise points.
-        # promotion_time: own time for cores, claiming-core time for borders, null for noise.
-        return output
-    # Without core metadata, return only the selected cluster ID (or -1 for noise).
-    return output.cluster
+    return output
 
 def st_hdbscan(
     data,
