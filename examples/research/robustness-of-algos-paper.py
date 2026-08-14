@@ -1,6 +1,7 @@
 # ---
 # jupyter:
 #   jupytext:
+#     cell_metadata_filter: all
 #     formats: ipynb,py:percent
 #     text_representation:
 #       extension: .py
@@ -13,7 +14,7 @@
 #     name: python3
 # ---
 
-# %%
+# %% tags=[]
 import numpy as np
 import numpy.random as npr
 import pandas as pd
@@ -33,9 +34,9 @@ import os
 
 import nomad.io.base as loader
 import nomad.stop_detection.utils as utils
-import nomad.stop_detection.sequential_algs as LACHESIS
-import nomad.stop_detection.density_algs as TADBSCAN
-import nomad.stop_detection.sequential_algs as GRID_BASED
+from nomad.stop_detection.sequential_algs import lachesis_labels
+from nomad.stop_detection.density_algs import ta_dbscan_labels
+from nomad.stop_detection.sequential_algs import grid_based_labels
 import nomad.stop_detection.postprocessing as pp
 
 import nomad.visit_attribution as visits
@@ -47,14 +48,14 @@ import nomad.generation.viz as viz
 from nomad.contact_estimation import overlapping_visits, compute_precision_recall_f1
 from nomad.stop_detection.validation import compute_visitation_errors
 
-# %%
+# %% tags=[]
 # At some point, we should fix the warnings in the codebase, but for now we can ignore them.
 
 warnings.filterwarnings('ignore', category=UserWarning)
 warnings.filterwarnings('ignore', category=FutureWarning)
 
 
-# %%
+# %% tags=[]
 # The following functions help with segmenting the analysis to building size/type and stop dwell time. 
 
 def classify_building_size_from_id(building_id):
@@ -96,10 +97,10 @@ def classify_dwell(duration):
 # %% [markdown]
 # Pre-processing algorithms for human mobility data, such as stop detection, are vulnerable to errors when applied to sparse and bursty GPS datasets, but evaluating their robustness is difficult in the absence of ground truth. We address this challenge with a synthetic benchmarking framework that combines an agent-based generator of realistic trajectories—based on the Exploration and Preferential Return model (EPR)—with a sparse sampler that replicates the temporal structure of real GPS data. This setup allows controlled comparison of algorithm outputs against known ground-truth stops. We evaluate three stop-detection methods—ST-DBScan, Lachesis, and a grid-based algorithm—across varying levels of sparsity, burstiness, and parameterizations. Our analysis identifies failure modes such as stop merging, splitting, and missed stops, quantifies how often they arise under realistic movement patterns, and assesses how parameter tuning can mitigate them. We find that commonly used algorithms are not robust to levels of sparsity commonly found in commercial datasets, and that parameter choices critically affect outcomes. These experiments offer practical guidance for improving the reliability of GPS data processing in applied research.
 
-# %% [markdown]
+# %% [markdown] tags=[]
 # ## Introduction
 
-# %% [markdown]
+# %% [markdown] tags=[]
 # Commercial GPS datasets have become central to human mobility research, powering applications in epidemiology, disaster response, transportation, urban planning, and behavioral science \cite{chang2021mobility, pepe2020covid, couture2021jue, moro2021mobility, gauvin2020gender, song2014prediction}. These datasets provide granular, high-frequency location signals from smartphones, but they are also sparse, bursty, and noisy—particularly when pings are collected opportunistically via apps or under privacy-preserving constraints. To extract useful signals from these raw data, researchers apply pre-processing algorithms to identify stops, trips, and frequently visited locations. However, many of these algorithms, including variants of DBScan \cite{birant2007st, ester1996density}, rule-based methods like Project Lachesis \cite{hariharan2004project}, and grid-based heuristics, were not designed with sparse or bursty signals in mind. Their performance in such settings is rarely tested, and robustness to signal degradation remains poorly understood.
 #
 # Evaluating robustness in these settings is nontrivial. Real datasets typically lack ground truth: it is unknown whether a detected stop reflects a real event, or if a missed stop is due to noise, sparsity, or poor parameterization. Even synthetic benchmarks often assume uniformly sampled trajectories, which overlook the temporal irregularities that characterize real data. As a result, existing evaluations often prioritize computational efficiency over behavioral accuracy \cite{aslak2020infostop, chen2014t}, leaving open questions about how well these algorithms perform under the kinds of signal degradation found in commercial datasets.
@@ -131,13 +132,13 @@ def classify_dwell(duration):
 #
 # ![Ad-hoc Trajectory 2](./ad-hoc-traj-2.png)
 
-# %% [markdown]
+# %% [markdown] tags=[]
 # ## START CODE
 
 # %% [markdown]
 # Begin by initiating the city and loading the table of POIs.
 
-# %%
+# %% tags=[]
 city = cg.load('../garden-city.pkl')
 
 poi_table = gpd.read_file('../garden_city_gc_coords.geojson')
@@ -147,7 +148,7 @@ poi_table['building_size'] = poi_table['building_id'].apply(classify_building_si
 # %% [markdown]
 # ### Define the function for simulation
 
-# %%
+# %% tags=[]
 summarize_stops_with_loc = partial(
     utils.summarize_stop,
     x='x',
@@ -243,7 +244,7 @@ def run_simulation_for_single_seed(
             MIN_PTS = dbscan_param['min_pts']
             DUR_MIN = dbscan_param['dur_min']
 
-            labels = TADBSCAN._temporal_dbscan_labels(
+            labels = ta_dbscan_labels(
                 data=sparse,
                 time_thresh=TIME_THRESH,
                 dist_thresh=DIST_THRESH,
@@ -258,7 +259,7 @@ def run_simulation_for_single_seed(
             DELTA_ROAM = lachesis_param['delta_roam']
             DUR_MIN = lachesis_param['dur_min']
 
-            labels = LACHESIS._lachesis_labels(
+            labels = lachesis_labels(
                 traj=sparse,
                 dt_max=TIME_THRESH,
                 dur_min=DUR_MIN,
@@ -458,10 +459,10 @@ def run_simulation_for_single_seed(
     print(f"Finished simulation for seed {seed} on process {os.getpid()}")
     return seed_all_metrics_df, seed_metrics_size_df, seed_metrics_btype_df, seed_metrics_dwell_df
 
-# %% [markdown]
+# %% [markdown] tags=[]
 # ## Figure: Demonstrate Problems
 
-# %%
+# %% tags=[]
 start_time = pd.date_range(start='2024-06-01 00:00-04:00', periods=4, freq='60min')
 tz_offset = loader._offset_seconds_from_ts(start_time[0])
 unix_timestamp = [int(t.timestamp()) for t in start_time]
@@ -481,7 +482,7 @@ traj_cols = {'user_id':'identifier',
              'y':'y',
              'timestamp':'timestamp'}
 
-# %%
+# %% tags=[]
 fig, axes = plt.subplots(
     4, 2, figsize=(10, 11),
     gridspec_kw={'height_ratios': [4.7, 0.3, 4.7, 0.3], 'hspace': 0.3, 'wspace': 0.1})
@@ -498,7 +499,7 @@ Charlie.set_beta_params(beta_start=None, beta_durations=None, beta_ping=4)
 Charlie.sample_trajectory(seed=2311,
                           ha=3/5,
                           replace_sparse_traj=True)
-labels = TADBSCAN._temporal_dbscan_labels(
+labels = ta_dbscan_labels(
     data=Charlie.sparse_traj,
     time_thresh=600,
     dist_thresh=0.8,
@@ -526,7 +527,7 @@ Charlie.set_beta_params(beta_start=None, beta_durations=None, beta_ping=12)
 Charlie.sample_trajectory(seed=7617,
                           ha=3/5,
                           replace_sparse_traj=True)
-labels = LACHESIS._lachesis_labels(
+labels = lachesis_labels(
     traj=Charlie.sparse_traj,
     dt_max=600,
     delta_roam=1.5,
@@ -553,7 +554,7 @@ Charlie.set_beta_params(beta_start=90, beta_durations=45, beta_ping=4)
 burst_info = Charlie.sample_trajectory(seed=3351,
                                        ha=3/5,
                                        replace_sparse_traj=True)
-labels = TADBSCAN._temporal_dbscan_labels(
+labels = ta_dbscan_labels(
     data=Charlie.sparse_traj,
     time_thresh=600,
     dist_thresh=1,
@@ -584,7 +585,7 @@ Charlie.set_beta_params(beta_start=90, beta_durations=45, beta_ping=12)
 burst_info = Charlie.sample_trajectory(seed=8758,
                                        ha=3/5,
                                        replace_sparse_traj=True)
-labels = TADBSCAN._temporal_dbscan_labels(
+labels = ta_dbscan_labels(
     data=Charlie.sparse_traj,
     time_thresh=600,
     dist_thresh=0.8,
@@ -614,12 +615,12 @@ plt.tight_layout()
 plt.savefig("all-problems.png", dpi=800, bbox_inches='tight')
 plt.show()
 
-# %% [markdown]
+# %% [markdown] tags=[]
 # ## Experiment 1.1
 #
 # Demonstrates merging. We specify four neighboring small stops.
 
-# %%
+# %% tags=[]
 start_time = pd.date_range(start='2024-06-01 00:00-04:00', periods=4, freq='60min')
 tz_offset = loader._offset_seconds_from_ts(start_time[0])
 unix_timestamp = [int(t.timestamp()) for t in start_time]
@@ -643,7 +644,7 @@ traj_cols = {'user_id':'identifier',
 # %% [markdown]
 # Example plot
 
-# %%
+# %% tags=[]
 Charlie = Agent(identifier="Charlie",
                 home='h-x13-y11',
                 workplace='w-x18-y8',
@@ -655,7 +656,7 @@ Charlie.sample_trajectory(seed=2,
                           ha=3/4,
                           replace_sparse_traj=True)
 
-dbscan_labels = TADBSCAN._temporal_dbscan_labels(
+dbscan_labels = ta_dbscan_labels(
     data=Charlie.sparse_traj,
     time_thresh=600,
     dist_thresh=0.8,
@@ -663,7 +664,7 @@ dbscan_labels = TADBSCAN._temporal_dbscan_labels(
     dur_min=5,
     traj_cols=traj_cols)
 
-lachesis_labels = LACHESIS._lachesis_labels(
+lachesis_labels = lachesis_labels(
     traj=Charlie.sparse_traj,
     dt_max=600,
     delta_roam=2.5,
@@ -691,7 +692,7 @@ plt.show()
 # %% [markdown]
 # Set up simulation parameters
 
-# %%
+# %% tags=[]
 BETA_START = [None]  # One long burst
 BETA_DUR = [None]    # One long burst
 BETA_PING = np.arange(2, 25.5, 0.5).tolist()   # Range of mean inter-ping times
@@ -718,7 +719,7 @@ sim_tasks = pd.DataFrame(sim_tasks, columns=['beta_start', 'beta_dur', 'beta_pin
 # %% [markdown]
 # The following code parallelizes the simulation. Run it on Sagemaker.
 
-# %%
+# %% tags=[]
 # PARALLELIZED CODE (RUN ON SAGEMAKER)
 
 if __name__ == '__main__':
@@ -780,7 +781,7 @@ if __name__ == '__main__':
     with open(output_filename, 'wb') as f:
         pickle.dump(all_results, f)
 
-# %%
+# %% tags=[]
 # Load the results from the pickle file
 with open('exp1a_results.pkl', 'rb') as f:
     results = pickle.load(f)
@@ -792,7 +793,7 @@ with open('exp1a_results.pkl', 'rb') as f:
 # %% [markdown]
 # Create Exp 1a plot:
 
-# %%
+# %% tags=[]
 # Prepare the DataFrame for plotting
 chart_df1 = all_metrics_df.groupby(['beta_ping', 'algorithm'])['merged_fraction'].agg(['mean', 'sem']).reset_index()
 chart_df1.rename(columns={'mean': 'merged_fraction_mean', 'sem': 'merged_fraction_sem'}, inplace=True)
@@ -832,12 +833,12 @@ plt.savefig("exp1a-merging.png")
 
 plt.show()
 
-# %% [markdown]
+# %% [markdown] tags=[]
 # ## Experiment 1.2
 #
 # Demonstrates splitting and missing. We specify 5 stops of varying areas and dwell times.
 
-# %%
+# %% tags=[]
 tz = ZoneInfo("America/New_York")
 start_time = pd.date_range(start='2024-06-01 03:00', periods=18, freq='60min', tz=tz)
 unix_timestamp = [int(t.timestamp()) for t in start_time]
@@ -861,7 +862,7 @@ traj_cols = {'user_id':'identifier',
 # %% [markdown]
 # Example plot
 
-# %%
+# %% tags=[]
 algo = 'ta-dbscan'  # or 'lachesis'
 
 Charlie = Agent(identifier="Charlie",
@@ -881,7 +882,7 @@ Charlie.sample_trajectory(
 )
 
 if algo == 'ta-dbscan':
-    labels = TADBSCAN._temporal_dbscan_labels(
+    labels = ta_dbscan_labels(
         data=Charlie.sparse_traj,
         time_thresh=90,
         dist_thresh=2,
@@ -889,7 +890,7 @@ if algo == 'ta-dbscan':
         traj_cols=traj_cols)
     
 elif algo == 'lachesis':
-    labels = LACHESIS._lachesis_labels(
+    labels = lachesis_labels(
         traj=Charlie.sparse_traj,
         dt_max=20,
         delta_roam=75,
@@ -930,7 +931,7 @@ plt.show()
 # %% [markdown]
 # Set up simulation parameters
 
-# %%
+# %% tags=[]
 EXP_Q = 0.4   # Expected completeness of the trajectory (i.e., the q value)
 BETA_START = np.arange(10, 200, 10)   # Range of beta_start values (in minutes)
 BETA_PING = [10]   # All trajectories have the same beta_ping
@@ -962,7 +963,7 @@ agent = Agent(
 # %% [markdown]
 # The following code parallelizes the simulation. Run it on Sagemaker.
 
-# %%
+# %% tags=[]
 # PARALLELIZED CODE (RUN ON SAGEMAKER)
 
 if __name__ == '__main__':
@@ -1024,7 +1025,7 @@ if __name__ == '__main__':
     with open(output_filename, 'wb') as f:
         pickle.dump(all_results, f)
 
-# %%
+# %% tags=[]
 # Load the results from the pickle file
 with open('exp1b_results.pkl', 'rb') as f:
     results = pickle.load(f)
@@ -1036,7 +1037,7 @@ with open('exp1b_results.pkl', 'rb') as f:
 # %% [markdown]
 # Create Exp 1b plot:
 
-# %%
+# %% tags=[]
 # Calculate mean and standard error of the mean for each metric
 chart_df2 = all_metrics_df.groupby(['beta_start', 'algorithm']).agg(
     split_fraction_mean=('split_fraction', 'mean'),
@@ -1165,7 +1166,7 @@ plt.savefig("exp1b-splitting-missing.png", dpi=300, bbox_inches='tight')
 
 plt.show()
 
-# %% [markdown]
+# %% [markdown] tags=[]
 # ## Experiment 2
 #
 # For each of (100?) agents with heterogeneous noise and sparsity patterns, we will generate multiple 3-week-long ground-truth trajectories and sample sparse traces. 
@@ -1173,7 +1174,7 @@ plt.show()
 # %% [markdown]
 # ### Define simulation code for exp 2
 
-# %%
+# %% tags=[]
 summarize_stops_with_loc = partial(
     utils.summarize_stop,
     x='x',
@@ -1264,7 +1265,7 @@ def run_simulation_for_single_agent(
                     timestamp='timestamp',
                     location_id='building_id')
                 # find cluster labels with naive grid-based continuity
-                labels = GRID_BASED.grid_based_labels(
+                labels = grid_based_labels(
                     data=sparse.join(location),
                     time_thresh=TIME_THRESH,
                     min_pts=0, #we allow stops of duration 0, patched later
@@ -1277,7 +1278,7 @@ def run_simulation_for_single_agent(
                 MIN_PTS = dbscan_param['min_pts']
                 DUR_MIN = dbscan_param['dur_min']
 
-                labels = TADBSCAN._temporal_dbscan_labels(
+                labels = ta_dbscan_labels(
                     data=sparse,
                     time_thresh=TIME_THRESH,
                     dist_thresh=DIST_THRESH,
@@ -1292,7 +1293,7 @@ def run_simulation_for_single_agent(
                 DELTA_ROAM = lachesis_param['delta_roam']
                 DUR_MIN = lachesis_param['dur_min']
 
-                labels = LACHESIS._lachesis_labels(
+                labels = lachesis_labels(
                     traj=sparse,
                     dt_max=TIME_THRESH,
                     dur_min=DUR_MIN,
@@ -1503,7 +1504,7 @@ def run_simulation_for_single_agent(
 # %% [markdown]
 # ### Run Exp 2
 
-# %%
+# %% tags=[]
 N_agents = 100   # number of agents to simulate
 N_sim = 10  # number of simulations per agent
 
@@ -1517,7 +1518,7 @@ traj_cols = {'user_id':'identifier',
              'timestamp':'timestamp',
              'location_id':'building_id'}
 
-# %%
+# %% tags=[]
 # PARALLELIZED CODE (RUN ON SAGEMAKER)
 
 if __name__ == '__main__':
@@ -1576,7 +1577,7 @@ if __name__ == '__main__':
     with open(output_filename, 'wb') as f:
         pickle.dump(all_results, f)
 
-# %%
+# %% tags=[]
 # Load the results from the pickle file
 with open('exp2_results.pkl', 'rb') as f:
     results = pickle.load(f)
@@ -1588,7 +1589,7 @@ with open('exp2_results.pkl', 'rb') as f:
 # %% [markdown]
 # Summary table of metrics (outputted in in LaTeX)
 
-# %%
+# %% tags=[]
 summary = all_metrics_df.groupby('algorithm')[['missed_fraction', 'merged_fraction', 'split_fraction', 'precision', 'recall', 'f1']].mean()
 summary.columns = ['missed', 'merged', 'split', 'precision', 'recall', 'f1']
 print(summary.to_latex(float_format="%.3f", caption="Stop Detection Metrics by Algorithm", label="tab:exp2_metrics"))
@@ -1596,7 +1597,7 @@ print(summary.to_latex(float_format="%.3f", caption="Stop Detection Metrics by A
 # %% [markdown]
 # Chart
 
-# %%
+# %% tags=[]
 chart_df3 = all_metrics_df.groupby(['agent', 'algorithm']).mean().reset_index()
 
 fig, axes = plt.subplots(1, 2, figsize=(11, 5), sharey=True)

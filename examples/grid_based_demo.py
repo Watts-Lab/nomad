@@ -1,11 +1,13 @@
 # ---
 # jupyter:
 #   jupytext:
+#     cell_metadata_filter: all
+#     formats: ipynb,py:percent
 #     text_representation:
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.18.1
+#       jupytext_version: 1.19.3
 #   kernelspec:
 #     display_name: .venv
 #     language: python
@@ -35,7 +37,7 @@ import nomad.io.base as loader
 import geopandas as gpd
 from shapely.geometry import box
 from nomad.stop_detection.viz import plot_stops_barcode, plot_time_barcode, plot_hexagons, plot_pings
-import nomad.stop_detection.sequential_algs as GRID_BASED
+from nomad.stop_detection.sequential_algs import grid_based
 import nomad.filters as filters 
 
 # Load data
@@ -53,7 +55,7 @@ traj = loader.sample_from_file(filepath_root, format='parquet', users=users, fil
 
 # Grid-based - data is in Web Mercator (EPSG:3857) projected coordinates
 traj['h3_cell'] = filters.to_tessellation(traj, index="h3", res=10, traj_cols=tc, data_crs='EPSG:3857')
-stops_gb = GRID_BASED.grid_based(traj, time_thresh=240, complete_output=True, location_id='h3_cell', traj_cols=tc)
+stops_gb = grid_based(traj, time_thresh=240, complete_output=True, location_id='h3_cell', traj_cols=tc)
 
 # %%
 fig, (ax_map, ax_barcode) = plt.subplots(2, 1, figsize=(6,6.5),

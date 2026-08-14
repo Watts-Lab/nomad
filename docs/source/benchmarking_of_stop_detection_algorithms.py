@@ -1,0 +1,195 @@
+# ---
+# jupyter:
+#   jupytext:
+#     cell_metadata_filter: all
+#     formats: ipynb,py:percent
+#     text_representation:
+#       extension: .py
+#       format_name: percent
+#       format_version: '1.3'
+#       jupytext_version: 1.19.3
+#   kernelspec:
+#     display_name: Python 3 (ipykernel)
+#     language: python
+#     name: python3
+# ---
+
+# %% [markdown]
+# # Comparing runtimes of different stop detection algorithms on toy datasets
+
+# %% [markdown]
+# Here we compare the runtimes of four different stop detection algorithms: Lachesis, grid-based, temporal DBSCAN, and HDBSCAN.
+
+# %% execution={"iopub.execute_input": "2026-08-13T02:23:44.456328Z", "iopub.status.busy": "2026-08-13T02:23:44.456328Z", "iopub.status.idle": "2026-08-13T02:23:47.743328Z", "shell.execute_reply": "2026-08-13T02:23:47.743328Z"}
+# %matplotlib inline
+import matplotlib
+import matplotlib.pyplot as plt
+import seaborn as sns
+# Imports
+import nomad.io.base as loader
+import geopandas as gpd
+from shapely.geometry import box
+import pandas as pd
+import numpy as np
+from nomad.stop_detection.viz import plot_stops_barcode, plot_pings, plot_stops, plot_time_barcode
+from nomad.stop_detection.density_algs import ta_dbscan_labels
+from nomad.stop_detection.sequential_algs import lachesis
+from nomad.stop_detection.sequential_algs import grid_based
+from nomad.stop_detection.density_algs import hdbscan_labels
+import nomad.filters as filters 
+import nomad.stop_detection.postprocessing as post
+import time
+from tqdm import tqdm
+
+# Load data
+import nomad.data as data_folder
+from pathlib import Path
+data_dir = Path(data_folder.__file__).parent
+city = gpd.read_parquet(data_dir / 'garden-city-buildings-mercator.parquet')
+outer_box = box(*city.total_bounds).buffer(15, join_style='mitre')
+
+filepath_root = data_dir / "gc_data_long"
+tc = {
+    "user_id": "gc_identifier",
+    "timestamp": "unix_ts",
+    "x": "dev_x",
+    "y": "dev_y",
+    "ha":"ha",
+    "date":"date"}
+
+users = ['admiring_brattain']
+traj = loader.sample_from_file(filepath_root, format='parquet', users=users, filters=('date','==', '2024-01-01'), traj_cols=tc)
+
+# Lachesis (sequential stop detection)
+start_time = time.time()
+stops = lachesis(traj, delta_roam=20, dt_max = 60, dur_min=5, complete_output=True, keep_col_names=True, traj_cols=tc)
+execution_time_lachesis = time.time() - start_time
+print(f"Lachesis execution time: {execution_time_lachesis} seconds")
+
+# Density based stop detection (Temporal DBSCAN)
+start_time = time.time()
+user_data_tadb = traj.assign(cluster=ta_dbscan_labels(traj, time_thresh=240, dist_thresh=15, min_pts=3, traj_cols=tc))
+clustering_time_tadbscan = time.time() - start_time
+start_time_post = time.time()
+cluster_labels_tadb = user_data_tadb['cluster']
+execution_time_tadbscan = time.time() - start_time
+post_time_tadbscan = time.time() - start_time_post
+print(f"TA-DBSCAN execution time: {execution_time_tadbscan} seconds")
+print(f"TA-DBSCAN clustering time: {clustering_time_tadbscan} seconds")
+print(f"TA-DBSCAN label extraction time: {post_time_tadbscan} seconds")
+
+# Grid-based
+start_time = time.time()
+traj['h3_cell'] = filters.to_tessellation(traj, index="h3", res=10, traj_cols=tc, data_crs='EPSG:3857')
+stops_gb = grid_based(traj, time_thresh=240, complete_output=True, traj_cols=tc, location_id='h3_cell')
+execution_time_grid = time.time() - start_time
+print(f"Grid-Based execution time: {execution_time_grid} seconds")
+
+# HDBSCAN
+start_time = time.time()
+user_data_hdb = traj.assign(cluster=hdbscan_labels(traj, time_thresh=240, min_pts=3, min_cluster_size=2, traj_cols=tc))
+clustering_time_hdbscan = time.time() - start_time
+start_time_post = time.time()
+cluster_labels_hdb = user_data_hdb['cluster']
+execution_time_hdbscan = time.time() - start_time
+post_time_hdbscan = time.time() - start_time_post
+print(f"HDBSCAN execution time: {execution_time_hdbscan} seconds")
+print(f"HDBSCAN clustering time: {clustering_time_hdbscan} seconds")
+print(f"HDBSCAN label extraction time: {post_time_hdbscan} seconds")
+
+# %% [markdown]
+# ## Summary of Single-User Performance
+
+# %% [markdown]
+# ### Lachesis
+
+# %% execution={"iopub.execute_input": "2026-08-13T02:23:47.745330Z", "iopub.status.busy": "2026-08-13T02:23:47.745330Z", "iopub.status.idle": "2026-08-13T02:23:48.058843Z", "shell.execute_reply": "2026-08-13T02:23:48.058843Z"}
+fig, (ax_map, ax_barcode) = plt.subplots(2, 1, figsize=(6,6.5),
+                                         gridspec_kw={'height_ratios':[10,1]})
+
+gpd.GeoDataFrame(geometry=[outer_box], crs='EPSG:3857').plot(ax=ax_map, color='#d3d3d3')
+city.plot(ax=ax_map, edgecolor='white', linewidth=1, color='#8c8c8c')
+
+plot_stops(stops, ax=ax_map, cmap='Reds')
+plot_pings(traj, ax=ax_map, s=6, point_color='black', cmap='twilight', traj_cols=tc)
+ax_map.set_axis_off()
+
+plot_time_barcode(traj[tc['timestamp']], ax=ax_barcode, set_xlim=True)
+plot_stops_barcode(stops, ax=ax_barcode, cmap='Reds', set_xlim=False, timestamp='unix_ts')
+
+plt.tight_layout(pad=0.1)
+plt.show()
+
+# %% execution={"iopub.execute_input": "2026-08-13T02:23:48.060845Z", "iopub.status.busy": "2026-08-13T02:23:48.060845Z", "iopub.status.idle": "2026-08-13T02:23:48.074525Z", "shell.execute_reply": "2026-08-13T02:23:48.074525Z"}
+print("Summary of Single-User Performance")
+print(f"Lachesis execution time: {execution_time_lachesis} seconds")
+print(f"TA-DBSCAN execution time: {execution_time_tadbscan} seconds")
+print(f"Grid-Based execution time: {execution_time_grid} seconds")
+print(f"HDBSCAN execution time: {execution_time_hdbscan} seconds")
+
+# %% execution={"iopub.execute_input": "2026-08-13T02:23:48.076526Z", "iopub.status.busy": "2026-08-13T02:23:48.075526Z", "iopub.status.idle": "2026-08-13T02:23:48.090205Z", "shell.execute_reply": "2026-08-13T02:23:48.090205Z"}
+print("Runtime Disaggregation")
+print(f"Lachesis clustering time: {execution_time_lachesis} seconds")
+print("--------------------------------")
+print(f"TA-DBSCAN clustering time: {clustering_time_tadbscan} seconds")
+print(f"TA-DBSCAN label extraction time: {post_time_tadbscan} seconds")
+print("--------------------------------")
+print(f"Grid-Based clustering time: {execution_time_grid} seconds")
+print("--------------------------------")
+print(f"HDBSCAN clustering time: {clustering_time_hdbscan} seconds")
+print(f"HDBSCAN label extraction time: {post_time_hdbscan} seconds")
+
+# %% [markdown]
+# ## Pings vs Runtime
+
+# %% execution={"iopub.execute_input": "2026-08-13T02:23:48.092207Z", "iopub.status.busy": "2026-08-13T02:23:48.091207Z", "iopub.status.idle": "2026-08-13T02:23:48.185209Z", "shell.execute_reply": "2026-08-13T02:23:48.185209Z"}
+traj = loader.sample_from_file(filepath_root, format='parquet', traj_cols=tc, seed=10)
+
+# H3 cells for grid_based stop detection method
+traj['h3_cell'] = filters.to_tessellation(traj, index="h3", res=10, traj_cols=tc, data_crs='EPSG:3857')
+pings_per_user = traj['gc_identifier'].value_counts()
+
+# %% execution={"iopub.execute_input": "2026-08-13T02:23:48.187210Z", "iopub.status.busy": "2026-08-13T02:23:48.187210Z", "iopub.status.idle": "2026-08-13T02:24:49.549301Z", "shell.execute_reply": "2026-08-13T02:24:49.549301Z"}
+# Approximately 5 minutes for 40 users
+results = []
+for user, n_pings in tqdm(pings_per_user.items(), total=len(pings_per_user)):
+    user_data = traj.query("gc_identifier == @user")
+
+    # For location based
+    start_time = time.time()
+    stops_gb = grid_based(user_data, time_thresh=240, complete_output=True, traj_cols=tc, location_id='h3_cell')
+    execution_time = time.time() - start_time
+    results += [pd.Series({'user':user, 'algo':'grid_based', 'execution_time':execution_time, 'n_pings':n_pings})]
+    
+    # For Lachesis
+    start_time = time.time()
+    stops_lac = lachesis(user_data, delta_roam=30, dt_max=240, complete_output=True, traj_cols=tc)
+    execution_time = time.time() - start_time
+    results += [pd.Series({'user':user, 'algo':'lachesis', 'execution_time':execution_time, 'n_pings':n_pings})]
+
+    # For TADbscan
+    start_time = time.time()
+    user_data_tadb = user_data.assign(cluster=ta_dbscan_labels(user_data, time_thresh=240, dist_thresh=15, min_pts=3, traj_cols=tc))
+    # - post-processing
+    stops_tadb = user_data_tadb[user_data_tadb.cluster != -1]
+    execution_time = time.time() - start_time
+    results += [pd.Series({'user':user, 'algo':'tadbscan', 'execution_time':execution_time, 'n_pings':n_pings})]
+
+    # For HDBSCAN
+    start_time = time.time()
+    user_data_hdb = user_data.assign(cluster=hdbscan_labels(user_data, time_thresh=240, min_pts=3, min_cluster_size=2, traj_cols=tc))
+    # - post-processing
+    stops_hdb = user_data_hdb[user_data_hdb.cluster != -1]
+    execution_time = time.time() - start_time
+    results += [pd.Series({'user':user, 'algo':'hdbscan', 'execution_time':execution_time, 'n_pings':n_pings})]
+
+results = pd.DataFrame(results)
+
+# %% execution={"iopub.execute_input": "2026-08-13T02:24:49.552301Z", "iopub.status.busy": "2026-08-13T02:24:49.551302Z", "iopub.status.idle": "2026-08-13T02:24:49.978930Z", "shell.execute_reply": "2026-08-13T02:24:49.978930Z"}
+algos = ['grid_based', 'lachesis', 'tadbscan', 'hdbscan']
+palette = dict(zip(algos, sns.color_palette(n_colors=len(algos))))
+
+fig, ax = plt.subplots(figsize=(5, 5))
+sns.lineplot(data=results, marker='o', x='n_pings', y='execution_time', hue='algo', ax=ax)
+ax.set_title('n_pings vs execution_time')
+plt.show()

@@ -1,6 +1,7 @@
 # ---
 # jupyter:
 #   jupytext:
+#     cell_metadata_filter: all
 #     formats: ipynb,py:percent
 #     text_representation:
 #       extension: .py
@@ -28,11 +29,11 @@ from tqdm import tqdm
 import nomad.data as data_folder
 import nomad.io.base as loader
 import nomad.stop_detection.utils as utils
-import nomad.stop_detection.density_algs as TADBSCAN
-import nomad.stop_detection.density_algs as HDBSCAN
-import nomad.stop_detection.sequential_algs as GRID_BASED
-import nomad.stop_detection.sequential_algs as LACHESIS
-import nomad.stop_detection.density_algs as SEQSCAN
+from nomad.stop_detection.density_algs import ta_dbscan_labels
+from nomad.stop_detection.density_algs import hdbscan_labels
+from nomad.stop_detection.sequential_algs import grid_based_labels
+from nomad.stop_detection.sequential_algs import lachesis_labels
+from nomad.stop_detection.density_algs import seqscan_labels
 from nomad.stop_detection.validation import (
     AlgorithmRegistry,
     bootstrap_metric_summary,
@@ -257,19 +258,19 @@ pipeline = {
 
 registry = AlgorithmRegistry()
 
-registry.add_algorithm(SEQSCAN.seqscan_labels, family='seqscan', dist_thresh=30, time_thresh=120)
+registry.add_algorithm(seqscan_labels, family='seqscan', dist_thresh=30, time_thresh=120)
 
-registry.add_algorithm(HDBSCAN.hdbscan_labels,       family='ta-hdbscan',
+registry.add_algorithm(hdbscan_labels,       family='ta-hdbscan',
                        time_thresh=240, min_pts=3, min_cluster_size=1, include_border_points=True)
-registry.add_algorithm(GRID_BASED.grid_based_labels,  family='oracle',
+registry.add_algorithm(grid_based_labels,  family='oracle',
                        time_thresh=600, min_pts=0, location_id='id')
-registry.add_algorithm(TADBSCAN.ta_dbscan_labels,     family='tadbscan_coarse',
+registry.add_algorithm(ta_dbscan_labels,     family='tadbscan_coarse',
                        time_thresh=240, min_pts=2, dist_thresh=30)
-registry.add_algorithm(TADBSCAN.ta_dbscan_labels,     family='tadbscan_fine',
+registry.add_algorithm(ta_dbscan_labels,     family='tadbscan_fine',
                        time_thresh=120, min_pts=3, dist_thresh=20)
-registry.add_algorithm(LACHESIS.lachesis_labels,      family='lachesis_coarse',
+registry.add_algorithm(lachesis_labels,      family='lachesis_coarse',
                        dt_max=240, delta_roam=40)
-registry.add_algorithm(LACHESIS.lachesis_labels,      family='lachesis_fine',
+registry.add_algorithm(lachesis_labels,      family='lachesis_fine',
                        dt_max=120, delta_roam=25)
 
 print(f"Registry: {len(registry)} algorithm configurations")

@@ -1,11 +1,13 @@
 # ---
 # jupyter:
 #   jupytext:
+#     cell_metadata_filter: all
+#     formats: ipynb,py:percent
 #     text_representation:
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.18.1
+#       jupytext_version: 1.19.3
 #   kernelspec:
 #     display_name: base
 #     language: python
@@ -30,9 +32,7 @@ import nomad.io.base as loader
 import geopandas as gpd
 from shapely.geometry import box
 from nomad.stop_detection.viz import plot_stops_barcode, plot_time_barcode, plot_stops, plot_pings
-import nomad.stop_detection.density_algs as HDBSCAN
-
-# Load data
+from nomad.stop_detection.density_algs import st_hdbscan
 import nomad.data as data_folder
 from pathlib import Path
 data_dir = Path(data_folder.__file__).parent
@@ -45,7 +45,7 @@ tc = {"user_id": "gc_identifier", "x": "dev_x", "y": "dev_y", "timestamp": "unix
 users = ['admiring_brattain']
 traj = loader.sample_from_file(filepath_root, format='parquet', users=users, filters=('date','==', '2024-01-01'), traj_cols=tc)
 
-stops_hdb = HDBSCAN.st_hdbscan(traj,
+stops_hdb = st_hdbscan(traj,
                     time_thresh=720,
                     min_pts=3,
                     complete_output=True,
