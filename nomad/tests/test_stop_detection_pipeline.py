@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 
 from nomad.stop_detection.sequential_algs import lachesis
-from nomad.visit_attribution.visit_attribution import lachesis_visits
+from nomad.stop_detection.pipeline import lachesis_visits
 
 
 @pytest.fixture
@@ -42,7 +42,7 @@ def test_lachesis_dbscan_clusters_and_merges_interrupted_visits(
         interrupted_destination_trajectory,
         postprocessing='dbscan',
         postprocessing_kwargs={'epsilon': 5},
-        merge_kwargs={'max_time_gap': '25min'},
+        merge_kwargs={'max_time_gap': 25},
         **lachesis_options(),
     )
 
@@ -60,7 +60,7 @@ def test_lachesis_dbscan_respects_merge_threshold(
         interrupted_destination_trajectory,
         postprocessing='dbscan',
         postprocessing_kwargs={'epsilon': 5},
-        merge_kwargs={'max_time_gap': '15min'},
+        merge_kwargs={'max_time_gap': 15},
         **lachesis_options(),
     )
 
@@ -87,7 +87,7 @@ def test_lachesis_visits_preserves_single_user_id(
     result = lachesis_visits(
         data,
         postprocessing_kwargs={'epsilon': 5},
-        merge_kwargs={'max_time_gap': '25min'},
+        merge_kwargs={'max_time_gap': 25},
         **lachesis_options(),
     )
 
@@ -114,7 +114,7 @@ def test_lachesis_dbscan_supports_custom_columns():
         data,
         postprocessing='dbscan',
         postprocessing_kwargs={'epsilon': 5},
-        merge_kwargs={'max_time_gap': '25min'},
+        merge_kwargs={'max_time_gap': 25},
         traj_cols=traj_cols,
         **lachesis_options(),
     )

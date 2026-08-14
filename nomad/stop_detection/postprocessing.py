@@ -34,7 +34,7 @@ def fill_timestamp_gaps(first_time, last_time, stop_table):
 
 def merge_stops(
     stops,
-    max_time_gap="10min",
+    max_time_gap=10,
     location_col=None,
     agg=None,
     traj_cols=None,
@@ -48,9 +48,9 @@ def merge_stops(
     stops : pd.DataFrame
         Ping or stop table containing time and location columns. Stop tables
         additionally contain an end time or duration.
-    max_time_gap : str or pd.Timedelta, default "10min"
-        Largest gap between one stop's end and the next stop's start that can
-        belong to the same visit.
+    max_time_gap : int, default 10
+        Largest gap in minutes between one stop's end and the next stop's start
+        that can belong to the same visit.
     location_col : str, optional
         Location identifier column. Defaults to the ``location_id`` mapping in
         ``traj_cols``.
@@ -67,13 +67,6 @@ def merge_stops(
         One row per uninterrupted visit. Ping tables are summarized through the
         grid-based algorithm; stop tables are merged using their intervals.
     """
-    if isinstance(max_time_gap, str):
-        max_time_gap = pd.to_timedelta(max_time_gap)
-    elif not isinstance(max_time_gap, pd.Timedelta):
-        raise TypeError(
-            "Parameter max_time_gap must be either of type str or pd.Timedelta!"
-        )
-
     traj_cols = loader._parse_traj_cols(
         stops.columns, traj_cols, kwargs, warn=False
     )
@@ -104,7 +97,7 @@ def merge_stops(
          # if ping table, call grid_based essentially
         return grid_based(
             stops,
-            time_thresh=max_time_gap.total_seconds() / 60,
+            time_thresh=max_time_gap,
             min_cluster_size=1,
             dur_min=0,
             traj_cols=traj_cols,
@@ -142,7 +135,10 @@ def merge_stops(
             )
 
     # standardize gap threshold
-    max_gap = max_time_gap if use_datetime else max_time_gap.total_seconds()
+    max_gap = (
+        pd.to_timedelta(max_time_gap, unit='min')
+        if use_datetime else max_time_gap * 60
+    )
     location_codes = pd.Series(pd.factorize(ordered[location_col], sort=False)[0])
     same_location = location_codes.eq(location_codes.shift()) & location_codes.ne(-1)
     #identify sequence of same destination

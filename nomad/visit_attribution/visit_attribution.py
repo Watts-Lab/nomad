@@ -7,8 +7,6 @@ import numpy as np
 from sklearn.cluster import DBSCAN
 import nomad.io.base as loader
 import nomad.constants as constants
-from nomad.stop_detection.postprocessing import merge_stops
-from nomad.stop_detection.sequential_algs import lachesis
 from nomad.stop_detection import utils
 
 # TO DO: change to stops_to_poi
@@ -478,7 +476,7 @@ def _get_location_center(coords, metric='euclidean'):
         return np.mean(coords[:, 0]), np.mean(coords[:, 1])
 
 
-def cluster_locations_dbscan(
+def detect_locations(
     data,
     epsilon=100,
     min_pts=1,
@@ -513,9 +511,8 @@ def cluster_locations_dbscan(
 
     Notes
     -----
-    Each DBSCAN noise row is retained with a unique negative location ID.
-    Geographic coordinates use haversine distance; projected coordinates use
-    Euclidean.
+    Each DBSCAN noise row is retained as its own nonnegative location. Geographic
+    coordinates use haversine distance; projected coordinates use Euclidean.
     """
     # check for pandas dataframe w/at least one row of data
     if isinstance(data, gpd.GeoDataFrame):
@@ -557,7 +554,10 @@ def cluster_locations_dbscan(
     non_noise = labels >= 0
     location_ids = np.empty(len(labels), dtype='int64')
     location_ids[non_noise] = pd.factorize(labels[non_noise], sort=False)[0]
-    location_ids[~non_noise] = -np.arange(1, (~non_noise).sum() + 1)
+    next_location_id = location_ids[non_noise].max() + 1 if non_noise.any() else 0
+    location_ids[~non_noise] = np.arange(
+        next_location_id, next_location_id + (~non_noise).sum()
+    )
     location_ids = pd.Series(location_ids, index=data.index, name=location_col)
 
     if not return_locations:
@@ -630,14 +630,14 @@ def _summarize_locations(data, location_ids, traj_cols=None, **kwargs):
 
 
 # Per-user clustering is intentionally inactive: callers should group their data
-# and invoke lachesis_visits once per user. Retained as a reference if an explicit
+# and invoke detect_locations once per user. Retained as a reference if an explicit
 # multi-user wrapper is added in the future.
 # def _cluster_locations_by_user(data, user_col, traj_cols=None, **kwargs):
 #     location_ids = np.empty(len(data), dtype='int64')
 #     next_location_id = 0
 #     groups = data.groupby(user_col, sort=False, dropna=False).indices.values()
 #     for positions in groups:
-#         group_ids = cluster_locations_dbscan(
+#         group_ids = detect_locations(
 #             data.iloc[positions], traj_cols=traj_cols, **kwargs
 #         ).to_numpy()
 #         location_ids[positions] = group_ids + next_location_id
@@ -647,96 +647,3 @@ def _summarize_locations(data, location_ids, traj_cols=None, **kwargs):
 #         data.columns, traj_cols, kwargs, warn=False
 #     )['location_id']
 #     return pd.Series(location_ids, index=data.index, name=location_col)
-
-
-def lachesis_visits(
-    data, # single user pings
-    delta_roam, # max roaming dist
-    dt_max=60, # max time gap between pings
-    dur_min=5, # min duration to be a stop
-    complete_output=False,
-    passthrough_cols=[],
-    keep_col_names=True,
-    postprocessing='dbscan',
-    postprocessing_kwargs=None,
-    merge_kwargs=None,
-    traj_cols=None,
-    **kwargs
-):
-    """Detect and attribute visits for one user's trajectory."""
-    traj_cols_temp = loader._parse_traj_cols(
-        data.columns, traj_cols, kwargs, warn=False
-    )
-    # Data must be for ONE user
-    user_col = traj_cols_temp['user_id']
-    if user_col in data.columns and data[user_col].nunique(dropna=False) > 1:
-        raise ValueError(
-            "lachesis_visits expects one user per call; group the input by "
-            "user_id and call lachesis_visits for each group."
-        )
-
-    # detect stops with lachesis
-    stops = lachesis(
-        data,
-        delta_roam=delta_roam,
-        dt_max=dt_max,
-        dur_min=dur_min,
-        complete_output=complete_output,
-        passthrough_cols=passthrough_cols,
-        keep_col_names=keep_col_names,
-        traj_cols=traj_cols,
-        **kwargs,
-    )
-
-    # handle postprocessing version
-    if postprocessing in (None, 'none'):
-        return stops
-    if postprocessing == 'infomap':
-        raise NotImplementedError("Lachesis postprocessing method 'infomap' is not implemented")
-    if postprocessing != 'dbscan':
-        raise ValueError("postprocessing must be one of: None, 'none', 'dbscan', 'infomap'")
-
-    # if no stops, do not call dbscan
-    location_col = traj_cols_temp['location_id']
-    if stops.empty:
-        stops[location_col] = pd.Series(index=stops.index, dtype='int64')
-        return stops
-
-    # call DBSCAN
-    cluster_options = dict(postprocessing_kwargs or {})
-    location_ids = cluster_locations_dbscan(
-        stops,
-        traj_cols=traj_cols,
-        **kwargs,
-        **cluster_options,
-    )
-
-    # call summarize locations
-    labeled_stops = stops.copy()
-    labeled_stops[location_col] = location_ids.to_numpy()
-    locations = _summarize_locations(
-        labeled_stops, location_ids, traj_cols=traj_cols, **kwargs
-    )
-    # call merge stops
-    merge_options = dict(merge_kwargs or {})
-    merge_options.setdefault('location_col', location_col)
-    visits = merge_stops(
-        labeled_stops,
-        traj_cols=traj_cols,
-        **kwargs,
-        **merge_options,
-    )
-
-    # after merge stops assign each visit the standardized center of its destination
-    coord_key1, coord_key2, _ = loader._fallback_spatial_cols(
-        labeled_stops.columns, traj_cols_temp, kwargs
-    )
-    # Create a location-ID-to-center lookup
-    centers = locations.set_index(location_col).center
-    visits[traj_cols_temp[coord_key1]] = visits[location_col].map(centers.x)
-    visits[traj_cols_temp[coord_key2]] = visits[location_col].map(centers.y)
-    return visits
-
-
-# Alias for convenience
-generate_locations = cluster_locations_dbscan
