@@ -7,9 +7,6 @@ from pandas.api.types import is_integer_dtype
 from nomad.stop_detection import density_algs, sequential_algs
 
 
-ANCHOR_COLUMNS = ["cluster", "anchor_time", "anchor_x", "anchor_y"]
-
-
 @pytest.fixture
 def single_user_trajectory():
     data = pd.DataFrame(
@@ -29,126 +26,39 @@ def single_user_trajectory():
     return data, traj_cols
 
 
-@pytest.mark.parametrize(
-    ("method", "expected_times", "expected_x"),
-    [
-        ("sliding", [0] * 6, [0.0] * 6),
-        ("centroid", [0, 120, 240, 360, 480, 600], [0.0, 0.05, 0.1, 0.15, 0.2, 0.25]),
-    ],
-)
-def test_sequential_return_anchors_returns_aligned_metadata(
-    single_user_trajectory,
-    method,
-    expected_times,
-    expected_x,
-):
-    data, traj_cols = single_user_trajectory
-
-    anchor_points = sequential_algs.detect_stops_labels(
-        data,
-        delta_roam=10,
-        dt_max=5,
-        dur_min=5,
-        method=method,
-        return_anchors=True,
-        traj_cols=traj_cols,
-    )
-
-    assert list(anchor_points.columns) == ANCHOR_COLUMNS
-    assert anchor_points.index.equals(data.index)
-    assert len(anchor_points) == len(data)
-    assert not anchor_points.empty
-    assert anchor_points["anchor_time"].tolist() == expected_times
-    assert anchor_points["anchor_x"].tolist() == pytest.approx(expected_x)
-    assert anchor_points["anchor_y"].tolist() == [0.0] * 6
-
-    labels_without_points = sequential_algs.detect_stops_labels(
-        data,
-        delta_roam=10,
-        dt_max=5,
-        dur_min=5,
-        method=method,
-        traj_cols=traj_cols,
-    )
-    pd.testing.assert_series_equal(anchor_points["cluster"], labels_without_points)
-
-
-def test_sequential_return_anchors_includes_noise(single_user_trajectory):
-    data, traj_cols = single_user_trajectory
-
-    anchor_points = sequential_algs.detect_stops_labels(
-        data,
-        delta_roam=10,
-        dt_max=5,
-        dur_min=20,
-        return_anchors=True,
-        traj_cols=traj_cols,
-    )
-
-    assert len(anchor_points) == len(data)
-    assert set(anchor_points["cluster"]) == {-1}
-    assert anchor_points[["anchor_time", "anchor_x", "anchor_y"]].isna().all().all()
-
-
-def test_sequential_return_anchors_empty_schema(single_user_trajectory):
-    data, traj_cols = single_user_trajectory
-
-    anchor_points = sequential_algs.detect_stops_labels(
-        data.iloc[:0],
-        return_anchors=True,
-        traj_cols=traj_cols,
-    )
-
-    assert anchor_points.empty
-    assert list(anchor_points.columns) == ANCHOR_COLUMNS
-    assert is_integer_dtype(anchor_points["cluster"])
-
-
-def test_anchor_output_uses_canonical_metadata_names(single_user_trajectory):
-    data, traj_cols = single_user_trajectory
-    traj_cols = {
-        **traj_cols,
-        "start_timestamp": "anchor_timestamp",
-        "label": "stop_label",
-    }
-    data = data.assign(anchor_timestamp=pd.NA, stop_label=pd.NA)
-
-    anchor_points = sequential_algs.detect_stops_labels(
-        data,
-        delta_roam=10,
-        dt_max=5,
-        dur_min=5,
-        return_anchors=True,
-        traj_cols=traj_cols,
-    )
-
-    assert list(anchor_points.columns) == ANCHOR_COLUMNS
-
-
-def test_anchor_time_preserves_datetime_values(single_user_trajectory):
-    data, traj_cols = single_user_trajectory
-    data = data.assign(datetime=pd.to_datetime(data["timestamp"], unit="s", utc=True))
-    traj_cols = {**traj_cols, "datetime": "datetime"}
-    traj_cols.pop("timestamp")
-
-    anchor_points = sequential_algs.detect_stops_labels(
-        data.drop(columns="timestamp"),
-        delta_roam=10,
-        dt_max=5,
-        dur_min=5,
-        method="sliding",
-        return_anchors=True,
-        traj_cols=traj_cols,
-    )
-
-    assert anchor_points["anchor_time"].tolist() == [data.loc[0, "datetime"]] * len(data)
-
-
-def test_lachesis_does_not_advertise_anchor_or_core_output():
+def test_lachesis_advertises_anchor_but_not_core_output():
     parameters = inspect.signature(sequential_algs.lachesis_labels).parameters
 
-    assert "return_anchors" not in parameters
+    assert "return_anchors" in parameters
     assert "return_cores" not in parameters
+
+
+def test_lachesis_return_anchors_uses_earliest_diameter_witness():
+    data = pd.DataFrame(
+        {
+            "timestamp": [0, 60, 120],
+            "x": [0.0, 5.0, 2.0],
+            "y": [0.0, 0.0, 0.0],
+        }
+    )
+
+    output = sequential_algs.lachesis_labels(
+        data, dt_max=5, delta_roam=10, dur_min=1, return_anchors=True
+    )
+
+    assert output["cluster"].tolist() == [0, 0, 0]
+    assert output["anchor_time"].tolist() == [pd.NA, 0, 0]
+
+
+def test_lachesis_return_anchors_empty_schema(single_user_trajectory):
+    data, traj_cols = single_user_trajectory
+
+    output = sequential_algs.lachesis_labels(
+        data.iloc[:0], dt_max=5, delta_roam=10, return_anchors=True, traj_cols=traj_cols
+    )
+
+    assert list(output.columns) == ["cluster", "anchor_time"]
+    assert output.empty
 
 
 def test_grid_based_does_not_advertise_core_output():
@@ -182,7 +92,7 @@ def test_point_output_algorithms_do_not_advertise_config_key():
     [
         (
             sequential_algs.detect_stops_labels,
-            {"delta_roam", "dt_max", "dur_min", "method", "return_anchors"},
+            {"delta_roam", "dt_max", "dur_min", "method"},
         ),
         (
             sequential_algs.lachesis_labels,
@@ -479,30 +389,6 @@ def test_hdbscan_propagates_min_pts_to_cluster_hierarchy(
     )
 
     assert received_min_pts == [3]
-
-
-def test_sequential_per_user_return_anchors_is_aligned(single_user_trajectory):
-    data, traj_cols = single_user_trajectory
-    second_user = data.assign(
-        uid="user-2",
-        timestamp=data["timestamp"] + 10_000,
-    )
-    multi_user = pd.concat([data, second_user], ignore_index=True)
-
-    anchor_points = sequential_algs.detect_stops_labels_per_user(
-        multi_user,
-        delta_roam=10,
-        dt_max=5,
-        dur_min=5,
-        method="sliding",
-        return_anchors=True,
-        traj_cols=traj_cols,
-    )
-
-    assert list(anchor_points.columns) == ANCHOR_COLUMNS
-    assert anchor_points.index.equals(multi_user.index)
-    assert is_integer_dtype(anchor_points["cluster"])
-    assert anchor_points["anchor_time"].tolist() == [0] * 6 + [10_000] * 6
 
 
 @pytest.mark.parametrize(

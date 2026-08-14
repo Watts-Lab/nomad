@@ -113,7 +113,7 @@ def clip_stops_datetime(stops, start_datetime, end_datetime, traj_cols=None, **k
     # Return only stops that have positive duration after clipping
     return stops[stops['duration'] > 0]
 
-def _diameter(coords, metric='euclidean'):
+def _diameter(coords, metric='euclidean', witness=False):
     """
     Calculate the diameter of a set of coordinates, defined as the maximum pairwise distance.
     
@@ -124,23 +124,32 @@ def _diameter(coords, metric='euclidean'):
     metric : str, optional
         Distance metric to use. Supported metrics include 'euclidean' (default) 
         and 'haversine'. If 'haversine' is used, coordinates should be in degrees.
+    witness : bool, default False
+        Return the earliest endpoint of a maximum-diameter pair.
     
     Returns
     -------
-    float
-        The diameter of the coordinate set, i.e., the maximum pairwise distance.
-        Returns 0 if there are fewer than two coordinates.
+    float or tuple
+        The diameter, or the diameter and witness row offset.
     """
     if len(coords) < 2:
-        return 0
+        return (0, None) if witness else 0
    
     if metric == 'haversine':
-        coords = np.radians(coords)
-        pairwise_dists = pdist(coords,
-                               metric=lambda u, v: _haversine_distance(u, v))
-        return np.max(pairwise_dists)
+        radians = np.radians(coords)
+        pairwise_dists = pdist(
+            radians, metric=lambda u, v: _haversine_distance(u, v)
+        )
     else:
-        return np.max(pdist(coords, metric=metric))
+        pairwise_dists = pdist(coords, metric=metric)
+
+    diameter = np.max(pairwise_dists)
+    if not witness:
+        return diameter
+
+    left, right = np.triu_indices(len(coords), k=1)
+    diameter_pairs = np.flatnonzero(pairwise_dists == diameter)
+    return diameter, min(left[diameter_pairs].min(), right[diameter_pairs].min())
 
 def _medoid(coords, metric='euclidean'):
     """
@@ -224,7 +233,7 @@ def _pairwise_haversine(coords):
     return distances
 
     
-def _update_diameter(c_j, coords_prev, D_prev, metric='euclidean'):
+def _update_diameter(c_j, coords_prev, D_prev, metric='euclidean', witness=False, witness_index=None):
     """
     Update the diameter of a set of coordinates when a new point is added.
     
@@ -239,11 +248,15 @@ def _update_diameter(c_j, coords_prev, D_prev, metric='euclidean'):
     metric : str, optional
         Distance metric to use. Supported metrics are 'euclidean' (default) and 'haversine'.
         If 'haversine' is used, coordinates should be in degrees.
+    witness_index : int, optional
+        Earliest endpoint of a previous maximum-diameter pair.
+    witness : bool, default False
+        Return the updated witness with the diameter.
     
     Returns
     -------
-    float
-        The updated diameter of the coordinate set, considering the new point.
+    float or tuple
+        The updated diameter, or the diameter and witness row offset.
     """
     if metric == 'euclidean':
         X_prev = coords_prev[:, 0]
@@ -264,7 +277,16 @@ def _update_diameter(c_j, coords_prev, D_prev, metric='euclidean'):
     else:
         raise ValueError("metric must be 'euclidean' or 'haversine'")
 
-    D_i_jp1 = np.max([D_prev, np.max(new_dists)])
+    new_diameter = np.max(new_dists)
+    D_i_jp1 = np.max([D_prev, new_diameter])
+
+    if witness:
+        new_witness = np.flatnonzero(new_dists == new_diameter).min()
+        if witness_index is None or new_diameter > D_prev:
+            witness_index = new_witness
+        elif new_diameter == D_prev:
+            witness_index = min(witness_index, new_witness)
+        return D_i_jp1, witness_index
 
     return D_i_jp1
 
@@ -544,7 +566,7 @@ def _get_empty_aux_df(time_col=None, return_cores=False, return_anchors=False):
     return_cores : bool
         Whether to include the core metadata of density-based algorithms.
     return_anchors : bool
-        Whether to include the anchor metadata of sequential algorithms.
+        Whether to include Lachesis diameter-witness metadata.
 
     Returns
     -------
@@ -564,8 +586,6 @@ def _get_empty_aux_df(time_col=None, return_cores=False, return_anchors=False):
         output['promotion_time'] = pd.Series(dtype=time_dtype)
     if return_anchors:
         output['anchor_time'] = pd.Series(dtype=time_dtype)
-        output['anchor_x'] = pd.Series(dtype='float64')
-        output['anchor_y'] = pd.Series(dtype='float64')
 
     return pd.DataFrame(output)
 

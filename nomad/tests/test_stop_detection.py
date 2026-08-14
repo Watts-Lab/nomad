@@ -35,6 +35,7 @@ from nomad.stop_detection.sequential_algs import (
     lachesis_labels_per_user,
     lachesis_per_user,
 )
+from nomad.stop_detection import utils
 from nomad.stop_detection.preprocessing import _find_neighbors
 from nomad.stop_detection.utils import has_overlapping_stops
 from pandas.api.types import is_integer_dtype
@@ -747,6 +748,42 @@ def test_lachesis_ground_truth(agent_traj_ground_truth):
     num_clusters = sum(lachesis_out.unique() > -1)
     assert num_clusters == 3
 
+
+def test_lachesis_accepts_gap_equal_to_dt_max():
+    data = pd.DataFrame(
+        {
+            "timestamp": [0, 300, 600],
+            "x": [0.0, 0.0, 0.0],
+            "y": [0.0, 0.0, 0.0],
+        }
+    )
+
+    labels = lachesis_labels(data, dt_max=5, delta_roam=1, dur_min=10)
+
+    assert labels.tolist() == [0, 0, 0]
+
+
+def test_lachesis_does_not_recheck_initial_window_endpoint(monkeypatch):
+    data = pd.DataFrame(
+        {
+            "timestamp": [0, 300, 600],
+            "x": [0.0, 0.1, 0.2],
+            "y": [0.0, 0.0, 0.0],
+        }
+    )
+    calls = []
+    original = utils._update_diameter
+
+    def record_update(point, previous, diameter, metric):
+        calls.append(point.copy())
+        return original(point, previous, diameter, metric)
+
+    monkeypatch.setattr(utils, "_update_diameter", record_update)
+    lachesis_labels(data, dt_max=5, delta_roam=1, dur_min=5)
+
+    assert len(calls) == 1
+    assert calls[0].tolist() == [0.2, 0.0]
+
 ##########################################
 ####        SEQUENTIAL TESTS          #### 
 ##########################################
@@ -1038,7 +1075,7 @@ def test_label_concat_with_empty_input_preserves_schema(
         ),
         pytest.param(
             detect_stops_labels,
-            {"delta_roam": 25, "dt_max": 60, "dur_min": 1, "return_anchors": True},
+            {"delta_roam": 25, "dt_max": 60, "dur_min": 1},
             id="sequential",
         ),
     ],
@@ -1058,7 +1095,10 @@ def test_daily_buckets_with_empty_day_preserve_dtypes(label_function, kwargs, tz
     reference = label_function(data, datetime="datetime", x="x", y="y", **kwargs)
 
     assert len(combined) == len(data)
-    assert combined.dtypes.equals(reference.dtypes)
+    if isinstance(combined, pd.DataFrame):
+        assert combined.dtypes.equals(reference.dtypes)
+    else:
+        assert combined.dtype == reference.dtype
 
 
 @pytest.mark.parametrize(

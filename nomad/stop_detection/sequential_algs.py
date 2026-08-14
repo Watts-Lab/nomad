@@ -15,7 +15,6 @@ def detect_stops_labels(
     dt_max=15.0,
     dur_min=5.0,
     method='sliding',
-    return_anchors=False,
     traj_cols=None,
     **kwargs
 ):
@@ -39,8 +38,6 @@ def detect_stops_labels(
         Minimum duration in minutes for a valid stop
     method : str, default 'sliding'
         Method to use ('sliding' or 'centroid') for the anchor point of the active stop
-    return_anchors : bool, default False
-        Return cluster and anchor metadata aligned to each input point.
     traj_cols : dict, optional
         Mapping for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'
     **kwargs
@@ -48,9 +45,8 @@ def detect_stops_labels(
         
     Returns
     -------
-    pd.Series or pd.DataFrame
-        Cluster labels, or ``cluster``, ``anchor_time``, ``anchor_x``, and
-        ``anchor_y`` when ``return_anchors`` is true.
+    pd.Series
+        Cluster labels.
     """
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
         raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
@@ -66,7 +62,7 @@ def detect_stops_labels(
     loader._has_time_cols(data.columns, traj_cols)
 
     if data.empty:
-        return utils._get_empty_aux_df(data[traj_cols[t_key]], return_anchors=return_anchors)
+        return utils._get_empty_aux_df()
 
     # Extract coordinates and time
     coords = data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy(dtype='float64')
@@ -75,10 +71,6 @@ def detect_stops_labels(
     # Initialize all labels as noise (-1)
     n = len(data)
     labels = np.full(n, -1, dtype=int)
-    if return_anchors:
-        anchor_times = pd.Series(index=data.index, dtype=data[traj_cols[t_key]].dtype if use_datetime else 'Int64')
-        anchor_x = pd.Series(np.nan, index=data.index, dtype="float64")
-        anchor_y = pd.Series(np.nan, index=data.index, dtype="float64")
     cluster_id = 0
     
     i = 0
@@ -120,17 +112,6 @@ def detect_stops_labels(
         if time_spent >= dur_min:
             # Assign cluster label to all points in this stop
             labels[i:j] = cluster_id
-            if return_anchors:
-                stop_coords = coords[i:j]
-                if method == 'centroid':
-                    anchors = np.cumsum(stop_coords, axis=0) / np.arange(1, len(stop_coords) + 1).reshape(-1, 1)
-                    source_times = data[traj_cols[t_key]].iloc[i:j].to_numpy()
-                else:
-                    anchors = np.repeat(stop_coords[:1], len(stop_coords), axis=0)
-                    source_times = np.repeat(data[traj_cols[t_key]].iloc[i], j - i)
-                anchor_times.iloc[i:j] = source_times
-                anchor_x.iloc[i:j] = anchors[:, 0]
-                anchor_y.iloc[i:j] = anchors[:, 1]
             cluster_id += 1
             # Move to the point that broke the stop
             i = j
@@ -138,18 +119,7 @@ def detect_stops_labels(
             # Not enough time spent, move to next point
             i += 1
     
-    result = pd.Series(labels, index=data.index, name='cluster')
-    if return_anchors:
-        return pd.DataFrame(
-            {
-                "cluster": result,
-                "anchor_time": anchor_times,
-                "anchor_x": anchor_x,
-                "anchor_y": anchor_y,
-            },
-            index=data.index,
-        )
-    return result
+    return pd.Series(labels, index=data.index, name='cluster')
 
 
 def applyParallel(groups, func, n_jobs=1, print_progress=False, **kwargs):
@@ -339,7 +309,6 @@ def detect_stops_labels_per_user(
     dt_max=15.0,
     dur_min=5.0,
     method='sliding',
-    return_anchors=False,
     traj_cols=None,
     n_jobs=1,
     print_progress=False,
@@ -362,7 +331,6 @@ def detect_stops_labels_per_user(
             dt_max=dt_max,
             dur_min=dur_min,
             method=method,
-            return_anchors=return_anchors,
             traj_cols=traj_cols,
             **kwargs,
         )
@@ -379,7 +347,7 @@ def detect_stops_labels_per_user(
 ########        Lachesis          ########
 ##########################################
 
-def lachesis_labels(data, dt_max, delta_roam, dur_min=5, traj_cols=None, **kwargs):
+def lachesis_labels(data, dt_max, delta_roam, dur_min=5, traj_cols=None, return_anchors=False, **kwargs):
     """
     Scan a trajectory and assign each ping to a stop‐cluster index or -1 for noise.
 
@@ -393,6 +361,9 @@ def lachesis_labels(data, dt_max, delta_roam, dur_min=5, traj_cols=None, **kwarg
         Maximum spatial diameter for a stop.
     dur_min : int
         Minimum duration in minutes for a valid stop.
+    return_anchors : bool, default False
+        Return the earliest endpoint of each accepted prefix's maximum-diameter
+        pair as ``anchor_time``.
     traj_cols : dict, optional
         Mapping for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'.
     **kwargs
@@ -400,13 +371,11 @@ def lachesis_labels(data, dt_max, delta_roam, dur_min=5, traj_cols=None, **kwarg
 
     Returns
     -------
-    pd.Series
-        One integer label per row, -1 for non‐stop points, 0..K for stops.
+    pd.Series or pd.DataFrame
+        Labels, or labels with aligned diameter-witness ``anchor_time``.
     """
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
          raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
-    if data.empty:
-        return utils._get_empty_aux_df()
 
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)        
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
@@ -414,6 +383,11 @@ def lachesis_labels(data, dt_max, delta_roam, dur_min=5, traj_cols=None, **kwarg
     # Tests to check for spatial and temporal columns
     loader._has_spatial_cols(data.columns, traj_cols)
     loader._has_time_cols(data.columns, traj_cols)
+
+    if data.empty:
+        return utils._get_empty_aux_df(
+            data[traj_cols[t_key]], return_anchors=return_anchors
+        )
 
     metric = 'haversine' if use_lon_lat else 'euclidean'    
     coords = data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy(dtype='float64')
@@ -426,6 +400,11 @@ def lachesis_labels(data, dt_max, delta_roam, dur_min=5, traj_cols=None, **kwarg
     
     # all cluster labels initialized as noise
     labels = np.full(n, -1, dtype=int)
+    if return_anchors:
+        anchor_times = pd.Series(
+            index=data.index,
+            dtype=data[traj_cols[t_key]].dtype if use_datetime else 'Int64',
+        )
     cluster_id = 0
     while i < n - 1:
         t_i = time_series.iloc[i]
@@ -435,12 +414,12 @@ def lachesis_labels(data, dt_max, delta_roam, dur_min=5, traj_cols=None, **kwarg
 
         d_start = utils._diameter(coords[i:j_star + 1], metric=metric)
         time_diffs = np.diff(time_series.iloc[i:j_star + 1].values)
-        if (time_diffs >= dt_max * 60).any() or d_start > delta_roam:
+        if (time_diffs > dt_max * 60).any() or d_start > delta_roam:
             i += 1
             continue
 
         j_final = j_star
-        for j in range(j_star, n):
+        for j in range(j_star + 1, n):
             d_update = utils._update_diameter(coords[j], coords[i:j], d_start, metric=metric)
             cc_diff = time_series.iloc[j] - time_series.iloc[j - 1]
             if d_update > delta_roam or cc_diff > dt_max * 60:
@@ -453,11 +432,27 @@ def lachesis_labels(data, dt_max, delta_roam, dur_min=5, traj_cols=None, **kwarg
         duration = (time_series.iloc[j_final] - time_series.iloc[i]) // 60
         if duration >= dur_min:
             labels[i : j_final + 1] = cluster_id
+            if return_anchors:
+                diameter, witness = utils._diameter(
+                    coords[i:i + 1], metric=metric, witness=True
+                )
+                for anchor_index in range(i + 1, j_final + 1):
+                    diameter, witness = utils._update_diameter(
+                        coords[anchor_index],
+                        coords[i:anchor_index],
+                        diameter,
+                        metric=metric,
+                        witness=True,
+                        witness_index=witness,
+                    )
+                    anchor_times.iloc[anchor_index] = data[traj_cols[t_key]].iloc[i + witness]
             cluster_id += 1
 
         i = j_final + 1
 
     result = pd.Series(labels, index=data.index, name='cluster')
+    if return_anchors:
+        return pd.DataFrame({"cluster": result, "anchor_time": anchor_times})
     return result
 
 def lachesis(
@@ -709,6 +704,7 @@ def lachesis_labels_per_user(
     delta_roam,
     dur_min=5,
     traj_cols=None,
+    return_anchors=False,
     n_jobs=1,
     print_progress=False,
     **kwargs
@@ -729,6 +725,7 @@ def lachesis_labels_per_user(
             dt_max=dt_max,
             delta_roam=delta_roam,
             dur_min=dur_min,
+            return_anchors=return_anchors,
             traj_cols=traj_cols,
             **kwargs,
         )
