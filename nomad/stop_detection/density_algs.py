@@ -1974,9 +1974,6 @@ def st_hdbscan(
                 raise ValueError("Multi-user data? Use hdbscan_per_user instead.")
             if traj_cols_temp['user_id'] not in passthrough_cols:
                 passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
-    else:
-        uid_col = None
-        
     labels = hdbscan_labels(
         data=data,
         time_thresh=time_thresh,
