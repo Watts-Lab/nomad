@@ -300,7 +300,14 @@ def _fallback_st_cols(col_names, traj_cols, kwargs):
     return t_key, coord_key1, coord_key2, use_datetime, use_lon_lat
 
 
-def applyParallel(groups, func, n_jobs=1, print_progress=False, **kwargs):
+def applyParallel(
+    groups,
+    algorithm,
+    algorithm_kwargs,
+    reset_index=False,
+    n_jobs=1,
+    print_progress=False,
+):
     """
     Apply a callable over grouped data, optionally in parallel.
 
@@ -308,32 +315,34 @@ def applyParallel(groups, func, n_jobs=1, print_progress=False, **kwargs):
     ----------
     groups : DataFrameGroupBy
         Grouped dataframe iterator (e.g. data.groupby(user_id)).
-    func : callable
-        Function applied to each group item.
+    algorithm : callable
+        Function applied to each group DataFrame.
+    algorithm_kwargs : dict
+        Arguments passed unchanged to ``algorithm``.
+    reset_index : bool, default False
+        Reset each group DataFrame before calling ``algorithm``.
     n_jobs : int, default 1
         Number of parallel jobs. 1 executes sequentially.
     print_progress : bool, default False
         Whether to show a progress bar.
-    **kwargs
-        Extra keyword args passed to func.
-
     Returns
     -------
     list
         List with one result per group.
     """
-    if n_jobs == 1:
-        if print_progress:
-            return [func(group, **kwargs) for group in tqdm(groups, desc="Processing users")]
-        return [func(group, **kwargs) for group in groups]
-
-    group_list = list(groups)
+    group_frames = (
+        group.reset_index(drop=True) if reset_index else group
+        for _, group in groups
+    )
     if print_progress:
-        return Parallel(n_jobs=n_jobs)(
-            delayed(func)(group, **kwargs) for group in tqdm(group_list, desc="Processing users")
-        )
+        group_frames = tqdm(group_frames, desc="Processing users")
+
+    if n_jobs == 1:
+        return [algorithm(data=group, **algorithm_kwargs) for group in group_frames]
+
+    group_frames = list(group_frames)
     return Parallel(n_jobs=n_jobs)(
-        delayed(func)(group, **kwargs) for group in group_list
+        delayed(algorithm)(data=group, **algorithm_kwargs) for group in group_frames
     )
 
 def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_col_names = True, passthrough_cols=None, traj_cols=None, **kwargs):

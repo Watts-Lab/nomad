@@ -309,23 +309,21 @@ def ta_dbscan_per_user(
 
     pt_cols = passthrough_cols if uid in passthrough_cols else passthrough_cols + [uid]
 
-    def process_user_group(group):
-        return ta_dbscan(
-            data=group[1].reset_index(drop=True),
-            dist_thresh=dist_thresh,
-            min_pts=min_pts,
-            time_thresh=time_thresh,
-            dur_min=dur_min,
-            complete_output=complete_output,
-            passthrough_cols=pt_cols,
-            traj_cols=traj_cols,
-            **kwargs
-        )
-
     grouped = data.groupby(uid, sort=False, as_index=False)
     results = utils.applyParallel(
         grouped,
-        process_user_group,
+        ta_dbscan,
+        {
+            "dist_thresh": dist_thresh,
+            "min_pts": min_pts,
+            "time_thresh": time_thresh,
+            "dur_min": dur_min,
+            "complete_output": complete_output,
+            "passthrough_cols": pt_cols,
+            "traj_cols": traj_cols,
+            **kwargs,
+        },
+        reset_index=True,
         n_jobs=n_jobs,
         print_progress=print_progress,
     )
@@ -354,22 +352,19 @@ def ta_dbscan_labels_per_user(
         raise ValueError("ta_dbscan_labels_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
     uid = traj_cols_temp['user_id']
 
-    def process_user_group(group):
-        return ta_dbscan_labels(
-            data=group[1],
-            dist_thresh=dist_thresh,
-            min_pts=min_pts,
-            time_thresh=time_thresh,
-            return_cores=return_cores,
-            remove_overlaps=remove_overlaps,
-            traj_cols=traj_cols,
-            **kwargs,
-        )
-
     grouped = data.groupby(uid, sort=False)
     results = utils.applyParallel(
         grouped,
-        process_user_group,
+        ta_dbscan_labels,
+        {
+            "dist_thresh": dist_thresh,
+            "min_pts": min_pts,
+            "time_thresh": time_thresh,
+            "return_cores": return_cores,
+            "remove_overlaps": remove_overlaps,
+            "traj_cols": traj_cols,
+            **kwargs,
+        },
         n_jobs=n_jobs,
         print_progress=print_progress,
     )
@@ -645,24 +640,22 @@ def dbstop_per_user(
 
     pt_cols = passthrough_cols if uid in passthrough_cols else passthrough_cols + [uid]
 
-    def process_user_group(group):
-        return dbstop(
-            data=group[1].reset_index(drop=True),
-            dist_thresh=dist_thresh,
-            min_pts=min_pts,
-            time_thresh=time_thresh,
-            dur_min=dur_min,
-            complete_output=complete_output,
-            passthrough_cols=pt_cols,
-            keep_col_names=keep_col_names,
-            traj_cols=traj_cols,
-            **kwargs
-        )
-
     grouped = data.groupby(uid, sort=False, as_index=False)
     results = utils.applyParallel(
         grouped,
-        process_user_group,
+        dbstop,
+        {
+            "dist_thresh": dist_thresh,
+            "min_pts": min_pts,
+            "time_thresh": time_thresh,
+            "dur_min": dur_min,
+            "complete_output": complete_output,
+            "passthrough_cols": pt_cols,
+            "keep_col_names": keep_col_names,
+            "traj_cols": traj_cols,
+            **kwargs,
+        },
+        reset_index=True,
         n_jobs=n_jobs,
         print_progress=print_progress
     )
@@ -690,21 +683,18 @@ def dbstop_labels_per_user(
         raise ValueError("dbstop_labels_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
     uid = traj_cols_temp['user_id']
 
-    def process_user_group(group):
-        return dbstop_labels(
-            group[1],
-            dist_thresh=dist_thresh,
-            min_pts=min_pts,
-            time_thresh=time_thresh,
-            return_cores=return_cores,
-            traj_cols=traj_cols,
-            **kwargs
-        )
-
     grouped = data.groupby(uid, sort=False)
     results = utils.applyParallel(
         grouped,
-        process_user_group,
+        dbstop_labels,
+        {
+            "dist_thresh": dist_thresh,
+            "min_pts": min_pts,
+            "time_thresh": time_thresh,
+            "return_cores": return_cores,
+            "traj_cols": traj_cols,
+            **kwargs,
+        },
         n_jobs=n_jobs,
         print_progress=print_progress
     )
@@ -1080,24 +1070,22 @@ def seqscan_per_user(
 
     pt_cols = passthrough_cols if uid in passthrough_cols else passthrough_cols + [uid]
 
-    def process_user_group(group):
-        return seqscan(
-            data=group[1].reset_index(drop=True),
-            dist_thresh=dist_thresh,
-            min_pts=min_pts,
-            time_thresh=time_thresh,
-            dur_min=dur_min,
-            complete_output=complete_output,
-            passthrough_cols=pt_cols,
-            keep_col_names=keep_col_names,
-            traj_cols=traj_cols,
-            **kwargs,
-        )
-
     grouped = data.groupby(uid, sort=False, as_index=False)
     results = utils.applyParallel(
         grouped,
-        process_user_group,
+        seqscan,
+        {
+            "dist_thresh": dist_thresh,
+            "min_pts": min_pts,
+            "time_thresh": time_thresh,
+            "dur_min": dur_min,
+            "complete_output": complete_output,
+            "passthrough_cols": pt_cols,
+            "keep_col_names": keep_col_names,
+            "traj_cols": traj_cols,
+            **kwargs,
+        },
+        reset_index=True,
         n_jobs=n_jobs,
         print_progress=print_progress,
     )
@@ -1127,23 +1115,20 @@ def seqscan_labels_per_user(
         raise ValueError("seqscan_labels_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
     uid = traj_cols_temp['user_id']
 
-    def process_user_group(group):
-        return seqscan_labels(
-            data=group[1],
-            dist_thresh=dist_thresh,
-            dur_min=dur_min,
-            time_thresh=time_thresh,
-            min_pts=min_pts,
-            return_cores=return_cores,
-            traj_cols=traj_cols,
-            back_merge=back_merge,
-            **kwargs,
-        )
-
     grouped = data.groupby(uid, sort=False)
     results = utils.applyParallel(
         grouped,
-        process_user_group,
+        seqscan_labels,
+        {
+            "dist_thresh": dist_thresh,
+            "dur_min": dur_min,
+            "time_thresh": time_thresh,
+            "min_pts": min_pts,
+            "return_cores": return_cores,
+            "traj_cols": traj_cols,
+            "back_merge": back_merge,
+            **kwargs,
+        },
         n_jobs=n_jobs,
         print_progress=print_progress,
     )
@@ -2037,23 +2022,21 @@ def st_hdbscan_per_user(
 
     pt_cols = passthrough_cols if uid in passthrough_cols else passthrough_cols + [uid]
 
-    def process_user_group(group):
-        return st_hdbscan(
-            data=group[1].reset_index(drop=True),
-            time_thresh=time_thresh,
-            min_pts=min_pts,
-            min_cluster_size=min_cluster_size,
-            dur_min=dur_min,
-            complete_output=complete_output,
-            passthrough_cols=pt_cols,
-            traj_cols=traj_cols,
-            **kwargs
-        )
-
     grouped = data.groupby(uid, sort=False, as_index=False)
     results = utils.applyParallel(
         grouped,
-        process_user_group,
+        st_hdbscan,
+        {
+            "time_thresh": time_thresh,
+            "min_pts": min_pts,
+            "min_cluster_size": min_cluster_size,
+            "dur_min": dur_min,
+            "complete_output": complete_output,
+            "passthrough_cols": pt_cols,
+            "traj_cols": traj_cols,
+            **kwargs,
+        },
+        reset_index=True,
         n_jobs=n_jobs,
         print_progress=print_progress,
     )
@@ -2083,23 +2066,20 @@ def hdbscan_labels_per_user(
         raise ValueError("hdbscan_labels_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
     uid = traj_cols_temp['user_id']
 
-    def process_user_group(group):
-        return hdbscan_labels(
-            data=group[1],
-            time_thresh=time_thresh,
-            min_pts=min_pts,
-            min_cluster_size=min_cluster_size,
-            dur_min=dur_min,
-            delta_roam=delta_roam,
-            return_cores=return_cores,
-            traj_cols=traj_cols,
-            **kwargs,
-        )
-
     grouped = data.groupby(uid, sort=False)
     results = utils.applyParallel(
         grouped,
-        process_user_group,
+        hdbscan_labels,
+        {
+            "time_thresh": time_thresh,
+            "min_pts": min_pts,
+            "min_cluster_size": min_cluster_size,
+            "dur_min": dur_min,
+            "delta_roam": delta_roam,
+            "return_cores": return_cores,
+            "traj_cols": traj_cols,
+            **kwargs,
+        },
         n_jobs=n_jobs,
         print_progress=print_progress,
     )

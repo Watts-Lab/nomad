@@ -122,16 +122,6 @@ def detect_stops_labels(
     return pd.Series(labels, index=data.index, name='cluster')
 
 
-def applyParallel(groups, func, n_jobs=1, print_progress=False, **kwargs):
-    return utils.applyParallel(
-        groups,
-        func,
-        n_jobs=n_jobs,
-        print_progress=print_progress,
-        **kwargs,
-    )
-
-
 def detect_stops(
     data,
     delta_roam=100,
@@ -276,26 +266,22 @@ def detect_stops_per_user(
     
     pt_cols = passthrough_cols if uid in passthrough_cols else passthrough_cols + [uid]
     
-    def process_user_group(group):
-        """Helper function to process a single user group."""
-        return detect_stops(
-            group[1].reset_index(drop=True),
-            delta_roam=delta_roam,
-            dt_max=dt_max,
-            dur_min=dur_min,
-            method=method,
-            complete_output=complete_output,
-            passthrough_cols=pt_cols,
-            keep_col_names=keep_col_names,
-            traj_cols=traj_cols,
-            **kwargs
-        )
-    
-    # Use applyParallel to process groups in parallel
     grouped = data.groupby(uid, sort=False, as_index=False)
-    results = applyParallel(
+    results = utils.applyParallel(
         grouped,
-        process_user_group,
+        detect_stops,
+        {
+            "delta_roam": delta_roam,
+            "dt_max": dt_max,
+            "dur_min": dur_min,
+            "method": method,
+            "complete_output": complete_output,
+            "passthrough_cols": pt_cols,
+            "keep_col_names": keep_col_names,
+            "traj_cols": traj_cols,
+            **kwargs,
+        },
+        reset_index=True,
         n_jobs=n_jobs,
         print_progress=print_progress
     )
@@ -324,21 +310,18 @@ def detect_stops_labels_per_user(
         raise ValueError("detect_stops_labels_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
     uid = traj_cols_temp['user_id']
 
-    def process_user_group(group):
-        return detect_stops_labels(
-            data=group[1],
-            delta_roam=delta_roam,
-            dt_max=dt_max,
-            dur_min=dur_min,
-            method=method,
-            traj_cols=traj_cols,
-            **kwargs,
-        )
-
     grouped = data.groupby(uid, sort=False)
-    results = applyParallel(
+    results = utils.applyParallel(
         grouped,
-        process_user_group,
+        detect_stops_labels,
+        {
+            "delta_roam": delta_roam,
+            "dt_max": dt_max,
+            "dur_min": dur_min,
+            "method": method,
+            "traj_cols": traj_cols,
+            **kwargs,
+        },
         n_jobs=n_jobs,
         print_progress=print_progress,
     )
@@ -664,25 +647,21 @@ def lachesis_per_user(
     
     pt_cols = passthrough_cols if uid in passthrough_cols else passthrough_cols + [uid]
     
-    def process_user_group(group):
-        """Helper function to process a single user group."""
-        return lachesis(
-            group[1],
-            dt_max=dt_max,
-            delta_roam=delta_roam,
-            dur_min=dur_min,
-            complete_output=complete_output,
-            passthrough_cols=pt_cols,
-            postprocessing=None,
-            traj_cols=traj_cols,
-            **kwargs
-        )
-    
-    # Use applyParallel to process groups in parallel
     grouped = data.groupby(uid, sort=False)
-    results = applyParallel(
+    results = utils.applyParallel(
         grouped,
-        process_user_group,
+        lachesis,
+        {
+            "dt_max": dt_max,
+            "delta_roam": delta_roam,
+            "dur_min": dur_min,
+            "complete_output": complete_output,
+            "passthrough_cols": pt_cols,
+            "postprocessing": None,
+            "traj_cols": traj_cols,
+            **kwargs,
+        },
+        reset_index=True,
         n_jobs=n_jobs,
         print_progress=print_progress
     )
@@ -719,21 +698,18 @@ def lachesis_labels_per_user(
         raise ValueError("lachesis_labels_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
     uid = traj_cols_temp['user_id']
 
-    def process_user_group(group):
-        return lachesis_labels(
-            data=group[1],
-            dt_max=dt_max,
-            delta_roam=delta_roam,
-            dur_min=dur_min,
-            return_anchors=return_anchors,
-            traj_cols=traj_cols,
-            **kwargs,
-        )
-
     grouped = data.groupby(uid, sort=False)
-    results = applyParallel(
+    results = utils.applyParallel(
         grouped,
-        process_user_group,
+        lachesis_labels,
+        {
+            "dt_max": dt_max,
+            "delta_roam": delta_roam,
+            "dur_min": dur_min,
+            "return_anchors": return_anchors,
+            "traj_cols": traj_cols,
+            **kwargs,
+        },
         n_jobs=n_jobs,
         print_progress=print_progress,
     )
@@ -920,22 +896,20 @@ def grid_based_per_user(
         if col not in pt_cols:
             pt_cols.append(col)
     
-    def process_user_group(group):
-        return grid_based(
-            data=group[1].reset_index(drop=True),
-            time_thresh=time_thresh,
-            min_cluster_size=min_cluster_size,
-            dur_min=dur_min,
-            complete_output=complete_output,
-            passthrough_cols=pt_cols,
-            traj_cols=traj_cols,
-            **kwargs
-        )
-
     grouped = data.groupby(uid, sort=False, as_index=False)
     results = utils.applyParallel(
         grouped,
-        process_user_group,
+        grid_based,
+        {
+            "time_thresh": time_thresh,
+            "min_cluster_size": min_cluster_size,
+            "dur_min": dur_min,
+            "complete_output": complete_output,
+            "passthrough_cols": pt_cols,
+            "traj_cols": traj_cols,
+            **kwargs,
+        },
+        reset_index=True,
         n_jobs=n_jobs,
         print_progress=print_progress,
     )
@@ -963,20 +937,17 @@ def grid_based_labels_per_user(
         raise ValueError("grid_based_labels_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
     uid = traj_cols_temp['user_id']
 
-    def process_user_group(group):
-        return grid_based_labels(
-            data=group[1],
-            time_thresh=time_thresh,
-            min_cluster_size=min_cluster_size,
-            dur_min=dur_min,
-            traj_cols=traj_cols,
-            **kwargs,
-        )
-
     grouped = data.groupby(uid, sort=False)
     results = utils.applyParallel(
         grouped,
-        process_user_group,
+        grid_based_labels,
+        {
+            "time_thresh": time_thresh,
+            "min_cluster_size": min_cluster_size,
+            "dur_min": dur_min,
+            "traj_cols": traj_cols,
+            **kwargs,
+        },
         n_jobs=n_jobs,
         print_progress=print_progress,
     )
@@ -985,7 +956,6 @@ def grid_based_labels_per_user(
 
 
 __all__ = [
-    "applyParallel",
     "detect_stops_labels",
     "detect_stops",
     "detect_stops_per_user",
