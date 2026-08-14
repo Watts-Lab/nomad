@@ -5,15 +5,38 @@ import pytest
 from pathlib import Path
 import nomad.io.base as loader
 from nomad import filters
-import nomad.stop_detection.density_algs as DBSCAN
-import nomad.stop_detection.sequential_algs as LACHESIS
-import nomad.stop_detection.density_algs as DBSTOP
-import nomad.stop_detection.density_algs as DENSITY_BASED
-import nomad.stop_detection.density_algs as HDBSCAN
-import nomad.stop_detection.sequential_algs as GRID_BASED
-import nomad.stop_detection.preprocessing as PREPROCESSING
-import nomad.stop_detection.utils as STOP_UTILS
-import nomad.stop_detection.sequential_algs as SEQUENTIAL
+from nomad.stop_detection.density_algs import (
+    dbstop,
+    dbstop_labels,
+    dbstop_labels_per_user,
+    dbstop_per_user,
+    hdbscan_labels,
+    hdbscan_labels_per_user,
+    seqscan,
+    seqscan_labels,
+    seqscan_labels_per_user,
+    seqscan_per_user,
+    st_hdbscan,
+    st_hdbscan_per_user,
+    ta_dbscan,
+    ta_dbscan_labels,
+    ta_dbscan_labels_per_user,
+    ta_dbscan_per_user,
+)
+from nomad.stop_detection.sequential_algs import (
+    detect_stops,
+    detect_stops_labels,
+    detect_stops_labels_per_user,
+    detect_stops_per_user,
+    grid_based,
+    grid_based_labels,
+    lachesis,
+    lachesis_labels,
+    lachesis_labels_per_user,
+    lachesis_per_user,
+)
+from nomad.stop_detection.preprocessing import _find_neighbors
+from nomad.stop_detection.utils import has_overlapping_stops
 from pandas.api.types import is_integer_dtype
 import numpy as np
 
@@ -35,18 +58,18 @@ def stop_test_params():
 def shared_algo_registry():
     return {
         "lachesis": {
-            "label_fn": LACHESIS.lachesis_labels,
-            "stop_fn": LACHESIS.lachesis,
+            "label_fn": lachesis_labels,
+            "stop_fn": lachesis,
             "extra_kwargs": {},
         },
         "sequential-sliding": {
-            "label_fn": SEQUENTIAL.detect_stops_labels,
-            "stop_fn": SEQUENTIAL.detect_stops,
+            "label_fn": detect_stops_labels,
+            "stop_fn": detect_stops,
             "extra_kwargs": {"method": "sliding"},
         },
         "sequential-centroid": {
-            "label_fn": SEQUENTIAL.detect_stops_labels,
-            "stop_fn": SEQUENTIAL.detect_stops,
+            "label_fn": detect_stops_labels,
+            "stop_fn": detect_stops,
             "extra_kwargs": {"method": "centroid"},
         },
     }
@@ -59,37 +82,37 @@ def coordinate_label_case_registry(stop_test_params):
     min_pts = stop_test_params["min_pts"]
     return {
         "sequential-sliding": {
-            "fn": SEQUENTIAL.detect_stops_labels,
+            "fn": detect_stops_labels,
             "single_kwargs": {"dt_max": dt_max, "delta_roam": dist_thresh, "dur_min": 5, "method": "sliding"},
             "two_stop_kwargs": {"dt_max": 5, "delta_roam": dist_thresh, "dur_min": 5, "method": "sliding"},
         },
         "sequential-centroid": {
-            "fn": SEQUENTIAL.detect_stops_labels,
+            "fn": detect_stops_labels,
             "single_kwargs": {"dt_max": dt_max, "delta_roam": dist_thresh, "dur_min": 5, "method": "centroid"},
             "two_stop_kwargs": {"dt_max": 5, "delta_roam": dist_thresh, "dur_min": 5, "method": "centroid"},
         },
         "lachesis": {
-            "fn": LACHESIS.lachesis_labels,
+            "fn": lachesis_labels,
             "single_kwargs": {"dt_max": dt_max, "delta_roam": dist_thresh, "dur_min": 5},
             "two_stop_kwargs": {"dt_max": 5, "delta_roam": dist_thresh, "dur_min": 5},
         },
         "dbstop": {
-            "fn": DBSTOP.dbstop_labels,
+            "fn": dbstop_labels,
             "single_kwargs": {"time_thresh": dt_max, "dist_thresh": dist_thresh, "min_pts": min_pts},
             "two_stop_kwargs": {"time_thresh": 5, "dist_thresh": dist_thresh, "min_pts": 3},
         },
         "tadbscan": {
-            "fn": DBSCAN.ta_dbscan_labels,
+            "fn": ta_dbscan_labels,
             "single_kwargs": {"time_thresh": dt_max, "dist_thresh": dist_thresh, "min_pts": min_pts},
             "two_stop_kwargs": {"time_thresh": 5, "dist_thresh": dist_thresh, "min_pts": 3},
         },
         "seqscan": {
-            "fn": DENSITY_BASED.seqscan_labels,
+            "fn": seqscan_labels,
             "single_kwargs": {"time_thresh": dt_max, "dist_thresh": dist_thresh, "min_pts": min_pts, "dur_min": 5},
             "two_stop_kwargs": {"time_thresh": 5, "dist_thresh": dist_thresh, "min_pts": 3, "dur_min": 5},
         },
         "hdbscan": {
-            "fn": HDBSCAN.hdbscan_labels,
+            "fn": hdbscan_labels,
             "single_kwargs": {"time_thresh": dt_max, "min_pts": min_pts, "min_cluster_size": 2, "dur_min": 5},
             "two_stop_kwargs": {"time_thresh": 5, "min_pts": 3, "min_cluster_size": 3, "dur_min": 5},
         },
@@ -103,15 +126,15 @@ def fallback_label_case_registry(stop_test_params):
     min_pts = stop_test_params["min_pts"]
     return {
         "tadbscan": {
-            "fn": DBSCAN.ta_dbscan_labels,
+            "fn": ta_dbscan_labels,
             "kwargs": {"dist_thresh": dist_thresh, "min_pts": min_pts, "time_thresh": dt_max},
         },
         "dbstop": {
-            "fn": DBSTOP.dbstop_labels,
+            "fn": dbstop_labels,
             "kwargs": {"dist_thresh": dist_thresh, "min_pts": min_pts, "time_thresh": dt_max},
         },
         "seqscan": {
-            "fn": DENSITY_BASED.seqscan_labels,
+            "fn": seqscan_labels,
             "kwargs": {"dist_thresh": dist_thresh, "min_pts": min_pts, "time_thresh": dt_max},
         },
     }
@@ -121,22 +144,22 @@ def fallback_label_case_registry(stop_test_params):
 def overlap_stop_case_registry():
     return {
         "tadbscan": {
-            "fn": DBSCAN.ta_dbscan,
+            "fn": ta_dbscan,
             "kwargs": {"dist_thresh": 45, "min_pts": 2, "time_thresh": 60, "dur_min": 3},
             "traj_cols": {"timestamp": "unix_timestamp", "x": "x", "y": "y"},
         },
         "dbstop": {
-            "fn": DBSTOP.dbstop,
+            "fn": dbstop,
             "kwargs": {"dist_thresh": 45, "min_pts": 2, "time_thresh": 60, "dur_min": 3},
             "traj_cols": {"timestamp": "unix_timestamp", "x": "x", "y": "y"},
         },
         "seqscan": {
-            "fn": DENSITY_BASED.seqscan,
+            "fn": seqscan,
             "kwargs": {"dist_thresh": 45, "min_pts": 2, "time_thresh": 60, "dur_min": 3},
             "traj_cols": {"timestamp": "unix_timestamp", "x": "x", "y": "y"},
         },
         "hdbscan": {
-            "fn": HDBSCAN.st_hdbscan,
+            "fn": st_hdbscan,
             "kwargs": {"time_thresh": 60, "min_pts": 2, "min_cluster_size": 2, "dur_min": 3},
             "traj_cols": {"timestamp": "unix_timestamp", "x": "x", "y": "y"},
         },
@@ -147,18 +170,18 @@ def overlap_stop_case_registry():
 def latlon_xy_consistency_case_registry():
     return {
         "sequential": {
-            "fn": SEQUENTIAL.detect_stops,
+            "fn": detect_stops,
             "kwargs": {},
         },
         "lachesis": {
-            "fn": LACHESIS.lachesis,
+            "fn": lachesis,
             "kwargs": {
                 # Required argument; other behavior uses implementation defaults.
                 "delta_roam": 100,
             },
         },
         "dbstop": {
-            "fn": DBSTOP.dbstop,
+            "fn": dbstop,
             "kwargs": {
                 # Required args; keep notebook-like dbstop settings.
                 "time_thresh": 60,
@@ -167,7 +190,7 @@ def latlon_xy_consistency_case_registry():
             },
         },
         "tadbscan": {
-            "fn": DBSCAN.ta_dbscan,
+            "fn": ta_dbscan,
             "kwargs": {
                 "time_thresh": 60,
                 "dist_thresh": 45,
@@ -175,7 +198,7 @@ def latlon_xy_consistency_case_registry():
             },
         },
         "seqscan": {
-            "fn": DENSITY_BASED.seqscan,
+            "fn": seqscan,
             "kwargs": {
                 "time_thresh": 60,
                 "dist_thresh": 45,
@@ -183,7 +206,7 @@ def latlon_xy_consistency_case_registry():
             },
         },
         "hdbscan": {
-            "fn": HDBSCAN.st_hdbscan,
+            "fn": st_hdbscan,
             "kwargs": {
                 "time_thresh": 60,
             },
@@ -195,19 +218,19 @@ def latlon_xy_consistency_case_registry():
 def latlon_xy_label_consistency_case_registry():
     return {
         "tadbscan-labels": {
-            "fn": DBSCAN.ta_dbscan_labels,
+            "fn": ta_dbscan_labels,
             "kwargs": {"dist_thresh": 45, "min_pts": 2, "time_thresh": 60},
         },
         "dbstop-labels": {
-            "fn": DBSTOP.dbstop_labels,
+            "fn": dbstop_labels,
             "kwargs": {"dist_thresh": 8, "min_pts": 3, "time_thresh": 60},
         },
         "seqscan-labels": {
-            "fn": DENSITY_BASED.seqscan_labels,
+            "fn": seqscan_labels,
             "kwargs": {"dist_thresh": 45},
         },
         "hdbscan-labels": {
-            "fn": HDBSCAN.hdbscan_labels,
+            "fn": hdbscan_labels,
             "kwargs": {"time_thresh": 60},
         },
     }
@@ -220,43 +243,43 @@ def label_concat_case_registry(stop_test_params):
     min_pts = stop_test_params["min_pts"]
     return {
         "dbstop": {
-            "fn": DBSTOP.dbstop_labels,
+            "fn": dbstop_labels,
             "kwargs": {"dist_thresh": dist_thresh, "min_pts": min_pts, "time_thresh": dt_max},
             "traj_cols": {"timestamp": "timestamp", "x": "x", "y": "y"},
             "supports_return_cores": True,
         },
         "tadbscan": {
-            "fn": DBSCAN.ta_dbscan_labels,
+            "fn": ta_dbscan_labels,
             "kwargs": {"dist_thresh": dist_thresh, "min_pts": min_pts, "time_thresh": dt_max},
             "traj_cols": {"timestamp": "timestamp", "x": "x", "y": "y"},
             "supports_return_cores": True,
         },
         "seqscan": {
-            "fn": DENSITY_BASED.seqscan_labels,
+            "fn": seqscan_labels,
             "kwargs": {"dist_thresh": dist_thresh, "min_pts": min_pts, "time_thresh": dt_max},
             "traj_cols": {"timestamp": "timestamp", "x": "x", "y": "y"},
             "supports_return_cores": True,
         },
         "lachesis": {
-            "fn": LACHESIS.lachesis_labels,
+            "fn": lachesis_labels,
             "kwargs": {"delta_roam": dist_thresh, "dt_max": dt_max, "dur_min": 5},
             "traj_cols": {"timestamp": "timestamp", "x": "x", "y": "y"},
             "supports_return_cores": False,
         },
         "sequential": {
-            "fn": SEQUENTIAL.detect_stops_labels,
+            "fn": detect_stops_labels,
             "kwargs": {"delta_roam": dist_thresh, "dt_max": dt_max, "dur_min": 5, "method": "sliding"},
             "traj_cols": {"timestamp": "timestamp", "x": "x", "y": "y"},
             "supports_return_cores": False,
         },
         "hdbscan": {
-            "fn": HDBSCAN.hdbscan_labels,
+            "fn": hdbscan_labels,
             "kwargs": {"time_thresh": dt_max, "min_pts": min_pts, "min_cluster_size": 2, "dur_min": 5},
             "traj_cols": {"timestamp": "timestamp", "x": "x", "y": "y"},
             "supports_return_cores": True,
         },
         "grid-based": {
-            "fn": GRID_BASED.grid_based_labels,
+            "fn": grid_based_labels,
             "kwargs": {"time_thresh": dt_max, "min_cluster_size": 2, "dur_min": 5},
             "traj_cols": {"timestamp": "timestamp", "location_id": "location_id"},
             "supports_return_cores": False,
@@ -268,27 +291,27 @@ def label_concat_case_registry(stop_test_params):
 def stop_df_schema_case_registry():
     return {
         "sequential": {
-            "fn": SEQUENTIAL.detect_stops,
+            "fn": detect_stops,
             "kwargs": {},
         },
         "lachesis": {
-            "fn": LACHESIS.lachesis,
+            "fn": lachesis,
             "kwargs": {"delta_roam": 100},
         },
         "dbstop": {
-            "fn": DBSTOP.dbstop,
+            "fn": dbstop,
             "kwargs": {"time_thresh": 60, "dist_thresh": 8, "min_pts": 3},
         },
         "tadbscan": {
-            "fn": DBSCAN.ta_dbscan,
+            "fn": ta_dbscan,
             "kwargs": {"time_thresh": 60, "dist_thresh": 45, "min_pts": 2},
         },
         "seqscan": {
-            "fn": DENSITY_BASED.seqscan,
+            "fn": seqscan,
             "kwargs": {"time_thresh": 60, "dist_thresh": 45, "min_pts": 2},
         },
         "hdbscan": {
-            "fn": HDBSCAN.st_hdbscan,
+            "fn": st_hdbscan,
             "kwargs": {"time_thresh": 60},
         },
     }
@@ -298,39 +321,39 @@ def stop_df_schema_case_registry():
 def per_user_wrapper_case_registry():
     return {
         "dbstop": {
-            "stop_fn": DBSTOP.dbstop_per_user,
-            "label_fn": DBSTOP.dbstop_labels_per_user,
-            "single_user_label_fn": DBSTOP.dbstop_labels,
+            "stop_fn": dbstop_per_user,
+            "label_fn": dbstop_labels_per_user,
+            "single_user_label_fn": dbstop_labels,
             "kwargs": {"dist_thresh": 100, "min_pts": 2, "time_thresh": 60},
         },
         "tadbscan": {
-            "stop_fn": DBSCAN.ta_dbscan_per_user,
-            "label_fn": DBSCAN.ta_dbscan_labels_per_user,
-            "single_user_label_fn": DBSCAN.ta_dbscan_labels,
+            "stop_fn": ta_dbscan_per_user,
+            "label_fn": ta_dbscan_labels_per_user,
+            "single_user_label_fn": ta_dbscan_labels,
             "kwargs": {"dist_thresh": 100, "min_pts": 2, "time_thresh": 60},
         },
         "seqscan": {
-            "stop_fn": DENSITY_BASED.seqscan_per_user,
-            "label_fn": DENSITY_BASED.seqscan_labels_per_user,
-            "single_user_label_fn": DENSITY_BASED.seqscan_labels,
+            "stop_fn": seqscan_per_user,
+            "label_fn": seqscan_labels_per_user,
+            "single_user_label_fn": seqscan_labels,
             "kwargs": {"dist_thresh": 100, "min_pts": 2, "time_thresh": 60},
         },
         "hdbscan": {
-            "stop_fn": HDBSCAN.st_hdbscan_per_user,
-            "label_fn": HDBSCAN.hdbscan_labels_per_user,
-            "single_user_label_fn": HDBSCAN.hdbscan_labels,
+            "stop_fn": st_hdbscan_per_user,
+            "label_fn": hdbscan_labels_per_user,
+            "single_user_label_fn": hdbscan_labels,
             "kwargs": {"time_thresh": 60, "min_pts": 2, "min_cluster_size": 2, "dur_min": 5},
         },
         "lachesis": {
-            "stop_fn": LACHESIS.lachesis_per_user,
-            "label_fn": LACHESIS.lachesis_labels_per_user,
-            "single_user_label_fn": LACHESIS.lachesis_labels,
+            "stop_fn": lachesis_per_user,
+            "label_fn": lachesis_labels_per_user,
+            "single_user_label_fn": lachesis_labels,
             "kwargs": {"dt_max": 60, "delta_roam": 100, "dur_min": 5},
         },
         "sequential": {
-            "stop_fn": SEQUENTIAL.detect_stops_per_user,
-            "label_fn": SEQUENTIAL.detect_stops_labels_per_user,
-            "single_user_label_fn": SEQUENTIAL.detect_stops_labels,
+            "stop_fn": detect_stops_per_user,
+            "label_fn": detect_stops_labels_per_user,
+            "single_user_label_fn": detect_stops_labels,
             "kwargs": {"dt_max": 60, "delta_roam": 100, "dur_min": 5, "method": "sliding"},
         },
     }
@@ -591,7 +614,7 @@ def test_hdbscan_respects_explicit_xy_column_names(two_stop_traj):
     traj = two_stop_traj.rename(
         columns={"timestamp": "unix_time", "x": "merc_x", "y": "merc_y"}
     )
-    labels = HDBSCAN.hdbscan_labels(
+    labels = hdbscan_labels(
         traj,
         time_thresh=5,
         min_pts=3,
@@ -717,7 +740,7 @@ def test_lachesis_ground_truth(agent_traj_ground_truth):
              'x':'x',
              'y':'y',
              'timestamp':'unix_timestamp'}
-    lachesis_out = LACHESIS.lachesis_labels(agent_traj_ground_truth,
+    lachesis_out = lachesis_labels(agent_traj_ground_truth,
                                              *lachesis_params,
                                              traj_cols)
 
@@ -735,7 +758,7 @@ def test_sequential_ground_truth(agent_traj_ground_truth):
              'y':'y',
              'timestamp':'unix_timestamp'}
     
-    sequential_out = SEQUENTIAL.detect_stops_labels(
+    sequential_out = detect_stops_labels(
         agent_traj_ground_truth,
         delta_roam=45,
         dt_max=60,
@@ -854,7 +877,7 @@ def test_per_user_label_wrapper_matches_single_user_reference(per_user_test_data
 def test_sequential_temporal_gap_breaks_stop(simple_traj, stop_test_params):
     """Test that temporal gap larger than dt_max breaks a stop."""
     # simple_traj has a gap of stop_test_params['gap_minutes'] between ping 6 and 7.
-    labels = SEQUENTIAL.detect_stops_labels(
+    labels = detect_stops_labels(
         data=simple_traj,
         dt_max=stop_test_params["dt_max"],
         delta_roam=stop_test_params["delta_roam"],
@@ -1009,12 +1032,12 @@ def test_label_concat_with_empty_input_preserves_schema(
     "label_function,kwargs",
     [
         pytest.param(
-            DBSTOP.dbstop_labels,
+            dbstop_labels,
             {"dist_thresh": 25, "min_pts": 2, "time_thresh": 60, "return_cores": True},
             id="dbstop",
         ),
         pytest.param(
-            SEQUENTIAL.detect_stops_labels,
+            detect_stops_labels,
             {"delta_roam": 25, "dt_max": 60, "dur_min": 1, "return_anchors": True},
             id="sequential",
         ),
@@ -1059,7 +1082,7 @@ def test_density_algorithms_output_non_overlapping_stops(agent_traj_ground_truth
     stops = case["fn"](agent_traj_ground_truth, traj_cols=case["traj_cols"], **case["kwargs"])
 
     assert isinstance(stops, pd.DataFrame)
-    assert not STOP_UTILS.has_overlapping_stops(stops, traj_cols=case["traj_cols"])
+    assert not has_overlapping_stops(stops, traj_cols=case["traj_cols"])
 
 
 @pytest.mark.parametrize(
@@ -1098,7 +1121,7 @@ def test_default_time_fallback_prefers_datetime(simple_traj_ts, stop_test_params
 
 
 def test_find_neighbors_datetime_relabels_to_unix_seconds(simple_traj, stop_test_params):
-    graph = PREPROCESSING._find_neighbors(
+    graph = _find_neighbors(
         data=simple_traj,
         time_thresh=stop_test_params["dt_max"],
         traj_cols={"x": "x", "y": "y", "datetime": "datetime"},
@@ -1118,7 +1141,7 @@ def test_find_neighbors_nullable_timestamp_relabels_to_unix_seconds(simple_traj,
     traj = simple_traj.copy()
     traj["timestamp"] = filters.to_timestamp(traj["datetime"]).astype("Int64")
 
-    graph = PREPROCESSING._find_neighbors(
+    graph = _find_neighbors(
         data=traj,
         time_thresh=stop_test_params["dt_max"],
         traj_cols={"x": "x", "y": "y", "timestamp": "timestamp"},
@@ -1132,11 +1155,6 @@ def test_find_neighbors_nullable_timestamp_relabels_to_unix_seconds(simple_traj,
 
     expected_nodes = traj["timestamp"].astype("int64").to_list()
     assert list(graph.nodes()) == expected_nodes
-
-
-##########################################
-####           DBSCAN TESTS           #### 
-##########################################
 
 ##########################################
 ####      EMPTY DATAFRAME TESTS       #### 
@@ -1161,7 +1179,7 @@ def empty_traj_xy():
 def empty_complete_case_registry():
     return {
         "grid-based": {
-            "fn": GRID_BASED.grid_based,
+            "fn": grid_based,
             "kwargs": {
                 "time_thresh": 120,
                 "min_cluster_size": 2,
@@ -1178,7 +1196,7 @@ def empty_complete_case_registry():
             "expected_cols": {'timestamp', 'end_timestamp', 'n_pings', 'max_gap', 'duration', 'location_id'},
         },
         "sequential": {
-            "fn": SEQUENTIAL.detect_stops,
+            "fn": detect_stops,
             "kwargs": {
                 "delta_roam": 100,
                 "dt_max": 60,
@@ -1195,7 +1213,7 @@ def empty_complete_case_registry():
             "expected_cols": {'longitude', 'latitude', 'timestamp', 'diameter', 'n_pings', 'end_timestamp', 'duration', 'max_gap'},
         },
         "hdbscan": {
-            "fn": HDBSCAN.st_hdbscan,
+            "fn": st_hdbscan,
             "kwargs": {
                 "time_thresh": 60,
                 "min_pts": 2,
@@ -1212,7 +1230,7 @@ def empty_complete_case_registry():
             "expected_cols": {'longitude', 'latitude', 'timestamp', 'diameter', 'n_pings', 'end_timestamp', 'duration', 'max_gap'},
         },
         "lachesis": {
-            "fn": LACHESIS.lachesis,
+            "fn": lachesis,
             "kwargs": {
                 "delta_roam": 100,
                 "dt_max": 60,
@@ -1228,7 +1246,7 @@ def empty_complete_case_registry():
             "expected_cols": {'longitude', 'latitude', 'timestamp', 'diameter', 'n_pings', 'end_timestamp', 'duration', 'max_gap'},
         },
         "tadbscan": {
-            "fn": DBSCAN.ta_dbscan,
+            "fn": ta_dbscan,
             "kwargs": {
                 "time_thresh": 60,
                 "dist_thresh": 25,
@@ -1245,7 +1263,7 @@ def empty_complete_case_registry():
             "expected_cols": {'longitude', 'latitude', 'timestamp', 'diameter', 'n_pings', 'end_timestamp', 'duration', 'max_gap'},
         },
         "dbstop": {
-            "fn": DBSTOP.dbstop,
+            "fn": dbstop,
             "kwargs": {
                 "time_thresh": 60,
                 "dist_thresh": 25,
@@ -1262,7 +1280,7 @@ def empty_complete_case_registry():
             "expected_cols": {'longitude', 'latitude', 'timestamp', 'diameter', 'n_pings', 'end_timestamp', 'duration', 'max_gap'},
         },
         "seqscan": {
-            "fn": DENSITY_BASED.seqscan,
+            "fn": seqscan,
             "kwargs": {
                 "time_thresh": 60,
                 "dist_thresh": 25,
@@ -1285,7 +1303,7 @@ def empty_complete_case_registry():
 def empty_xy_case_registry():
     return {
         "grid-based": {
-            "fn": GRID_BASED.grid_based,
+            "fn": grid_based,
             "kwargs": {
                 "time_thresh": 120,
                 "min_cluster_size": 2,
@@ -1302,7 +1320,7 @@ def empty_xy_case_registry():
             "expected_cols": {'timestamp', 'duration', 'location_id'},
         },
         "sequential": {
-            "fn": SEQUENTIAL.detect_stops,
+            "fn": detect_stops,
             "kwargs": {
                 "delta_roam": 100,
                 "dt_max": 60,
@@ -1319,7 +1337,7 @@ def empty_xy_case_registry():
             "expected_cols": {'x', 'y', 'timestamp', 'duration'},
         },
         "hdbscan": {
-            "fn": HDBSCAN.st_hdbscan,
+            "fn": st_hdbscan,
             "kwargs": {
                 "time_thresh": 60,
                 "min_pts": 2,
@@ -1336,7 +1354,7 @@ def empty_xy_case_registry():
             "expected_cols": {'x', 'y', 'timestamp', 'duration'},
         },
         "lachesis": {
-            "fn": LACHESIS.lachesis,
+            "fn": lachesis,
             "kwargs": {
                 "delta_roam": 100,
                 "dt_max": 60,
@@ -1352,7 +1370,7 @@ def empty_xy_case_registry():
             "expected_cols": {'x', 'y', 'timestamp', 'duration'},
         },
         "tadbscan": {
-            "fn": DBSCAN.ta_dbscan,
+            "fn": ta_dbscan,
             "kwargs": {
                 "time_thresh": 60,
                 "dist_thresh": 25,
@@ -1369,7 +1387,7 @@ def empty_xy_case_registry():
             "expected_cols": {'x', 'y', 'timestamp', 'duration'},
         },
         "dbstop": {
-            "fn": DBSTOP.dbstop,
+            "fn": dbstop,
             "kwargs": {
                 "time_thresh": 60,
                 "dist_thresh": 25,
@@ -1386,7 +1404,7 @@ def empty_xy_case_registry():
             "expected_cols": {'x', 'y', 'timestamp', 'duration'},
         },
         "seqscan": {
-            "fn": DENSITY_BASED.seqscan,
+            "fn": seqscan,
             "kwargs": {
                 "time_thresh": 60,
                 "dist_thresh": 25,
@@ -1456,9 +1474,9 @@ def test_empty_dataframe_consistency():
     }
     
     # Test with complete_output=False for all algorithms
-    grid_result = GRID_BASED.grid_based(empty_data, traj_cols=traj_cols, complete_output=False)
-    hdbscan_result = HDBSCAN.st_hdbscan(empty_data, time_thresh=60, traj_cols=traj_cols, complete_output=False)
-    lachesis_result = LACHESIS.lachesis(empty_data, delta_roam=100, dt_max=60, traj_cols=traj_cols, complete_output=False)
+    grid_result = grid_based(empty_data, traj_cols=traj_cols, complete_output=False)
+    hdbscan_result = st_hdbscan(empty_data, time_thresh=60, traj_cols=traj_cols, complete_output=False)
+    lachesis_result = lachesis(empty_data, delta_roam=100, dt_max=60, traj_cols=traj_cols, complete_output=False)
     
     # All should be empty
     assert grid_result.empty
@@ -1478,7 +1496,7 @@ def test_empty_dataframe_consistency():
 
 def test_hdbscan_labels_single_stop(hdbscan_traj):
     """hdbscan_labels detects at least one cluster on clear stop data."""
-    labels = HDBSCAN.hdbscan_labels(
+    labels = hdbscan_labels(
         hdbscan_traj, time_thresh=5, min_pts=3, min_cluster_size=3, dur_min=5,
         traj_cols={'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
     )
@@ -1487,7 +1505,7 @@ def test_hdbscan_labels_single_stop(hdbscan_traj):
 
 def test_hdbscan_labels_no_cluster_when_sparse(hdbscan_traj):
     """No cluster forms when min_pts exceeds the number of temporal neighbors."""
-    labels = HDBSCAN.hdbscan_labels(
+    labels = hdbscan_labels(
         hdbscan_traj, time_thresh=5, min_pts=100, min_cluster_size=3, dur_min=5,
         traj_cols={'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
     )
@@ -1496,7 +1514,7 @@ def test_hdbscan_labels_no_cluster_when_sparse(hdbscan_traj):
 
 def test_hdbscan_labels_no_cluster_insufficient_duration(hdbscan_traj):
     """No cluster forms when dur_min exceeds actual stop duration."""
-    labels = HDBSCAN.hdbscan_labels(
+    labels = hdbscan_labels(
         hdbscan_traj, time_thresh=5, min_pts=3, min_cluster_size=3, dur_min=60,
         traj_cols={'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
     )
@@ -1505,7 +1523,7 @@ def test_hdbscan_labels_no_cluster_insufficient_duration(hdbscan_traj):
 
 def test_hdbscan_labels_two_stops(hdbscan_traj):
     """hdbscan_labels finds both stops in a two-stop trajectory."""
-    labels = HDBSCAN.hdbscan_labels(
+    labels = hdbscan_labels(
         hdbscan_traj, time_thresh=5, min_pts=3, min_cluster_size=3, dur_min=5,
         traj_cols={'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
     )
@@ -1516,11 +1534,11 @@ def test_hdbscan_labels_two_stops(hdbscan_traj):
 def test_hdbscan_number_labels_matches_stop_table(hdbscan_traj):
     """Number of unique non-noise labels equals number of rows in st_hdbscan output."""
     traj_cols = {'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
-    labels = HDBSCAN.hdbscan_labels(
+    labels = hdbscan_labels(
         hdbscan_traj, time_thresh=5, min_pts=3, min_cluster_size=3, dur_min=5,
         traj_cols=traj_cols
     )
-    stops = HDBSCAN.st_hdbscan(
+    stops = st_hdbscan(
         hdbscan_traj, time_thresh=5, min_pts=3, min_cluster_size=3, dur_min=5,
         traj_cols=traj_cols
     )
@@ -1534,7 +1552,7 @@ def test_st_hdbscan_output_is_valid_stop_df(base_df):
     first_user = df[traj_cols['user_id']].iloc[0]
     single = df[df[traj_cols['user_id']] == first_user]
 
-    stops = HDBSCAN.st_hdbscan(
+    stops = st_hdbscan(
         single, time_thresh=10, min_pts=2, min_cluster_size=2, dur_min=5,
         traj_cols=traj_cols, complete_output=False
     )
@@ -1552,7 +1570,7 @@ def test_st_hdbscan_output_is_valid_stop_df(base_df):
 def test_st_hdbscan_ground_truth(agent_traj_ground_truth):
     """st_hdbscan detects the expected number of stops on ground-truth data."""
     traj_cols = {'user_id': 'identifier', 'x': 'x', 'y': 'y', 'timestamp': 'unix_timestamp'}
-    labels = HDBSCAN.hdbscan_labels(
+    labels = hdbscan_labels(
         agent_traj_ground_truth, time_thresh=10, min_pts=2, min_cluster_size=2, dur_min=3,
         traj_cols=traj_cols
     )
@@ -1565,13 +1583,13 @@ def test_st_hdbscan_multiuser_raises(base_df):
     traj_cols = {'user_id': 'uid', 'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
     df = loader.from_df(base_df, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior='utc')
     with pytest.raises(ValueError, match="Multi-user"):
-        HDBSCAN.st_hdbscan(df, time_thresh=10, traj_cols=traj_cols)
+        st_hdbscan(df, time_thresh=10, traj_cols=traj_cols)
 
 
 def test_st_hdbscan_per_user_basic(per_user_test_data):
     """st_hdbscan_per_user runs on multi-user data and returns stops for multiple users."""
     df, traj_cols = per_user_test_data
-    stops = HDBSCAN.st_hdbscan_per_user(
+    stops = st_hdbscan_per_user(
         df, time_thresh=10, min_pts=2, min_cluster_size=2, dur_min=5,
         traj_cols=traj_cols
     )
@@ -1583,52 +1601,8 @@ def test_st_hdbscan_per_user_basic(per_user_test_data):
 def test_st_hdbscan_delta_roam(hdbscan_traj):
     """delta_roam (epsilon cut) path runs without error and returns a DataFrame."""
     traj_cols = {'timestamp': 'timestamp', 'x': 'x', 'y': 'y'}
-    stops = HDBSCAN.st_hdbscan(
+    stops = st_hdbscan(
         hdbscan_traj, time_thresh=5, min_pts=3, min_cluster_size=3, dur_min=5,
         delta_roam=50, traj_cols=traj_cols
     )
     assert isinstance(stops, pd.DataFrame)
-
-
-##########################################
-####        LOCATION CLUSTERING      ####
-####           (SLIDING.PY)          ####
-##########################################
-
-@pytest.fixture
-def position_fixes_simple():
-    """Simple position fixes for testing sliding window algorithm."""
-    times = pd.date_range("2025-01-01 08:00", periods=10, freq="1min").tolist()
-
-    # Create position fixes:
-    # Points 0-5: stationary (should form staypoint if time_threshold <= 5 min)
-    # Points 6-9: moved away
-    coords = [(0.0, 0.0)] * 6 + [(0.002, 0.002)] * 4
-
-    df = gpd.GeoDataFrame({
-        "user_id": "user1",
-        "tracked_at": times,
-        "geometry": [Point(lon, lat) for lon, lat in coords]
-    }, crs="EPSG:4326")
-
-    return df
-
-
-@pytest.fixture
-def position_fixes_with_gap():
-    """Position fixes with temporal gap for testing gap_threshold."""
-    times = pd.date_range("2025-01-01 08:00", periods=5, freq="1min").tolist()
-    # Add a large gap
-    times += [times[-1] + pd.Timedelta(minutes=20)]
-    times += pd.date_range(times[-1] + pd.Timedelta(minutes=1), periods=4, freq="1min").tolist()
-
-    # All points at same location
-    coords = [(0.0, 0.0)] * len(times)
-
-    df = gpd.GeoDataFrame({
-        "user_id": "user1",
-        "tracked_at": times,
-        "geometry": [Point(lon, lat) for lon, lat in coords]
-    }, crs="EPSG:4326")
-
-    return df
