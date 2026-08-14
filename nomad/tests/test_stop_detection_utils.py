@@ -1,5 +1,6 @@
 import pandas as pd
 import pytest
+import nomad.stop_detection.utils as utils
 
 def _assert_empty_stop_df(empty_df, expected_columns, expected_dtypes):
     assert empty_df.empty
@@ -7,7 +8,7 @@ def _assert_empty_stop_df(empty_df, expected_columns, expected_dtypes):
     assert {col: str(dtype) for col, dtype in empty_df.dtypes.items()} == expected_dtypes
 
 
-def _summarize_stop_clusters(utils, data, complete_output, passthrough_cols, traj_cols, keep_col_names=True):
+def _summarize_stop_clusters(data, complete_output, passthrough_cols, traj_cols, keep_col_names=True):
     merged = data[data["cluster"] != -1]
     if merged.empty:
         return utils._get_empty_stop_df(
@@ -34,7 +35,6 @@ def _summarize_stop_clusters(utils, data, complete_output, passthrough_cols, tra
 # Tests for _get_empty_stop_df function
 def test_get_empty_stop_df_basic():
     """Test _get_empty_stop_df with basic parameters."""
-    import nomad.stop_detection.utils as utils
     
     # Test basic case - should match summarize_stop output
     input_columns = ['timestamp', 'longitude', 'latitude']
@@ -61,7 +61,6 @@ def test_get_empty_stop_df_basic():
 
 def test_get_empty_stop_df_complete_output():
     """Test _get_empty_stop_df with complete_output=True."""
-    import nomad.stop_detection.utils as utils
     
     input_columns = ['timestamp', 'longitude', 'latitude']
     empty_df = utils._get_empty_stop_df(
@@ -91,7 +90,6 @@ def test_get_empty_stop_df_complete_output():
 
 def test_get_empty_stop_df_with_passthrough():
     """Test _get_empty_stop_df with passthrough columns."""
-    import nomad.stop_detection.utils as utils
     
     input_columns = ['timestamp', 'longitude', 'latitude', 'user_id', 'location_id']
     empty_df = utils._get_empty_stop_df(
@@ -119,7 +117,6 @@ def test_get_empty_stop_df_with_passthrough():
 
 def test_get_empty_stop_df_xy_coordinates():
     """Test _get_empty_stop_df with x,y coordinates."""
-    import nomad.stop_detection.utils as utils
     
     input_columns = ['timestamp', 'x', 'y']
     empty_df = utils._get_empty_stop_df(
@@ -147,7 +144,6 @@ def test_get_empty_stop_df_xy_coordinates():
 
 def test_get_empty_stop_df_custom_traj_cols():
     """Test _get_empty_stop_df with custom traj_cols."""
-    import nomad.stop_detection.utils as utils
     
     traj_cols = {
         'timestamp': 'unix_timestamp',
@@ -179,7 +175,6 @@ def test_get_empty_stop_df_custom_traj_cols():
 
 def test_get_empty_stop_df_grid_based():
     """Test _get_empty_stop_df for grid-based summarization."""
-    import nomad.stop_detection.utils as utils
     
     input_columns = ['timestamp', 'location_id']
     empty_df = utils._get_empty_stop_df(
@@ -204,7 +199,6 @@ def test_get_empty_stop_df_grid_based():
 
 def test_get_empty_stop_df_grid_based_complete():
     """Test _get_empty_stop_df for grid-based with complete output."""
-    import nomad.stop_detection.utils as utils
     
     input_columns = ['timestamp', 'location_id']
     empty_df = utils._get_empty_stop_df(
@@ -232,7 +226,6 @@ def test_get_empty_stop_df_grid_based_complete():
 
 def test_get_empty_stop_df_grid_based_with_geometry():
     """Test _get_empty_stop_df for grid-based with geometry."""
-    import nomad.stop_detection.utils as utils
     
     input_columns = ['timestamp', 'location_id', 'geometry']
     empty_df = utils._get_empty_stop_df(
@@ -258,7 +251,6 @@ def test_get_empty_stop_df_grid_based_with_geometry():
 
 def test_get_empty_stop_df_keep_col_names_false():
     """Test _get_empty_stop_df with keep_col_names=False."""
-    import nomad.stop_detection.utils as utils
     
     input_columns = ['timestamp', 'longitude', 'latitude']
     empty_df = utils._get_empty_stop_df(
@@ -284,7 +276,6 @@ def test_get_empty_stop_df_keep_col_names_false():
 
 def test_get_empty_stop_df_matches_summarize_stop_schema_for_empty_and_clustered_input():
     """Test that empty and clustered summarize_stop paths share the exact output columns."""
-    import nomad.stop_detection.utils as utils
 
     traj_cols = {
         "timestamp": "timestamp",
@@ -304,14 +295,12 @@ def test_get_empty_stop_df_matches_summarize_stop_schema_for_empty_and_clustered
     )
 
     empty_output = _summarize_stop_clusters(
-        utils,
         base.assign(cluster=-1),
         complete_output=True,
         passthrough_cols=passthrough_cols,
         traj_cols=traj_cols,
     )
     clustered_output = _summarize_stop_clusters(
-        utils,
         base.assign(cluster=[-1, -1, 0, 0, 0, 1, 1]),
         complete_output=True,
         passthrough_cols=passthrough_cols,
@@ -324,8 +313,6 @@ def test_get_empty_stop_df_matches_summarize_stop_schema_for_empty_and_clustered
 
 
 def test_has_overlapping_stops_timestamp_detects_overlap():
-    import nomad.stop_detection.utils as utils
-
     stops = pd.DataFrame(
         {
             "start_timestamp": [0, 100, 220],
@@ -337,8 +324,6 @@ def test_has_overlapping_stops_timestamp_detects_overlap():
 
 
 def test_has_overlapping_stops_timestamp_no_overlap_at_boundary():
-    import nomad.stop_detection.utils as utils
-
     stops = pd.DataFrame(
         {
             "start_timestamp": [0, 120, 180],
@@ -350,8 +335,6 @@ def test_has_overlapping_stops_timestamp_no_overlap_at_boundary():
 
 
 def test_has_overlapping_stops_datetime_with_end_columns():
-    import nomad.stop_detection.utils as utils
-
     starts = pd.to_datetime(["2025-01-01 00:00:00", "2025-01-01 00:03:00"])
     ends = pd.to_datetime(["2025-01-01 00:04:00", "2025-01-01 00:06:00"])
     stops = pd.DataFrame({"start_datetime": starts, "end_datetime": ends})
@@ -360,8 +343,6 @@ def test_has_overlapping_stops_datetime_with_end_columns():
 
 
 def test_has_overlapping_stops_raises_without_end_or_duration():
-    import nomad.stop_detection.utils as utils
-
     stops = pd.DataFrame({"start_timestamp": [0, 60, 120]})
 
     with pytest.raises(ValueError, match=r"Missing required \(end or duration\)"):

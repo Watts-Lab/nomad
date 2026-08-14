@@ -4,8 +4,7 @@ import numpy as np
 from nomad.metrics.metrics import rog, self_containment, social_interaction_potential
 from pathlib import Path
 from nomad.io import base as loader
-from nomad.stop_detection import sequential_algs as LACHESIS
-import nomad.stop_detection.utils as utils
+from nomad.stop_detection.sequential_algs import lachesis
 
 
 def test_social_interaction_potential_credits_both_users_by_duration():
@@ -53,7 +52,7 @@ def agent_traj_ground_truth():
                  'x':'x',
                  'y':'y',
                  'timestamp':'unix_timestamp'}
-    lachesis_out = LACHESIS.lachesis(
+    lachesis_out = lachesis(
         data=df,
         dt_max=45,
         delta_roam=60,

@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import geopandas as gpd
-from shapely.geometry import box, Polygon, shape
+from shapely.geometry import box, Polygon
 from shapely import wkt
 from pathlib import Path
 
