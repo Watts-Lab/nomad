@@ -736,7 +736,8 @@ def seqscan_labels(
          raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
 
     if user_id is not None:
-        data = data.loc[data["user_id"] == user_id].copy()
+        user_col = loader._parse_traj_cols(data.columns, traj_cols, kwargs)["user_id"]
+        data = data.loc[data[user_col] == user_id]
 
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(
         data.columns, traj_cols, kwargs

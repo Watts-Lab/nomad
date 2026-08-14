@@ -749,6 +749,30 @@ def test_lachesis_ground_truth(agent_traj_ground_truth):
     assert num_clusters == 3
 
 
+def test_seqscan_labels_filters_on_mapped_user_column():
+    data = pd.DataFrame(
+        {
+            "uid": ["a"] * 3 + ["b"] * 3,
+            "timestamp": [0, 60, 120, 0, 60, 120],
+            "x": [0.0, 0.0, 0.0, 10.0, 10.0, 10.0],
+            "y": [0.0] * 6,
+        }
+    )
+
+    labels = seqscan_labels(
+        data,
+        dist_thresh=1,
+        min_pts=2,
+        time_thresh=5,
+        dur_min=0,
+        user_id="a",
+        traj_cols={"user_id": "uid", "timestamp": "timestamp", "x": "x", "y": "y"},
+    )
+
+    assert labels.index.tolist() == [0, 1, 2]
+    assert labels.tolist() == [0, 0, 0]
+
+
 def test_lachesis_accepts_gap_equal_to_dt_max():
     data = pd.DataFrame(
         {
