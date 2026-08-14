@@ -530,22 +530,18 @@ def summarize_stop_grid(
 
     return pd.Series(out, dtype='object')
 
-def _get_empty_aux_df(data, return_cores=False, return_anchors=False, traj_cols=None, **kwargs):
+def _get_empty_aux_df(time_col=None, return_cores=False, return_anchors=False):
     """
     Build the empty output of a stop detection labeling algorithm.
 
     Parameters
     ----------
-    data : pd.DataFrame or gpd.GeoDataFrame
-        Empty trajectory whose time column the auxiliary times are aligned to.
+    time_col : pd.Series, optional
+        Time column the auxiliary times are aligned to. Needed for auxiliary output.
     return_cores : bool
         Whether to include the core metadata of density-based algorithms.
     return_anchors : bool
         Whether to include the anchor metadata of sequential algorithms.
-    traj_cols : dict, optional
-        Canonical-to-actual column mapping.
-    **kwargs
-        Additional column mappings.
 
     Returns
     -------
@@ -556,12 +552,8 @@ def _get_empty_aux_df(data, return_cores=False, return_anchors=False, traj_cols=
     if not (return_cores or return_anchors):
         return cluster
 
-    t_key, _ = loader._fallback_time_cols_dt(data.columns, traj_cols, kwargs)
-    cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
-
-    time_dtype = data[cols[t_key]].dtype
-    if pd.api.types.is_integer_dtype(time_dtype):
-        time_dtype = 'Int64'
+    # unix timestamps widen so that noise points can hold a missing time
+    time_dtype = 'Int64' if pd.api.types.is_integer_dtype(time_col) else time_col.dtype
 
     output = {'cluster': cluster}
     if return_cores:

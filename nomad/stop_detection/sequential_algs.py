@@ -59,14 +59,14 @@ def detect_stops_labels(
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(
         data.columns, traj_cols, kwargs
     )
-    if data.empty:
-        return utils._get_empty_aux_df(data, return_anchors=return_anchors, traj_cols=traj_cols, **kwargs)
-
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     
     # Validate spatial and temporal columns
     loader._has_spatial_cols(data.columns, traj_cols)
     loader._has_time_cols(data.columns, traj_cols)
+
+    if data.empty:
+        return utils._get_empty_aux_df(data[traj_cols[t_key]], return_anchors=return_anchors)
 
     # Extract coordinates and time
     coords = data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy(dtype='float64')
@@ -406,7 +406,7 @@ def lachesis_labels(data, dt_max, delta_roam, dur_min=5, traj_cols=None, **kwarg
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
          raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
     if data.empty:
-        return utils._get_empty_aux_df(data)
+        return utils._get_empty_aux_df()
 
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)        
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
@@ -768,7 +768,7 @@ def grid_based_labels(data, time_thresh=np.inf, min_cluster_size=1, dur_min=0, t
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
         raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
     if data.empty:
-        return utils._get_empty_aux_df(data)
+        return utils._get_empty_aux_df()
     # Decide on temporal column to use
     t_key, use_datetime = loader._fallback_time_cols_dt(data.columns, traj_cols, kwargs)
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs) # load defaults
