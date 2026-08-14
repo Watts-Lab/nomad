@@ -11,7 +11,7 @@ def _summarize_stop_clusters(utils, data, complete_output, passthrough_cols, tra
     merged = data[data["cluster"] != -1]
     if merged.empty:
         return utils._get_empty_stop_df(
-            data.columns,
+            data,
             complete_output=complete_output,
             passthrough_cols=passthrough_cols,
             traj_cols=traj_cols,
@@ -39,7 +39,7 @@ def test_get_empty_stop_df_basic():
     # Test basic case - should match summarize_stop output
     input_columns = ['timestamp', 'longitude', 'latitude']
     empty_df = utils._get_empty_stop_df(
-        input_columns,
+        pd.DataFrame(columns=input_columns),
         complete_output=False,
         passthrough_cols=[],
         traj_cols={'longitude': 'longitude', 'latitude': 'latitude', 'timestamp': 'timestamp'},
@@ -65,7 +65,7 @@ def test_get_empty_stop_df_complete_output():
     
     input_columns = ['timestamp', 'longitude', 'latitude']
     empty_df = utils._get_empty_stop_df(
-        input_columns,
+        pd.DataFrame(columns=input_columns),
         complete_output=True,
         passthrough_cols=[],
         traj_cols=None,
@@ -95,7 +95,7 @@ def test_get_empty_stop_df_with_passthrough():
     
     input_columns = ['timestamp', 'longitude', 'latitude', 'user_id', 'location_id']
     empty_df = utils._get_empty_stop_df(
-        input_columns,
+        pd.DataFrame(columns=input_columns),
         complete_output=False,
         passthrough_cols=['user_id', 'location_id'],
         traj_cols=None,
@@ -123,7 +123,7 @@ def test_get_empty_stop_df_xy_coordinates():
     
     input_columns = ['timestamp', 'x', 'y']
     empty_df = utils._get_empty_stop_df(
-        input_columns,
+        pd.DataFrame(columns=input_columns),
         complete_output=False,
         passthrough_cols=[],
         traj_cols=None,
@@ -157,7 +157,7 @@ def test_get_empty_stop_df_custom_traj_cols():
     
     input_columns = ['unix_timestamp', 'lon', 'lat']
     empty_df = utils._get_empty_stop_df(
-        input_columns,
+        pd.DataFrame(columns=input_columns),
         complete_output=False,
         passthrough_cols=[],
         traj_cols=traj_cols,
@@ -183,7 +183,7 @@ def test_get_empty_stop_df_grid_based():
     
     input_columns = ['timestamp', 'location_id']
     empty_df = utils._get_empty_stop_df(
-        input_columns,
+        pd.DataFrame(columns=input_columns),
         complete_output=False,
         passthrough_cols=[],
         traj_cols=None,
@@ -208,7 +208,7 @@ def test_get_empty_stop_df_grid_based_complete():
     
     input_columns = ['timestamp', 'location_id']
     empty_df = utils._get_empty_stop_df(
-        input_columns,
+        pd.DataFrame(columns=input_columns),
         complete_output=True,
         passthrough_cols=[],
         traj_cols=None,
@@ -236,7 +236,7 @@ def test_get_empty_stop_df_grid_based_with_geometry():
     
     input_columns = ['timestamp', 'location_id', 'geometry']
     empty_df = utils._get_empty_stop_df(
-        input_columns,
+        pd.DataFrame(columns=input_columns),
         complete_output=False,
         passthrough_cols=[],
         traj_cols=None,
@@ -262,7 +262,7 @@ def test_get_empty_stop_df_keep_col_names_false():
     
     input_columns = ['timestamp', 'longitude', 'latitude']
     empty_df = utils._get_empty_stop_df(
-        input_columns,
+        pd.DataFrame(columns=input_columns),
         complete_output=False,
         passthrough_cols=[],
         traj_cols=None,

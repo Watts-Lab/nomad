@@ -10,16 +10,6 @@ from nomad.stop_detection import utils
 from nomad.stop_detection.preprocessing import _find_neighbors
 
 
-def _empty_density_labels_output():
-    return pd.DataFrame(
-        {
-            "cluster": pd.Series(dtype="int64"),
-            "core": pd.Series(dtype="int64"),
-            "promotion_time": pd.Series(dtype="float64"),
-        }
-    )
-
-
 ##########################################
 ########         DBSCAN           ########
 ##########################################
@@ -34,18 +24,17 @@ def ta_dbscan_labels(data,
                      **kwargs):
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
          raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
-    if data.empty:
-        if return_cores:
-            return _empty_density_labels_output()
-        return pd.Series(dtype='int64', name='cluster')
 
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)        
+    if data.empty:
+        return utils._get_empty_aux_df(data, return_cores=return_cores, traj_cols=traj_cols, **kwargs)
+
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
 
     # Tests to check for spatial and temporal columns
     loader._has_spatial_cols(data.columns, traj_cols)
     loader._has_time_cols(data.columns, traj_cols)
-    
+
     G = _find_neighbors(data, time_thresh, traj_cols, dist_thresh,
                 False, use_datetime, use_lon_lat, return_trees=False, relabel_nodes=True)
     
@@ -174,6 +163,8 @@ def ta_dbscan_labels(data,
             
     original_times = pd.Series(data[traj_cols[t_key]].to_numpy(), index=G)
     promotion_time = promotion_time.map(original_times)
+    if not use_datetime:
+        promotion_time = promotion_time.astype('Int64')
     output = pd.DataFrame(
         {'cluster': cluster_df, 'core': core_df, 'promotion_time': promotion_time}
     ).set_axis(data.index)
@@ -230,7 +221,7 @@ def ta_dbscan(
     passthrough_cols = [] if passthrough_cols is None else passthrough_cols
     if data.empty:
         return utils._get_empty_stop_df(
-            data.columns,
+            data,
             complete_output,
             passthrough_cols,
             traj_cols,
@@ -373,18 +364,17 @@ def dbstop_labels(data,
                  **kwargs):
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
          raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
-    if data.empty:
-        if return_cores:
-            return _empty_density_labels_output()
-        return pd.Series(dtype='int64', name='cluster')
 
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)        
+    if data.empty:
+        return utils._get_empty_aux_df(data, return_cores=return_cores, traj_cols=traj_cols, **kwargs)
+
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
 
     # Tests to check for spatial and temporal columns
     loader._has_spatial_cols(data.columns, traj_cols)
     loader._has_time_cols(data.columns, traj_cols)
-    
+
     G, t_tree, s_tree = _find_neighbors(data,  time_thresh,  traj_cols,  dist_thresh, False,  use_datetime,  use_lon_lat,  return_trees=True, relabel_nodes=True)
     node_times = np.asarray(list(G), dtype=np.float64)
 
@@ -490,6 +480,8 @@ def dbstop_labels(data,
 
     original_times = pd.Series(data[traj_cols[t_key]].to_numpy(), index=G)
     promotion_time = promotion_time.map(original_times)
+    if not use_datetime:
+        promotion_time = promotion_time.astype('Int64')
     output = pd.DataFrame(
         {'cluster': cluster_df, 'core': core_df, 'promotion_time': promotion_time}
     ).set_axis(data.index)
@@ -546,7 +538,7 @@ def dbstop(
     passthrough_cols = [] if passthrough_cols is None else passthrough_cols
     if data.empty:
         return utils._get_empty_stop_df(
-            data.columns,
+            data,
             complete_output,
             passthrough_cols,
             traj_cols,
@@ -695,10 +687,6 @@ def seqscan_labels(
 ):
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
          raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
-    if data.empty:
-        if return_cores:
-            return _empty_density_labels_output()
-        return pd.Series(dtype='int64', name='cluster')
 
     if user_id is not None:
         data = data.loc[data["user_id"] == user_id].copy()
@@ -706,6 +694,9 @@ def seqscan_labels(
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(
         data.columns, traj_cols, kwargs
     )        
+    if data.empty:
+        return utils._get_empty_aux_df(data, return_cores=return_cores, traj_cols=traj_cols, **kwargs)
+
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
 
     # Tests to check for spatial and temporal columns
@@ -892,6 +883,8 @@ def seqscan_labels(
     promotion_time.loc[temporary_mask] = np.nan
     original_times = pd.Series(data[traj_cols[t_key]].to_numpy(), index=G)
     promotion_time = promotion_time.map(original_times)
+    if not use_datetime:
+        promotion_time = promotion_time.astype('Int64')
     output = pd.DataFrame(
         {'cluster': cluster_df, 'core': core_df, 'promotion_time': promotion_time}
     ).set_axis(data.index)
@@ -947,7 +940,7 @@ def seqscan(
     passthrough_cols = [] if passthrough_cols is None else passthrough_cols
     if data.empty:
         return utils._get_empty_stop_df(
-            data.columns,
+            data,
             complete_output,
             passthrough_cols,
             traj_cols,
@@ -1752,14 +1745,13 @@ def hdbscan_labels(data,
     """
     # Check if user wants long and lat and datetime
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)
+    # Handle empty data
+    if data.empty:
+        return utils._get_empty_aux_df(data, return_cores=return_cores, traj_cols=traj_cols, **kwargs)
+
     # Load default col names
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     
-    # Handle empty data
-    if data.empty:
-        if return_cores:
-            return _empty_density_labels_output()
-        return pd.Series(dtype='int64', name='cluster')
     
     if traj_cols['user_id'] in data.columns:
         uid_col = data[traj_cols['user_id']]
@@ -1849,6 +1841,8 @@ def hdbscan_labels(data,
 
     original_times = pd.Series(data[traj_cols[t_key]].to_numpy(), index=G)
     promotion_time = promotion_time.map(original_times)
+    if not use_datetime:
+        promotion_time = promotion_time.astype('Int64')
     output = pd.DataFrame(
         {
             'cluster': final_labels,

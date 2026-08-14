@@ -962,7 +962,7 @@ def test_density_label_algorithms_latlon_vs_xy_consistency(base_df, latlon_xy_la
         pytest.param("grid-based", False, id="grid-based-series"),
     ],
 )
-def test_label_concat_with_empty_input_preserves_integer_schema(
+def test_label_concat_with_empty_input_preserves_schema(
     simple_traj_ts,
     label_concat_case_registry,
     algo_name,
@@ -994,12 +994,48 @@ def test_label_concat_with_empty_input_preserves_integer_schema(
         assert list(concatenated.columns) == ["cluster", "core", "promotion_time"]
         assert is_integer_dtype(concatenated["cluster"].dtype)
         assert is_integer_dtype(concatenated["core"].dtype)
+        assert concatenated.dtypes.equals(labels_non_empty.dtypes)
     else:
         assert isinstance(labels_empty, pd.Series)
         assert labels_empty.name == "cluster"
         assert isinstance(concatenated, pd.Series)
         assert concatenated.name == "cluster"
         assert is_integer_dtype(concatenated.dtype)
+        assert concatenated.dtype == labels_non_empty.dtype
+
+
+@pytest.mark.parametrize("tz", ["UTC", "America/New_York"])
+@pytest.mark.parametrize(
+    "label_function,kwargs",
+    [
+        pytest.param(
+            DBSTOP.dbstop_labels,
+            {"dist_thresh": 25, "min_pts": 2, "time_thresh": 60, "return_cores": True},
+            id="dbstop",
+        ),
+        pytest.param(
+            SEQUENTIAL.detect_stops_labels,
+            {"delta_roam": 25, "dt_max": 60, "dur_min": 1, "return_anchors": True},
+            id="sequential",
+        ),
+    ],
+)
+def test_daily_buckets_with_empty_day_preserve_dtypes(label_function, kwargs, tz):
+    times = pd.to_datetime(
+        [0, 60, 120, 3 * 86400, 3 * 86400 + 60, 3 * 86400 + 120], unit="s", utc=True
+    ).tz_convert(tz)
+    data = pd.DataFrame({"datetime": times, "x": np.zeros(len(times)), "y": np.zeros(len(times))})
+
+    buckets = [group for _, group in data.groupby(pd.Grouper(key="datetime", freq="D"))]
+    assert any(group.empty for group in buckets)
+
+    combined = pd.concat(
+        [label_function(group, datetime="datetime", x="x", y="y", **kwargs) for group in buckets]
+    )
+    reference = label_function(data, datetime="datetime", x="x", y="y", **kwargs)
+
+    assert len(combined) == len(data)
+    assert combined.dtypes.equals(reference.dtypes)
 
 
 @pytest.mark.parametrize(

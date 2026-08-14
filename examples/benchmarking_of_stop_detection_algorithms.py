@@ -46,7 +46,7 @@ data_dir = Path(data_folder.__file__).parent
 city = gpd.read_parquet(data_dir / 'garden-city-buildings-mercator.parquet')
 outer_box = box(*city.total_bounds).buffer(15, join_style='mitre')
 
-filepath_root = 'gc_data_long/'
+filepath_root = data_dir / "gc_data_long"
 tc = {
     "user_id": "gc_identifier",
     "timestamp": "unix_ts",

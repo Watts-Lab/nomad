@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.3
+#       jupytext_version: 1.19.3
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -26,12 +26,14 @@ import time
 from pathlib import Path
 from joblib import Parallel, delayed
 
+import nomad.data as data_folder
 from nomad.city_gen import City
 from nomad.traj_gen import Agent, Population
 from nomad.stop_detection.viz import plot_pings, plot_time_barcode
 
 # %%
-city = City.from_geopackage('garden-city.gpkg')
+data_dir = Path(data_folder.__file__).parent
+city = City.from_geopackage(data_dir / "garden-city.gpkg")
 city._build_hub_network(hub_size=16)
 city.compute_gravity(exponent=2.0)
 city.compute_shortest_paths(callable_only=True)
@@ -65,8 +67,8 @@ for i, (agent_id, agent) in enumerate(population.roster.items()):
         seed=i
     )
 
+    agent.set_beta_params(sampling_params[i])
     agent.sample_trajectory(
-        **sampling_params[i],
         replace_sparse_traj=True,
         seed=i
     )
@@ -110,7 +112,8 @@ plt.show()
 def generate_agent_trajectory(args):
     """Worker function for parallel generation."""
     identifier, home, work, seed = args
-    city = City.from_geopackage('garden-city.gpkg')
+    data_dir = Path(data_folder.__file__).parent
+    city = City.from_geopackage(data_dir / "garden-city.gpkg")
     city._build_hub_network(hub_size=16)
     city.compute_gravity(exponent=2.0)
     city.compute_shortest_paths(callable_only=True)
@@ -121,8 +124,8 @@ def generate_agent_trajectory(args):
         end_time=pd.Timestamp("2024-01-08T07:00-04:00"),
         seed=seed
     )
+    agent.set_beta_params(beta_start=None, beta_durations=None, beta_ping=5)
     agent.sample_trajectory(
-        beta_ping=5,
         replace_sparse_traj=True,
         seed=seed
     )
@@ -164,6 +167,8 @@ for df, params in zip(results, agent_params):
     agent = Agent(identifier=identifier, city=city, home=home, workplace=work, seed=seed)
     agent.sparse_traj = df.drop(columns=['home', 'workplace'])
     parallel_population.add_agent(agent, verbose=False)
+
+parallel_population.reproject_to_mercator(sparse_traj=True)
 
 output_path = 'data/trajectories_15_users'
 parallel_population.save_pop(

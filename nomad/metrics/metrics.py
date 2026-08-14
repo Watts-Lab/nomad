@@ -4,7 +4,6 @@ from nomad.constants import SEC_PER_UNIT
 from nomad.stop_detection import utils
 import nomad.io.base as loader
 import warnings
-import pdb
 
 def _centroid(coords, metric='euclidean', weight=None):
     """
@@ -50,6 +49,38 @@ def _centroid(coords, metric='euclidean', weight=None):
         return np.degrees([lat_c, lon_c])
     else:
         return np.sum(coords * weight[:, None], axis=0)
+
+
+def social_interaction_potential(contacts, weight="duration"):
+    """
+    Aggregate undirected contact events into user-level SIP.
+
+    Each contact contributes its weight to both users.
+
+    Parameters
+    ----------
+    contacts : pandas.DataFrame
+        Contact event table with one row per undirected contact and canonical
+        user_id_1 and user_id_2 columns.
+    weight : str, default "duration"
+        Name of the column containing the weight contributed by each contact.
+
+    Returns
+    -------
+    pandas.DataFrame
+        User-level SIP table with columns ``user_id`` and ``sip``.
+    """
+    return (
+        contacts.melt(
+            id_vars=weight,
+            value_vars=["user_id_1", "user_id_2"],
+            value_name="user_id",
+        )
+        .groupby("user_id", as_index=False)[weight]
+        .sum()
+        .rename(columns={weight: "sip"})
+    )
+
 
 def rog(stops, agg_freq='d', weighted=True, traj_cols=None, time_weights=None, exploded=True, **kwargs):
     """

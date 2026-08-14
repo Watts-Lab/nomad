@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.3
+#       jupytext_version: 1.19.3
 #   kernelspec:
 #     display_name: Python 3
 #     language: python
@@ -108,8 +108,12 @@ def generate_agent_trajectory(args):
 
     agent = Agent(identifier=identifier, city=city, home=home, workplace=work)
     agent.generate_trajectory(datetime=_GEN_START, end_time=_GEN_END, seed=seed)
+    agent.set_beta_params(
+        beta_ping=beta_ping,
+        beta_start=beta_start,
+        beta_durations=beta_durations
+    )
     agent.sample_trajectory(
-        beta_ping=beta_ping, beta_start=beta_start, beta_durations=beta_durations,
         ha=ha, seed=seed, replace_sparse_traj=True,
     )
 

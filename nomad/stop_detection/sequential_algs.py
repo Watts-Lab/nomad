@@ -9,17 +9,6 @@ from nomad.stop_detection.utils import _haversine_distance
 from nomad.visit_attribution.visit_attribution import cluster_locations_dbscan
 
 
-def _empty_anchor_output():
-    return pd.DataFrame(
-        {
-            "cluster": pd.Series(dtype="int64"),
-            "anchor_time": pd.Series(dtype="float64"),
-            "anchor_x": pd.Series(dtype="float64"),
-            "anchor_y": pd.Series(dtype="float64"),
-        }
-    )
-
-
 def detect_stops_labels(
     data,
     delta_roam=100,
@@ -66,15 +55,13 @@ def detect_stops_labels(
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
         raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
     
-    if data.empty:
-        if return_anchors:
-            return _empty_anchor_output()
-        return pd.Series(dtype='int64', name='cluster')
-    
     # Get column mappings
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(
         data.columns, traj_cols, kwargs
     )
+    if data.empty:
+        return utils._get_empty_aux_df(data, return_anchors=return_anchors, traj_cols=traj_cols, **kwargs)
+
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
     
     # Validate spatial and temporal columns
@@ -89,7 +76,7 @@ def detect_stops_labels(
     n = len(data)
     labels = np.full(n, -1, dtype=int)
     if return_anchors:
-        anchor_times = pd.Series(pd.NA, index=data.index, dtype="object")
+        anchor_times = pd.Series(index=data.index, dtype=data[traj_cols[t_key]].dtype if use_datetime else 'Int64')
         anchor_x = pd.Series(np.nan, index=data.index, dtype="float64")
         anchor_y = pd.Series(np.nan, index=data.index, dtype="float64")
     cluster_id = 0
@@ -153,10 +140,6 @@ def detect_stops_labels(
     
     result = pd.Series(labels, index=data.index, name='cluster')
     if return_anchors:
-        if use_datetime:
-            anchor_times = pd.to_datetime(anchor_times)
-        else:
-            anchor_times = pd.to_numeric(anchor_times)
         return pd.DataFrame(
             {
                 "cluster": result,
@@ -423,8 +406,7 @@ def lachesis_labels(data, dt_max, delta_roam, dur_min=5, traj_cols=None, **kwarg
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
          raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
     if data.empty:
-        result = pd.Series(dtype='int64', name='cluster')
-        return result
+        return utils._get_empty_aux_df(data)
 
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)        
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
@@ -786,7 +768,7 @@ def grid_based_labels(data, time_thresh=np.inf, min_cluster_size=1, dur_min=0, t
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
         raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
     if data.empty:
-        return pd.Series(dtype='int64', name='cluster')
+        return utils._get_empty_aux_df(data)
     # Decide on temporal column to use
     t_key, use_datetime = loader._fallback_time_cols_dt(data.columns, traj_cols, kwargs)
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs) # load defaults
@@ -885,7 +867,7 @@ def grid_based(
 
     if merged.empty:
         return utils._get_empty_stop_df(
-            data.columns,
+            data,
             complete_output,
             passthrough_cols,
             traj_cols,
