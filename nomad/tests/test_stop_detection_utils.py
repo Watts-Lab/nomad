@@ -4,32 +4,66 @@ import nomad.stop_detection.utils as utils
 
 def _assert_empty_stop_df(empty_df, expected_columns, expected_dtypes):
     assert empty_df.empty
-    assert list(empty_df.columns) == expected_columns
-    assert {col: str(dtype) for col, dtype in empty_df.dtypes.items()} == expected_dtypes
+    # every stop table leads with the per-ping cluster label
+    assert list(empty_df.columns) == ["cluster"] + expected_columns
+    assert {col: str(dtype) for col, dtype in empty_df.dtypes.items()} == {
+        "cluster": "Int64",
+        **expected_dtypes,
+    }
 
 
-def _summarize_stop_clusters(data, complete_output, passthrough_cols, traj_cols, keep_col_names=True):
-    merged = data[data["cluster"] != -1]
-    if merged.empty:
-        return utils._get_empty_stop_df(
-            data,
-            complete_output=complete_output,
-            passthrough_cols=passthrough_cols,
-            traj_cols=traj_cols,
-            keep_col_names=keep_col_names,
-            is_grid_based=False,
-        )
+@pytest.mark.parametrize("keep_col_names", [True, False])
+@pytest.mark.parametrize("complete_output", [False, True])
+def test_summarize_stops_empty_output_matches_summarized_schema(complete_output, keep_col_names):
+    """The no-cluster path must return the schema the summarized path produces."""
+    traj_cols = {"timestamp": "timestamp", "x": "x", "y": "y", "ha": "ha"}
+    passthrough_cols = ["user_id"]
+    data = pd.DataFrame(
+        {
+            "timestamp": [0, 60, 120, 180, 240, 300, 360],
+            "x": [0.0, 0.1, 0.2, 0.25, 0.3, 5.0, 5.1],
+            "y": [0.0, 0.1, 0.2, 0.25, 0.3, 5.0, 5.1],
+            "ha": [10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0],
+            "user_id": ["test_user"] * 7,
+        }
+    )
+    kwargs = dict(
+        complete_output=complete_output,
+        passthrough_cols=passthrough_cols,
+        keep_col_names=keep_col_names,
+        traj_cols=traj_cols,
+    )
 
-    return merged.groupby("cluster", sort=False).apply(
-        lambda grp: utils.summarize_stop(
-            grp,
-            complete_output=complete_output,
-            keep_col_names=keep_col_names,
-            passthrough_cols=passthrough_cols,
-            traj_cols=traj_cols,
-        ),
-        include_groups=False,
-    ).reset_index(drop=True)
+    summarized = utils.summarize_stops(
+        data, pd.Series([-1, -1, 0, 0, 0, 1, 1], name="cluster"), **kwargs
+    )
+    empty = utils.summarize_stops(
+        data, pd.Series(-1, index=data.index, name="cluster"), **kwargs
+    )
+
+    assert not summarized.empty
+    assert empty.empty
+    assert list(empty.columns) == list(summarized.columns)
+    assert empty.dtypes.equals(summarized.dtypes)
+
+
+@pytest.mark.parametrize(
+    "time_col,times",
+    [
+        pytest.param("timestamp", [0], id="timestamp"),
+        pytest.param("datetime", pd.to_datetime([0], unit="s", utc=True), id="datetime"),
+    ],
+)
+def test_summarize_stop_single_ping_reports_no_gap(time_col, times):
+    """A one-ping cluster has no gap, and summarizing it must not raise."""
+    group = pd.DataFrame({time_col: times, "x": [0.0], "y": [0.0]})
+
+    summary = utils.summarize_stop(
+        group, complete_output=True, traj_cols={time_col: time_col, "x": "x", "y": "y"}
+    )
+
+    assert summary["duration"] == 0
+    assert summary["max_gap"] == 0
 
 
 # Tests for _get_empty_stop_df function
@@ -79,7 +113,7 @@ def test_get_empty_stop_df_complete_output():
             'longitude': 'Float64',
             'latitude': 'Float64',
             'timestamp': 'Int64',
-            'diameter': 'Float64',
+            'diameter': 'Int64',
             'n_pings': 'Int64',
             'end_timestamp': 'Int64',
             'duration': 'Int64',
@@ -109,8 +143,8 @@ def test_get_empty_stop_df_with_passthrough():
             'latitude': 'Float64',
             'timestamp': 'Int64',
             'duration': 'Int64',
-            'user_id': 'string',
-            'location_id': 'string',
+            'user_id': 'object',
+            'location_id': 'object',
         },
     )
 
@@ -192,7 +226,7 @@ def test_get_empty_stop_df_grid_based():
         {
             'timestamp': 'Int64',
             'duration': 'Int64',
-            'location_id': 'string',
+            'location_id': 'object',
         },
     )
 
@@ -219,7 +253,7 @@ def test_get_empty_stop_df_grid_based_complete():
             'end_timestamp': 'Int64',
             'n_pings': 'Int64',
             'max_gap': 'Int64',
-            'location_id': 'string',
+            'location_id': 'object',
         },
     )
 
@@ -243,7 +277,7 @@ def test_get_empty_stop_df_grid_based_with_geometry():
         {
             'timestamp': 'Int64',
             'duration': 'Int64',
-            'location_id': 'string',
+            'location_id': 'object',
             'geometry': 'object',
         },
     )
@@ -272,44 +306,6 @@ def test_get_empty_stop_df_keep_col_names_false():
             'duration': 'Int64',
         },
     )
-
-
-def test_get_empty_stop_df_matches_summarize_stop_schema_for_empty_and_clustered_input():
-    """Test that empty and clustered summarize_stop paths share the exact output columns."""
-
-    traj_cols = {
-        "timestamp": "timestamp",
-        "x": "x",
-        "y": "y",
-        "ha": "ha",
-    }
-    passthrough_cols = ["user_id"]
-    base = pd.DataFrame(
-        {
-            "timestamp": [0, 60, 120, 180, 240, 300, 360],
-            "x": [0.0, 0.1, 0.2, 0.25, 0.3, 5.0, 5.1],
-            "y": [0.0, 0.1, 0.2, 0.25, 0.3, 5.0, 5.1],
-            "ha": [10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0],
-            "user_id": ["test_user"] * 7,
-        }
-    )
-
-    empty_output = _summarize_stop_clusters(
-        base.assign(cluster=-1),
-        complete_output=True,
-        passthrough_cols=passthrough_cols,
-        traj_cols=traj_cols,
-    )
-    clustered_output = _summarize_stop_clusters(
-        base.assign(cluster=[-1, -1, 0, 0, 0, 1, 1]),
-        complete_output=True,
-        passthrough_cols=passthrough_cols,
-        traj_cols=traj_cols,
-    )
-
-    assert empty_output.empty
-    assert not clustered_output.empty
-    assert list(empty_output.columns) == list(clustered_output.columns)
 
 
 def test_has_overlapping_stops_timestamp_detects_overlap():

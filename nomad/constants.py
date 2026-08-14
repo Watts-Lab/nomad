@@ -21,7 +21,38 @@ DEFAULT_SCHEMA = {
     "ha":"ha",
     "h3_cell":"h3_cell",
     "location_id" : "location_id",
-    "label": "label"}
+    "label": "label",
+    "diameter": "diameter",
+    "n_pings": "n_pings",
+    "max_gap": "max_gap"}
+
+# Canonical dtype of each schema column. Validators also accept the numpy
+# equivalent, since inputs are not required to use nullable dtypes.
+SCHEMA_DTYPES = {
+    "user_id": "string",
+    "geohash": "string",
+    "location_id": "string",
+    "h3_cell": "string",
+    "date": "string",
+    "utc_date": "string",
+    "latitude": "Float64",
+    "longitude": "Float64",
+    "x": "Float64",
+    "y": "Float64",
+    "ha": "Float64",
+    "distance": "Float64",
+    "timestamp": "Int64",
+    "start_timestamp": "Int64",
+    "end_timestamp": "Int64",
+    "tz_offset": "Int64",
+    "duration": "Int64",
+    "diameter": "Int64",
+    "n_pings": "Int64",
+    "max_gap": "Int64",
+    "label": "Int64",
+    "datetime": "datetime64[ns, UTC]",
+    "start_datetime": "datetime64[ns, UTC]",
+    "end_datetime": "datetime64[ns, UTC]"}
 
 SEC_PER_UNIT = {'s': 1, 'min': 60, 'h': 3_600, 'd': 86_400, 'w': 604_800}
 EARTH_RADIUS_METERS = 6_371_000

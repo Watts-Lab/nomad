@@ -865,16 +865,18 @@ def grid_based(
     merged = data.join(labels)
     merged = merged[merged.cluster != -1]
 
+    empty_stops = utils._get_empty_stop_df(
+        data,
+        complete_output,
+        passthrough_cols,
+        traj_cols,
+        keep_col_names=True,
+        is_grid_based=True,
+        **kwargs,
+    )
+
     if merged.empty:
-        return utils._get_empty_stop_df(
-            data,
-            complete_output,
-            passthrough_cols,
-            traj_cols,
-            keep_col_names=True,
-            is_grid_based=True,
-            **kwargs,
-        )
+        return empty_stops
 
     stop_table = merged.groupby('cluster', as_index=False, sort=False).apply(
         lambda grp: utils.summarize_stop_grid(
@@ -891,7 +893,7 @@ def grid_based(
     if complete_output:
         pass #implement diameter, centroid for location_id being an h3_cell
         
-    return stop_table
+    return utils._cast_to_stop_schema(stop_table, empty_stops)
 
 def grid_based_per_user(
     data,

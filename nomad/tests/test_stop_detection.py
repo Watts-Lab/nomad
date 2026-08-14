@@ -1440,7 +1440,8 @@ def test_empty_dataframe_complete_output(empty_traj, empty_complete_case_registr
     result = case["fn"](empty_traj, **case["kwargs"])
 
     assert result.empty
-    assert set(result.columns) == case["expected_cols"]
+    # every stop table carries the per-ping cluster label
+    assert set(result.columns) == case["expected_cols"] | {"cluster"}
 
 
 @pytest.mark.parametrize(
@@ -1460,7 +1461,7 @@ def test_empty_dataframe_xy_output(empty_traj_xy, empty_xy_case_registry, algo_n
     result = case["fn"](empty_traj_xy, **case["kwargs"])
 
     assert result.empty
-    assert set(result.columns) == case["expected_cols"]
+    assert set(result.columns) == case["expected_cols"] | {"cluster"}
 
 def test_empty_dataframe_consistency():
     """Test that all algorithms return consistent column structures for empty data."""
