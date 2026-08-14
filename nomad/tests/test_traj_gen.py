@@ -98,6 +98,8 @@ def test_complete_workflow(garden_city, simple_dest_diary, temp_output_dir, defa
     # Generate trajectories for each agent
     beta_pings = [5, 10, 15]
     for i, agent in enumerate(pop.roster.values()):
+        assert 'user_id' in agent.diary.columns
+
         agent.generate_trajectory(
             destination_diary=simple_dest_diary,
             dt=0.5,
@@ -108,6 +110,8 @@ def test_complete_workflow(garden_city, simple_dest_diary, temp_output_dir, defa
         assert agent.trajectory is not None
         assert len(agent.trajectory) > 0
         assert agent.trajectory['timestamp'].is_monotonic_increasing
+        assert agent.trajectory['user_id'].eq(agent.identifier).all()
+        assert agent.diary['user_id'].eq(agent.identifier).all()
 
         agent.set_beta_params(
             beta_start=None,
@@ -122,6 +126,7 @@ def test_complete_workflow(garden_city, simple_dest_diary, temp_output_dir, defa
         
         assert agent.sparse_traj is not None
         assert len(agent.sparse_traj) <= len(agent.trajectory)
+        assert agent.sparse_traj['user_id'].eq(agent.identifier).all()
     
     # Reproject to Web Mercator
     poi_data = pd.DataFrame({
