@@ -191,12 +191,25 @@ def test_get_empty_stop_df_complete_output():
     )
 
 
-def test_get_empty_stop_df_with_passthrough():
+@pytest.mark.parametrize(
+    "identifier_value,identifier_dtype",
+    [
+        pytest.param("test-id", "string", id="string-identifiers"),
+        pytest.param(1, "Int64", id="integer-identifiers"),
+    ],
+)
+def test_get_empty_stop_df_with_passthrough(identifier_value, identifier_dtype):
     """Test _get_empty_stop_df with passthrough columns."""
-    
-    input_columns = ['timestamp', 'longitude', 'latitude', 'user_id', 'location_id']
+
+    data = pd.DataFrame({
+        'timestamp': pd.Series([0], dtype='Int64'),
+        'longitude': pd.Series([0], dtype='Float64'),
+        'latitude': pd.Series([0], dtype='Float64'),
+        'user_id': pd.Series([identifier_value], dtype=identifier_dtype),
+        'location_id': pd.Series([identifier_value], dtype=identifier_dtype),
+    })
     empty_df = utils._get_empty_stop_df(
-        pd.DataFrame(columns=input_columns),
+        data,
         complete_output=False,
         passthrough_cols=['user_id', 'location_id'],
         traj_cols=None,
@@ -212,8 +225,8 @@ def test_get_empty_stop_df_with_passthrough():
             'latitude': 'Float64',
             'timestamp': 'Int64',
             'duration': 'Int64',
-            'user_id': 'string',
-            'location_id': 'string',
+            'user_id': identifier_dtype,
+            'location_id': identifier_dtype,
         },
     )
 
@@ -276,12 +289,22 @@ def test_get_empty_stop_df_custom_traj_cols():
     )
 
 
-def test_get_empty_stop_df_grid_based():
+@pytest.mark.parametrize(
+    "location_value,location_dtype",
+    [
+        pytest.param("test-location", "string", id="string-location-id"),
+        pytest.param(1, "Int64", id="integer-location-id"),
+    ],
+)
+def test_get_empty_stop_df_grid_based(location_value, location_dtype):
     """Test _get_empty_stop_df for grid-based summarization."""
-    
-    input_columns = ['timestamp', 'location_id']
+
+    data = pd.DataFrame({
+        'timestamp': pd.Series([0], dtype='Int64'),
+        'location_id': pd.Series([location_value], dtype=location_dtype),
+    })
     empty_df = utils._get_empty_stop_df(
-        pd.DataFrame(columns=input_columns),
+        data,
         complete_output=False,
         passthrough_cols=[],
         traj_cols=None,
@@ -295,17 +318,27 @@ def test_get_empty_stop_df_grid_based():
         {
             'timestamp': 'Int64',
             'duration': 'Int64',
-            'location_id': 'string',
+            'location_id': location_dtype,
         },
     )
 
 
-def test_get_empty_stop_df_grid_based_complete():
+@pytest.mark.parametrize(
+    "location_value,location_dtype",
+    [
+        pytest.param("test-location", "string", id="string-location-id"),
+        pytest.param(1, "Int64", id="integer-location-id"),
+    ],
+)
+def test_get_empty_stop_df_grid_based_complete(location_value, location_dtype):
     """Test _get_empty_stop_df for grid-based with complete output."""
-    
-    input_columns = ['timestamp', 'location_id']
+
+    data = pd.DataFrame({
+        'timestamp': pd.Series([0], dtype='Int64'),
+        'location_id': pd.Series([location_value], dtype=location_dtype),
+    })
     empty_df = utils._get_empty_stop_df(
-        pd.DataFrame(columns=input_columns),
+        data,
         complete_output=True,
         passthrough_cols=[],
         traj_cols=None,
@@ -322,17 +355,28 @@ def test_get_empty_stop_df_grid_based_complete():
             'end_timestamp': 'Int64',
             'n_pings': 'Int64',
             'max_gap': 'Int64',
-            'location_id': 'string',
+            'location_id': location_dtype,
         },
     )
 
 
-def test_get_empty_stop_df_grid_based_with_geometry():
+@pytest.mark.parametrize(
+    "location_value,location_dtype",
+    [
+        pytest.param("test-location", "string", id="string-location-id"),
+        pytest.param(1, "Int64", id="integer-location-id"),
+    ],
+)
+def test_get_empty_stop_df_grid_based_with_geometry(location_value, location_dtype):
     """Test _get_empty_stop_df for grid-based with geometry."""
-    
-    input_columns = ['timestamp', 'location_id', 'geometry']
+
+    data = pd.DataFrame({
+        'timestamp': pd.Series([0], dtype='Int64'),
+        'location_id': pd.Series([location_value], dtype=location_dtype),
+        'geometry': pd.Series([None], dtype='object'),
+    })
     empty_df = utils._get_empty_stop_df(
-        pd.DataFrame(columns=input_columns),
+        data,
         complete_output=False,
         passthrough_cols=[],
         traj_cols=None,
@@ -346,7 +390,7 @@ def test_get_empty_stop_df_grid_based_with_geometry():
         {
             'timestamp': 'Int64',
             'duration': 'Int64',
-            'location_id': 'string',
+            'location_id': location_dtype,
             'geometry': 'object',
         },
     )
