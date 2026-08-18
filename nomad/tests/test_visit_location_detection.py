@@ -167,11 +167,22 @@ def test_detect_locations_rejects_non_dataframe():
         detect_locations([[0.0, 0.0]])
 
 
-def test_detect_locations_rejects_empty_dataframe():
+def test_detect_locations_returns_empty_schema():
     points = pd.DataFrame(columns=["x", "y"])
 
-    with pytest.raises(ValueError, match="at least one row"):
-        detect_locations(points)
+    location_ids, locations = detect_locations(points, return_locations=True)
+
+    assert location_ids.empty
+    assert location_ids.name == "location_id"
+    assert location_ids.dtype == "Int64"
+    assert locations.empty
+    assert locations.columns.tolist() == [
+        "location_id",
+        "n_stops",
+        "center",
+        "extent",
+    ]
+    assert locations["location_id"].dtype == "Int64"
 
 
 def test_detect_locations_does_not_mutate_input(cartesian_points):

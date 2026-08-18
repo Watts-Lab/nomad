@@ -738,7 +738,9 @@ def grid_based_labels(data, time_thresh=np.inf, min_cluster_size=1, dur_min=0, t
         return utils._get_empty_aux_df()
     # Decide on temporal column to use
     t_key, use_datetime = loader._fallback_time_cols_dt(data.columns, traj_cols, kwargs)
-    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs) # load defaults
+    traj_cols = loader._parse_traj_cols(
+        data.columns, traj_cols, kwargs, warn=False
+    )
 
     if traj_cols['location_id'] not in data.columns:
             raise ValueError(f"Missing {traj_cols['location_id']} column in {data.columns}."

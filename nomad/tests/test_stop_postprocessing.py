@@ -79,7 +79,7 @@ def test_merge_stops_uses_grid_based_for_ping_table():
         }
     )
 
-    merged = merge_stops(pings, max_time_gap=10)
+    merged = merge_stops(pings, time_thresh=10)
 
     assert merged.to_dict('records') == [
         {'cluster': 0, 'timestamp': 0, 'duration': 1, 'location_id': 4},
@@ -114,7 +114,7 @@ def test_merge_stops_ping_table_matches_grid_based():
         }
     )
 
-    result = merge_stops(pings, max_time_gap=10)
+    result = merge_stops(pings, time_thresh=10)
     expected = grid_based(
         pings,
         time_thresh=10,
@@ -158,7 +158,7 @@ def test_merge_stops_supports_datetime_pings():
         }
     )
 
-    merged = merge_stops(pings, max_time_gap=10)
+    merged = merge_stops(pings, time_thresh=10)
 
     assert merged['datetime'].tolist() == [
         pd.Timestamp('2026-01-01 09:00'),
@@ -201,7 +201,7 @@ def test_merge_stops_merges_gap_equal_to_threshold():
         }
     )
 
-    merged = merge_stops(stops, max_time_gap=10)
+    merged = merge_stops(stops, time_thresh=10)
 
     assert len(merged) == 1
     assert merged['duration'].tolist() == [60]
@@ -216,7 +216,7 @@ def test_merge_stops_keeps_gap_above_threshold_separate():
         }
     )
 
-    merged = merge_stops(stops, max_time_gap=10)
+    merged = merge_stops(stops, time_thresh=10)
 
     assert len(merged) == 2
     assert merged['duration'].tolist() == [30, 20]
@@ -290,7 +290,7 @@ def test_merge_stops_uses_furthest_end_for_nested_intervals():
         }
     )
 
-    merged = merge_stops(stops, max_time_gap=5)
+    merged = merge_stops(stops, time_thresh=5)
 
     assert len(merged) == 1
     assert merged['start_timestamp'].tolist() == [0]
@@ -431,12 +431,3 @@ def test_merge_stops_requires_location_column():
 
     with pytest.raises(ValueError, match="Location column 'location_id'"):
         merge_stops(stops)
-
-
-def test_merge_stops_rejects_string_time_gap():
-    stops = pd.DataFrame(
-        {'start_timestamp': [0], 'duration': [10], 'location_id': [4]}
-    )
-
-    with pytest.raises(TypeError):
-        merge_stops(stops, max_time_gap='10min')

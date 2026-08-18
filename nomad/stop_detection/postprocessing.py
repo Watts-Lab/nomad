@@ -33,7 +33,7 @@ def fill_timestamp_gaps(first_time, last_time, stop_table):
 
 def merge_stops(
     stops,
-    max_time_gap=10,
+    time_thresh=10,
     location_col=None,
     agg=None,
     traj_cols=None,
@@ -47,7 +47,7 @@ def merge_stops(
     stops : pd.DataFrame
         Ping or stop table containing time and location columns. Stop tables
         additionally contain an end time or duration.
-    max_time_gap : int, default 10
+    time_thresh : int, default 10
         Largest gap in minutes between one stop's end and the next stop's start
         that can belong to the same visit.
     location_col : str, optional
@@ -73,10 +73,13 @@ def merge_stops(
     traj_cols['location_id'] = location_col
     if location_col not in stops.columns:
         raise ValueError(f"Location column '{location_col}' not found in stops DataFrame")
+    if isinstance(time_thresh, bool) or not isinstance(time_thresh, (int, np.integer)):
+        raise TypeError("time_thresh must be an integer number of minutes")
+    if time_thresh < 0:
+        raise ValueError("time_thresh must be nonnegative")
     if stops.empty:
         return stops.copy()
 
-    # must be one user
     user_col = traj_cols['user_id'] if traj_cols['user_id'] in stops.columns else None
     if user_col is not None and stops[user_col].nunique(dropna=False) > 1:
         raise ValueError(
@@ -84,7 +87,6 @@ def merge_stops(
             "and call merge_stops for each group."
         )
 
-    # determine if pings or stops
     end_col_present = loader._has_end_cols(stops.columns, traj_cols)
     duration_col_present = loader._has_duration_cols(stops.columns, traj_cols)
     if not end_col_present and not duration_col_present:
@@ -97,24 +99,21 @@ def merge_stops(
         )
         if t_key in ('start_timestamp', 'start_datetime'):
             raise ValueError("Stops must contain either end time or duration columns")
-         # if ping table, call grid_based essentially
         return grid_based(
             stops,
-            time_thresh=max_time_gap,
+            time_thresh=time_thresh,
             min_cluster_size=1,
             dur_min=0,
             traj_cols=traj_cols,
             **kwargs,
         )
 
-    # continue when the input already contains detected stops
     t_key, use_datetime = loader._fallback_time_cols_dt(
         stops.columns, traj_cols, kwargs
     )
     start_col = traj_cols[t_key]
     end_key = 'end_datetime' if use_datetime else 'end_timestamp'
 
-    # sort stops chronologically
     order = (
         stops.reset_index(drop=True)
         .sort_values(start_col, kind='stable')
@@ -123,7 +122,6 @@ def merge_stops(
     input_index = stops.index.take(order)
     ordered = stops.iloc[order].reset_index(drop=True)
 
-    # if duration provided find end time for each stop
     if end_col_present:
         end_col = traj_cols[end_key]
     else:
@@ -137,21 +135,18 @@ def merge_stops(
                 ordered[start_col] + ordered[traj_cols['duration']] * 60
             )
 
-    # standardize gap threshold
-    max_gap = (
-        pd.to_timedelta(max_time_gap, unit='min')
-        if use_datetime else max_time_gap * 60
+    gap_threshold = (
+        pd.to_timedelta(time_thresh, unit='min')
+        if use_datetime else time_thresh * 60
     )
     location_codes = pd.Series(pd.factorize(ordered[location_col], sort=False)[0])
     same_location = location_codes.eq(location_codes.shift()) & location_codes.ne(-1)
-    #identify sequence of same destination
-    sequence_id = (~same_location).cumsum() 
+    sequence_id = (~same_location).cumsum()
+    # The running maximum handles stops nested inside a longer stop.
     previous_end = ordered.groupby(sequence_id, sort=False)[end_col].cummax().shift()
-    # determine when new visit starts
-    new_visit = ~same_location | ordered[start_col].sub(previous_end).gt(max_gap)
+    new_visit = ~same_location | ordered[start_col].sub(previous_end).gt(gap_threshold)
     visit_id = new_visit.fillna(True).cumsum()
 
-    # collapse each consecutive visit group into one interval
     agg_dict = {
         start_col: 'first',
         end_col: 'max',
@@ -163,7 +158,6 @@ def merge_stops(
         agg_dict.update(agg)
 
     merged = ordered.groupby(visit_id, sort=False).agg(agg_dict)
-    # Recompute duration across the complete merged interval.
     if duration_col_present:
         duration = merged[end_col] - merged[start_col]
         if use_datetime:

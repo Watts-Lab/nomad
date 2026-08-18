@@ -2,12 +2,10 @@ import geopandas as gpd
 import warnings
 import pandas as pd
 import pyproj
-import pdb
 import numpy as np
 from sklearn.cluster import DBSCAN
 import nomad.io.base as loader
 from nomad.constants import EARTH_RADIUS_METERS
-from nomad.stop_detection import utils
 
 # TO DO: change to stops_to_poi
 def point_in_polygon(data, poi_table, method='centroid', data_crs=None, max_distance=0,
@@ -449,19 +447,15 @@ def _get_location_center(coords, metric='euclidean'):
         (x, y) coordinates of the center
     """
     if metric == 'haversine':
-        # For geographic coordinates, use angle-based mean
-        # Convert to radians for calculation
         coords_rad = np.radians(coords)
         x = coords_rad[:, 0]
         y = coords_rad[:, 1]
 
-        # Convert to 3D Cartesian coordinates
         cos_y = np.cos(y)
         cart_x = cos_y * np.cos(x)
         cart_y = cos_y * np.sin(x)
         cart_z = np.sin(y)
 
-        # Average and convert back
         avg_x = np.mean(cart_x)
         avg_y = np.mean(cart_y)
         avg_z = np.mean(cart_z)
@@ -471,9 +465,7 @@ def _get_location_center(coords, metric='euclidean'):
         lat = np.arctan2(avg_z, hyp)
 
         return np.degrees(lon), np.degrees(lat)
-    else:
-        # For projected coordinates, use simple mean
-        return np.mean(coords[:, 0]), np.mean(coords[:, 1])
+    return np.mean(coords[:, 0]), np.mean(coords[:, 1])
 
 
 def detect_locations(
@@ -514,20 +506,34 @@ def detect_locations(
     Each DBSCAN noise row is retained as its own nonnegative location. Geographic
     coordinates use haversine distance; projected coordinates use Euclidean.
     """
-    # check for pandas dataframe w/at least one row of data
     if isinstance(data, gpd.GeoDataFrame):
         raise NotImplementedError("GeoDataFrame location clustering is not implemented")
     if not isinstance(data, pd.DataFrame):
         raise TypeError("data must be a pandas DataFrame")
-    if data.empty:
-        raise ValueError("data must contain at least one row")
 
-    # convert data to correct coordinate system
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
     location_col = traj_cols['location_id']
     coord_key1, coord_key2, use_lon_lat = loader._fallback_spatial_cols(
         data.columns, traj_cols, kwargs
     )
+    if data.empty:
+        location_ids = pd.Series(index=data.index, dtype='Int64', name=location_col)
+        if not return_locations:
+            return location_ids
+
+        crs = 'EPSG:4326' if use_lon_lat else None
+        locations = gpd.GeoDataFrame(
+            {
+                location_col: pd.Series(dtype='Int64'),
+                'n_stops': pd.Series(dtype='Int64'),
+                'center': gpd.GeoSeries([], crs=crs),
+                'extent': gpd.GeoSeries([], crs=crs),
+            },
+            geometry='center',
+            crs=crs,
+        )
+        return location_ids, locations
+
     coords = data[
         [traj_cols[coord_key1], traj_cols[coord_key2]]
     ].to_numpy(dtype='float64')
@@ -542,15 +548,12 @@ def detect_locations(
         cluster_epsilon = epsilon
         metric = 'euclidean'
 
-    # use built in DBSCAN for labels
     labels = DBSCAN(
         eps=cluster_epsilon,
         min_samples=min_pts,
         metric=metric,
         algorithm='ball_tree',
     ).fit_predict(cluster_coords)
-    # all non-noise stops are labeled from 0 up
-    # label all noise stops starting at -1 and going down
     non_noise = labels >= 0
     location_ids = np.empty(len(labels), dtype='int64')
     location_ids[non_noise] = pd.factorize(labels[non_noise], sort=False)[0]
@@ -571,27 +574,22 @@ def detect_locations(
 
 def _summarize_locations(data, location_ids, traj_cols=None, **kwargs):
     """Build center and extent geometries for assigned location IDs."""
-    # resolve column names
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
     location_col = location_ids.name
-    # identify spatial columns
     coord_key1, coord_key2, use_lon_lat = loader._fallback_spatial_cols(
         data.columns, traj_cols, kwargs
     )
-    # get coordinates + choose output coord system
     coords = data[
         [traj_cols[coord_key1], traj_cols[coord_key2]]
     ].to_numpy(dtype='float64')
     crs = 'EPSG:4326' if use_lon_lat else None
     location_rows = pd.DataFrame(
         {
-            # combine labels with coordinates
             location_col: location_ids.to_numpy(),
             '_coord1': coords[:, 0],
             '_coord2': coords[:, 1],
         }
     )
-    # group by desination
     grouped_locations = location_rows.groupby(location_col, sort=True)
     center_values = grouped_locations[['_coord1', '_coord2']].apply(
         lambda group: _get_location_center(
@@ -599,9 +597,7 @@ def _summarize_locations(data, location_ids, traj_cols=None, **kwargs):
         ),
         include_groups=False,
     )
-    # calculate 1 center per destination
     center_coords = np.vstack(center_values.to_numpy())
-    # build locations GeoDataFrame
     locations = gpd.GeoDataFrame(
         {
             location_col: center_values.index.to_numpy(),
@@ -627,23 +623,3 @@ def _summarize_locations(data, location_ids, traj_cols=None, **kwargs):
     )
 
     return locations
-
-
-# Per-user clustering is intentionally inactive: callers should group their data
-# and invoke detect_locations once per user. Retained as a reference if an explicit
-# multi-user wrapper is added in the future.
-# def _cluster_locations_by_user(data, user_col, traj_cols=None, **kwargs):
-#     location_ids = np.empty(len(data), dtype='int64')
-#     next_location_id = 0
-#     groups = data.groupby(user_col, sort=False, dropna=False).indices.values()
-#     for positions in groups:
-#         group_ids = detect_locations(
-#             data.iloc[positions], traj_cols=traj_cols, **kwargs
-#         ).to_numpy()
-#         location_ids[positions] = group_ids + next_location_id
-#         next_location_id += group_ids.max() + 1
-#
-#     location_col = loader._parse_traj_cols(
-#         data.columns, traj_cols, kwargs, warn=False
-#     )['location_id']
-#     return pd.Series(location_ids, index=data.index, name=location_col)
