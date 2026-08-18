@@ -41,7 +41,7 @@ from nomad.stop_detection.validation import (
     plot_metric_boxplots,
     plot_metric_intervals,
 )
-from joblib import Parallel, delayed
+from joblib import Parallel, delayed, effective_n_jobs
 import time
 from nomad.traj_gen import Agent, Population
 
@@ -55,8 +55,8 @@ from nomad.map_utils import blocks_to_mercator_gdf
 data_dir = Path(data_folder.__file__).parent
 city = City.from_geopackage(data_dir / "garden-city.gpkg")
 
-def classify_building_size_from_id(building_id):
-    building = city.buildings_df.loc[building_id]
+def classify_building_size(location_id):
+    building = city.buildings_df.loc[location_id]
     n_blocks = len(building.blocks)
     if n_blocks == 1:
         return 'small'
@@ -65,8 +65,8 @@ def classify_building_size_from_id(building_id):
     else:
         return 'big'
 
-def classify_building_type_from_id(building_id):
-    building = city.buildings_df.loc[building_id]
+def classify_building_type(location_id):
+    building = city.buildings_df.loc[location_id]
     return building.building_type
 
 def classify_dwell(duration):
@@ -89,7 +89,9 @@ _sparse_path  = Path("robustness-of-algorithms/sparse_traj_2")
 _diaries_path = Path("robustness-of-algorithms/diaries_2")
 _homes_path   = Path("robustness-of-algorithms/homes_2")
 
-_rng = np.random.default_rng(_GEN_SEED)
+_Q_RANGE = (0.3, 0.9)
+_BETA_PING_RANGE = (3, 12)
+_BETA_DURATIONS_RANGE = (30, 300)
 HA_LOWER_BOUND = 8/15  # blocks; matches nomad.traj_gen._sample_horizontal_noise lower bound for pareto_prior
 _PARAMS = {
     "beta_ping":      _rng.uniform(3,   12,  _GEN_N).tolist(),
@@ -98,72 +100,84 @@ _PARAMS = {
     "ha":             _rng.uniform(HA_LOWER_BOUND + 1e-9, 5,   _GEN_N).tolist(),
 }
 
-def generate_agent_trajectory(args):
-    """Worker function for parallel generation."""
-    identifier, home, work, seed, beta_ping, beta_start, beta_durations, ha = args
+def generate_agent_trajectory(params, city):
+    """Generate dense and sparse trajectories for one agent."""
+    agent = Agent(
+        identifier=params.identifier,
+        city=city,
+        home=params.home,
+        workplace=params.workplace,
+    )
+    agent.generate_trajectory(datetime=_GEN_START, end_time=_GEN_END, seed=params.seed)
+    agent.set_beta_params(
+        beta_ping=params.beta_ping,
+        beta_start=params.beta_start,
+        beta_durations=params.beta_durations,
+    )
+    agent.sample_trajectory(
+        ha=params.ha,
+        seed=params.seed,
+        replace_sparse_traj=True,
+    )
+    return agent.sparse_traj, agent.diary
 
+
+def generate_agent_batch(params_batch):
+    """Initialize one city and generate a batch of agent trajectories."""
     city = City.from_geopackage(_DATA_DIR / "garden-city.gpkg")
     city._build_hub_network(hub_size=16)
     city.compute_gravity(exponent=2.0)
     city.compute_shortest_paths(callable_only=True)
-
-    agent = Agent(identifier=identifier, city=city, home=home, workplace=work)
-    agent.generate_trajectory(datetime=_GEN_START, end_time=_GEN_END, seed=seed)
-    agent.set_beta_params(
-        beta_ping=beta_ping,
-        beta_start=beta_start,
-        beta_durations=beta_durations
-    )
-    agent.sample_trajectory(
-        ha=ha, seed=seed, replace_sparse_traj=True,
-    )
-
-    sparse_df = agent.sparse_traj.copy()
-    sparse_df['user_id'] = identifier
-    sparse_df['home'] = home
-    sparse_df['workplace'] = work
-
-    diary_df = agent.diary.copy()
-    diary_df['user_id'] = identifier
-
-    return sparse_df, diary_df
+    return [generate_agent_trajectory(params, city) for params in params_batch]
 
 if _sparse_path.exists() and _diaries_path.exists():
     print("Data already exists — skipping generation.")
 else:
     _city = City.from_geopackage(_DATA_DIR / "garden-city.gpkg")
-    homes      = _city.buildings_gdf[_city.buildings_gdf['building_type'] == 'home']['id'].to_numpy()
-    workplaces = _city.buildings_gdf[_city.buildings_gdf['building_type'] == 'workplace']['id'].to_numpy()
+    _rng = np.random.default_rng(_GEN_SEED)
+    population = Population(_city)
+    population.generate_agents(N=_GEN_N, seed=_GEN_SEED, datetimes=_GEN_START)
 
-    agent_params = [
-        (f'agent_{i:04d}',
-         _rng.choice(homes),
-         _rng.choice(workplaces),
-         i,
-         _PARAMS['beta_ping'][i],
-         _PARAMS['beta_start'][i],
-         _PARAMS['beta_durations'][i],
-         _PARAMS['ha'][i])
-        for i in range(_GEN_N)
-    ]
+    sampling_params = pd.DataFrame([
+        Population.gen_params_target_q(
+            q=_Q_RANGE,
+            beta_ping=_BETA_PING_RANGE,
+            beta_durations=_BETA_DURATIONS_RANGE,
+            rng=_rng,
+        )
+        for _ in range(_GEN_N)
+    ])
+    sampling_params['ha'] = _rng.uniform(HA_LOWER_BOUND + 1e-9, 5, _GEN_N)
+    sampling_params['seed'] = np.arange(_GEN_N)
+
+    agent_params = pd.DataFrame([
+        {
+            'identifier': agent.identifier,
+            'home': agent.home,
+            'workplace': agent.workplace,
+        }
+        for agent in population.roster.values()
+    ]).join(sampling_params)
 
     print(f"Generating {_GEN_N} agents in parallel...")
     start_time = time.time()
 
-    results = Parallel(n_jobs=-1, verbose=10)(
-        delayed(generate_agent_trajectory)(params) for params in agent_params
+    n_jobs = min(effective_n_jobs(-1), len(agent_params))
+    agent_batches = [
+        list(agent_params.iloc[index].itertuples(index=False))
+        for index in np.array_split(np.arange(len(agent_params)), n_jobs)
+    ]
+    batch_results = Parallel(n_jobs=n_jobs, verbose=10)(
+        delayed(generate_agent_batch)(batch) for batch in agent_batches
     )
+    results = list(chain.from_iterable(batch_results))
 
     generation_time = time.time() - start_time
     print(f"Generated {_GEN_N} agents in {generation_time:.2f}s ({generation_time / _GEN_N:.2f}s per agent)")
 
-    population = Population(_city)
-    for (sparse_df, diary_df), params in zip(results, agent_params):
-        identifier, home, work = params[0], params[1], params[2]
-        agent = Agent(identifier=identifier, city=_city, home=home, workplace=work)
-        agent.sparse_traj = sparse_df.drop(columns=['home', 'workplace'])
+    for (sparse_df, diary_df), agent in zip(results, population.roster.values()):
+        agent.sparse_traj = sparse_df
         agent.diary = diary_df
-        population.add_agent(agent, verbose=False)
 
     poi_data = pd.DataFrame({
         'building_id': _city.buildings_gdf['id'].values,
@@ -176,18 +190,19 @@ else:
         sparse_path=str(_sparse_path),
         diaries_path=str(_diaries_path),
         homes_path=str(_homes_path),
-        beta_ping=_PARAMS['beta_ping'],
-        beta_start=_PARAMS['beta_start'],
-        beta_durations=_PARAMS['beta_durations'],
-        ha=_PARAMS['ha'],
+        beta_ping=agent_params['beta_ping'].tolist(),
+        beta_start=agent_params['beta_start'].tolist(),
+        beta_durations=agent_params['beta_durations'].tolist(),
+        q=agent_params['q'].tolist(),
+        ha=agent_params['ha'].tolist(),
     )
-    del _city, population, results
+    del _city, population, results, batch_results
     print(f"Generated {_GEN_N} agents in {generation_time:.2f}s -> {_diaries_path} / {_sparse_path}")
 
 # %%
 # ── DATA LOADING ──────────────────────────────────────────────────────────────
 poi_table = gpd.read_file(data_dir / "garden-city.gpkg", layer='buildings')
-poi_table = poi_table.rename({'type': 'building_type'}, axis=1)
+poi_table = poi_table.rename({'id': 'location_id', 'type': 'building_type'}, axis=1)
 # Project from local grid units → EPSG:3857 meters to match the saved sparse trajectories
 poi_table = blocks_to_mercator_gdf(
     poi_table,
@@ -196,65 +211,28 @@ poi_table = blocks_to_mercator_gdf(
     false_northing=city.web_mercator_origin_y,
     drop_garden_cols=False,
 )
-poi_table['building_size'] = poi_table['id'].apply(classify_building_size_from_id)
+poi_table['building_size'] = poi_table['location_id'].apply(classify_building_size)
 
 diaries_df = loader.from_file("robustness-of-algorithms/diaries_2", format="parquet")
-diaries_df = diaries_df.rename({'location': 'id'}, axis=1)
-diaries_df = diaries_df.merge(poi_table[['id', 'building_size', 'building_type']], on='id', how='left')
-diaries_df.loc[~diaries_df.id.isna(), 'dwell_length'] = (
-    diaries_df.loc[~diaries_df.id.isna(), 'duration'].apply(classify_dwell)
+diaries_df = diaries_df.rename({'location': 'location_id'}, axis=1)
+diaries_df = diaries_df.merge(
+    poi_table[['location_id', 'building_size', 'building_type']], on='location_id', how='left',
+)
+diaries_df.loc[~diaries_df.location_id.isna(), 'dwell_length'] = (
+    diaries_df.loc[~diaries_df.location_id.isna(), 'duration'].apply(classify_dwell)
 )
 
 sparse_df = loader.from_file("robustness-of-algorithms/sparse_traj_2", format="parquet")
-
-
-# %%
-# ── PREPROCESSING / POST-PROCESSING FUNCTIONS ─────────────────────────────────
-
-def no_op(value, *_args, **_kwargs):
-    return value
-
-def prejoin_oracle_map(data, diary):
-    location = visits.oracle_map(data, diary, timestamp='timestamp', location_id='id')
-    return data.join(location)
-
-summarize_stops_with_loc = partial(
-    utils.summarize_stop, x='x', y='y',
-    keep_col_names=True, passthrough_cols=['id'], complete_output=True,
-    timestamp='timestamp',
+sparse_gdf = gpd.GeoDataFrame(
+    sparse_df, geometry=gpd.points_from_xy(sparse_df['x'], sparse_df['y']), crs='EPSG:3857',
+)
+sparse_df['location_id'] = visits.poi_map(
+    sparse_gdf, poi_table=poi_table, max_distance=12, location_id='location_id',
+    x='x', y='y', data_crs='EPSG:3857',
 )
 
-def postjoin_poly_map(data):
-    if not isinstance(data, gpd.GeoDataFrame):
-        geometry = [Point(xy) for xy in zip(data['x'], data['y'])]
-        data_gdf = gpd.GeoDataFrame(data, geometry=geometry, crs='EPSG:3857')
-    else:
-        data_gdf = data
-        if data_gdf.crs is None:
-            data_gdf = data_gdf.set_crs('EPSG:3857', allow_override=True)
-    location = visits.point_in_polygon(
-        data=data_gdf, poi_table=poi_table, method='majority',
-        max_distance=12, cluster_label='cluster', location_id='id',
-        x='x', y='y', data_crs='EPSG:3857',
-    )
-    return data.join(location)
-
-def pad_oracle_stops_long(stops):
-    return utils.pad_short_stops(stops, pad=15, dur_min=4, timestamp='timestamp')
-
-
-# ── PRE/POST PIPELINE — keyed by family name ──────────────────────────────────
-
-pipeline = {
-    'ta-hdbscan':      {'pre': no_op,           'post': postjoin_poly_map, 'fix': no_op},
-    'oracle':          {'pre': prejoin_oracle_map,  'post': no_op,          'fix': pad_oracle_stops_long},
-    'tadbscan_coarse': {'pre': no_op,            'post': postjoin_poly_map, 'fix': no_op},
-    'tadbscan_fine':   {'pre': no_op,            'post': postjoin_poly_map, 'fix': no_op},
-    'lachesis_coarse': {'pre': no_op,            'post': postjoin_poly_map, 'fix': no_op},
-    'lachesis_fine':   {'pre': no_op,            'post': postjoin_poly_map, 'fix': no_op},
-    'seqscan':   {'pre': no_op,            'post': postjoin_poly_map, 'fix': no_op},
-}
-
+# %%
+# ── STOP SUMMARIZATION AND ALGORITHM CONFIGURATION ────────────────────────────
 
 registry = AlgorithmRegistry()
 
@@ -283,7 +261,7 @@ def compute_all_metrics(stops, truth, user, algo):
         truth,
         algorithm=algo,
         prf_only=False,
-        location_id='id',
+        location_id='location_id',
         timestamp='timestamp',
     )
     gen.update({'user': user, 'metric_category': 'general', 'category_value': 'all'})
@@ -298,7 +276,7 @@ def compute_all_metrics(stops, truth, user, algo):
                 truth_sub,
                 algorithm=algo,
                 prf_only=False,
-                location_id='id',
+                location_id='location_id',
                 timestamp='timestamp',
             )
             cat.update({'user': user, 'metric_category': category, 'category_value': val})
@@ -317,28 +295,31 @@ results_rows = []
 for user in tqdm(diaries_df.user_id.unique()[:10], desc='Processing users'):
     user_sparse = sparse_df[sparse_df['user_id'] == user].copy()
     user_truth = diaries_df[diaries_df['user_id'] == user].copy()
+    user_sparse['oracle_location_id'] = visits.oracle_map(
+        user_sparse, user_truth, timestamp='timestamp', location_id='location_id',
+    )
 
     for algo in registry:
         algorithm = algo["family"]
-        steps = pipeline[algorithm]
+        location_col = 'oracle_location_id' if algorithm == 'oracle' else 'location_id'
+        labels = registry.time_call(algo, user_sparse, timestamp='timestamp')
 
-        sparse_for_algo = steps["pre"](user_sparse, user_truth)
-        labels = registry.time_call(algo, sparse_for_algo, timestamp='timestamp')
-
-        clustered = sparse_for_algo.join(labels)
-        located = steps["post"](clustered)
-        stops = located.loc[located['cluster'] != -1].groupby(
-            'cluster', as_index=False
-        ).apply(summarize_stops_with_loc, include_groups=False)
-        stops = steps["fix"](stops)
+        stops = utils.summarize_stops(
+            user_sparse, labels,
+            x='x', y='y', timestamp='timestamp',
+            keep_col_names=True, passthrough_cols=[location_col], complete_output=True,
+            passthrough_agg={
+                location_col: lambda values: values.mode().iat[0] if values.notna().any() else None,
+            },
+        )
+        if algorithm == 'oracle':
+            stops.rename(columns={'oracle_location_id': 'location_id'}, inplace=True)
 
         metric_rows = compute_all_metrics(stops, user_truth, user, algorithm)
-        elapsed_s = registry._timings[-1]['elapsed_s']
-        for row in metric_rows:
-            row['execution_time'] = elapsed_s
         results_rows.extend(metric_rows)
 
 results_df = pd.DataFrame(results_rows)
+timing_df = registry.timing_frame()
 print("Processing Complete!")
 
 # %%

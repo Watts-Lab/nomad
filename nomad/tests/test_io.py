@@ -216,6 +216,7 @@ def test_from_df_stop_table(stop_df, stop_col_variations, variation_name):
 
     result = loader.from_df(df_subset, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior='naive')
 
+    assert "cluster" not in result.columns
     assert loader._is_stop_df(result, traj_cols=traj_cols, parse_dates=True), \
         f"_is_stop_df validation failed for stop variation '{variation_name}'"
 

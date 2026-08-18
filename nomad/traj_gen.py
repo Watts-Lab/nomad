@@ -125,9 +125,9 @@ class Agent:
         destination_diary : pandas.DataFrame, optional
             If provided, a DataFrame with columns ['datetime','timestamp','duration','location'].
         trajectory : pandas.DataFrame, optional
-            If provided, a DataFrame with columns ['x','y','datetime','timestamp','identifier'].
+            If provided, a DataFrame with columns ['x','y','datetime','timestamp','user_id'].
         diary : pandas.DataFrame, optional
-            If provided, a DataFrame with columns ['datetime','timestamp','duration','location'].
+            If provided, a DataFrame with columns ['datetime','timestamp','duration','location','user_id'].
         sparsity_params : dict, optional
             Parameters for sparse trajectory sampling. Valid keys are
             'beta_start', 'beta_durations', 'beta_ping', 'q', and 'f'.
@@ -205,7 +205,7 @@ class Agent:
         self.trajectory = trajectory
         self.dt = None
         self.diary = diary if diary is not None else pd.DataFrame(
-            columns=['datetime', 'timestamp', 'duration', 'location', 'identifier'])
+            columns=['datetime', 'timestamp', 'duration', 'location', 'user_id'])
         self.sparse_traj = None
         if sparsity_params is not None:
             if not isinstance(sparsity_params, dict):
@@ -1320,7 +1320,7 @@ class Population:
                               rng=None):
         """
         Sample random trajectory parameters from specified ranges.
-        
+
         Each beta parameter may be a scalar, a ``(low, high)`` tuple sampled
         uniformly, a list of exact values sampled uniformly, or a dict with
         ``{"values": [...], "probs": [...]}``.
@@ -1355,9 +1355,9 @@ class Population:
                             seed=None,
                             rng=None):
         """
-        Sample burst parameters targeting coverage ``q``, modeled as 
+        Sample burst parameters targeting coverage ``q``, modeled as
         ``beta_durations / beta_start``.
-        
+
         ``beta_ping`` must be provided. Provide exactly one of ``beta_start``
         and ``beta_durations``; the other is derived from the sampled ``q``.
         """
@@ -1412,8 +1412,8 @@ class Population:
                             rng=None):
         """
         Sample burst parameters targeting expected ping frequency ``f``,
-        modeled as ``beta_durations / (beta_start * beta_ping)``. 
-        
+        modeled as ``beta_durations / (beta_start * beta_ping)``.
+
         Provide exactly two of ``beta_start``, ``beta_ping``, and
         ``beta_durations``. The missing parameter is derived from ``f``.
         """

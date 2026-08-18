@@ -4,7 +4,7 @@ import nomad.stop_detection.utils as utils
 
 def _assert_empty_stop_df(empty_df, expected_columns, expected_dtypes):
     assert empty_df.empty
-    # every stop table leads with the per-ping cluster label
+    # Stop tables produced by NOMAD's detection algorithms retain the cluster label.
     assert list(empty_df.columns) == ["cluster"] + expected_columns
     assert {col: str(dtype) for col, dtype in empty_df.dtypes.items()} == {
         "cluster": "Int64",
@@ -66,6 +66,75 @@ def test_summarize_stop_single_ping_reports_no_gap(time_col, times):
     assert summary["max_gap"] == 0
 
 
+@pytest.mark.parametrize(
+    "location_values,location_dtype,expected_location",
+    [
+        pytest.param(["work", "home", "home", None], "string", "home", id="string-location-id"),
+        pytest.param([2, 1, 1, None], "Int64", 1, id="integer-location-id"),
+    ],
+)
+def test_summarize_stops_aggregates_passthrough_columns(
+    location_values, location_dtype, expected_location
+):
+    data = pd.DataFrame(
+        {
+            "timestamp": [0, 60, 120, 180],
+            "x": [0.0, 0.1, 0.2, 0.3],
+            "y": [0.0, 0.1, 0.2, 0.3],
+            "location_id": pd.Series(location_values, dtype=location_dtype),
+            "confidence": pd.Series([0.2, 0.4, 0.6, 0.8], dtype="Float64"),
+            "source": pd.Series(["first", "later", "later", "later"], dtype="string"),
+        }
+    )
+    kwargs = {
+        "passthrough_cols": ["location_id", "confidence", "source"],
+        "passthrough_agg": {
+            "location_id": lambda values: values.mode().iat[0] if values.notna().any() else None,
+            "confidence": "mean",
+        },
+        "timestamp": "timestamp",
+        "x": "x",
+        "y": "y",
+    }
+
+    stops = utils.summarize_stops(data, pd.Series([0, 0, 0, 0], name="cluster"), **kwargs)
+    empty = utils.summarize_stops(data, pd.Series([-1, -1, -1, -1], name="cluster"), **kwargs)
+
+    assert stops.loc[0, "location_id"] == expected_location
+    assert stops.loc[0, "confidence"] == pytest.approx(0.5)
+    assert stops.loc[0, "source"] == "first"
+    assert list(empty.columns) == list(stops.columns)
+    assert empty.dtypes.equals(stops.dtypes)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="Custom passthrough aggregations cannot yet declare an output dtype.",
+)
+def test_summarize_stops_custom_aggregation_can_change_dtype():
+    data = pd.DataFrame(
+        {
+            "timestamp": [0, 60, 120, 180],
+            "x": [0.0, 0.1, 0.2, 0.3],
+            "y": [0.0, 0.1, 0.2, 0.3],
+            "score": pd.Series([0, 1, 2, 3], dtype="Int64"),
+        }
+    )
+
+    stops = utils.summarize_stops(
+        data,
+        pd.Series([0, 0, 0, 0], name="cluster"),
+        passthrough_cols=["score"],
+        passthrough_agg={"score": "mean"},
+        timestamp="timestamp",
+        x="x",
+        y="y",
+    )
+
+    assert stops.loc[0, "score"] == pytest.approx(1.5)
+    assert stops["score"].dtype == pd.Float64Dtype()
+
+
 # Tests for _get_empty_stop_df function
 def test_get_empty_stop_df_basic():
     """Test _get_empty_stop_df with basic parameters."""
@@ -122,12 +191,25 @@ def test_get_empty_stop_df_complete_output():
     )
 
 
-def test_get_empty_stop_df_with_passthrough():
+@pytest.mark.parametrize(
+    "identifier_value,identifier_dtype",
+    [
+        pytest.param("test-id", "string", id="string-identifiers"),
+        pytest.param(1, "Int64", id="integer-identifiers"),
+    ],
+)
+def test_get_empty_stop_df_with_passthrough(identifier_value, identifier_dtype):
     """Test _get_empty_stop_df with passthrough columns."""
-    
-    input_columns = ['timestamp', 'longitude', 'latitude', 'user_id', 'location_id']
+
+    data = pd.DataFrame({
+        'timestamp': pd.Series([0], dtype='Int64'),
+        'longitude': pd.Series([0], dtype='Float64'),
+        'latitude': pd.Series([0], dtype='Float64'),
+        'user_id': pd.Series([identifier_value], dtype=identifier_dtype),
+        'location_id': pd.Series([identifier_value], dtype=identifier_dtype),
+    })
     empty_df = utils._get_empty_stop_df(
-        pd.DataFrame(columns=input_columns),
+        data,
         complete_output=False,
         passthrough_cols=['user_id', 'location_id'],
         traj_cols=None,
@@ -143,8 +225,8 @@ def test_get_empty_stop_df_with_passthrough():
             'latitude': 'Float64',
             'timestamp': 'Int64',
             'duration': 'Int64',
-            'user_id': 'object',
-            'location_id': 'object',
+            'user_id': identifier_dtype,
+            'location_id': identifier_dtype,
         },
     )
 
@@ -207,12 +289,22 @@ def test_get_empty_stop_df_custom_traj_cols():
     )
 
 
-def test_get_empty_stop_df_grid_based():
+@pytest.mark.parametrize(
+    "location_value,location_dtype",
+    [
+        pytest.param("test-location", "string", id="string-location-id"),
+        pytest.param(1, "Int64", id="integer-location-id"),
+    ],
+)
+def test_get_empty_stop_df_grid_based(location_value, location_dtype):
     """Test _get_empty_stop_df for grid-based summarization."""
-    
-    input_columns = ['timestamp', 'location_id']
+
+    data = pd.DataFrame({
+        'timestamp': pd.Series([0], dtype='Int64'),
+        'location_id': pd.Series([location_value], dtype=location_dtype),
+    })
     empty_df = utils._get_empty_stop_df(
-        pd.DataFrame(columns=input_columns),
+        data,
         complete_output=False,
         passthrough_cols=[],
         traj_cols=None,
@@ -226,17 +318,27 @@ def test_get_empty_stop_df_grid_based():
         {
             'timestamp': 'Int64',
             'duration': 'Int64',
-            'location_id': 'object',
+            'location_id': location_dtype,
         },
     )
 
 
-def test_get_empty_stop_df_grid_based_complete():
+@pytest.mark.parametrize(
+    "location_value,location_dtype",
+    [
+        pytest.param("test-location", "string", id="string-location-id"),
+        pytest.param(1, "Int64", id="integer-location-id"),
+    ],
+)
+def test_get_empty_stop_df_grid_based_complete(location_value, location_dtype):
     """Test _get_empty_stop_df for grid-based with complete output."""
-    
-    input_columns = ['timestamp', 'location_id']
+
+    data = pd.DataFrame({
+        'timestamp': pd.Series([0], dtype='Int64'),
+        'location_id': pd.Series([location_value], dtype=location_dtype),
+    })
     empty_df = utils._get_empty_stop_df(
-        pd.DataFrame(columns=input_columns),
+        data,
         complete_output=True,
         passthrough_cols=[],
         traj_cols=None,
@@ -253,17 +355,28 @@ def test_get_empty_stop_df_grid_based_complete():
             'end_timestamp': 'Int64',
             'n_pings': 'Int64',
             'max_gap': 'Int64',
-            'location_id': 'object',
+            'location_id': location_dtype,
         },
     )
 
 
-def test_get_empty_stop_df_grid_based_with_geometry():
+@pytest.mark.parametrize(
+    "location_value,location_dtype",
+    [
+        pytest.param("test-location", "string", id="string-location-id"),
+        pytest.param(1, "Int64", id="integer-location-id"),
+    ],
+)
+def test_get_empty_stop_df_grid_based_with_geometry(location_value, location_dtype):
     """Test _get_empty_stop_df for grid-based with geometry."""
-    
-    input_columns = ['timestamp', 'location_id', 'geometry']
+
+    data = pd.DataFrame({
+        'timestamp': pd.Series([0], dtype='Int64'),
+        'location_id': pd.Series([location_value], dtype=location_dtype),
+        'geometry': pd.Series([None], dtype='object'),
+    })
     empty_df = utils._get_empty_stop_df(
-        pd.DataFrame(columns=input_columns),
+        data,
         complete_output=False,
         passthrough_cols=[],
         traj_cols=None,
@@ -277,7 +390,7 @@ def test_get_empty_stop_df_grid_based_with_geometry():
         {
             'timestamp': 'Int64',
             'duration': 'Int64',
-            'location_id': 'object',
+            'location_id': location_dtype,
             'geometry': 'object',
         },
     )

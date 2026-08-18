@@ -1,9 +1,13 @@
 import pandas as pd
 from scipy.spatial.distance import pdist, cdist
 import numpy as np
+import datetime as dt
+import itertools
+import os
 import nomad.io.base as loader
 from nomad.constants import DEFAULT_SCHEMA, EARTH_RADIUS_METERS, SCHEMA_DTYPES
 import h3
+import warnings
 from datetime import datetime, time, timedelta
 from nomad.filters import to_timestamp
 from joblib import Parallel, delayed
@@ -234,16 +238,33 @@ def applyParallel(
         group_frames = tqdm(group_frames, desc="Processing users")
 
     if n_jobs == 1:
+        if print_progress:
+            return [algorithm(data=group, **algorithm_kwargs) for group in tqdm(group_frames, desc="Processing users")]
         return [algorithm(data=group, **algorithm_kwargs) for group in group_frames]
 
     group_frames = list(group_frames)
-    return Parallel(n_jobs=n_jobs)(
+    if print_progress:
+        return Parallel(n_jobs=n_jobs, return_as="generator")(
+            delayed(algorithm)(data=group, **algorithm_kwargs) for group in tqdm(group_frames, desc="Processing users")
+        )
+    return Parallel(n_jobs=n_jobs, return_as="generator")(
         delayed(algorithm)(data=group, **algorithm_kwargs) for group in group_frames
     )
 
-def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_col_names = True, passthrough_cols=None, traj_cols=None, **kwargs):
+def summarize_stop(
+    grouped_data,
+    method='medoid',
+    complete_output=False,
+    keep_col_names=True,
+    passthrough_cols=None,
+    passthrough_agg=None,
+    traj_cols=None,
+    **kwargs,
+):
     if passthrough_cols is None:
         passthrough_cols = []
+    if passthrough_agg is None:
+        passthrough_agg = {}
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = _fallback_st_cols(grouped_data.columns, traj_cols, kwargs)
     traj_cols = loader._parse_traj_cols(grouped_data.columns, traj_cols, kwargs, warn=False)
     metric = 'haversine' if use_lon_lat else 'euclidean'    
@@ -292,7 +313,11 @@ def summarize_stop(grouped_data, method='medoid', complete_output = False, keep_
     # passthrough columns: e.g. location_id
     for col in passthrough_cols:
         if col in grouped_data.columns:
-            stop_attr[col] = grouped_data[col].iloc[0]
+            stop_attr[col] = (
+                grouped_data[col].agg(passthrough_agg[col])
+                if col in passthrough_agg
+                else grouped_data[col].iloc[0]
+            )
     return pd.Series(stop_attr, dtype="object")
 
 
@@ -302,6 +327,7 @@ def summarize_stops(
     complete_output=False,
     dur_min=None,
     passthrough_cols=None,
+    passthrough_agg=None,
     keep_col_names=True,
     traj_cols=None,
     **kwargs,
@@ -320,7 +346,10 @@ def summarize_stops(
     dur_min : number, optional
         Minimum summarized stop duration to retain.
     passthrough_cols : list, optional
-        Columns copied into each stop summary.
+        Columns copied into each stop summary. The first value is used by default.
+    passthrough_agg : dict, optional
+        Pandas-compatible aggregation function for each passthrough column that
+        should not use its first value.
     keep_col_names : bool
         Whether to retain input coordinate and time column names.
     traj_cols : dict, optional
@@ -358,6 +387,7 @@ def summarize_stops(
             traj_cols=traj_cols,
             keep_col_names=keep_col_names,
             passthrough_cols=passthrough_cols,
+            passthrough_agg=passthrough_agg,
             **kwargs,
         ),
         include_groups=False,
@@ -494,7 +524,6 @@ def _get_empty_aux_df(time_col=None, return_cores=False, return_anchors=False):
 
     return pd.DataFrame(output)
 
-
 def _get_empty_stop_df(data, complete_output, passthrough_cols, traj_cols, keep_col_names, is_grid_based=False, **kwargs):
     """
     Build the empty stop table declaring the columns, their order and their dtypes.
@@ -509,7 +538,7 @@ def _get_empty_stop_df(data, complete_output, passthrough_cols, traj_cols, keep_
     complete_output : bool
         Whether extended stop statistics are included.
     passthrough_cols : list
-        Columns copied into each stop summary.
+        Additional columns to pass through to stop summary.
     traj_cols : dict
         Column mapping dictionary.
     keep_col_names : bool
@@ -522,7 +551,7 @@ def _get_empty_stop_df(data, complete_output, passthrough_cols, traj_cols, keep_
     Returns
     -------
     pd.DataFrame
-        Zero-row stop table with schema-aligned dtypes.
+        Empty stop table with schema-aligned dtypes.
     """
     if passthrough_cols is None:
         passthrough_cols = []
