@@ -25,6 +25,10 @@ examples/research/**/*.svg
 # Exclude config files from research folder
 examples/research/**/*.json
 
+# Exclude generated example data
+examples/**/*.parquet
+examples/research/results_by_category.csv
+
 # OSM cache and large outputs
 cache/
 nomad/tests/tmp_osm_cache/
@@ -41,6 +45,7 @@ dist/
 build/
 pip
 tutorials/IC2S2-2025/tutorial-sample/*
+tutorials/SICSS_2026/data/
 
 # Development environment configurations (personal/local only)
 AGENTS.md
@@ -75,3 +80,4 @@ sandbox/sandbox_data.gpkg
 **/*.svg
 **/*.eps
 tmp_parallelized_per_user_pr_description.md
+examples/research/virtual_philadelphia/output/

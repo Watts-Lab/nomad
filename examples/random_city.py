@@ -1,11 +1,13 @@
 # ---
 # jupyter:
 #   jupytext:
+#     cell_metadata_filter: all
+#     formats: ipynb,py:percent
 #     text_representation:
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.18.1
+#       jupytext_version: 1.19.3
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -29,7 +31,6 @@ import nomad.city_gen as cg
 from nomad.city_gen import City, RandomCityGenerator
 import nomad.traj_gen as tg
 from nomad.traj_gen import Agent, Population
-import nomad.stop_detection as sd
 
 from nomad.constants import DEFAULT_SPEEDS, FAST_SPEEDS, SLOW_SPEEDS, DEFAULT_STILL_PROBS
 from nomad.constants import FAST_STILL_PROBS, SLOW_STILL_PROBS, ALLOWED_BUILDINGS
@@ -87,10 +88,11 @@ for i, agent_id in enumerate(population.roster):
     agent.generate_trajectory(datetime=pd.Timestamp(2025, 1, 1, hour=7, minute=0),
                               end_time=pd.Timestamp(2025, 1, 8, hour=0, minute=0),
                               seed=100+i)
-    agent.sample_trajectory(
+    agent.set_beta_params(
         beta_start=300,
         beta_durations=60,
-        beta_ping=10,
+        beta_ping=10)
+    agent.sample_trajectory(
         seed=100+i)
     sampled_traj = agent.sparse_traj
 

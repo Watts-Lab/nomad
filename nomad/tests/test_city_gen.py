@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import geopandas as gpd
-from shapely.geometry import box, Polygon, shape
+from shapely.geometry import box, Polygon
 from shapely import wkt
 from pathlib import Path
 
@@ -236,6 +236,16 @@ def test_shortest_path():
         assert False, "Expected ValueError for non-street block"
     except ValueError:
         pass
+
+
+def test_shortest_path_with_added_streets():
+    city = City(dimensions=(2, 1), manual_streets=True)
+    city.add_street((0, 0))
+    city.add_street((1, 0))
+    city.compute_shortest_paths(callable_only=True)
+
+    assert city.get_block((0, 0))['building_type'] == 'street'
+    assert city.get_shortest_path((0, 0), (1, 0)) == [(0, 0), (1, 0)]
 
 
 def test_add_building_with_gdf_row():
@@ -530,6 +540,16 @@ def test_compute_gravity_callable():
         dense_row = city_dense.grav.loc[bid].values
         callable_row = city_callable.grav(bid).values
         assert np.allclose(dense_row, callable_row, atol=1e-5)
+
+    origin = city_dense.buildings_gdf['id'].iloc[0]
+    candidates = city_dense.buildings_gdf['id'].iloc[[8, 2, 6]]
+    pd.testing.assert_series_equal(
+        city_callable.grav(origin, candidates),
+        city_dense.grav.loc[origin, candidates],
+        check_names=False,
+        check_exact=False,
+        atol=1e-5
+    )
 
 
 def test_compute_gravity_true_distance():
@@ -1086,5 +1106,3 @@ def test_rastercity_building_type_id_consistency():
         count = street_blocks_with_id.sum()
         examples = city.blocks_gdf[street_blocks_with_id].index.tolist()[:5]
         assert False, f"{count} street blocks have building_id (should be None). Examples: {examples}"
-
-

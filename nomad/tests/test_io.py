@@ -1,18 +1,14 @@
 import pytest
-import warnings
 from pathlib import Path
 import pandas as pd
 from pandas.testing import assert_series_equal, assert_frame_equal
 import numpy as np
 import geopandas as gpd
 import pygeohash as gh
-from shapely.geometry import Polygon
 from shapely import wkt
 import pyarrow.dataset as ds
-import pdb
 from nomad.io import base as loader
 from nomad.filters import to_timestamp
-from nomad import constants
 
 # Define the keys explicitly for parametrization
 _col_variation_keys = [
@@ -220,6 +216,7 @@ def test_from_df_stop_table(stop_df, stop_col_variations, variation_name):
 
     result = loader.from_df(df_subset, traj_cols=traj_cols, parse_dates=True, mixed_timezone_behavior='naive')
 
+    assert "cluster" not in result.columns
     assert loader._is_stop_df(result, traj_cols=traj_cols, parse_dates=True), \
         f"_is_stop_df validation failed for stop variation '{variation_name}'"
 

@@ -6,7 +6,7 @@ import pdb
 import numpy as np
 from sklearn.cluster import DBSCAN
 import nomad.io.base as loader
-import nomad.constants as constants
+from nomad.constants import EARTH_RADIUS_METERS
 from nomad.stop_detection import utils
 
 # TO DO: change to stops_to_poi
@@ -535,7 +535,7 @@ def detect_locations(
     # DBSCAN expects geographic coordinates in radians and latitude-first order.
     if use_lon_lat:
         cluster_coords = np.radians(coords[:, [1, 0]])
-        cluster_epsilon = epsilon / constants.EARTH_RADIUS_METERS
+        cluster_epsilon = epsilon / EARTH_RADIUS_METERS
         metric = 'haversine'
     else:
         cluster_coords = coords

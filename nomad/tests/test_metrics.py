@@ -1,11 +1,46 @@
 import pytest
 import pandas as pd
 import numpy as np
-from nomad.metrics.metrics import rog, self_containment
+from nomad.metrics.metrics import rog, self_containment, social_interaction_potential
 from pathlib import Path
 from nomad.io import base as loader
-from nomad.stop_detection import sequential_algs as LACHESIS
-import nomad.stop_detection.utils as utils
+from nomad.stop_detection.sequential_algs import lachesis
+
+
+def test_social_interaction_potential_credits_both_users_by_duration():
+    contacts = pd.DataFrame(
+        {
+            "user_id_1": ["a", "b"],
+            "user_id_2": ["b", "c"],
+            "duration": [2, 3],
+        }
+    )
+
+    result = social_interaction_potential(contacts)
+    sip = result.set_index("user_id")["sip"]
+
+    assert result.columns.tolist() == ["user_id", "sip"]
+    assert np.issubdtype(result["sip"].dtype, np.number)
+    assert sip.to_dict() == {"a": 2, "b": 5, "c": 3}
+
+
+def test_social_interaction_potential_uses_weight_column():
+    contacts = pd.DataFrame(
+        {
+            "user_id_1": ["a", "b"],
+            "user_id_2": ["b", "c"],
+            "custom_weight": [1.5, 2.5],
+            "duration": [100, 100],
+        }
+    )
+
+    sip = social_interaction_potential(
+        contacts,
+        weight="custom_weight",
+    ).set_index("user_id")["sip"]
+
+    assert sip.to_dict() == {"a": 1.5, "b": 4.0, "c": 2.5}
+
 
 @pytest.fixture
 def agent_traj_ground_truth():
@@ -17,7 +52,7 @@ def agent_traj_ground_truth():
                  'x':'x',
                  'y':'y',
                  'timestamp':'unix_timestamp'}
-    lachesis_out = LACHESIS.lachesis(
+    lachesis_out = lachesis(
         data=df,
         dt_max=45,
         delta_roam=60,

@@ -1,9 +1,7 @@
 import pandas as pd
 import numpy as np
 import numpy.random as npr
-from shapely.geometry import box, Point, MultiLineString
-from shapely.ops import unary_union, linemerge
-from shapely import distance as shp_distance
+from shapely.geometry import LineString, Point
 from datetime import timedelta
 import warnings
 import funkybob
@@ -49,92 +47,6 @@ def parse_agent_attr(attr, N, name):
     else:
         raise ValueError(f"{name} must be a string, pd.Timestamp, list of length {N}, or None")
 
-def sample_bursts_gaps(traj,
-                     beta_start=None,
-                     beta_durations=None,
-                     beta_ping=5,
-                     ha=3/4,
-                     pareto_prior=True,
-                     seed=None,
-                     output_bursts=False,
-                     deduplicate=True):
-    """
-    Sample from simulated trajectory, drawn using hierarchical Poisson processes.
-
-    Parameters
-    ----------
-    traj: numpy array
-        simulated trajectory from simulate_traj
-    beta_start: float
-        scale parameter (mean) of Exponential distribution modeling burst inter-arrival times
-        where 1/beta_start is the rate of events (bursts) per minute.
-    beta_durations: float
-        scale parameter (mean) of Exponential distribution modeling burst durations.
-        if beta_start and beta_durations are None, a single burst covering the whole trajectory is used.
-    beta_ping: float
-        scale parameter (mean) of Exponential distribution modeling ping inter-arrival times
-        within a burst, where 1/beta_ping is the rate of events (pings) per minute.
-    ha: float
-        Mean horizontal-accuracy radius in 15 m blocks. The actual per-ping
-        accuracy is random: ha >= 8 m / 15 m and follows a Pareto distribution
-        with that mean. For each ping the spatial noise (epsilon_x, epsilon_y)
-        is drawn i.i.d. from N(0, sigma^2), with sigma = HA / 1.515 so that
-        abs(epsilon) <= HA with 68 percent probability.
-    seed : int
-        The seed for random number generation.
-    output_bursts : bool
-        If True, outputs the latent variables on when bursts start and end.
-    deduplicate : bool
-        If True, sampled times are also discretized to be in ticks
-    """
-    rng = npr.default_rng(seed)
-
-    # absolute window
-    t0   = int(traj['timestamp'].iloc[0])
-    t_end = int(traj['timestamp'].iloc[-1])
-    # Step 1: generate ping_times (and bursts if requested)
-    tz = traj['datetime'].dt.tz
-    if output_bursts:
-        ping_times, bursts = generate_ping_times(
-            t0, t_end,
-            beta_start=beta_start,
-            beta_durations=beta_durations,
-            beta_ping=beta_ping,
-            seed=seed,
-            return_bursts=True,
-            tz=tz,
-        )
-    else:
-        ping_times = generate_ping_times(
-            t0, t_end,
-            beta_start=beta_start,
-            beta_durations=beta_durations,
-            beta_ping=beta_ping,
-            seed=seed,
-        )
-
-    # Step 2: thin trajectory
-    sampled_traj = thin_traj_by_times(traj, ping_times, deduplicate=deduplicate)
-    if sampled_traj.empty:
-        empty = sampled_traj
-        if output_bursts:
-            return empty, pd.DataFrame(columns=['start_time','end_time'])
-        return empty
-
-    # Step 3: add horizontal noise
-    rng = npr.default_rng(seed)
-    n = len(sampled_traj)
-    ha_realized, noise = _sample_horizontal_noise(n, ha=ha, rng=rng, pareto_prior=pareto_prior)
-    sampled_traj['ha'] = ha_realized
-    sampled_traj[['x', 'y']] += noise
-
-    if output_bursts:
-        burst_df = pd.DataFrame(bursts, columns=['start_time','end_time'])
-        return sampled_traj, burst_df
-
-    return sampled_traj
-
-
 # =============================================================================
 # AGENT CLASS
 # =============================================================================
@@ -145,15 +57,37 @@ class Agent:
 
     Attributes
     ----------
+    identifier : str
+        Agent identifier.
+    city : City
+        City object containing buildings and movement topology.
+    home : str
+        Building ID for the agent's home.
+    workplace : str
+        Building ID for the agent's workplace.
+    home_centroid : shapely.geometry.Point
+        Centroid of the agent's home building.
+    workplace_centroid : shapely.geometry.Point
+        Centroid of the agent's workplace building.
     still_probs : dict
         Dictionary containing probabilities of the agent staying still.
     speeds : dict
         Dictionary containing possible speeds of the agent.
+    destination_diary : pandas.DataFrame
+        Planned destinations with columns ['datetime', 'timestamp', 'duration', 'location'].
+    trajectory : pandas.DataFrame or None
+        Full simulated trajectory.
+    sparse_traj : pandas.DataFrame or None
+        Sampled sparse trajectory.
+    diary : pandas.DataFrame
+        Travel diary produced from trajectory generation.
+    sparsity_params : dict
+        Sparse trajectory sampling parameters and metadata.
+    last_ping : pandas.Series or None
+        Most recent known agent state.
     dt : float
         Time step duration.
-
     """
-
     def __init__(self, 
                  identifier, 
                  city,
@@ -164,6 +98,7 @@ class Agent:
                  destination_diary=None,
                  trajectory=None,
                  diary=None,
+                 sparsity_params=None,
                  seed=0,
                  x=None,
                  y=None,
@@ -190,11 +125,22 @@ class Agent:
         destination_diary : pandas.DataFrame, optional
             If provided, a DataFrame with columns ['datetime','timestamp','duration','location'].
         trajectory : pandas.DataFrame, optional
-            If provided, a DataFrame with columns ['x','y','datetime','timestamp','identifier'].
+            If provided, a DataFrame with columns ['x','y','datetime','timestamp','user_id'].
         diary : pandas.DataFrame, optional
-            If provided, a DataFrame with columns ['datetime','timestamp','duration','location'].
+            If provided, a DataFrame with columns ['datetime','timestamp','duration','location','user_id'].
+        sparsity_params : dict, optional
+            Parameters for sparse trajectory sampling. Valid keys are
+            'beta_start', 'beta_durations', 'beta_ping', 'q', and 'f'.
         seed : int, optional
             RNG seed used for sampling fallback home/work locations.
+        x, y : float, optional
+            Initial coordinates. Must be provided together.
+        location : str, optional
+            Building ID used to set the initial position from that building's centroid.
+        datetime : str or pandas.Timestamp, optional
+            Initial datetime. If omitted, uses the current time in America/New_York.
+        timestamp : int, optional
+            Initial Unix timestamp in seconds. If omitted, derived from datetime.
         """
 
         rng = npr.default_rng(seed)
@@ -259,12 +205,22 @@ class Agent:
         self.trajectory = trajectory
         self.dt = None
         self.diary = diary if diary is not None else pd.DataFrame(
-            columns=['datetime', 'timestamp', 'duration', 'location', 'identifier'])
+            columns=['datetime', 'timestamp', 'duration', 'location', 'user_id'])
         self.sparse_traj = None
-        
+        if sparsity_params is not None:
+            if not isinstance(sparsity_params, dict):
+                raise ValueError("sparsity_params must be a dictionary.")
+            allowed_keys = {'beta_start', 'beta_durations', 'beta_ping', 'q', 'f'}
+            unknown_keys = set(sparsity_params) - allowed_keys
+            if unknown_keys:
+                raise ValueError(f"sparsity_params contains unknown keys: {unknown_keys}.")
+            self.sparsity_params = sparsity_params.copy()
+        else:
+            self.sparsity_params = {}
         # Trajectory simulation parameters (caching for performance)
-        self._cached_bound_poly = None
-        self._cached_path_ml = None
+        self._cached_path = None
+        self._cached_dest_id = None
+        self._cached_path_blocks = None
         self._previous_dest_building_row = None
         self._current_dest_building_row = None
 
@@ -278,10 +234,9 @@ class Agent:
         self.destination_diary = pd.DataFrame(columns=self.destination_diary.columns)
         self.dt = None
         # null cache for trajectory generation
-        self._cached_path_ml = None
-        self._cached_bound_poly = None
+        self._cached_path = None
         self._cached_dest_id = None
-        self._cached_bound_poly_blocks_set = None
+        self._cached_path_blocks = None
         self._previous_dest_building_row = None
         self._current_dest_building_row = None
         
@@ -342,122 +297,103 @@ class Agent:
         Returns
         -------
         coord : numpy.ndarray
-            A numpy array of floats with shape (1, 2) representing the new coordinates.
+            A numpy array of floats with shape (2,) representing the new coordinates.
         location : str or None
             The building ID if the step is a stay, or `None` if the step is a move.
         """
-        city = self.city
+        destination = self._current_dest_building_row
+        previous_destination = self._previous_dest_building_row
+        dest_type = destination['building_type']
 
-        # Resolve destination building geometry and attributes from cache
-        brow = self._current_dest_building_row
-        dest_type = brow['building_type']
-
-        # Determine start block and geometry
-        start_block = tuple(np.floor(start_point).astype(int))
         start_point_arr = np.asarray(start_point, dtype=float)
+        start_block = tuple(np.floor(start_point_arr).astype(int))
         
-        # Check if agent is in building using integer truncation
-        in_current_dest = False
-        if self._current_dest_building_row is not None:
-            in_current_dest = _point_in_blocks(start_point_arr, self._current_dest_building_row['blocks_set'])
-        in_previous_dest = False
-        if self._previous_dest_building_row is not None:
-            in_previous_dest = _point_in_blocks(start_point_arr, self._previous_dest_building_row['blocks_set'])
+        in_previous_dest = (
+            previous_destination is not None
+            and _point_in_blocks(start_point_arr, previous_destination['blocks_set'])
+        )
 
         # If already at destination building area, stay-within-building dynamics
-        if in_current_dest:
-            # Clear cache when arriving at destination (bound_poly only for inter-building movement)
-            self._cached_path_ml = None
-            self._cached_bound_poly = None
+        if _point_in_blocks(start_point_arr, destination['blocks_set']):
+            # Clear route cache when arriving at the destination.
+            self._cached_path = None
             self._cached_dest_id = None
-            location = brow['id']
-            p = self.still_probs.get(dest_type, 0.5)
-            sigma = self.speeds.get(dest_type, 0.5)
+            self._cached_path_blocks = None
 
-            if rng.uniform() < p:
+            if rng.uniform() < self.still_probs.get(dest_type, 1-((1/0.5)/4)):
                 coord = start_point_arr
             else:
                 # Draw until coord falls inside building
                 while True:
-                    coord = rng.normal(loc=start_point_arr, scale=sigma*np.sqrt(dt), size=2)
-                    if _point_in_blocks(coord, brow['blocks_set']):
+                    coord = rng.normal(
+                        loc=start_point_arr,
+                        scale=self.speeds.get(dest_type, 0.75/1.96)*np.sqrt(dt),
+                        size=2
+                    )
+                    if _point_in_blocks(coord, destination['blocks_set']):
                         break
 
-            return coord, location
+            return coord, destination['id']
 
         # Otherwise, move along streets toward destination door cell
-        location = None
-        start_segment = []
         # If currently inside previous destination building, first move towards its door
         if in_previous_dest:
-            prev_door_point = self._previous_dest_building_row['door_point']
-            start_segment = [tuple(start_point), prev_door_point]
-            start_node = (int(self._previous_dest_building_row['door_cell_x']), int(self._previous_dest_building_row['door_cell_y']))
+            start_segment = [start_point]
+            if start_point != previous_destination['door_point']:
+                start_segment.append(previous_destination['door_point'])
+            start_node = (
+                int(previous_destination['door_cell_x']),
+                int(previous_destination['door_cell_y'])
+            )
         else:
+            start_segment = []
             start_node = start_block
 
-        # Resolve destination door coordinates for path computation
-        dest_cell = (int(brow['door_cell_x']), int(brow['door_cell_y']))
-
-        # Check if cached geometry is valid for current destination
-        use_cache = False
-        if self._cached_bound_poly is not None and self._cached_dest_id == brow['id']:
-            use_cache = True
-
-        if use_cache:
-            path_ml = self._cached_path_ml
-            bound_poly = self._cached_bound_poly
-            bound_poly_blocks_set = self._cached_bound_poly_blocks_set
+        if self._cached_path is not None and self._cached_dest_id == destination['id']:
+            path = self._cached_path
+            path_blocks = self._cached_path_blocks
         else:
-            # Shortest path between street blocks (door cells)
-            street_path = city.get_shortest_path(start_node, dest_cell)
-            street_blocks = city.blocks_gdf.loc[street_path]
-
-            # Build continuous path through block centers, include start/end segments
-            centroids = street_blocks['geometry'].centroid
-            path_segments = [start_segment + [(pt.x, pt.y) for pt in centroids] + [brow['door_point']]]
-            path_ml = MultiLineString([linemerge(MultiLineString(path_segments))])
-            street_geom = unary_union(street_blocks['geometry'])
-            # Use previous destination building geometry if agent is departing from it, otherwise use start block geometry
-            if in_previous_dest and self._previous_dest_building_row is not None:
-                start_geom = self._previous_dest_building_row['geometry']
-            else:
-                start_geom = city.blocks_gdf.loc[start_block]['geometry']
-            bound_poly = unary_union([start_geom, street_geom])
+            street_path = self.city.get_shortest_path(
+                start_node,
+                (int(destination['door_cell_x']), int(destination['door_cell_y']))
+            )
+            path = LineString(
+                start_segment
+                + [(x + 0.5, y + 0.5) for x, y in street_path]
+                + [destination['door_point']]
+            )
+            path_blocks = (
+                previous_destination['blocks_set'] if in_previous_dest else {start_block}
+            ) | set(street_path)
             
-            # Build bound_poly_blocks_set from components
-            if in_previous_dest and self._previous_dest_building_row is not None:
-                start_blocks = self._previous_dest_building_row['blocks_set']
-            else:
-                start_blocks = {start_block}
-            bound_poly_blocks_set = start_blocks | set(street_path)
-            
-            # Cache the results
-            self._cached_path_ml = path_ml
-            self._cached_bound_poly = bound_poly
-            self._cached_dest_id = brow['id']
-            self._cached_bound_poly_blocks_set = bound_poly_blocks_set
+            self._cached_path = path
+            self._cached_dest_id = destination['id']
+            self._cached_path_blocks = path_blocks
 
         # Transformed coordinates of current position along the path
-        path_coord = _path_coords(path_ml, start_point_arr)
-
-        heading_drift = 3.33 * dt
-        sigma = 0.5 * dt / 1.96
+        path_coord = _path_coords(path, start_point_arr)
+        # TO DO: Check these parameters for realism, make them dependent on block size
+        heading_drift = 3.33 * dt # 50m/min; blocks are 15m x 15m
+        sigma = 0.5 * dt / 1.96 # 95% prob of moving 0.5
 
         while True:
             # Step in transformed (path-based) space
-            step = rng.normal(loc=[heading_drift, 0], scale=sigma * np.sqrt(dt), size=2)
+            step = rng.normal(
+                loc=[heading_drift, 0],
+                scale=sigma * np.sqrt(dt),
+                size=2
+            )
             path_coord = (path_coord[0] + step[0], 0.7 * path_coord[1] + step[1])
 
-            if path_coord[0] > path_ml.length:
-                coord = np.array(brow['door_point'])
+            if path_coord[0] > path.length:
+                coord = np.array(destination['door_point'])
             else:
-                coord = _cartesian_coords(path_ml, *path_coord)
+                coord = _cartesian_coords(path, *path_coord)
 
-            if _point_in_blocks(coord, bound_poly_blocks_set) or _point_in_blocks(coord, self._current_dest_building_row.get('blocks_set')):
+            if _point_in_blocks(coord, path_blocks) or _point_in_blocks(coord, destination['blocks_set']):
                 break
 
-        return coord, location
+        return coord, None
 
     def _traj_from_dest_diary(self, dt, seed=0):
         """
@@ -490,11 +426,6 @@ class Agent:
         else:
             self._previous_dest_building_row = None
 
-        # Initialize current destination building to first entry
-        first_building_id = destination_diary.iloc[0]['location']
-        building_dict = city.buildings_gdf.loc[first_building_id].to_dict()
-        building_dict['blocks_set'] = set(building_dict['blocks'])
-        self._current_dest_building_row = building_dict
         entry_update = []
         for i in range(destination_diary.shape[0]):
             building_id = destination_diary.iloc[i]['location']
@@ -504,7 +435,7 @@ class Agent:
                 self._previous_dest_building_row = self._current_dest_building_row
 
             building_dict = city.buildings_gdf.loc[building_id].to_dict()
-            building_dict['blocks_set'] = set(building_dict.get('blocks', []))
+            building_dict['blocks_set'] = set(building_dict['blocks'])
             self._current_dest_building_row = building_dict
 
             duration_in_ticks = int(destination_diary.iloc[i]['duration'] / dt)
@@ -680,55 +611,61 @@ class Agent:
                 f"Agent {self.identifier}: last_ping timestamp ({start_time}) is at or beyond end_time ({end_time}). "
                 "No destinations will be generated. Consider providing an earlier last_ping or later end_time."
             )
-            return
         
+        building_ids = visit_freqs.index.to_numpy()
+        building_types = visit_freqs['building_type'].to_numpy()
+        frequencies = visit_freqs['freq'].to_numpy(copy=True)
+        allowed_idx_by_hour = [
+            np.flatnonzero(np.isin(building_types, ALLOWED_BUILDINGS[hour]))
+            for hour in range(24)
+        ]
+        curr_idx = visit_freqs.index.get_loc(curr)
+
         dest_update = []
         # verbosity
         if verbose:
             print(f"Generating destination diary via EPR (rho={rho}, gamma={gamma}, epr_time_res={epr_time_res} min, seed={seed})")
         while start_time < end_time:
-            curr_type = visit_freqs.loc[curr, 'building_type'] if curr in visit_freqs.index else 'home'
-            allowed = allowed_buildings(start_time_local)
-            x = visit_freqs.loc[(visit_freqs['building_type'].isin(allowed)) & (visit_freqs.freq > 0)]
-
-            S = len(x) if len(x) > 0 else 1
-
-            # probability of exploring
-            p_exp = rho*(S**(-gamma))
+            hour = start_time_local.hour
+            allowed_idx = allowed_idx_by_hour[hour]
+            allowed_frequencies = frequencies[allowed_idx]
+            visited_idx = allowed_idx[allowed_frequencies > 0]
 
             # Stay
-            if (curr_type in allowed) & (rng.uniform() < stay_probs.get(curr_type, 0.5)):
+            curr_type = building_types[curr_idx]
+            if rng.uniform() < stay_probs[curr_type] and curr_type in ALLOWED_BUILDINGS[hour]:
                 pass
 
-            # Exploration
-            elif rng.uniform() < p_exp:
-                # Compute gravity probs from current door cell to unexplored candidates
-                y = visit_freqs.loc[(visit_freqs['building_type'].isin(allowed)) & (visit_freqs.freq == 0)]
-                if not y.empty:
-                    if callable(self.city.grav):
-                        probs = self.city.grav(curr).loc[y.index].values
-                    else:
-                        probs = self.city.grav.loc[curr, y.index].values
-                    
-                    probs = probs / probs.sum()
-                    curr = rng.choice(y.index, p=probs)
-                else:
-                    # Preferential return
-                    curr = _choose_destination(visit_freqs, x, rng)
-
-                visit_freqs.loc[curr, 'freq'] += 1
-
-            # Preferential return
             else:
-                curr = _choose_destination(visit_freqs, x, rng)
-                visit_freqs.loc[curr, 'freq'] += 1
+                # Exploration
+                S=max(visited_idx.size, 1)
+                p_exp = rho*S**(-gamma)
+
+                if rng.uniform() < p_exp:
+                    unvisited_idx = allowed_idx[allowed_frequencies == 0]
+                    if unvisited_idx.size:
+                        candidate_ids = building_ids[unvisited_idx]
+                        if callable(self.city.grav):
+                            probs = self.city.grav(building_ids[curr_idx], candidate_ids).values
+                        else:
+                            probs = self.city.grav.loc[building_ids[curr_idx], candidate_ids].values
+
+                        probs = probs / probs.sum()
+                        curr_idx = int(rng.choice(unvisited_idx, p=probs))
+                    else:
+                        curr_idx = _preferential_return_idx(visited_idx, frequencies, rng)
+                else:
+                    curr_idx = _preferential_return_idx(visited_idx, frequencies, rng)
+
+                frequencies[curr_idx] += 1
 
             # Update destination diary
-            entry = {'datetime': start_time_local,
-                     'timestamp': start_time,
-                     'duration': epr_time_res,
-                     'location': curr}
-            dest_update.append(entry)
+            dest_update.append({
+                'datetime': start_time_local,
+                'timestamp': start_time,
+                'duration': epr_time_res,
+                'location': building_ids[curr_idx]
+            })
 
             start_time_local = start_time_local + timedelta(minutes=int(epr_time_res))
             start_time = start_time + epr_time_res*60  # because start_time in seconds
@@ -740,6 +677,7 @@ class Agent:
                 [self.destination_diary, pd.DataFrame(dest_update)], ignore_index=True)
         self.destination_diary = condense_destinations(self.destination_diary)
 
+        visit_freqs['freq'] = frequencies
         self.visit_freqs = visit_freqs
 
         return None
@@ -856,82 +794,137 @@ class Agent:
 
         return None
 
-    def sample_trajectory(self,
-                          beta_start=None,
-                          beta_durations=None,
-                          beta_ping=5,
-                          seed=0,
-                          ha=3/4,
-                          pareto_prior=True,
-                          dt=None,
-                          output_bursts=False,
-                          deduplicate=True,
-                          replace_sparse_traj=False,
-                          cache_traj=False):
+    def set_beta_params(self,
+                        beta_params=None,
+                        *,
+                        beta_start=None,
+                        beta_durations=None,
+                        beta_ping=None):
         """
-        Samples a sparse trajectory using a hierarchical non-homogeneous Poisson process.
+        Set the parameters used to sample sparse trajectories.
 
         Parameters
         ----------
-        beta_start : float
-            The rate parameter governing the Poisson Process controlling 
-            the start of the trajectory.
-        beta_durations : float
-            The rate parameter governing the Exponential controlling 
-            for the durations of the trajectory.
+        beta_params : dict, optional
+            Parameter dictionary containing 'beta_start', 'beta_durations',
+            and 'beta_ping'. Additional values are retained. If provided,
+            this dictionary takes precedence over the explicit parameters.
+        beta_start : float or None
+            The rate parameter governing burst starts. Use 0 together with
+            beta_durations=np.inf for one full-trajectory burst. A value of 0
+            is stored as None.
+        beta_durations : float or None
+            The rate parameter governing burst durations. Use np.inf together
+            with beta_start=0 for one full-trajectory burst. A value of np.inf
+            is stored as None.
         beta_ping : float
-            The rate parameter governing the Poisson Process controlling
-            which pings are sampled.
+            The rate parameter governing ping sampling.
+        """
+        if beta_params is None:
+            beta_params = {
+                'beta_start': beta_start,
+                'beta_durations': beta_durations,
+                'beta_ping': beta_ping
+            }
+        else:
+            required_params = {'beta_start', 'beta_durations', 'beta_ping'}
+            missing_params = required_params - beta_params.keys()
+            if missing_params:
+                raise ValueError(f"beta_params is missing required keys: {missing_params}.")
+
+        beta_params = beta_params.copy()
+        if beta_params['beta_start'] == 0:
+            beta_params['beta_start'] = None
+        if beta_params['beta_durations'] is not None and np.isinf(beta_params['beta_durations']):
+            beta_params['beta_durations'] = None
+
+        if beta_params['beta_ping'] is None:
+            raise ValueError("beta_ping must be provided.")
+        if (beta_params['beta_start'] is None) != (beta_params['beta_durations'] is None):
+            raise ValueError(
+                "beta_start and beta_durations must either both be provided "
+                "or indicate one full-trajectory burst."
+            )
+
+        self.sparsity_params = beta_params
+
+    def sample_trajectory(self,
+                          seed=0,
+                          ha=3/4,
+                          pareto_prior=True,
+                          replace_sparse_traj=False,
+                          flush_traj_cache=False,
+                          debug_mode=False):
+        """
+        Samples a sparse trajectory using a hierarchical inhomogeneous Poisson process.
+
+        Parameters
+        ----------
         seed : int
             Random seed for reproducibility.
         ha : float
             Horizontal accuracy
-        output_bursts : bool
-            If True, outputs the latent variables on when bursts start and end.
         replace_sparse_traj : bool
             if True, replaces existing sparse_traj field with the new sparsified trajectory
             rather than appending.
-        cache_traj : bool
-            if True, empties the Agent's trajectory DataFrame.
+        flush_traj_cache : bool
+            If True, discards the dense trajectory except for its final ping.
+        debug_mode : bool
+            If True, validates that dense and sparse trajectories are sorted
+            chronologically.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Start and end times for bursts that produced at least one ping.
         """
-        if not self.trajectory.timestamp.is_monotonic_increasing:
+        if debug_mode and not self.trajectory.timestamp.is_monotonic_increasing:
             raise ValueError("The input trajectory is not sorted chronologically.")
-            
-        result = sample_bursts_gaps(
-            self.trajectory, 
-            beta_start, 
-            beta_durations, 
-            beta_ping, 
-            ha=ha,
-            pareto_prior=pareto_prior,
-            seed=seed, 
-            output_bursts=output_bursts,
-            deduplicate=deduplicate
+
+        required_params = {'beta_start', 'beta_durations', 'beta_ping'}
+        if not self.sparsity_params or not required_params.issubset(self.sparsity_params):
+            raise ValueError(
+                "Agent.sparsity_params must contain beta_start, beta_durations, and beta_ping. "
+                "Set them with Agent.set_beta_params()."
+            )
+        if self.sparsity_params['beta_ping'] is None:
+            raise ValueError("beta_ping must be provided.")
+
+        ping_times, burst_info = generate_ping_times(
+            int(self.trajectory['timestamp'].iloc[0]),
+            int(self.trajectory['timestamp'].iloc[-1]),
+            beta_start=self.sparsity_params['beta_start'],
+            beta_durations=self.sparsity_params['beta_durations'],
+            beta_ping=self.sparsity_params['beta_ping'],
+            seed=seed,
+            tz=self.trajectory['datetime'].dt.tz
         )
+        sparse_traj = thin_traj_by_times(
+            self.trajectory,
+            ping_times
+        ).set_index('timestamp', drop=False)
 
-        if output_bursts:
-            sparse_traj, burst_info = result
-        else:
-            sparse_traj = result
-
-        if not sparse_traj.timestamp.is_monotonic_increasing:
-            raise ValueError("The sampled trajectory is not sorted chronologically.")
-            
-        sparse_traj = sparse_traj.set_index('timestamp', drop=False)
+        if not sparse_traj.empty:
+            ha_realized, noise = _sample_horizontal_noise(
+                len(sparse_traj),
+                ha=ha,
+                rng=npr.default_rng(seed),
+                pareto_prior=pareto_prior
+            )
+            sparse_traj['ha'] = ha_realized
+            sparse_traj[['x', 'y']] += noise
 
         if self.sparse_traj is None or replace_sparse_traj:
             self.sparse_traj = sparse_traj
         else:
             self.sparse_traj = pd.concat([self.sparse_traj, sparse_traj], ignore_index=False)
-            if not self.sparse_traj.timestamp.is_monotonic_increasing:
-                raise ValueError("The aggregated sampled trajectory is not sorted chronologically.")
+        if debug_mode and not self.sparse_traj.timestamp.is_monotonic_increasing:
+            raise ValueError("The sparse trajectory is not sorted chronologically.")
 
-        if cache_traj:
-            self.last_ping = self.trajectory.iloc[-1]
-            self.trajectory = self.trajectory.loc[[]]  # empty df
+        if flush_traj_cache:
+            self.trajectory = self.trajectory.iloc[[-1]]
 
-        if output_bursts:
-            return burst_info
+        return burst_info
 
 
 def condense_destinations(destination_diary, *, time_cols=None):
@@ -999,16 +992,10 @@ def generate_ping_times(t0,
                         *,
                         beta_start=None,
                         beta_durations=None,
-                        beta_ping=5,
+                        beta_ping=None,
                         seed=None,
-                        return_bursts=False,
                         tz=None):
-    """Generate absolute ping timestamps (seconds) within [t0, t_end].
-
-    If return_bursts is True, also returns a list of (start_time, end_time)
-    for bursts that produced at least one ping. If tz is provided, start/end
-    are timezone-aware pandas Timestamps; otherwise they are Unix seconds (int).
-    """
+    """Generate ping timestamps and burst information within [t0, t_end]."""
     rng = npr.default_rng(seed)
 
     # convert minutes→seconds
@@ -1031,7 +1018,7 @@ def generate_ping_times(t0,
             burst_end_points[-1] = min(burst_end_points[-1], t_end - t0)
 
     ping_times_chunks: list[np.ndarray] = []
-    bursts_out = [] if return_bursts else None
+    bursts_out = []
     for start, end in zip(burst_start_points, burst_end_points):
         dur = end - start
         if dur <= 0:
@@ -1042,53 +1029,29 @@ def generate_ping_times(t0,
         times_rel = times_rel[times_rel < dur]
         if times_rel.size:
             ping_times_chunks.append(t0 + start + times_rel)
-            if return_bursts:
-                if tz is not None:
-                    sdt = pd.to_datetime(t0 + start, unit='s', utc=True).tz_convert(tz)
-                    edt = pd.to_datetime(t0 + end, unit='s', utc=True).tz_convert(tz)
-                else:
-                    sdt = int(t0 + start)
-                    edt = int(t0 + end)
-                bursts_out.append([sdt, edt])
+            if tz is not None:
+                sdt = pd.to_datetime(t0 + start, unit='s', utc=True).tz_convert(tz)
+                edt = pd.to_datetime(t0 + end, unit='s', utc=True).tz_convert(tz)
+            else:
+                sdt = int(t0 + start)
+                edt = int(t0 + end)
+            bursts_out.append([sdt, edt])
 
+    burst_info = pd.DataFrame(bursts_out, columns=['start_time', 'end_time'])
     if not ping_times_chunks:
-        if return_bursts:
-            return np.array([], dtype=int), []
-        return np.array([], dtype=int)
-    ping = np.concatenate(ping_times_chunks).astype(int)
-    if return_bursts:
-        return ping, bursts_out
-    return ping
+        return np.array([], dtype=int), burst_info
+    return np.concatenate(ping_times_chunks).astype(int), burst_info
 
 
-def thin_traj_by_times(traj,
-                       ping_times,
-                       *,
-                       deduplicate=True):
+def thin_traj_by_times(traj, ping_times):
     """Apply ping_times to a dense traj via searchsorted thinning."""
     if ping_times.size == 0:
         return pd.DataFrame(columns=traj.columns)
 
     traj_ts = traj['timestamp'].to_numpy()
-    tz = traj['datetime'].dt.tz
-
     idx = np.searchsorted(traj_ts, ping_times, side='right') - 1
-    valid = idx >= 0
-    idx = idx[valid]
-    ping_times = ping_times[valid]
-
-    if deduplicate:
-        _, keep = np.unique(idx, return_index=True)
-        idx = idx[keep]
-        ping_times = ping_times[keep]
-
-    sampled_traj = traj.iloc[idx].copy()
-    sampled_traj['timestamp'] = ping_times
-    sampled_traj['datetime'] = (
-        pd.to_datetime(ping_times, unit='s', utc=True)
-          .tz_convert(tz)
-    )
-    return sampled_traj
+    idx = idx[(idx >= 0) & np.r_[True, idx[1:] != idx[:-1]]]
+    return traj.iloc[idx].copy()
 
 
 def _sample_horizontal_noise(n,
@@ -1143,15 +1106,15 @@ def _point_in_blocks(point_arr, blocks_set):
     return False
 
 
-def _cartesian_coords(multilines, distance, offset, eps=0.001):
+def _cartesian_coords(path, distance, offset, eps=0.001):
     """
     Converts path-based coordinates (distance along path, signed perpendicular offset)
     into cartesian coordinates on the plane.
 
     Parameters
     ----------
-    multilines : shapely.geometry.MultiLineString
-        MultiLineString representing the street path.
+    path : shapely.geometry.LineString or MultiLineString
+        Line geometry representing the street path.
     distance : float
         Distance along the path.
     offset : float
@@ -1164,8 +1127,8 @@ def _cartesian_coords(multilines, distance, offset, eps=0.001):
     tuple
         Cartesian coordinates (x, y) corresponding to the input path-based coordinates.
     """
-    point_on_path = multilines.interpolate(distance)
-    offset_point = multilines.interpolate(distance - eps)
+    point_on_path = path.interpolate(distance)
+    offset_point = path.interpolate(distance - eps)
 
     p = np.array([point_on_path.x, point_on_path.y])
     q = np.array([offset_point.x, offset_point.y])
@@ -1177,15 +1140,15 @@ def _cartesian_coords(multilines, distance, offset, eps=0.001):
 
     return tuple(p + offset * normal)
 
-def _path_coords(multilines, point, eps=0.001):
+def _path_coords(path, point, eps=0.001):
     """
-    Given a MultiLineString and a cartesian point, returns the transformed coordinates:
+    Given a line geometry and a cartesian point, returns the transformed coordinates:
     distance along the path and signed perpendicular offset.
 
     Parameters
     ----------
-    multilines : shapely.geometry.MultiLineString
-        MultiLineString representing the street path.
+    path : shapely.geometry.LineString or MultiLineString
+        Line geometry representing the street path.
     point : shapely.geometry.Point or tuple
         The cartesian point to transform.
     eps : float, optional
@@ -1199,9 +1162,9 @@ def _path_coords(multilines, point, eps=0.001):
     if not isinstance(point, Point):
         point = Point(point)
 
-    distance = multilines.project(point)
-    point_on_path = multilines.interpolate(distance)
-    offset_point = multilines.interpolate(distance - eps)
+    distance = path.project(point)
+    point_on_path = path.interpolate(distance)
+    offset_point = path.interpolate(distance - eps)
 
     p = np.array([point_on_path.x, point_on_path.y])
     q = np.array([offset_point.x, offset_point.y])
@@ -1215,6 +1178,52 @@ def _path_coords(multilines, point, eps=0.001):
     offset = np.dot(delta, normal)
 
     return distance, offset
+
+def _sample_param_spec(spec, rng, *, probs=None, name="parameter"):
+    """
+    Sample one positive numeric parameter from a compact user specification.
+
+    ``spec`` can be one of:
+    - a single number, returned as that exact value;
+    - a two-item tuple ``(low, high)``, sampled uniformly from that interval;
+    - a list of exact values, sampled uniformly unless ``probs`` is provided;
+    - a dict ``{"values": [...], "probs": [...]}``, for weighted exact values.
+
+    The caller supplies ``rng`` so a single seeded generator can be reused across
+    many parameter draws.
+    """
+    if spec is None:
+        return None
+
+    if isinstance(spec, dict):
+        values = spec.get("values")
+        if values is None:
+            raise ValueError(f"{name} spec dictionaries must include a 'values' key")
+        probs = spec.get("probs", probs)
+        spec = values
+
+    if np.isscalar(spec):
+        values = [spec]
+        value = float(values[0])
+    elif isinstance(spec, tuple) and len(spec) == 2:
+        lo, hi = spec
+        value = float(rng.uniform(lo, hi))
+    elif isinstance(spec, list):
+        values = spec
+        if not values:
+            raise ValueError(f"{name} values must not be empty")
+        if probs is not None and len(probs) != len(values):
+            raise ValueError(f"{name} probs must have the same length as values")
+        value = float(rng.choice(values, p=probs))
+    else:
+        raise TypeError(
+            f"{name} must be a number, a (low, high) tuple, a list of values, "
+            "or a {'values': ..., 'probs': ...} dict"
+        )
+
+    if value <= 0:
+        raise ValueError(f"{name} must be positive")
+    return value
 
 class Population:
     """
@@ -1298,6 +1307,151 @@ class Population:
                           datetime=get_datetime(i),
                           seed=agent_seed)
             self.add_agent(agent)
+
+    @staticmethod
+    def sample_from_intervals(beta_start,
+                              beta_ping,
+                              beta_durations,
+                              *,
+                              beta_start_probs=None,
+                              beta_ping_probs=None,
+                              beta_durations_probs=None,
+                              seed=None,
+                              rng=None):
+        """
+        Sample random trajectory parameters from specified ranges.
+
+        Each beta parameter may be a scalar, a ``(low, high)`` tuple sampled
+        uniformly, a list of exact values sampled uniformly, or a dict with
+        ``{"values": [...], "probs": [...]}``.
+        """
+        if rng is None:
+            rng = npr.default_rng(seed)
+        sampled_durations = _sample_param_spec(
+            beta_durations, rng, probs=beta_durations_probs, name="beta_durations"
+        )
+        sampled_start = _sample_param_spec(
+            beta_start, rng, probs=beta_start_probs, name="beta_start"
+        )
+        sampled_ping = _sample_param_spec(
+            beta_ping, rng, probs=beta_ping_probs, name="beta_ping"
+        )
+        sampled_ping = min(sampled_ping, sampled_durations)
+        return {
+            "beta_durations": sampled_durations,
+            "beta_start": sampled_start,
+            "beta_ping": sampled_ping
+        }
+
+    @staticmethod
+    def gen_params_target_q(q,
+                            beta_start=None,
+                            beta_ping=None,
+                            beta_durations=None,
+                            *,
+                            beta_start_probs=None,
+                            beta_ping_probs=None,
+                            beta_durations_probs=None,
+                            seed=None,
+                            rng=None):
+        """
+        Sample burst parameters targeting coverage ``q``, modeled as
+        ``beta_durations / beta_start``.
+
+        ``beta_ping`` must be provided. Provide exactly one of ``beta_start``
+        and ``beta_durations``; the other is derived from the sampled ``q``.
+        """
+        if rng is None:
+            rng = npr.default_rng(seed)
+        target_q = _sample_param_spec(q, rng, name="q")
+        if target_q is None:
+            raise ValueError("q must be provided")
+        if not 0 < target_q <= 1:
+            raise ValueError("q must be in the interval (0, 1]")
+
+        if beta_ping is None:
+            raise ValueError("beta_ping must be provided when targeting q")
+        if (beta_start is None) == (beta_durations is None):
+            raise ValueError("Provide exactly one of beta_start and beta_durations when targeting q")
+
+        sampled_start = _sample_param_spec(
+            beta_start, rng, probs=beta_start_probs, name="beta_start"
+        )
+        sampled_ping = _sample_param_spec(
+            beta_ping, rng, probs=beta_ping_probs, name="beta_ping"
+        )
+        sampled_durations = _sample_param_spec(
+            beta_durations, rng, probs=beta_durations_probs, name="beta_durations"
+        )
+
+        if sampled_start is None and sampled_durations is None:
+            raise ValueError("Provide beta_start or beta_durations so the other can be derived from q")
+        if sampled_start is None:
+            sampled_start = sampled_durations / target_q
+        if sampled_durations is None:
+            sampled_durations = target_q * sampled_start
+
+        sampled_ping = min(sampled_ping, sampled_durations)
+        return {
+            "beta_durations": sampled_durations,
+            "beta_start": sampled_start,
+            "beta_ping": sampled_ping,
+            "q": target_q
+        }
+
+    @staticmethod
+    def gen_params_target_f(f,
+                            beta_start=None,
+                            beta_ping=None,
+                            beta_durations=None,
+                            *,
+                            beta_start_probs=None,
+                            beta_ping_probs=None,
+                            beta_durations_probs=None,
+                            seed=None,
+                            rng=None):
+        """
+        Sample burst parameters targeting expected ping frequency ``f``,
+        modeled as ``beta_durations / (beta_start * beta_ping)``.
+
+        Provide exactly two of ``beta_start``, ``beta_ping``, and
+        ``beta_durations``. The missing parameter is derived from ``f``.
+        """
+        if rng is None:
+            rng = npr.default_rng(seed)
+        target_f = _sample_param_spec(f, rng, name="f")
+        if target_f is None:
+            raise ValueError("f must be provided")
+        if target_f <= 0:
+            raise ValueError("f must be positive")
+
+        supplied_count = sum(value is not None for value in (beta_start, beta_ping, beta_durations))
+        if supplied_count != 2:
+            raise ValueError("Provide exactly two of beta_start, beta_ping, and beta_durations")
+
+        sampled_start = _sample_param_spec(
+            beta_start, rng, probs=beta_start_probs, name="beta_start"
+        )
+        sampled_ping = _sample_param_spec(
+            beta_ping, rng, probs=beta_ping_probs, name="beta_ping"
+        )
+        sampled_durations = _sample_param_spec(
+            beta_durations, rng, probs=beta_durations_probs, name="beta_durations"
+        )
+
+        if sampled_durations is None:
+            sampled_durations = target_f * sampled_start * sampled_ping
+        elif sampled_start is None:
+            sampled_start = sampled_durations / (target_f * sampled_ping)
+        elif sampled_ping is None:
+            sampled_ping = sampled_durations / (target_f * sampled_start)
+
+        return {
+            "beta_durations": sampled_durations,
+            "beta_start": sampled_start,
+            "beta_ping": sampled_ping,
+            "f": target_f
+        }
 
     def save_pop(self,
                  traj_cols=None,
@@ -1501,33 +1655,9 @@ class Population:
 # AUXILIARY METHODS
 # =============================================================================
 
-def _choose_destination(visit_freqs, x, rng):
-    """
-    Select destination using preferential return from allowed, visited buildings.
-    Falls back to uniform random selection if no visited buildings are available.
-    
-    Parameters
-    ----------
-    visit_freqs : pandas.DataFrame
-        DataFrame with building IDs as index and 'freq' column
-    x : pandas.DataFrame
-        Subset of visit_freqs with allowed, visited buildings (freq > 0)
-    rng : numpy.random.Generator
-        Random number generator
-        
-    Returns
-    -------
-    str
-        Building ID of selected destination
-    """
-    if not x.empty and x['freq'].sum() > 0:
-        return rng.choice(x.index, p=x['freq']/x['freq'].sum())
-    else:
-        return rng.choice(visit_freqs.index)
-
-def allowed_buildings(local_ts):
-    """
-    Finds allowed buildings for the timestamp
-    """
-    hour = local_ts.hour
-    return ALLOWED_BUILDINGS[hour]
+def _preferential_return_idx(visited_idx, frequencies, rng):
+    """Choose a visited destination in proportion to its visit frequency."""
+    if visited_idx.size:
+        weights = frequencies[visited_idx]
+        return int(rng.choice(visited_idx, p=weights / weights.sum()))
+    return int(rng.choice(frequencies.size))

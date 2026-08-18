@@ -1,6 +1,7 @@
 from functools import partial
 import itertools
 from pathlib import Path
+import re
 import time
 
 import matplotlib.pyplot as plt
@@ -40,6 +41,34 @@ class AlgorithmRegistry:
         return name
 
     @staticmethod
+    def _param_codifier(value):
+        if isinstance(value, np.generic):
+            value = value.item()
+
+        if isinstance(value, float):
+            text = f"{value:.12g}"
+        elif isinstance(value, bool):
+            text = str(value).lower()
+        elif value is None:
+            text = "none"
+        else:
+            text = str(value)
+
+        text = re.sub(r"[^0-9A-Za-z_.-]+", "-", text).strip("-")
+        return text or "empty"
+
+    @classmethod
+    def _algorithm_identifier(cls, index, params):
+        if not params:
+            return f"{index:03d}"
+
+        param_parts = [
+            f"{cls._param_codifier(key)}-{cls._param_codifier(value)}"
+            for key, value in sorted(params.items())
+        ]
+        return f"{index:03d}__{'__'.join(param_parts)}"
+
+    @staticmethod
     def _expand_values(value, granularity):
         if isinstance(value, tuple):
             start, stop = value
@@ -67,9 +96,10 @@ class AlgorithmRegistry:
 
         for index, combo in enumerate(itertools.product(*values), start=1):
             params = dict(zip(keys, combo))
+            algorithm_id = self._algorithm_identifier(index, params)
             self._algos.append(
                 {
-                    "algorithm": algorithm_name,
+                    "algorithm": algorithm_id,
                     "family": family_name,
                     "fn": fn,
                     "call": partial(fn, **params),
@@ -196,13 +226,13 @@ def compute_visitation_errors(overlaps, true_visits, traj_cols=None, right_traj_
             "do not exist in ground truth: " + repr(sorted(bad_ts)[:10])
         )
 
-    diff_loc = overlaps[loc_left] != overlaps[loc_right]
-    same_loc = ~diff_loc
+    same_loc = overlaps[loc_left] == overlaps[loc_right]
+    merged_rows = overlaps.groupby(t_left)[loc_right].transform("nunique").gt(1)
 
     num_overlapped = overlaps[t_right].nunique()
     missed_fraction = 1 - num_overlapped / n_truth
-    merged_fraction = diff_loc.groupby(overlaps[t_right]).any().mean()
-    split_fraction = overlaps[same_loc].groupby(t_right)[t_left].nunique().gt(1).mean()
+    merged_fraction = overlaps.loc[merged_rows, t_right].nunique() / n_truth
+    split_fraction = overlaps[same_loc].groupby(t_right)[t_left].nunique().gt(1).sum() / n_truth
 
     return {
         "missed_fraction": missed_fraction,

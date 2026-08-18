@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 
 import nomad.io.base as loader
-from nomad.stop_detection.sequential_algs import grid_based
 
 
 def fill_timestamp_gaps(first_time, last_time, stop_table):
@@ -89,6 +88,10 @@ def merge_stops(
     end_col_present = loader._has_end_cols(stops.columns, traj_cols)
     duration_col_present = loader._has_duration_cols(stops.columns, traj_cols)
     if not end_col_present and not duration_col_present:
+        # Imported here because sequential_algs embeds merge_stops as an optional
+        # postprocessing step and therefore imports this module.
+        from nomad.stop_detection.sequential_algs import grid_based
+
         t_key, _ = loader._fallback_time_cols_dt(
             stops.columns, traj_cols, kwargs
         )

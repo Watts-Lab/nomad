@@ -7,6 +7,7 @@ import pickle
 import pandas as pd
 import numpy as np
 import numpy.random as npr
+from scipy.sparse import csr_matrix
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from matplotlib import cm
@@ -235,24 +236,13 @@ class City:
         Adds a street to the city at the specified (x, y) coordinates.
         """
         x, y = coords
-        # ensure blocks_gdf marks as street
-        if hasattr(self, 'blocks_gdf'):
-            mask = (self.blocks_gdf['coord_x'] == x) & (self.blocks_gdf['coord_y'] == y)
-            if mask.any():
-                self.blocks_gdf.loc[mask, ['building_id','building_type']] = [None, 'street']
-            else:
-                self.blocks_gdf = pd.concat([self.blocks_gdf, gpd.GeoDataFrame([{
-                    'coord_x': x,
-                    'coord_y': y,
-                    'building_id': None,
-                    'building_type': None,
-                    'geometry': box(x, y, x+1, y+1)
-                }], geometry='geometry', crs=self.blocks_gdf.crs)], ignore_index=True)
-        # update streets_gdf
-        if hasattr(self, 'streets_gdf'):
-            sid = f's-x{x}-y{y}'
-            row = {'coord_x': x, 'coord_y': y, 'id': sid, 'geometry': box(x, y, x+1, y+1)}
-            self.streets_gdf = pd.concat([self.streets_gdf, gpd.GeoDataFrame([row], geometry='geometry', crs=self.streets_gdf.crs)], ignore_index=True)
+        geometry = box(x, y, x+1, y+1)
+        self.blocks_gdf.loc[coords, ['coord_x', 'coord_y', 'building_id', 'building_type', 'geometry']] = [
+            x, y, None, 'street', geometry
+        ]
+        self.streets_gdf.loc[coords, ['coord_x', 'coord_y', 'id', 'geometry']] = [
+            x, y, f's-x{x}-y{y}', geometry
+        ]
 
     def add_building(self, building_type, door, geom=None, blocks=None, gdf_row=None):
         """
@@ -637,6 +627,47 @@ class City:
         dy = np.abs(y1[:, None] - y2[None, :])
         return dx + dy
 
+    def _set_hub_gravity_callable(self, exponent):
+        """Set callable gravity from the city's hub-distance data."""
+        building_ids = self.buildings_gdf.index
+        nearby_i = building_ids.get_indexer(self.mh_dist_nearby_doors.index.get_level_values(0))
+        nearby_j = building_ids.get_indexer(self.mh_dist_nearby_doors.index.get_level_values(1))
+        nearby_distances = csr_matrix(
+            (
+                np.tile(self.mh_dist_nearby_doors.to_numpy(), 2),
+                (np.concatenate([nearby_i, nearby_j]), np.concatenate([nearby_j, nearby_i]))
+            ),
+            shape=(len(building_ids), len(building_ids))
+        )
+        hub_info = self.grav_hub_info.loc[building_ids]
+        closest_hub_idx = hub_info['closest_hub_idx'].to_numpy()
+        dist_to_hub = hub_info['dist_to_hub'].to_numpy()
+        hub_distances = self.hub_df.to_numpy()
+
+        def gravity(building_id, candidate_ids=None):
+            candidate_ids = building_ids if candidate_ids is None else pd.Index(candidate_ids)
+            origin_idx = building_ids.get_loc(building_id)
+            candidate_idx = building_ids.get_indexer(candidate_ids)
+            if (candidate_idx < 0).any():
+                raise KeyError(candidate_ids[candidate_idx < 0].tolist())
+            distances = (
+                dist_to_hub[origin_idx]
+                + hub_distances[closest_hub_idx[origin_idx], closest_hub_idx[candidate_idx]]
+                + dist_to_hub[candidate_idx]
+            )
+            nearby = nearby_distances.getrow(origin_idx)
+            nearby_pos = np.searchsorted(nearby.indices, candidate_idx)
+            use_nearby = nearby_pos < nearby.indices.size
+            use_nearby[use_nearby] &= nearby.indices[nearby_pos[use_nearby]] == candidate_idx[use_nearby]
+            distances[use_nearby] = nearby.data[nearby_pos[use_nearby]]
+            same_building = candidate_idx == origin_idx
+            distances[same_building] = 1
+            weights = 1.0 / distances.astype(float) ** exponent
+            weights[same_building] = 0
+            return pd.Series(weights, index=candidate_ids)
+
+        self.grav = gravity
+
     def compute_gravity(self, exponent=2.0, callable_only=False, n_chunks=10, use_proxy_hub_distance=True):
         """Precompute building-to-building gravity from door-to-door distances.
         
@@ -662,6 +693,7 @@ class City:
         street graph.
         
         Stores result in self.grav as DataFrame (callable_only=False) or callable (callable_only=True)
+        Callable gravity accepts a building ID and an optional sequence of candidate IDs.
         
         Persistence:
 
@@ -733,49 +765,18 @@ class City:
             else:
                 self.mh_dist_nearby_doors = pd.Series([], dtype=np.int32, index=pd.MultiIndex.from_arrays([[], []]))
             
-            # Fix: Buildings sharing same door have Manhattan distance 0, set to 1 to avoid inf gravity
-            door_groups = self.buildings_gdf.groupby(['door_cell_x', 'door_cell_y'])['id']
-            same_door_mask = door_groups.transform('size') > 1
-            same_door_buildings = set(self.buildings_gdf[same_door_mask]['id'].values)
-            
-            if same_door_buildings and len(self.mh_dist_nearby_doors) > 0:
-                zero_dist_mask = (self.mh_dist_nearby_doors == 0)
-                for (bid_i, bid_j) in self.mh_dist_nearby_doors[zero_dist_mask].index:
-                    if bid_i in same_door_buildings and bid_j in same_door_buildings:
-                        self.mh_dist_nearby_doors.loc[(bid_i, bid_j)] = 1
+            # Distinct buildings can share a door cell; use one block as their distance.
+            self.mh_dist_nearby_doors[self.mh_dist_nearby_doors == 0] = 1
             
             if callable_only:
-                bid_to_idx = {bid: i for i, bid in enumerate(building_ids)}
-                hub_to_hub = self.hub_df.values
-                
-                def compute_gravity_row(building_id):
-                    idx = bid_to_idx[building_id]
-                    hub_i = closest_hub_idx[idx]
-                    dist_to_hub_i = dist_to_closest_hub[idx]
-                    
-                    distances = dist_to_hub_i + hub_to_hub[hub_i, closest_hub_idx] + dist_to_closest_hub
-                    
-                    for (bid_i, bid_j), d in self.mh_dist_nearby_doors.items():
-                        if bid_i == building_id:
-                            distances[bid_to_idx[bid_j]] = d
-                        elif bid_j == building_id:
-                            distances[bid_to_idx[bid_i]] = d
-                    
-                    distances[idx] = 1
-                    gravity_row = 1.0 / (distances ** exponent)
-                    gravity_row[idx] = 0.0
-                    
-                    return pd.Series(gravity_row, index=building_ids)
-                
-                self.grav = compute_gravity_row
+                self._set_hub_gravity_callable(exponent)
             else:
                 hub_to_hub = self.hub_df.values
                 dist_matrix = dist_to_closest_hub[:, None] + hub_to_hub[closest_hub_idx[:, None], closest_hub_idx[None, :]] + dist_to_closest_hub[None, :]
-                
-                bid_to_idx = {bid: i for i, bid in enumerate(building_ids)}
-                for (bid_i, bid_j), d in self.mh_dist_nearby_doors.items():
-                    i, j = bid_to_idx[bid_i], bid_to_idx[bid_j]
-                    dist_matrix[i, j] = dist_matrix[j, i] = d
+                nearby_i = self.buildings_gdf.index.get_indexer(self.mh_dist_nearby_doors.index.get_level_values(0))
+                nearby_j = self.buildings_gdf.index.get_indexer(self.mh_dist_nearby_doors.index.get_level_values(1))
+                dist_matrix[nearby_i, nearby_j] = self.mh_dist_nearby_doors.to_numpy()
+                dist_matrix[nearby_j, nearby_i] = self.mh_dist_nearby_doors.to_numpy()
                 
                 np.fill_diagonal(dist_matrix, 1)
                 gravity = 1.0 / (dist_matrix ** exponent)
@@ -814,8 +815,12 @@ class City:
             
             if callable_only:
                 grav_df = pd.DataFrame(gravity, index=building_ids, columns=building_ids)
-                def compute_gravity_row(building_id):
-                    return grav_df.loc[building_id]
+
+                def compute_gravity_row(building_id, candidate_ids=None):
+                    if candidate_ids is None:
+                        return grav_df.loc[building_id]
+                    return grav_df.loc[building_id, candidate_ids]
+
                 self.grav = compute_gravity_row
             else:
                 self.grav = pd.DataFrame(gravity, index=building_ids, columns=building_ids)
@@ -1319,33 +1324,7 @@ class City:
                 except Exception:
                     city.mh_dist_nearby_doors = pd.Series([], dtype=np.int32, index=pd.MultiIndex.from_arrays([[], []]))
                 
-                # Reconstruct callable gravity function
-                building_ids = city.buildings_gdf['id'].to_numpy()
-                bid_to_idx = {bid: i for i, bid in enumerate(building_ids)}
-                hub_to_hub = city.hub_df.values
-                closest_hub_idx = city.grav_hub_info['closest_hub_idx'].to_numpy()
-                dist_to_closest_hub = city.grav_hub_info['dist_to_hub'].to_numpy()
-                
-                def compute_gravity_row(building_id, exponent=2.0):
-                    idx = bid_to_idx[building_id]
-                    hub_i = closest_hub_idx[idx]
-                    dist_to_hub_i = dist_to_closest_hub[idx]
-                    
-                    distances = dist_to_hub_i + hub_to_hub[hub_i, closest_hub_idx] + dist_to_closest_hub
-                    
-                    for (bid_i, bid_j), d in city.mh_dist_nearby_doors.items():
-                        if bid_i == building_id:
-                            distances[bid_to_idx[bid_j]] = d
-                        elif bid_j == building_id:
-                            distances[bid_to_idx[bid_i]] = d
-                    
-                    distances[idx] = 1  # Temporary non-zero to avoid divide-by-zero warning
-                    gravity_row = 1.0 / (distances ** exponent)
-                    gravity_row[idx] = 0.0  # Self-gravity is always 0
-                    
-                    return pd.Series(gravity_row, index=building_ids)
-                
-                city.grav = compute_gravity_row
+                city._set_hub_gravity_callable(exponent=2.0)
                 
             except Exception:
                 pass
@@ -1557,9 +1536,9 @@ class City:
         paths (dict) or on-demand callable depending on mode.
         """
         # Check if coordinates are street blocks
-        if not ((self.streets_gdf['coord_x'] == start_coord[0]) & (self.streets_gdf['coord_y'] == start_coord[1])).any():
+        if start_coord not in self.streets_gdf.index:
             raise ValueError(f"Start coordinate {start_coord} must be a street block.")
-        if not ((self.streets_gdf['coord_x'] == end_coord[0]) & (self.streets_gdf['coord_y'] == end_coord[1])).any():
+        if end_coord not in self.streets_gdf.index:
             raise ValueError(f"End coordinate {end_coord} must be a street block.")
 
         # Auto-initialize callable if not set (lazy initialization for convenience)

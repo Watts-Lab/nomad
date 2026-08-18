@@ -1,12 +1,13 @@
 # ---
 # jupyter:
 #   jupytext:
+#     cell_metadata_filter: all
 #     formats: ipynb,py:percent
 #     text_representation:
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.3
+#       jupytext_version: 1.19.3
 #   kernelspec:
 #     display_name: nomad_env
 #     language: python
@@ -31,9 +32,9 @@ from statsmodels.nonparametric.smoothers_lowess import lowess
 
 import nomad.io.base as loader
 import nomad.stop_detection.utils as utils
-import nomad.stop_detection.sequential_algs as LACHESIS
-import nomad.stop_detection.density_algs as TADBSCAN
-import nomad.stop_detection.sequential_algs as GRID_BASED # for oracle visits
+from nomad.stop_detection.sequential_algs import lachesis
+from nomad.stop_detection.density_algs import ta_dbscan
+
 
 import nomad.visit_attribution.visit_attribution as visits
 import nomad.filters as filters
@@ -81,7 +82,7 @@ config=config3
 # %%
 config["algos"] = {
     "ta_dbscan_coarse":{
-        "func":TADBSCAN.ta_dbscan,
+        "func":ta_dbscan,
         "params":{
             "time_thresh":240,
             "dist_thresh":15,
@@ -89,7 +90,7 @@ config["algos"] = {
         }
     },
     "lachesis_coarse":{
-        "func":LACHESIS.lachesis,
+        "func":lachesis,
         "params":{
             'dt_max': 240,
             'delta_roam': 20

@@ -5,6 +5,244 @@ import nomad.contact_estimation as contact
 from nomad.stop_detection.validation import compute_stop_detection_metrics, compute_visitation_errors
 
 
+def test_estimate_contacts_exact_location_and_duration_weight():
+    stops = pd.DataFrame(
+        {
+            "user_id": ["a", "b", "c"],
+            "start_timestamp": [0, 300, 0],
+            "end_timestamp": [600, 900, 600],
+            "location_id": ["cafe", "cafe", "park"],
+        }
+    )
+
+    contacts = contact.estimate_contacts(stops, complete_output=True)
+    weighted = contact.compute_contact_weights(contacts)
+
+    assert len(contacts) == 1
+    assert contacts.loc[0, "user_id_1"] == "a"
+    assert contacts.loc[0, "user_id_2"] == "b"
+    assert contacts.loc[0, "location_id"] == "cafe"
+    assert contacts.loc[0, "duration"] == 5
+    assert "distance" not in contacts.columns
+    assert "stop_id_1" not in contacts.columns
+    assert "stop_id_2" not in contacts.columns
+    assert weighted.name == "contact_weight"
+    assert weighted.loc[0] == 5
+
+
+def test_estimate_contacts_radius_and_linear_distance_weight():
+    stops = pd.DataFrame(
+        {
+            "user_id": ["a", "b", "c"],
+            "start_timestamp": [0, 0, 0],
+            "end_timestamp": [600, 600, 600],
+            "x": [0, 3, 30],
+            "y": [0, 4, 0],
+        }
+    )
+
+    contacts = contact.estimate_contacts(
+        stops,
+        distance_threshold=10,
+        complete_output=True,
+    )
+    weighted = contact.compute_contact_weights(
+        contacts, method="linear_distance", distance_threshold=10
+    )
+
+    assert len(contacts) == 1
+    assert contacts.loc[0, "distance"] == pytest.approx(5)
+    assert contacts.loc[0, "duration"] == 10
+    assert weighted.name == "contact_weight"
+    assert weighted.loc[0] == pytest.approx(5)
+
+
+def test_estimate_contacts_radius_with_latitude_longitude():
+    stops = pd.DataFrame(
+        {
+            "user_id": ["a", "b", "c"],
+            "start_timestamp": [0, 0, 0],
+            "end_timestamp": [600, 600, 600],
+            "latitude": [0, 0, 0],
+            "longitude": [0, 0.0005, 0.002],
+        }
+    )
+
+    contacts = contact.estimate_contacts(stops, distance_threshold=100)
+
+    assert contacts[["user_id_1", "user_id_2"]].values.tolist() == [["a", "b"]]
+
+
+def test_estimate_contacts_radius_keeps_temporal_block_boundary_overlap():
+    stops = pd.DataFrame(
+        {
+            "user_id": ["a", "b"],
+            "start_timestamp": [3540, 3600],
+            "end_timestamp": [3660, 3720],
+            "x": [0, 3],
+            "y": [0, 4],
+        }
+    )
+
+    contacts = contact.estimate_contacts(
+        stops,
+        distance_threshold=10,
+        complete_output=True,
+    )
+
+    assert len(contacts) == 1
+    assert contacts.loc[0, "start_timestamp"] == 3600
+    assert contacts.loc[0, "end_timestamp"] == 3660
+    assert contacts.loc[0, "duration"] == 1
+
+
+def test_estimate_contacts_radius_deduplicates_multi_block_overlap():
+    stops = pd.DataFrame(
+        {
+            "user_id": ["a", "b"],
+            "start_timestamp": [0, 1800],
+            "end_timestamp": [10800, 9000],
+            "x": [0, 3],
+            "y": [0, 4],
+        }
+    )
+
+    contacts = contact.estimate_contacts(stops, distance_threshold=10)
+
+    assert len(contacts) == 1
+    assert contacts.loc[0, "duration"] == 120
+
+
+def test_estimate_contacts_preserves_datetime_output():
+    stops = pd.DataFrame(
+        {
+            "user_id": ["a", "b"],
+            "start_time": pd.to_datetime(
+                ["2024-01-01 00:00", "2024-01-01 00:10"],
+                utc=True,
+            ),
+            "duration": [20, 30],
+            "location_id": ["cafe", "cafe"],
+        }
+    )
+
+    contacts = contact.estimate_contacts(
+        stops,
+        complete_output=True,
+        start_datetime="start_time",
+        end_datetime="end_time",
+    )
+
+    assert len(contacts) == 1
+    assert contacts.loc[0, ["start_time", "end_time", "duration"]].tolist() == [
+        pd.Timestamp("2024-01-01 00:10", tz="UTC"),
+        pd.Timestamp("2024-01-01 00:20", tz="UTC"),
+        10,
+    ]
+
+
+def test_estimate_contacts_uses_strict_temporal_overlap():
+    stops = pd.DataFrame(
+        {
+            "user_id": ["a", "b"],
+            "start_timestamp": [0, 600],
+            "end_timestamp": [600, 1200],
+            "location_id": ["cafe", "cafe"],
+        }
+    )
+
+    contacts = contact.estimate_contacts(stops)
+
+    assert contacts.empty
+
+
+def test_estimate_contacts_empty_stops_has_expected_columns():
+    stops = pd.DataFrame(columns=["user_id", "start_timestamp", "end_timestamp", "location_id"])
+
+    contacts = contact.estimate_contacts(stops)
+
+    assert contacts.empty
+    assert contacts.columns.tolist() == [
+        "user_id_1",
+        "user_id_2",
+        "start_timestamp",
+        "duration",
+    ]
+
+
+def test_estimate_contacts_excludes_same_user_overlap():
+    stops = pd.DataFrame(
+        {
+            "user_id": ["a", "a"],
+            "start_timestamp": [0, 300],
+            "end_timestamp": [600, 900],
+            "location_id": ["cafe", "cafe"],
+        }
+    )
+
+    contacts = contact.estimate_contacts(stops)
+
+    assert contacts.empty
+
+
+def test_estimate_contacts_exact_location_requires_non_missing_location():
+    stops = pd.DataFrame(
+        {
+            "user_id": ["a", "b"],
+            "start_timestamp": [0, 300],
+            "end_timestamp": [600, 900],
+            "location_id": ["cafe", None],
+        }
+    )
+
+    with pytest.raises(ValueError, match="non-missing location_id"):
+        contact.estimate_contacts(stops)
+
+
+def test_estimate_contacts_requires_user_id():
+    stops = pd.DataFrame(
+        {
+            "start_timestamp": [0],
+            "end_timestamp": [600],
+            "location_id": ["cafe"],
+        }
+    )
+
+    with pytest.raises(ValueError, match="user_id"):
+        contact.estimate_contacts(stops)
+
+
+def test_estimate_contacts_requires_end_or_duration():
+    stops = pd.DataFrame(
+        {
+            "user_id": ["a"],
+            "start_timestamp": [0],
+            "location_id": ["cafe"],
+        }
+    )
+
+    with pytest.raises(ValueError, match="end time or duration"):
+        contact.estimate_contacts(stops)
+
+
+def test_linear_distance_weight_uses_column_mappings_and_clips_at_zero():
+    contacts = pd.DataFrame(
+        {
+            "minutes": [30, 30],
+            "meters": [5, 15],
+        }
+    )
+
+    weights = contact.compute_contact_weights(
+        contacts,
+        method="linear_distance",
+        distance_threshold=10,
+        traj_cols={"duration": "minutes", "distance": "meters"},
+    )
+
+    assert weights.tolist() == [15, 0]
+
+
 @pytest.fixture
 def distinct_visit_tables():
     left = pd.DataFrame(
@@ -84,8 +322,56 @@ def test_compute_visitation_errors_supports_distinct_schemas(distinct_visit_tabl
     )
 
     assert errors["missed_fraction"] == 0.0
-    assert errors["merged_fraction"] == pytest.approx(0.5)
-    assert errors["split_fraction"] == pytest.approx(1.0)
+    assert errors["merged_fraction"] == pytest.approx(0.0)
+    assert errors["split_fraction"] == pytest.approx(0.5)
+
+
+def test_compute_visitation_errors_counts_structural_merges():
+    predicted = pd.DataFrame(
+        {
+            "start_timestamp": [0],
+            "end_timestamp": [1200],
+            "location_id": ["home"],
+        }
+    )
+    truth = pd.DataFrame(
+        {
+            "start_timestamp": [0, 600],
+            "end_timestamp": [600, 1200],
+            "location_id": ["home", "work"],
+        }
+    )
+
+    overlaps = contact.overlapping_visits(predicted, truth, match_location=False)
+    errors = compute_visitation_errors(overlaps, truth)
+
+    assert errors["missed_fraction"] == pytest.approx(0.0)
+    assert errors["merged_fraction"] == pytest.approx(1.0)
+    assert errors["split_fraction"] == pytest.approx(0.0)
+
+
+def test_compute_visitation_errors_handles_no_temporal_overlap():
+    predicted = pd.DataFrame(
+        {
+            "start_timestamp": [1200],
+            "end_timestamp": [1800],
+            "location_id": ["home"],
+        }
+    )
+    truth = pd.DataFrame(
+        {
+            "start_timestamp": [0],
+            "end_timestamp": [600],
+            "location_id": ["home"],
+        }
+    )
+
+    overlaps = contact.overlapping_visits(predicted, truth, match_location=False)
+    errors = compute_visitation_errors(overlaps, truth)
+
+    assert errors["missed_fraction"] == pytest.approx(1.0)
+    assert errors["merged_fraction"] == pytest.approx(0.0)
+    assert errors["split_fraction"] == pytest.approx(0.0)
 
 
 def test_compute_stop_detection_metrics_supports_distinct_schemas():

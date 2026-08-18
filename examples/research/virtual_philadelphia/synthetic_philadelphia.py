@@ -1,12 +1,13 @@
 # ---
 # jupyter:
 #   jupytext:
+#     cell_metadata_filter: all
 #     formats: ipynb,py:percent
 #     text_representation:
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.3
+#       jupytext_version: 1.19.3
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -38,8 +39,7 @@ from tqdm import tqdm
 # ## Configuration
 
 # %%
-LARGE_BOX = box(-75.1905, 39.9235, -75.1425, 39.9535)
-MEDIUM_BOX = box(-75.1665, 39.9385, -75.1425, 39.9535)
+LARGE_BOX = box(-75.212193, 39.940800, -75.136933, 39.962847)
 
 USE_FULL_CITY = False
 OUTPUT_DIR = Path("output")
@@ -59,7 +59,7 @@ config = {
     "box_name": BOX_NAME,
     "block_side_length": 15.0,
     "hub_size": 100,
-    "N": 200,
+    "N": 1000,
     "name_seed": 42,
     "name_count": 2,
     "epr_params": {
@@ -160,8 +160,7 @@ if REGENERATE_DATA or not SANDBOX_GPKG.exists():
             'rotation_origin': rotation_origin
         }, f)
     
-    data_gen_time = download_buildings_time + download_streets_time + rotation_time
-    print("-"*50)
+    data_gen_time = time.time() - data_start
     print(f"Data generation:    {data_gen_time:>6.2f}s")
     print("="*50 + "\n")
 else:
@@ -322,7 +321,7 @@ population.save_pop(
     dest_diaries_path=dest_diaries_path,
     partition_cols=["date"],
     fmt='parquet',
-    traj_cols={'geohash': 'location'}
+    traj_cols={'user_id': 'identifier', 'geohash': 'location'}
 )
 persist_time = time.time() - t2
 print(f"Persistence:        {persist_time:>6.2f}s")
@@ -377,10 +376,12 @@ t1 = time.time()
 for i, agent in tqdm(enumerate(population.roster.values()), total=config["N"], desc="Sampling trajectories"):
     if agent.trajectory is None:
         continue
-    agent.sample_trajectory(
+    agent.set_beta_params(
         beta_ping=config["sampling_params"]["beta_ping"],
         beta_durations=config["sampling_params"]["beta_durations"],
-        beta_start=config["sampling_params"]["beta_start"],
+        beta_start=config["sampling_params"]["beta_start"]
+    )
+    agent.sample_trajectory(
         ha=config["sampling_params"]["ha"],
         seed=config["sampling_params"]["seed_base"] + i,
         replace_sparse_traj=True

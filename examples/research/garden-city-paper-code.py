@@ -1,12 +1,13 @@
 # ---
 # jupyter:
 #   jupytext:
+#     cell_metadata_filter: all
 #     formats: ipynb,py:percent
 #     text_representation:
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.3
+#       jupytext_version: 1.19.3
 #   kernelspec:
 #     display_name: nomad_env
 #     language: python
@@ -16,7 +17,7 @@
 # %% [markdown]
 # # Garden city: A synthetic dataset and sandbox environment for analysis of pre-processing algorithms for GPS human mobility data
 
-# %%
+# %% tags=[]
 import pandas as pd
 from zoneinfo import ZoneInfo
 import numpy as np
@@ -33,8 +34,8 @@ import nomad.city_gen as cg
 from nomad.city_gen import City
 import nomad.traj_gen as tg
 from nomad.traj_gen import Agent, Population
-import nomad.stop_detection.density_algs as DBSCAN
-import nomad.stop_detection.sequential_algs as Lachesis
+from nomad.stop_detection.density_algs import ta_dbscan_labels
+from nomad.stop_detection.sequential_algs import lachesis, lachesis_labels
 
 from nomad.constants import DEFAULT_SPEEDS, FAST_SPEEDS, SLOW_SPEEDS, DEFAULT_STILL_PROBS
 from nomad.constants import FAST_STILL_PROBS, SLOW_STILL_PROBS, ALLOWED_BUILDINGS
@@ -53,7 +54,7 @@ city.add_building(building_type='park', door=(13, 11), geom=box(9, 9, 13, 13))
 # add a home
 city.add_building(building_type='home', door=(8, 8), blocks=[(7, 7), (7, 8)])
 
-# %%
+# %% tags=[]
 # add remaining homes
 city.add_building('home', (9, 8), [(8, 7), (9, 7)])
 city.add_building('home', (10, 8), [(10, 7)])
@@ -173,7 +174,7 @@ city.save_geopackage('../garden-city.gpkg')
 # %% [markdown]
 # For future uses, we can simply load the city gpkg file. 
 
-# %%
+# %% tags=[]
 city = City.from_geopackage('../garden-city.gpkg')
 
 city.compute_gravity(exponent=2.0, use_proxy_hub_distance=False)
@@ -184,7 +185,7 @@ city.compute_gravity(exponent=2.0, use_proxy_hub_distance=False)
 # %% [markdown]
 # To visualize the city, we can call the `plot_city` method of the `City` class. Doors are plotted as gaps in the boundary of their building.
 
-# %%
+# %% tags=[]
 # %matplotlib inline
 
 fig, ax = plt.subplots(figsize=(6, 6))
@@ -203,14 +204,14 @@ plt.show(block=False)
 plt.close(fig)
 
 # %% [markdown]
-# Each building row is indexed by a unique identifier: type initial + door cell, e.g. retail at (12,3) -> 'r-x12-y3'.
+# Each building row is indexed by a unique identifier formed from its type initial and an occupied building block adjacent to its door. For example, the retail building with door cell (12, 3) occupies block (12, 2) and has identifier `r-x12-y2`.
 
-# %%
-print("Blocks for 'r-x12-y3':")
+# %% tags=[]
+print("Blocks for 'r-x12-y2':")
 print(city.blocks_gdf.loc[city.blocks_gdf['building_id']== 'r-x12-y2', ['coord_x','coord_y']].values.tolist())
 building = city.get_building(identifier='r-x12-y2')
 x, y = building.iloc[0].door_point
-print("Door centroid for 'r-x12-y3':", (x, y))
+print("Door centroid for 'r-x12-y2':", (x, y))
 
 # %% [markdown]
 # Once a `City` object has been defined, a `Population` object can be initialized. The `Population` object will contain the `Agents` of the city and generate their trajectories.
@@ -219,7 +220,7 @@ print("Door centroid for 'r-x12-y3':", (x, y))
 # Instantiate population to collect all agents
 population = Population(city)
 
-# %% [markdown]
+# %% [markdown] tags=[]
 # ## Agents and trajectories
 
 # %% [markdown]
@@ -235,7 +236,7 @@ population = Population(city)
 # %% [markdown]
 # Initializing in this way simply requires passing a `DataFrame` object with appropriate diary columns to the `Agent` constructor. 
 
-# %%
+# %% tags=[]
 # Initialization with custom diary
 tz = ZoneInfo("America/New_York")
 start_time = pd.date_range(start='2024-01-01 00:00', periods=22, freq='15min', tz=tz)
@@ -272,16 +273,16 @@ Alice.__dict__
 # ### Diary generation with EPR model
 
 # %% [markdown]
-# If no diary is provided, `Agent`s are initialized with an empty diary. When calling `Population.generate_trajectory`, the destination diary is generated and then a granular trajectory is sampled from it. Unlike the case with a user-provided diary, this option requires specifying the duration of the trajectory, with a parameter `T` specifying the ending datetime, while the `start_time` is provided when creating the Agent. 
+# If no diary is provided, `Agent`s are initialized with an empty diary. When calling `Agent.generate_trajectory`, the destination diary is generated and then a granular trajectory is sampled from it. Unlike the case with a user-provided diary, this option requires an `end_time`; the starting `datetime` can be provided when creating the agent or when generating its trajectory.
 
 # %% [markdown]
-# The following agent, Bob, is given home `h-x8-y8` and workplace `w-x18-y4`. We generate a trajectory for Bob that lasts a week from midnight January 1, 2024 to midnight January 8, 2024.
+# The following agent, Bob, is given home `h-x7-y8` and workplace `w-x17-y4`. We generate a trajectory for Bob that lasts a week from midnight January 1, 2025 to midnight January 8, 2025.
 
 # %%
 import pandas as pd
 pd.to_datetime(1763439982, unit='s')
 
-# %%
+# %% tags=[]
 # Initialization and diary generation
 Bob = Agent(identifier="Bob",
             home='h-x7-y8',
@@ -303,7 +304,7 @@ Bob.trajectory
 # %% [markdown]
 # To visualize an `Agent`'s trajectory, we can call the `plot_city` method of the `City` class and overlay the points of the trajectory using the `ax.scatter` method of matplotlib.
 
-# %%
+# %% tags=[]
 fig, ax = plt.subplots(figsize=(5, 5))
 city.plot_city(ax, doors=True, address=False, zorder=1)
 
@@ -326,7 +327,7 @@ plt.close(fig)
 # %% [markdown]
 # The following code produces an animation of Bob's movement. We limit the animation to the 24 hours between midnight January 4 to midnight January 5 for speed and tractability of the output.
 
-# %%
+# %% tags=[]
 produce_animation = False
 
 if produce_animation:
@@ -370,34 +371,34 @@ if produce_animation:
 # ## Sparsifying a complete trajectory
 
 # %% [markdown]
-# To simulate realistic GPS trajectory data with the sparsity and clusters of pings (or 'burstiness') observed in commercial datasets, we make use of self-exciting point processes—a type of stochastic process that naturally captures triggering and clustering behavior. From a complete ground-truth trajectory, a sparsifed trajectory can be sampled via the `Agent.sample_traj_hier_nhpp` function.
+# To simulate realistic GPS trajectory data with the sparsity and clusters of pings (or 'burstiness') observed in commercial datasets, we use a hierarchical Poisson process. From a complete ground-truth trajectory, a sparse trajectory can be sampled via `Agent.sample_trajectory`.
 #
-# The sampling function `Agent.sample_traj_hier_nhpp` is controlled by three parameters: 
+# The agent's sampling process is controlled by three parameters, which are set with `Agent.set_beta_params` before calling `Agent.sample_trajectory`:
 # * `beta_start`: the start times of bursts occur according to a Poisson Process with rate 1/`beta_start`
-# * `beta_dur`: the duration of bursts are sampled from a Exponential distribution with rate 1/`beta_dur`
+# * `beta_durations`: the duration of bursts are sampled from an Exponential distribution with rate 1/`beta_durations`
 # * `beta_ping`: within a burst, pings are sampled according to a Poisson Process with rate 1/`beta_ping`
 #
-# These parameters can be interpreted as follows: A burst is expected every `beta_start` minutes and lasts an expected `beta_dur` minutes. Within the burst, a ping is expected to be sampled every `beta_ping` minutes.
+# These parameters can be interpreted as follows: A burst is expected every `beta_start` minutes and lasts an expected `beta_durations` minutes. Within the burst, a ping is expected to be sampled every `beta_ping` minutes.
 #
 # Moreover, GPS measurements are often subject to horizontal errors due to various factors like signal obstruction and atmospheric conditions. As such, the sampling function also adds Gaussian noise to the true positions, with the horizontal accuracy indicated in the 'ha' column of the output.
 
 # %% [markdown]
-# In the example below, we sample from Bob's complete trajectory with the following parameters: `beta_start`=300, `beta_dur`=60, and `beta_ping`=10. 
+# In the example below, we sample from Bob's complete trajectory with the following parameters: `beta_start`=300, `beta_durations`=60, and `beta_ping`=10.
 
 # %%
 # Sample sparse trajectory and latent variables for Bob
-burst_info = Bob.sample_trajectory(
+Bob.set_beta_params(
     beta_start=300, # a burst every 300 mins on average
     beta_durations=60, # average burst duration is 60 mins
-    beta_ping=10, # a ping every 10 mins within a burst
-    seed=2,
-    output_bursts=True)
+    beta_ping=10) # a ping every 10 mins within a burst
+burst_info = Bob.sample_trajectory(
+    seed=2)
 Bob.sparse_traj.head()
 
 # %% [markdown]
-# To visualize the distribution of the sparsified pings, set `output_bursts=True` when calling `Agent.sample_traj_hier_nhpp` to obtain information about the start time and duration of bursts. These can then be graphed alongside the sampled pings to visualize the sparsification. The start times are indicated by the red lines and the duration of bursts are shown by grey rectangles. The sampled pings are the black lines.
+# `Agent.sample_trajectory` returns information about the start time and duration of bursts. These can be graphed alongside the sampled pings to visualize the sparsification. The start times are indicated by the red lines and the duration of bursts are shown by grey rectangles. The sampled pings are the black lines.
 
-# %%
+# %% tags=[]
 fig, axes = plt.subplots(nrows=3,figsize=(10, 3))
 for ax in axes:
     ax.set(xlim=(pd.Timestamp('2025-01-01 05:00', tz='America/New_York'), 
@@ -428,13 +429,13 @@ plt.show()
 # # Generating multiple agents
 
 # %% [markdown]
-# A `Population` may contain any number of `Agent`s, which can be initialized en masse using the `Population.generate_agents` method. Each `Agent` is assigned a random name as well as a uniformly sampled home and workplace. The `start_time` parameter indicates the time at which all the `Agent`s start their trajectories.
+# A `Population` may contain any number of `Agent`s, which can be initialized en masse using the `Population.generate_agents` method. Each `Agent` is assigned a random name as well as a uniformly sampled home and workplace. Initial datetimes can be supplied through the `datetimes` parameter.
 #
-# `Agent` trajectories can be generated by looping over each `Agent` and running the `Population.generate_trajectory` function as explained above. 
+# Trajectories can be generated by looping over the population and calling `Agent.generate_trajectory` for each agent, as shown below.
 #
 # _Note: if using a seed, make sure that each agent's seed is different to avoid all agents having the same trajectory._
 
-# %%
+# %% tags=[]
 population = Population(city)
 population.generate_agents(N=5,
                             seed=100)
@@ -444,10 +445,10 @@ for i, agent_id in enumerate(population.roster):
     agent.generate_trajectory(end_time=pd.Timestamp('2025-01-08 00:00', tz='America/New_York'),
                               datetime=pd.Timestamp('2025-01-01 00:00', tz='America/New_York'),
                               seed=100+i)
-    agent.sample_trajectory(beta_start=300,
-                            beta_durations=60,
-                            beta_ping=10,
-                            seed=100+i)
+    agent.set_beta_params(beta_start=300,
+                          beta_durations=60,
+                          beta_ping=10)
+    agent.sample_trajectory(seed=100+i)
 
 population.roster
 
@@ -468,13 +469,13 @@ print("\nSparse Trajectory:\n", nifty_saha.sparse_traj.head())
 #
 # We first initialize an `Agent` (Charlie) and generate a complete ground-truth trajectory. The destination diary is manually initialized as consecutive 1-hour visits to two homes followed by a 3-hour visit at a larger retail building.
 
-# %%
+# %% tags=[]
 tz = ZoneInfo("America/New_York")
 start_time = pd.date_range(start='2024-06-01 00:00', periods=5, freq='60min', tz=tz)
 tz_offset = loader._offset_seconds_from_ts(start_time[0])
 unix_timestamp = [int(t.timestamp()) for t in start_time]
 duration = [60]*5  # in minutes
-location = ['h-x14-y11'] * 1 + ['h-x13-y8'] * 1 + ['r-x18-y10'] * 3
+location = ['h-x14-y11'] * 1 + ['h-x14-y8'] * 1 + ['r-x19-y10'] * 3
 
 destination = pd.DataFrame(
     {"datetime":start_time,
@@ -486,7 +487,7 @@ destination = tg.condense_destinations(destination)
 
 Charlie = Agent(identifier="Charlie",
                 home='h-x14-y11',
-                workplace='w-x15-y9',
+                workplace='w-x16-y9',
                 city=city)
 
 Charlie.generate_trajectory(destination_diary=destination, seed=75)
@@ -496,7 +497,7 @@ Charlie.diary
 # %% [markdown]
 # Charlie's ground-truth trajectory is plotted below.
 
-# %%
+# %% tags=[]
 fig, ax = plt.subplots(figsize=(9, 5))
 ax.scatter(x=Charlie.trajectory.x, 
            y=Charlie.trajectory.y, 
@@ -521,21 +522,30 @@ plt.close(fig)
 
 # %% [markdown]
 # We sample Charlie's ground-truth trajectory at two levels of sparsity. 
-# * The higher sparsity sample uses parameters `beta_start`=150, `beta_dur`=20, and `beta_ping`=2. 
-# * The lower sparsity sample uses parameters `beta_start`=60, `beta_dur`=40, and `beta_ping`=10. 
+# * The higher sparsity sample uses parameters `beta_start`=150, `beta_durations`=20, and `beta_ping`=2.
+# * The lower sparsity sample uses parameters `beta_start`=60, `beta_durations`=40, and `beta_ping`=10.
 #
-# The high sparsity sample expects a burst every 2.5 hours with a mean length of 20 minutes and a ping expected roughly every 2 minutes within the burst, for an expected total burst period of 40 minutes over 5 hours. The low sparsity sample expects a burst every hour with a mean length of 40 minutes and a ping expected roughly every 5 minutes within the burst, for an expected total burst period of 200 minutes over 5 hours.
+# The high sparsity sample expects a burst every 2.5 hours with a mean length of 20 minutes and a ping expected roughly every 2 minutes within the burst, for an expected total burst period of 40 minutes over 5 hours. The low sparsity sample expects a burst every hour with a mean length of 40 minutes and a ping expected roughly every 10 minutes within the burst, for an expected total burst period of 200 minutes over 5 hours.
 #
 # Note that both sparsity levels expect 20 pings over the 5-hour duration. We deliberately choose these parameters to hold overall ping frequency fixed in order to isolate the effect of the burstiness pattern.
 
-# %%
+# %% tags=[]
 fig, axes = plt.subplots(1, 2, figsize=(11, 4))
 hier_nhpp_params = [(150, 20, 2), (60, 40, 10)]
 seed = 819
 
 for j in range(2):
     ax = axes[j]
-    Charlie.sample_trajectory(*hier_nhpp_params[j], seed=seed, replace_sparse_traj=True)
+    beta_start, beta_durations, beta_ping = hier_nhpp_params[j]
+    Charlie.set_beta_params(
+        beta_start=beta_start,
+        beta_durations=beta_durations,
+        beta_ping=beta_ping
+    )
+    Charlie.sample_trajectory(
+        seed=seed,
+        replace_sparse_traj=True
+    )
 
     ax.scatter(Charlie.sparse_traj.x, Charlie.sparse_traj.y, s=6, color='black', alpha=1, zorder=2)
     city.plot_city(ax, doors=True, address=False, zorder=1)
@@ -571,10 +581,14 @@ for j in range(2):
     [spine.set_visible(False) for name, spine in ax.spines.items() if name != 'bottom']
     ax.yaxis.set_visible(False)
 
+    beta_start, beta_durations, beta_ping = hier_nhpp_params[j]
+    Charlie.set_beta_params(
+        beta_start=beta_start,
+        beta_durations=beta_durations,
+        beta_ping=beta_ping
+    )
     burst_info = Charlie.sample_trajectory(
-        *hier_nhpp_params[j], 
         seed=seed, 
-        output_bursts=True,
         replace_sparse_traj=True)
 
     #ax.vlines(burst_info['start_time'], 0.95, 1.05, color='red', linewidth=1.2, alpha=1)
@@ -607,7 +621,7 @@ plt.show()
 # %% [markdown]
 # ## TO-DO: UPDATE THE STOP DETECTION LOGIC 
 
-# %%
+# %% tags=[]
 fig, axes = plt.subplots(2, 2, figsize=(9, 6))
 dbscan_params = [(120, 2.25, 2), (45, 1, 3)]
 traj_cols = {
@@ -620,21 +634,28 @@ traj_cols = {
 for i in range(2):
     for j in range(2):
         ax = axes[i, j]
-        Charlie.sample_trajectory(*hier_nhpp_params[j], seed=seed, replace_sparse_traj=True)
+        beta_start, beta_durations, beta_ping = hier_nhpp_params[j]
+        Charlie.set_beta_params(
+            beta_start=beta_start,
+            beta_durations=beta_durations,
+            beta_ping=beta_ping
+        )
+        Charlie.sample_trajectory(
+            seed=seed,
+            replace_sparse_traj=True
+        )
 
-        # dbscan_out IS the cluster labels
-        dbscan_out = DBSCAN.ta_dbscan_labels(
+        dbscan_labels = ta_dbscan_labels(
             Charlie.sparse_traj,
             dist_thresh=dbscan_params[i][1],
             min_pts=dbscan_params[i][2],
             time_thresh=dbscan_params[i][0],
             traj_cols=traj_cols,
-            return_cores=True
         )
 
-        num_clusters = int((dbscan_out.cluster.unique() > -1).sum())
+        num_clusters = int((dbscan_labels.unique() > -1).sum())
         for cid in range(num_clusters):
-            cpings = dbscan_out[dbscan_out.cluster == cid]
+            cpings = dbscan_labels[dbscan_labels == cid]
             cdata = Charlie.sparse_traj.loc[cpings.index]
             col = cm.tab20c(cid/(num_clusters+1))
             ax.scatter(cdata.x, cdata.y, s=80, color=col, alpha=1, zorder=2)
@@ -675,7 +696,7 @@ tz_offset = loader._offset_seconds_from_ts(start_time[0])
 unix_timestamp = [int(t.timestamp()) for t in start_time]
 duration = [60]*2  # in minutes
 
-location = ['p-x13-y11'] * 2
+location = ['p-x12-y11'] * 2
 
 destination = pd.DataFrame({
     "datetime": start_time,
@@ -697,7 +718,7 @@ init_diary = pd.DataFrame([{
     'datetime': pd.Timestamp('2024-06-01 00:00', tz='America/New_York'),
     'timestamp': int(pd.Timestamp('2024-06-01 00:00', tz='America/New_York').timestamp()),
     'duration': 1,
-    'location': 'p-x13-y11'
+    'location': 'p-x12-y11'
 }])
 
 # Condense the destination diary
@@ -714,8 +735,8 @@ d_diary = tg.condense_destinations(d_diary)
 
 # Daniel is slow
 Daniel = Agent(identifier="Daniel",
-            home='p-x13-y11',
-            workplace='w-x15-y9',
+            home='p-x12-y11',
+            workplace='w-x16-y9',
             city=city,
             still_probs=SLOW_STILL_PROBS,
             speeds=SLOW_SPEEDS,
@@ -726,8 +747,8 @@ Daniel.generate_trajectory(destination_diary=destination, seed=50)
 
 # Elaine is fast
 Elaine = Agent(identifier="Elaine",
-            home='p-x13-y11',
-            workplace='w-x15-y9',
+            home='p-x12-y11',
+            workplace='w-x16-y9',
             city=city,
             still_probs=FAST_STILL_PROBS,
             speeds=FAST_SPEEDS,
@@ -786,16 +807,26 @@ for j in range(2):
     ax = axes[j]
     agent = [Daniel, Elaine][j]
 
-    agent.sample_trajectory(*hier_nhpp_params, seed=seed, ha=ha[j], replace_sparse_traj=True)
+    beta_start, beta_durations, beta_ping = hier_nhpp_params
+    agent.set_beta_params(
+        beta_start=beta_start,
+        beta_durations=beta_durations,
+        beta_ping=beta_ping
+    )
+    agent.sample_trajectory(
+        seed=seed,
+        ha=ha[j],
+        replace_sparse_traj=True
+    )
 
-    lachesis_out = Lachesis.lachesis_labels(
+    lachesis_out = lachesis_labels(
         agent.sparse_traj,
         dt_max=lachesis_params[1],
         delta_roam=lachesis_params[0],
         dur_min=lachesis_params[2],
         traj_cols=traj_cols
     )
-    lachesis_stays = Lachesis.lachesis(
+    lachesis_stays = lachesis(
         agent.sparse_traj,
         delta_roam=lachesis_params[0],
         dt_max=lachesis_params[1],
@@ -841,8 +872,8 @@ fig, ax = plt.subplots(figsize=(10, 10))
 city.plot_city(ax, doors=True, address=False)
 
 # Example: Plot shortest path between two buildings
-start_building_id = 'r-x12-y3'
-end_building_id = 'r-x15-y5'
+start_building_id = 'r-x12-y2'
+end_building_id = 'r-x15-y2'
 
 # Get building door coordinates using get_building method
 start_building = city.get_building(identifier=start_building_id)
@@ -854,7 +885,7 @@ if start_building is not None and not start_building.empty and end_building is n
     print(f"Plotting shortest path from door {start_door} to door {end_door}")
     city.get_shortest_path(start_door, end_door, plot=True, ax=ax)
 else:
-    print(f"Could not find buildings 'r-x12-y3' or 'r-x15-y5'")
+    print(f"Could not find buildings '{start_building_id}' or '{end_building_id}'")
 
 ax.legend()
 plt.title(f'Shortest Path from {start_building_id} to {end_building_id}')

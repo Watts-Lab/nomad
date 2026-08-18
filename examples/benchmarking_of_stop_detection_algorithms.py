@@ -1,12 +1,13 @@
 # ---
 # jupyter:
 #   jupytext:
+#     cell_metadata_filter: all
 #     formats: ipynb,py:percent
 #     text_representation:
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.3
+#       jupytext_version: 1.19.3
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -31,10 +32,10 @@ from shapely.geometry import box
 import pandas as pd
 import numpy as np
 from nomad.stop_detection.viz import plot_stops_barcode, plot_pings, plot_stops, plot_time_barcode
-import nomad.stop_detection.density_algs as DBSCAN
-import nomad.stop_detection.sequential_algs as LACHESIS
-import nomad.stop_detection.sequential_algs as GRID_BASED
-import nomad.stop_detection.density_algs as HDBSCAN
+from nomad.stop_detection.density_algs import ta_dbscan_labels
+from nomad.stop_detection.sequential_algs import lachesis
+from nomad.stop_detection.sequential_algs import grid_based
+from nomad.stop_detection.density_algs import hdbscan_labels
 import nomad.filters as filters 
 import time
 from tqdm import tqdm
@@ -46,7 +47,7 @@ data_dir = Path(data_folder.__file__).parent
 city = gpd.read_parquet(data_dir / 'garden-city-buildings-mercator.parquet')
 outer_box = box(*city.total_bounds).buffer(15, join_style='mitre')
 
-filepath_root = 'gc_data_long/'
+filepath_root = data_dir / "gc_data_long"
 tc = {
     "user_id": "gc_identifier",
     "timestamp": "unix_ts",
@@ -60,13 +61,13 @@ traj = loader.sample_from_file(filepath_root, format='parquet', users=users, fil
 
 # Lachesis (sequential stop detection)
 start_time = time.time()
-stops = LACHESIS.lachesis(traj, delta_roam=20, dt_max = 60, dur_min=5, complete_output=True, keep_col_names=True, traj_cols=tc)
+stops = lachesis(traj, delta_roam=20, dt_max = 60, dur_min=5, complete_output=True, keep_col_names=True, traj_cols=tc)
 execution_time_lachesis = time.time() - start_time
 print(f"Lachesis execution time: {execution_time_lachesis} seconds")
 
 # Density based stop detection (Temporal DBSCAN)
 start_time = time.time()
-user_data_tadb = traj.assign(cluster=DBSCAN.ta_dbscan_labels(traj, time_thresh=240, dist_thresh=15, min_pts=3, traj_cols=tc))
+user_data_tadb = traj.assign(cluster=ta_dbscan_labels(traj, time_thresh=240, dist_thresh=15, min_pts=3, traj_cols=tc))
 clustering_time_tadbscan = time.time() - start_time
 start_time_post = time.time()
 cluster_labels_tadb = user_data_tadb['cluster']
@@ -79,13 +80,13 @@ print(f"TA-DBSCAN label extraction time: {post_time_tadbscan} seconds")
 # Grid-based
 start_time = time.time()
 traj['h3_cell'] = filters.to_tessellation(traj, index="h3", res=10, traj_cols=tc, data_crs='EPSG:3857')
-stops_gb = GRID_BASED.grid_based(traj, time_thresh=240, complete_output=True, traj_cols=tc, location_id='h3_cell')
+stops_gb = grid_based(traj, time_thresh=240, complete_output=True, traj_cols=tc, location_id='h3_cell')
 execution_time_grid = time.time() - start_time
 print(f"Grid-Based execution time: {execution_time_grid} seconds")
 
 # HDBSCAN
 start_time = time.time()
-user_data_hdb = traj.assign(cluster=HDBSCAN.hdbscan_labels(traj, time_thresh=240, min_pts=3, min_cluster_size=2, traj_cols=tc))
+user_data_hdb = traj.assign(cluster=hdbscan_labels(traj, time_thresh=240, min_pts=3, min_cluster_size=2, traj_cols=tc))
 clustering_time_hdbscan = time.time() - start_time
 start_time_post = time.time()
 cluster_labels_hdb = user_data_hdb['cluster']
@@ -155,26 +156,26 @@ for user, n_pings in tqdm(pings_per_user.items(), total=len(pings_per_user)):
 
     # For location based
     start_time = time.time()
-    stops_gb = GRID_BASED.grid_based(user_data, time_thresh=240, complete_output=True, traj_cols=tc, location_id='h3_cell')
+    stops_gb = grid_based(user_data, time_thresh=240, complete_output=True, traj_cols=tc, location_id='h3_cell')
     execution_time = time.time() - start_time
     results += [pd.Series({'user':user, 'algo':'grid_based', 'execution_time':execution_time, 'n_pings':n_pings})]
     
     # For Lachesis
     start_time = time.time()
-    stops_lac = LACHESIS.lachesis(user_data, delta_roam=30, dt_max=240, complete_output=True, traj_cols=tc)
+    stops_lac = lachesis(user_data, delta_roam=30, dt_max=240, complete_output=True, traj_cols=tc)
     execution_time = time.time() - start_time
     results += [pd.Series({'user':user, 'algo':'lachesis', 'execution_time':execution_time, 'n_pings':n_pings})]
 
     # For TADbscan
     start_time = time.time()
-    user_data_tadb = user_data.assign(cluster=DBSCAN.ta_dbscan_labels(user_data, time_thresh=240, dist_thresh=15, min_pts=3, traj_cols=tc))
+    user_data_tadb = user_data.assign(cluster=ta_dbscan_labels(user_data, time_thresh=240, dist_thresh=15, min_pts=3, traj_cols=tc))
     stops_tadb = user_data_tadb[user_data_tadb.cluster != -1]
     execution_time = time.time() - start_time
     results += [pd.Series({'user':user, 'algo':'tadbscan', 'execution_time':execution_time, 'n_pings':n_pings})]
 
     # For HDBSCAN
     start_time = time.time()
-    user_data_hdb = user_data.assign(cluster=HDBSCAN.hdbscan_labels(user_data, time_thresh=240, min_pts=3, min_cluster_size=2, traj_cols=tc))
+    user_data_hdb = user_data.assign(cluster=hdbscan_labels(user_data, time_thresh=240, min_pts=3, min_cluster_size=2, traj_cols=tc))
     stops_hdb = user_data_hdb[user_data_hdb.cluster != -1]
     execution_time = time.time() - start_time
     results += [pd.Series({'user':user, 'algo':'hdbscan', 'execution_time':execution_time, 'n_pings':n_pings})]
