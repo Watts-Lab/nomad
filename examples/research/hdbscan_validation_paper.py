@@ -1,6 +1,7 @@
 # ---
 # jupyter:
 #   jupytext:
+#     cell_metadata_filter: all
 #     formats: ipynb,py:percent
 #     text_representation:
 #       extension: .py
@@ -8,7 +9,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.19.3
 #   kernelspec:
-#     display_name: css-nomad
+#     display_name: Python 3
 #     language: python
 #     name: python3
 # ---
@@ -20,21 +21,19 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 import geopandas as gpd
 import numpy as np
-from itertools import chain
+from functools import partial
 from pathlib import Path
+from shapely.geometry import Point
 from tqdm import tqdm
 
 import nomad.data as data_folder
 import nomad.io.base as loader
 import nomad.stop_detection.utils as utils
-# Beware: The stop detection algorithms will need to be imported
-# differently after merging PR #380 (cores_refactor)
-# TO DO: import directly from modules stop_detection.sequential_algs and stop_detection.density_algs
-import nomad.stop_detection.dbscan as TADBSCAN
-import nomad.stop_detection.hdbscan as HDBSCAN
-import nomad.stop_detection.grid_based as GRID_BASED
-import nomad.stop_detection.lachesis as LACHESIS
-import nomad.stop_detection.density_based as SEQSCAN
+from nomad.stop_detection.density_algs import ta_dbscan_labels
+from nomad.stop_detection.density_algs import hdbscan_labels
+from nomad.stop_detection.sequential_algs import grid_based_labels
+from nomad.stop_detection.sequential_algs import lachesis_labels
+from nomad.stop_detection.density_algs import seqscan_labels
 from nomad.stop_detection.validation import (
     AlgorithmRegistry,
     bootstrap_metric_summary,
@@ -94,6 +93,12 @@ _Q_RANGE = (0.3, 0.9)
 _BETA_PING_RANGE = (3, 12)
 _BETA_DURATIONS_RANGE = (30, 300)
 HA_LOWER_BOUND = 8/15  # blocks; matches nomad.traj_gen._sample_horizontal_noise lower bound for pareto_prior
+_PARAMS = {
+    "beta_ping":      _rng.uniform(3,   12,  _GEN_N).tolist(),
+    "beta_start":     _rng.uniform(50,  500, _GEN_N).tolist(),
+    "beta_durations": _rng.uniform(30,  300, _GEN_N).tolist(),
+    "ha":             _rng.uniform(HA_LOWER_BOUND + 1e-9, 5,   _GEN_N).tolist(),
+}
 
 def generate_agent_trajectory(params, city):
     """Generate dense and sparse trajectories for one agent."""
@@ -231,19 +236,19 @@ sparse_df['location_id'] = visits.poi_map(
 
 registry = AlgorithmRegistry()
 
-registry.add_algorithm(SEQSCAN.seqscan_labels, family='seqscan', dist_thresh=30, time_thresh=120)
+registry.add_algorithm(seqscan_labels, family='seqscan', dist_thresh=30, time_thresh=120)
 
-registry.add_algorithm(HDBSCAN.hdbscan_labels,       family='ta-hdbscan',
+registry.add_algorithm(hdbscan_labels,       family='ta-hdbscan',
                        time_thresh=240, min_pts=3, min_cluster_size=1, include_border_points=True)
-registry.add_algorithm(GRID_BASED.grid_based_labels,  family='oracle',
-                       time_thresh=600, location_id='oracle_location_id')
-registry.add_algorithm(TADBSCAN.ta_dbscan_labels,     family='tadbscan_coarse',
+registry.add_algorithm(grid_based_labels,  family='oracle',
+                       time_thresh=600, min_pts=0, location_id='id')
+registry.add_algorithm(ta_dbscan_labels,     family='tadbscan_coarse',
                        time_thresh=240, min_pts=2, dist_thresh=30)
-registry.add_algorithm(TADBSCAN.ta_dbscan_labels,     family='tadbscan_fine',
+registry.add_algorithm(ta_dbscan_labels,     family='tadbscan_fine',
                        time_thresh=120, min_pts=3, dist_thresh=20)
-registry.add_algorithm(LACHESIS.lachesis_labels,      family='lachesis_coarse',
+registry.add_algorithm(lachesis_labels,      family='lachesis_coarse',
                        dt_max=240, delta_roam=40)
-registry.add_algorithm(LACHESIS.lachesis_labels,      family='lachesis_fine',
+registry.add_algorithm(lachesis_labels,      family='lachesis_fine',
                        dt_max=120, delta_roam=25)
 
 print(f"Registry: {len(registry)} algorithm configurations")

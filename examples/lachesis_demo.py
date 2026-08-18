@@ -1,11 +1,13 @@
 # ---
 # jupyter:
 #   jupytext:
+#     cell_metadata_filter: all
+#     formats: ipynb,py:percent
 #     text_representation:
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.18.1
+#       jupytext_version: 1.19.3
 #   kernelspec:
 #     display_name: base
 #     language: python
@@ -38,7 +40,7 @@ import nomad.io.base as loader
 import geopandas as gpd
 from shapely.geometry import box
 from nomad.stop_detection.viz import plot_stops_barcode, plot_time_barcode, plot_stops, plot_pings
-import nomad.stop_detection.lachesis as LACHESIS
+from nomad.stop_detection.sequential_algs import lachesis
 import nomad.data as data_folder
 from pathlib import Path
 
@@ -54,7 +56,7 @@ users = ['admiring_brattain']
 traj = loader.sample_from_file(filepath_root, format='parquet', users=users, filters=('date','==', '2024-01-01'), traj_cols=tc)
 
 # Lachesis (sequential stop detection)
-stops = LACHESIS.lachesis(traj, delta_roam=20, dt_max = 60, dur_min=5, complete_output=True, keep_col_names=True, traj_cols=tc)
+stops = lachesis(traj, delta_roam=20, dt_max = 60, dur_min=5, complete_output=True, keep_col_names=True, traj_cols=tc)
 
 # %%
 fig, (ax_map, ax_barcode) = plt.subplots(2, 1, figsize=(6,6.5),

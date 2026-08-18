@@ -756,3 +756,4 @@ def cluster_locations_per_user(
 
 # Alias for convenience
 generate_locations = cluster_locations_dbscan
+

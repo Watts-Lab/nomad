@@ -5,11 +5,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
-from nomad.city_gen import (
-    RasterCity,
-    generate_canvas_blocks,
-    find_connected_components,
-)
+from nomad.city_gen import RasterCity
 
 
 def _load_fixture():
