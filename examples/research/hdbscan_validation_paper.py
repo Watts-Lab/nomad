@@ -104,25 +104,17 @@ def generate_agent_trajectory(params, city):
         workplace=params.workplace,
     )
     agent.generate_trajectory(datetime=_GEN_START, end_time=_GEN_END, seed=params.seed)
-    agent.set_beta_params({
-        'beta_start': params.beta_start,
-        'beta_durations': params.beta_durations,
-        'beta_ping': params.beta_ping,
-        'q': params.q,
-    })
+    agent.set_beta_params(
+        beta_ping=params.beta_ping,
+        beta_start=params.beta_start,
+        beta_durations=params.beta_durations,
+    )
     agent.sample_trajectory(
         ha=params.ha,
         seed=params.seed,
         replace_sparse_traj=True,
     )
-
-    sparse_df = agent.sparse_traj.copy()
-    sparse_df['user_id'] = params.identifier
-
-    diary_df = agent.diary.copy()
-    diary_df['user_id'] = params.identifier
-
-    return sparse_df, diary_df
+    return agent.sparse_traj, agent.diary
 
 
 def generate_agent_batch(params_batch):
@@ -132,7 +124,6 @@ def generate_agent_batch(params_batch):
     city.compute_gravity(exponent=2.0)
     city.compute_shortest_paths(callable_only=True)
     return [generate_agent_trajectory(params, city) for params in params_batch]
-
 
 if _sparse_path.exists() and _diaries_path.exists():
     print("Data already exists — skipping generation.")
@@ -245,7 +236,7 @@ registry.add_algorithm(SEQSCAN.seqscan_labels, family='seqscan', dist_thresh=30,
 registry.add_algorithm(HDBSCAN.hdbscan_labels,       family='ta-hdbscan',
                        time_thresh=240, min_pts=3, min_cluster_size=1, include_border_points=True)
 registry.add_algorithm(GRID_BASED.grid_based_labels,  family='oracle',
-                       time_thresh=600, min_pts=0, location_id='location_id')
+                       time_thresh=600, location_id='oracle_location_id')
 registry.add_algorithm(TADBSCAN.ta_dbscan_labels,     family='tadbscan_coarse',
                        time_thresh=240, min_pts=2, dist_thresh=30)
 registry.add_algorithm(TADBSCAN.ta_dbscan_labels,     family='tadbscan_fine',
@@ -299,28 +290,25 @@ results_rows = []
 for user in tqdm(diaries_df.user_id.unique()[:10], desc='Processing users'):
     user_sparse = sparse_df[sparse_df['user_id'] == user].copy()
     user_truth = diaries_df[diaries_df['user_id'] == user].copy()
+    user_sparse['oracle_location_id'] = visits.oracle_map(
+        user_sparse, user_truth, timestamp='timestamp', location_id='location_id',
+    )
 
     for algo in registry:
         algorithm = algo["family"]
-        sparse_for_algo = user_sparse
+        location_col = 'oracle_location_id' if algorithm == 'oracle' else 'location_id'
+        labels = registry.time_call(algo, user_sparse, timestamp='timestamp')
 
-        if algorithm == 'oracle':
-            sparse_for_algo = user_sparse.drop(columns='location_id')
-            sparse_for_algo['location_id'] = visits.oracle_map(
-                sparse_for_algo, user_truth, timestamp='timestamp', location_id='location_id',
-            )
-
-        labels = registry.time_call(algo, sparse_for_algo, timestamp='timestamp')
-
-        clustered = sparse_for_algo.join(labels)
         stops = utils.summarize_stops(
-            clustered.drop(columns='cluster'), labels,
+            user_sparse, labels,
             x='x', y='y', timestamp='timestamp',
-            keep_col_names=True, passthrough_cols=['location_id'], complete_output=True,
+            keep_col_names=True, passthrough_cols=[location_col], complete_output=True,
             passthrough_agg={
-                'location_id': lambda values: values.mode().iat[0] if values.notna().any() else None,
+                location_col: lambda values: values.mode().iat[0] if values.notna().any() else None,
             },
         )
+        if algorithm == 'oracle':
+            stops.rename(columns={'oracle_location_id': 'location_id'}, inplace=True)
 
         metric_rows = compute_all_metrics(stops, user_truth, user, algorithm)
         results_rows.extend(metric_rows)
