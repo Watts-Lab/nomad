@@ -2,6 +2,7 @@ import pandas as pd
 import pytest
 
 from nomad.stop_detection.postprocessing import fill_timestamp_gaps, merge_stops
+from nomad.stop_detection.sequential_algs import grid_based
 
 
 def test_fill_timestamp_gaps_adds_unassigned_intervals():
@@ -64,10 +65,162 @@ def test_merge_stops_merges_same_location_with_short_gap():
 
     assert merged.index.tolist() == [10]
     assert merged.iloc[0].to_dict() == {
+        'cluster': 0,
         'start_timestamp': 0,
         'location_id': 4,
         'duration': 55,
     }
+
+
+def test_merge_stops_uses_grid_based_for_ping_table():
+    pings = pd.DataFrame(
+        {
+            'timestamp': [0, 60, 20 * 60, 21 * 60],
+            'location_id': [4, 4, 4, 4],
+        }
+    )
+
+    merged = merge_stops(pings, time_thresh=10)
+
+    assert merged.to_dict('records') == [
+        {'cluster': 0, 'timestamp': 0, 'duration': 1, 'location_id': 4},
+        {
+            'cluster': 1,
+            'timestamp': 20 * 60,
+            'duration': 1,
+            'location_id': 4,
+        },
+    ]
+
+
+def test_merge_stops_ping_table_respects_location_changes():
+    pings = pd.DataFrame(
+        {
+            'timestamp': [0, 60, 120],
+            'location_id': [4, 8, 8],
+        }
+    )
+
+    merged = merge_stops(pings)
+
+    assert merged['location_id'].tolist() == [4, 8]
+    assert merged['duration'].tolist() == [0, 1]
+
+
+def test_merge_stops_ping_table_matches_grid_based():
+    pings = pd.DataFrame(
+        {
+            'timestamp': [0, 60, 20 * 60, 21 * 60],
+            'location_id': [4, 4, 4, 4],
+        }
+    )
+
+    result = merge_stops(pings, time_thresh=10)
+    expected = grid_based(
+        pings,
+        time_thresh=10,
+        min_cluster_size=1,
+        dur_min=0,
+    )
+
+    pd.testing.assert_frame_equal(result, expected)
+
+
+def test_merge_stops_custom_method_overrides_time_thresh():
+    pings = pd.DataFrame(
+        {'timestamp': [0, 60], 'location_id': [4, 4]}
+    )
+
+    def custom_algorithm(data, time_thresh, traj_cols):
+        result = data.iloc[[0]].copy()
+        result['time_thresh'] = time_thresh
+        return result
+
+    result = merge_stops(
+        pings,
+        time_thresh=60,
+        method='custom',
+        algorithm=custom_algorithm,
+        algorithm_kwargs={'time_thresh': 5},
+    )
+
+    assert result['time_thresh'].tolist() == [5]
+
+
+def test_merge_stops_requires_custom_method_for_algorithm():
+    pings = pd.DataFrame(
+        {'timestamp': [0, 60], 'location_id': [4, 4]}
+    )
+
+    with pytest.raises(ValueError, match="method='custom'"):
+        merge_stops(pings, algorithm=lambda data: data)
+
+
+def test_merge_stops_ping_table_keeps_single_ping():
+    pings = pd.DataFrame({'timestamp': [0], 'location_id': [4]})
+
+    merged = merge_stops(pings)
+
+    assert merged.to_dict('records') == [
+        {'cluster': 0, 'timestamp': 0, 'duration': 0, 'location_id': 4}
+    ]
+
+
+def test_merge_stops_rejects_multiple_users_in_ping_table():
+    pings = pd.DataFrame(
+        {
+            'user_id': ['a', 'b'],
+            'timestamp': [0, 60],
+            'location_id': [4, 4],
+        }
+    )
+
+    with pytest.raises(ValueError, match='one user per call'):
+        merge_stops(pings)
+
+
+def test_merge_stops_supports_datetime_pings():
+    pings = pd.DataFrame(
+        {
+            'datetime': pd.to_datetime(
+                ['2026-01-01 09:00', '2026-01-01 09:05', '2026-01-01 09:20']
+            ),
+            'location_id': [4, 4, 4],
+        }
+    )
+
+    merged = merge_stops(pings, time_thresh=10)
+
+    assert merged['datetime'].tolist() == [
+        pd.Timestamp('2026-01-01 09:00'),
+        pd.Timestamp('2026-01-01 09:20'),
+    ]
+    assert merged['duration'].tolist() == [5, 0]
+
+
+def test_merge_stops_ping_table_supports_custom_columns_without_mutation():
+    pings = pd.DataFrame(
+        {
+            'recorded_at': [0, 60],
+            'building': ['home', 'home'],
+        }
+    )
+    original = pings.copy()
+
+    merged = merge_stops(
+        pings,
+        traj_cols={'timestamp': 'recorded_at', 'location_id': 'building'},
+    )
+
+    assert merged.to_dict('records') == [
+        {
+            'cluster': 0,
+            'recorded_at': 0,
+            'duration': 1,
+            'building': 'home',
+        }
+    ]
+    pd.testing.assert_frame_equal(pings, original)
 
 
 def test_merge_stops_merges_gap_equal_to_threshold():
@@ -79,7 +232,7 @@ def test_merge_stops_merges_gap_equal_to_threshold():
         }
     )
 
-    merged = merge_stops(stops, max_time_gap='10min')
+    merged = merge_stops(stops, time_thresh=10)
 
     assert len(merged) == 1
     assert merged['duration'].tolist() == [60]
@@ -94,7 +247,7 @@ def test_merge_stops_keeps_gap_above_threshold_separate():
         }
     )
 
-    merged = merge_stops(stops, max_time_gap='10min')
+    merged = merge_stops(stops, time_thresh=10)
 
     assert len(merged) == 2
     assert merged['duration'].tolist() == [30, 20]
@@ -114,7 +267,7 @@ def test_merge_stops_keeps_different_locations_separate():
     assert merged['location_id'].tolist() == [4, 8]
 
 
-def test_merge_stops_keeps_users_separate():
+def test_merge_stops_rejects_multiple_users():
     stops = pd.DataFrame(
         {
             'user_id': ['a', 'b'],
@@ -124,10 +277,8 @@ def test_merge_stops_keeps_users_separate():
         }
     )
 
-    merged = merge_stops(stops)
-
-    assert len(merged) == 2
-    assert merged['user_id'].tolist() == ['a', 'b']
+    with pytest.raises(ValueError, match='one user per call'):
+        merge_stops(stops)
 
 
 def test_merge_stops_supports_missing_user_ids():
@@ -159,6 +310,22 @@ def test_merge_stops_merges_multiple_consecutive_stops():
 
     assert len(merged) == 1
     assert merged['duration'].tolist() == [75]
+
+
+def test_merge_stops_uses_furthest_end_for_nested_intervals():
+    stops = pd.DataFrame(
+        {
+            'start_timestamp': [0, 10 * 60, 25 * 60],
+            'end_timestamp': [30 * 60, 20 * 60, 40 * 60],
+            'location_id': [4, 4, 4],
+        }
+    )
+
+    merged = merge_stops(stops, time_thresh=5)
+
+    assert len(merged) == 1
+    assert merged['start_timestamp'].tolist() == [0]
+    assert merged['end_timestamp'].tolist() == [40 * 60]
 
 
 def test_merge_stops_supports_datetime_and_explicit_end():
@@ -200,6 +367,7 @@ def test_merge_stops_supports_custom_column_mappings():
     merged = merge_stops(stops, traj_cols=traj_cols)
 
     assert merged.iloc[0].to_dict() == {
+        'cluster': 0,
         'started': 0,
         'destination': 4,
         'person': 'a',
@@ -207,7 +375,7 @@ def test_merge_stops_supports_custom_column_mappings():
     }
 
 
-def test_merge_stops_sorts_before_merging_and_preserves_first_stop_index():
+def test_merge_stops_requires_monotonic_start_times():
     stops = pd.DataFrame(
         {
             'start_timestamp': [35 * 60, 0],
@@ -217,30 +385,8 @@ def test_merge_stops_sorts_before_merging_and_preserves_first_stop_index():
         index=[20, 10],
     )
 
-    merged = merge_stops(stops)
-
-    assert merged.index.tolist() == [10]
-    assert merged['start_timestamp'].tolist() == [0]
-
-
-def test_merge_stops_applies_requested_aggregations():
-    stops = pd.DataFrame(
-        {
-            'start_timestamp': [0, 35 * 60],
-            'duration': [30, 20],
-            'location_id': [4, 4],
-            'n_pings': [5, 7],
-            'geometry': ['first', 'second'],
-        }
-    )
-
-    merged = merge_stops(
-        stops,
-        agg={'n_pings': 'sum', 'geometry': 'first'},
-    )
-
-    assert merged['n_pings'].tolist() == [12]
-    assert merged['geometry'].tolist() == ['first']
+    with pytest.raises(ValueError, match='monotonically increasing'):
+        merge_stops(stops)
 
 
 def test_merge_stops_does_not_merge_missing_locations():
@@ -257,14 +403,17 @@ def test_merge_stops_does_not_merge_missing_locations():
     assert len(merged) == 2
 
 
-def test_merge_stops_returns_empty_input_unchanged():
+def test_merge_stops_returns_typed_empty_cluster():
     stops = pd.DataFrame(
         columns=['start_timestamp', 'duration', 'location_id']
     )
 
     merged = merge_stops(stops)
 
-    pd.testing.assert_frame_equal(merged, stops)
+    expected = stops.copy()
+    expected.insert(0, 'cluster', pd.Series(dtype='Int64'))
+
+    pd.testing.assert_frame_equal(merged, expected)
     assert merged is not stops
 
 
@@ -295,12 +444,3 @@ def test_merge_stops_requires_location_column():
 
     with pytest.raises(ValueError, match="Location column 'location_id'"):
         merge_stops(stops)
-
-
-def test_merge_stops_rejects_invalid_time_gap_type():
-    stops = pd.DataFrame(
-        {'start_timestamp': [0], 'duration': [10], 'location_id': [4]}
-    )
-
-    with pytest.raises(TypeError, match='str or pd.Timedelta'):
-        merge_stops(stops, max_time_gap=10)
