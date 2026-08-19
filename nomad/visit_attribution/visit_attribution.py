@@ -468,53 +468,20 @@ def _get_location_center(coords, metric='euclidean'):
     return np.mean(coords[:, 0]), np.mean(coords[:, 1])
 
 
-def detect_locations(
+def _detect_locations(
     data,
     epsilon=100,
     min_pts=1,
     return_locations=False,
+    algorithm=None,
+    algorithm_kwargs=None,
     traj_cols=None,
-    **kwargs
 ):
-    """
-    Assign recurring-location IDs to coordinate points using DBSCAN.
-
-    Parameters
-    ----------
-    data : pd.DataFrame
-        Coordinate points or stop rows with x/y or longitude/latitude columns.
-    epsilon : float, default 100
-        Maximum distance between rows in the same location. Units match projected
-        coordinates or are meters for longitude/latitude coordinates.
-    min_pts : int, default 1
-        Minimum number of stops required to form a location
-    return_locations : bool, default False
-        If True, also return a GeoDataFrame summarizing each location.
-    traj_cols : dict, optional
-        Column name mappings for coordinates and location_id.
-    **kwargs
-        Additional arguments passed to column detection
-
-    Returns
-    -------
-    pd.Series or tuple of (pd.Series, gpd.GeoDataFrame)
-        Location IDs aligned with ``data.index`` and, when requested, location
-        centers, extents, and row counts.
-
-    Notes
-    -----
-    Each DBSCAN noise row is retained as its own nonnegative location. Geographic
-    coordinates use haversine distance; projected coordinates use Euclidean.
-    """
-    if isinstance(data, gpd.GeoDataFrame):
-        raise NotImplementedError("GeoDataFrame location clustering is not implemented")
-    if not isinstance(data, pd.DataFrame):
-        raise TypeError("data must be a pandas DataFrame")
-
-    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
+    """Assign location IDs to one user's coordinate rows."""
+    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, {}, warn=False)
     location_col = traj_cols['location_id']
     coord_key1, coord_key2, use_lon_lat = loader._fallback_spatial_cols(
-        data.columns, traj_cols, kwargs
+        data.columns, traj_cols, {}
     )
     if data.empty:
         location_ids = pd.Series(index=data.index, dtype='Int64', name=location_col)
@@ -538,38 +505,134 @@ def detect_locations(
         [traj_cols[coord_key1], traj_cols[coord_key2]]
     ].to_numpy(dtype='float64')
 
-    # DBSCAN expects geographic coordinates in radians and latitude-first order.
-    if use_lon_lat:
-        cluster_coords = np.radians(coords[:, [1, 0]])
-        cluster_epsilon = epsilon / EARTH_RADIUS_METERS
-        metric = 'haversine'
-    else:
-        cluster_coords = coords
-        cluster_epsilon = epsilon
-        metric = 'euclidean'
+    if algorithm is None:
+        if use_lon_lat:
+            cluster_coords = np.radians(coords[:, [1, 0]])
+            cluster_epsilon = epsilon / EARTH_RADIUS_METERS
+            metric = 'haversine'
+        else:
+            cluster_coords = coords
+            cluster_epsilon = epsilon
+            metric = 'euclidean'
 
-    labels = DBSCAN(
-        eps=cluster_epsilon,
-        min_samples=min_pts,
-        metric=metric,
-        algorithm='ball_tree',
-    ).fit_predict(cluster_coords)
-    non_noise = labels >= 0
+        labels = DBSCAN(
+            eps=cluster_epsilon,
+            min_samples=min_pts,
+            metric=metric,
+            algorithm='ball_tree',
+        ).fit_predict(cluster_coords)
+    else:
+        options = dict(algorithm_kwargs or {})
+        options['traj_cols'] = traj_cols
+        labels = np.asarray(algorithm(data=data, **options))
+        if labels.ndim != 1 or len(labels) != len(data):
+            raise ValueError(
+                "Custom location-detection algorithms must return one label per row"
+            )
+
+    noise = pd.isna(labels) | (labels == -1)
     location_ids = np.empty(len(labels), dtype='int64')
-    location_ids[non_noise] = pd.factorize(labels[non_noise], sort=False)[0]
-    next_location_id = location_ids[non_noise].max() + 1 if non_noise.any() else 0
-    location_ids[~non_noise] = np.arange(
-        next_location_id, next_location_id + (~non_noise).sum()
+    location_ids[~noise] = pd.factorize(labels[~noise], sort=False)[0]
+    next_location_id = location_ids[~noise].max() + 1 if (~noise).any() else 0
+    location_ids[noise] = np.arange(
+        next_location_id, next_location_id + noise.sum()
     )
     location_ids = pd.Series(location_ids, index=data.index, name=location_col)
 
     if not return_locations:
         return location_ids
 
-    locations = _summarize_locations(
-        data, location_ids, traj_cols=traj_cols, **kwargs
-    )
+    locations = _summarize_locations(data, location_ids, traj_cols=traj_cols)
     return location_ids, locations
+
+
+def _detect_locations_multi_user(data):
+    """Reject multi-user location detection until it is implemented."""
+    raise NotImplementedError("Multi-user location detection is not implemented")
+
+
+def detect_locations(
+    data,
+    epsilon=100,
+    min_pts=1,
+    return_locations=False,
+    method='dbscan',
+    algorithm=None,
+    algorithm_kwargs=None,
+    traj_cols=None,
+    **kwargs
+):
+    """
+    Assign recurring-location IDs to coordinate points.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Coordinate points or stop rows with x/y or longitude/latitude columns.
+    epsilon : float, default 100
+        Maximum distance between rows in the same location. Units match projected
+        coordinates or are meters for longitude/latitude coordinates.
+    min_pts : int, default 1
+        Minimum number of stops required to form a location
+    return_locations : bool, default False
+        If True, also return a GeoDataFrame summarizing each location.
+    method : {'dbscan', 'custom'}, default 'dbscan'
+        Location-detection method.
+    algorithm : callable, optional
+        Location-detection callable required when ``method='custom'``. It must
+        return one label per input row.
+    algorithm_kwargs : dict, optional
+        Arguments for a custom location-detection callable.
+    traj_cols : dict, optional
+        Column name mappings for coordinates and location_id.
+    **kwargs
+        Additional arguments passed to column detection
+
+    Returns
+    -------
+    pd.Series or tuple of (pd.Series, gpd.GeoDataFrame)
+        Location IDs aligned with ``data.index`` and, when requested, location
+        centers, extents, and row counts.
+
+    Notes
+    -----
+    Each noise row is retained as its own nonnegative location.
+    """
+    if isinstance(data, gpd.GeoDataFrame):
+        raise NotImplementedError("GeoDataFrame location clustering is not implemented")
+    if not isinstance(data, pd.DataFrame):
+        raise TypeError("data must be a pandas DataFrame")
+
+    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
+    user_col = traj_cols['user_id']
+    if user_col in data.columns and data[user_col].nunique(dropna=False) > 1:
+        return _detect_locations_multi_user(data)
+
+    if method == 'dbscan':
+        if algorithm is not None or algorithm_kwargs is not None:
+            raise ValueError(
+                "algorithm and algorithm_kwargs require method='custom'"
+            )
+        return _detect_locations(
+            data,
+            epsilon=epsilon,
+            min_pts=min_pts,
+            return_locations=return_locations,
+            traj_cols=traj_cols,
+        )
+    if method != 'custom':
+        raise NotImplementedError(
+            f"detect_locations method '{method}' is not implemented"
+        )
+    if algorithm is None:
+        raise ValueError("algorithm is required when method='custom'")
+    return _detect_locations(
+        data,
+        return_locations=return_locations,
+        algorithm=algorithm,
+        algorithm_kwargs=algorithm_kwargs,
+        traj_cols=traj_cols,
+    )
 
 
 def _summarize_locations(data, location_ids, traj_cols=None, **kwargs):

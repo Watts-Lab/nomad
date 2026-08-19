@@ -71,6 +71,33 @@ def test_detect_locations_preserves_duplicate_indices():
     assert location_ids.tolist() == [0, 0, 1]
 
 
+def test_detect_locations_supports_custom_method(cartesian_points):
+    def custom_algorithm(data, traj_cols, split_at):
+        return pd.Series([0, 0, -1] if split_at == 2 else [0, 0, 0])
+
+    location_ids = detect_locations(
+        cartesian_points,
+        method='custom',
+        algorithm=custom_algorithm,
+        algorithm_kwargs={'split_at': 2},
+    )
+
+    assert location_ids.tolist() == [0, 0, 1]
+
+
+def test_detect_locations_multi_user_is_not_implemented():
+    points = pd.DataFrame(
+        {
+            'user_id': ['a', 'b'],
+            'x': [0.0, 1.0],
+            'y': [0.0, 1.0],
+        }
+    )
+
+    with pytest.raises(NotImplementedError, match='Multi-user'):
+        detect_locations(points)
+
+
 def test_detect_locations_uses_haversine_distance_in_meters():
     points = pd.DataFrame(
         {

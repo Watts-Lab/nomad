@@ -65,6 +65,7 @@ def test_merge_stops_merges_same_location_with_short_gap():
 
     assert merged.index.tolist() == [10]
     assert merged.iloc[0].to_dict() == {
+        'cluster': 0,
         'start_timestamp': 0,
         'location_id': 4,
         'duration': 55,
@@ -123,6 +124,36 @@ def test_merge_stops_ping_table_matches_grid_based():
     )
 
     pd.testing.assert_frame_equal(result, expected)
+
+
+def test_merge_stops_custom_method_overrides_time_thresh():
+    pings = pd.DataFrame(
+        {'timestamp': [0, 60], 'location_id': [4, 4]}
+    )
+
+    def custom_algorithm(data, time_thresh, traj_cols):
+        result = data.iloc[[0]].copy()
+        result['time_thresh'] = time_thresh
+        return result
+
+    result = merge_stops(
+        pings,
+        time_thresh=60,
+        method='custom',
+        algorithm=custom_algorithm,
+        algorithm_kwargs={'time_thresh': 5},
+    )
+
+    assert result['time_thresh'].tolist() == [5]
+
+
+def test_merge_stops_requires_custom_method_for_algorithm():
+    pings = pd.DataFrame(
+        {'timestamp': [0, 60], 'location_id': [4, 4]}
+    )
+
+    with pytest.raises(ValueError, match="method='custom'"):
+        merge_stops(pings, algorithm=lambda data: data)
 
 
 def test_merge_stops_ping_table_keeps_single_ping():
@@ -336,6 +367,7 @@ def test_merge_stops_supports_custom_column_mappings():
     merged = merge_stops(stops, traj_cols=traj_cols)
 
     assert merged.iloc[0].to_dict() == {
+        'cluster': 0,
         'started': 0,
         'destination': 4,
         'person': 'a',
@@ -343,7 +375,7 @@ def test_merge_stops_supports_custom_column_mappings():
     }
 
 
-def test_merge_stops_sorts_before_merging_and_preserves_first_stop_index():
+def test_merge_stops_requires_monotonic_start_times():
     stops = pd.DataFrame(
         {
             'start_timestamp': [35 * 60, 0],
@@ -353,30 +385,8 @@ def test_merge_stops_sorts_before_merging_and_preserves_first_stop_index():
         index=[20, 10],
     )
 
-    merged = merge_stops(stops)
-
-    assert merged.index.tolist() == [10]
-    assert merged['start_timestamp'].tolist() == [0]
-
-
-def test_merge_stops_applies_requested_aggregations():
-    stops = pd.DataFrame(
-        {
-            'start_timestamp': [0, 35 * 60],
-            'duration': [30, 20],
-            'location_id': [4, 4],
-            'n_pings': [5, 7],
-            'geometry': ['first', 'second'],
-        }
-    )
-
-    merged = merge_stops(
-        stops,
-        agg={'n_pings': 'sum', 'geometry': 'first'},
-    )
-
-    assert merged['n_pings'].tolist() == [12]
-    assert merged['geometry'].tolist() == ['first']
+    with pytest.raises(ValueError, match='monotonically increasing'):
+        merge_stops(stops)
 
 
 def test_merge_stops_does_not_merge_missing_locations():
@@ -393,14 +403,17 @@ def test_merge_stops_does_not_merge_missing_locations():
     assert len(merged) == 2
 
 
-def test_merge_stops_returns_empty_input_unchanged():
+def test_merge_stops_returns_typed_empty_cluster():
     stops = pd.DataFrame(
         columns=['start_timestamp', 'duration', 'location_id']
     )
 
     merged = merge_stops(stops)
 
-    pd.testing.assert_frame_equal(merged, stops)
+    expected = stops.copy()
+    expected.insert(0, 'cluster', pd.Series(dtype='Int64'))
+
+    pd.testing.assert_frame_equal(merged, expected)
     assert merged is not stops
 
 
