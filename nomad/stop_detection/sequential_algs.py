@@ -760,8 +760,11 @@ def grid_based_labels(data, time_thresh=np.inf, min_cluster_size=1, dur_min=0, t
         # find first index where location changes or gap exceeds threshold
         j = i + 1
         while j < n:
-            gap = (ts.iloc[j] - ts.iloc[j-1]) // 60
-            if pd.isna(loc.iloc[j]) or loc.iloc[j] != loc_i or gap > time_thresh:
+            if (
+                pd.isna(loc.iloc[j])
+                or loc.iloc[j] != loc_i
+                or ts.iloc[j] - ts.iloc[j - 1] > time_thresh * 60
+            ):
                 break
             j += 1
 

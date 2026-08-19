@@ -430,44 +430,6 @@ def night_stops(stop_table, user='user', dawn_hour = 6, dusk_hour = 19, min_dwel
     return df_clipped.groupby(['id', 'location'], group_keys=False).apply(count_nights(dawn_hour, dusk_hour, min_dwell)).reset_index(drop=True)
 
 
-def _get_location_center(coords, metric='euclidean'):
-    """
-    Calculate the center of a location cluster.
-
-    Parameters
-    ----------
-    coords : numpy.ndarray
-        Array of coordinates (n_points, 2)
-    metric : str
-        'euclidean' for projected coordinates, 'haversine' for lat/lon
-
-    Returns
-    -------
-    tuple
-        (x, y) coordinates of the center
-    """
-    if metric == 'haversine':
-        coords_rad = np.radians(coords)
-        x = coords_rad[:, 0]
-        y = coords_rad[:, 1]
-
-        cos_y = np.cos(y)
-        cart_x = cos_y * np.cos(x)
-        cart_y = cos_y * np.sin(x)
-        cart_z = np.sin(y)
-
-        avg_x = np.mean(cart_x)
-        avg_y = np.mean(cart_y)
-        avg_z = np.mean(cart_z)
-
-        lon = np.arctan2(avg_y, avg_x)
-        hyp = np.sqrt(avg_x**2 + avg_y**2)
-        lat = np.arctan2(avg_z, hyp)
-
-        return np.degrees(lon), np.degrees(lat)
-    return np.mean(coords[:, 0]), np.mean(coords[:, 1])
-
-
 def _detect_locations(
     data,
     epsilon=100,
@@ -476,33 +438,39 @@ def _detect_locations(
     algorithm=None,
     algorithm_kwargs=None,
     traj_cols=None,
+    **kwargs,
 ):
     """Assign location IDs to one user's coordinate rows."""
-    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, {}, warn=False)
-    location_col = traj_cols['location_id']
     coord_key1, coord_key2, use_lon_lat = loader._fallback_spatial_cols(
-        data.columns, traj_cols, {}
+        data.columns, traj_cols, kwargs
     )
+    if return_locations and use_lon_lat:
+        raise NotImplementedError(
+            "Location geometry summaries require projected coordinates"
+        )
+
+    parsed_cols = loader._parse_traj_cols(
+        data.columns, traj_cols, kwargs, warn=False
+    )
+    location_col = parsed_cols['location_id']
     if data.empty:
         location_ids = pd.Series(index=data.index, dtype='Int64', name=location_col)
         if not return_locations:
             return location_ids
 
-        crs = 'EPSG:4326' if use_lon_lat else None
         locations = gpd.GeoDataFrame(
             {
                 location_col: pd.Series(dtype='Int64'),
                 'n_stops': pd.Series(dtype='Int64'),
-                'center': gpd.GeoSeries([], crs=crs),
-                'extent': gpd.GeoSeries([], crs=crs),
+                'center': gpd.GeoSeries([]),
+                'extent': gpd.GeoSeries([]),
             },
             geometry='center',
-            crs=crs,
         )
         return location_ids, locations
 
     coords = data[
-        [traj_cols[coord_key1], traj_cols[coord_key2]]
+        [parsed_cols[coord_key1], parsed_cols[coord_key2]]
     ].to_numpy(dtype='float64')
 
     if algorithm is None:
@@ -523,14 +491,15 @@ def _detect_locations(
         ).fit_predict(cluster_coords)
     else:
         options = dict(algorithm_kwargs or {})
-        options['traj_cols'] = traj_cols
+        options['traj_cols'] = parsed_cols
         labels = np.asarray(algorithm(data=data, **options))
         if labels.ndim != 1 or len(labels) != len(data):
             raise ValueError(
                 "Custom location-detection algorithms must return one label per row"
             )
 
-    noise = pd.isna(labels) | (labels == -1)
+    noise = pd.isna(labels)
+    noise[~noise] = labels[~noise] == -1
     location_ids = np.empty(len(labels), dtype='int64')
     location_ids[~noise] = pd.factorize(labels[~noise], sort=False)[0]
     next_location_id = location_ids[~noise].max() + 1 if (~noise).any() else 0
@@ -542,12 +511,24 @@ def _detect_locations(
     if not return_locations:
         return location_ids
 
-    locations = _summarize_locations(data, location_ids, traj_cols=traj_cols)
+    locations = _summarize_locations(
+        data, location_ids, traj_cols=traj_cols, **kwargs
+    )
     return location_ids, locations
 
 
-def _detect_locations_multi_user(data):
-    """Reject multi-user location detection until it is implemented."""
+def _detect_locations_multi_user(data, method, traj_cols):
+    """Validate planned multi-user methods before reporting them unimplemented."""
+    if method == 'infomap':
+        loader._has_user_cols(data.columns, traj_cols)
+        loader._has_spatial_cols(data.columns, traj_cols)
+        loader._has_time_cols(data.columns, traj_cols)
+        if not (
+            loader._has_end_cols(data.columns, traj_cols)
+            or loader._has_duration_cols(data.columns, traj_cols)
+        ):
+            raise ValueError("Infomap location detection requires a stop table")
+        raise NotImplementedError("Infomap location detection is not implemented")
     raise NotImplementedError("Multi-user location detection is not implemented")
 
 
@@ -575,9 +556,11 @@ def detect_locations(
     min_pts : int, default 1
         Minimum number of stops required to form a location
     return_locations : bool, default False
-        If True, also return a GeoDataFrame summarizing each location.
-    method : {'dbscan', 'custom'}, default 'dbscan'
-        Location-detection method.
+        If True, also return a GeoDataFrame summarizing each location. Location
+        summaries currently require projected x/y coordinates.
+    method : {'dbscan', 'custom', 'infomap'}, default 'dbscan'
+        Location-detection method. Infomap is reserved for future multi-user
+        stop-table support and currently raises ``NotImplementedError``.
     algorithm : callable, optional
         Location-detection callable required when ``method='custom'``. It must
         return one label per input row.
@@ -603,10 +586,15 @@ def detect_locations(
     if not isinstance(data, pd.DataFrame):
         raise TypeError("data must be a pandas DataFrame")
 
-    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
-    user_col = traj_cols['user_id']
-    if user_col in data.columns and data[user_col].nunique(dropna=False) > 1:
-        return _detect_locations_multi_user(data)
+    parsed_cols = loader._parse_traj_cols(
+        data.columns, traj_cols, kwargs, warn=False
+    )
+    user_col = parsed_cols['user_id']
+    if method == 'infomap' or (
+        user_col in data.columns
+        and data[user_col].nunique(dropna=False) > 1
+    ):
+        return _detect_locations_multi_user(data, method, parsed_cols)
 
     if method == 'dbscan':
         if algorithm is not None or algorithm_kwargs is not None:
@@ -619,6 +607,7 @@ def detect_locations(
             min_pts=min_pts,
             return_locations=return_locations,
             traj_cols=traj_cols,
+            **kwargs,
         )
     if method != 'custom':
         raise NotImplementedError(
@@ -632,20 +621,20 @@ def detect_locations(
         algorithm=algorithm,
         algorithm_kwargs=algorithm_kwargs,
         traj_cols=traj_cols,
+        **kwargs,
     )
 
 
 def _summarize_locations(data, location_ids, traj_cols=None, **kwargs):
     """Build center and extent geometries for assigned location IDs."""
-    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
-    location_col = location_ids.name
-    coord_key1, coord_key2, use_lon_lat = loader._fallback_spatial_cols(
+    coord_key1, coord_key2, _ = loader._fallback_spatial_cols(
         data.columns, traj_cols, kwargs
     )
+    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
+    location_col = location_ids.name
     coords = data[
         [traj_cols[coord_key1], traj_cols[coord_key2]]
     ].to_numpy(dtype='float64')
-    crs = 'EPSG:4326' if use_lon_lat else None
     location_rows = pd.DataFrame(
         {
             location_col: location_ids.to_numpy(),
@@ -654,38 +643,26 @@ def _summarize_locations(data, location_ids, traj_cols=None, **kwargs):
         }
     )
     grouped_locations = location_rows.groupby(location_col, sort=True)
-    center_values = grouped_locations[['_coord1', '_coord2']].apply(
-        lambda group: _get_location_center(
-            group.to_numpy(), metric='haversine' if use_lon_lat else 'euclidean'
-        ),
-        include_groups=False,
-    )
-    center_coords = np.vstack(center_values.to_numpy())
+    center_values = grouped_locations[['_coord1', '_coord2']].mean()
     locations = gpd.GeoDataFrame(
         {
             location_col: center_values.index.to_numpy(),
             'n_stops': grouped_locations.size().to_numpy(),
         },
         geometry=gpd.points_from_xy(
-            center_coords[:, 0], center_coords[:, 1], crs=crs
+            center_values['_coord1'], center_values['_coord2']
         ),
-        crs=crs,
     ).rename_geometry('center')
 
     # The convex hull records the observed spatial extent of each location.
     point_locations = gpd.GeoDataFrame(
         {location_col: location_ids.to_numpy()},
-        geometry=gpd.GeoSeries(
-            gpd.points_from_xy(coords[:, 0], coords[:, 1]), index=data.index, crs=crs
-        ),
-        index=data.index,
-        crs=crs,
+        geometry=gpd.points_from_xy(coords[:, 0], coords[:, 1]),
     )
     extents = point_locations.dissolve(by=location_col).geometry.convex_hull
     locations['extent'] = gpd.GeoSeries(
         extents.reindex(locations[location_col]).to_numpy(),
         index=locations.index,
-        crs=crs,
     )
 
     return locations
