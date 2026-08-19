@@ -674,8 +674,11 @@ def _summarize_locations(data, location_ids, traj_cols=None, **kwargs):
 
     # The convex hull records the observed spatial extent of each location.
     point_locations = gpd.GeoDataFrame(
-        {location_col: location_ids},
-        geometry=gpd.points_from_xy(coords[:, 0], coords[:, 1], crs=crs),
+        {location_col: location_ids.to_numpy()},
+        geometry=gpd.GeoSeries(
+            gpd.points_from_xy(coords[:, 0], coords[:, 1]), index=data.index, crs=crs
+        ),
+        index=data.index,
         crs=crs,
     )
     extents = point_locations.dissolve(by=location_col).geometry.convex_hull
