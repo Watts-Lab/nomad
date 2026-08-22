@@ -82,13 +82,26 @@ class AlgorithmRegistry:
 
         return [value]
 
-    def add_algorithm(self, fn, family=None, granularity=30, **param_specs):
+    def add_algorithm(
+        self,
+        fn,
+        family=None,
+        granularity=30,
+        external_params=None,
+        **param_specs,
+    ):
+        """Register every combination of the supplied parameter specifications.
+
+        ``external_params`` defines parameters that identify and annotate a run
+        but are consumed before invocation rather than passed to ``fn``.
+        """
         algorithm_name = self._normalize_algorithm_name(fn.__name__)
         family_name = family or self._next_auto_family(algorithm_name)
+        external_params = external_params or {}
 
         expanded = {
             key: self._expand_values(value, granularity)
-            for key, value in param_specs.items()
+            for key, value in {**param_specs, **external_params}.items()
         }
 
         keys = list(expanded.keys())
@@ -96,13 +109,18 @@ class AlgorithmRegistry:
 
         for index, combo in enumerate(itertools.product(*values), start=1):
             params = dict(zip(keys, combo))
+            call_params = {
+                key: value
+                for key, value in params.items()
+                if key in param_specs
+            }
             algorithm_id = self._algorithm_identifier(index, params)
             self._algos.append(
                 {
                     "algorithm": algorithm_id,
                     "family": family_name,
                     "fn": fn,
-                    "call": partial(fn, **params),
+                    "call": partial(fn, **call_params),
                     "params": params,
                 }
             )
