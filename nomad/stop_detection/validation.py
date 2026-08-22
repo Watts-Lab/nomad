@@ -112,7 +112,7 @@ class AlgorithmRegistry:
             call_params = {
                 key: value
                 for key, value in params.items()
-                if key in param_specs
+                if key not in external_params
             }
             algorithm_id = self._algorithm_identifier(index, params)
             self._algos.append(
