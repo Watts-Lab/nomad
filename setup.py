@@ -34,6 +34,7 @@ setup(
         'pyarrow',
         's3fs',
         'h3',
+        'h3ronpy',
         'pydeck'
     ],
 
