@@ -15,25 +15,22 @@
 # ---
 
 # %%
-import pandas as pd
+from pathlib import Path
+import time
 import warnings
-warnings.filterwarnings("ignore", category=FutureWarning)
 
 import geopandas as gpd
 import numpy as np
-from functools import partial
-from pathlib import Path
-from shapely.geometry import Point
-from tqdm import tqdm
+import pandas as pd
+from joblib import Parallel, delayed, effective_n_jobs
 
 import nomad.data as data_folder
 import nomad.io.base as loader
-import nomad.stop_detection.utils as utils
-from nomad.stop_detection.density_algs import ta_dbscan_labels
-from nomad.stop_detection.density_algs import hdbscan_labels
-from nomad.stop_detection.sequential_algs import grid_based_labels
-from nomad.stop_detection.sequential_algs import lachesis_labels
-from nomad.stop_detection.density_algs import seqscan_labels
+from nomad.stop_detection.density_algs import seqscan_per_user
+from nomad.stop_detection.density_algs import st_hdbscan_per_user
+from nomad.stop_detection.density_algs import ta_dbscan_per_user
+from nomad.stop_detection.sequential_algs import grid_based_per_user
+from nomad.stop_detection.sequential_algs import lachesis_per_user
 from nomad.stop_detection.validation import (
     AlgorithmRegistry,
     bootstrap_metric_summary,
@@ -41,13 +38,13 @@ from nomad.stop_detection.validation import (
     plot_metric_boxplots,
     plot_metric_intervals,
 )
-from joblib import Parallel, delayed, effective_n_jobs
-import time
 from nomad.traj_gen import Agent, Population
 
 import nomad.visit_attribution.visit_attribution as visits
 from nomad.city_gen import City
 from nomad.map_utils import blocks_to_mercator_gdf
+
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 
 # %%
@@ -93,12 +90,6 @@ _Q_RANGE = (0.3, 0.9)
 _BETA_PING_RANGE = (3, 12)
 _BETA_DURATIONS_RANGE = (30, 300)
 HA_LOWER_BOUND = 8/15  # blocks; matches nomad.traj_gen._sample_horizontal_noise lower bound for pareto_prior
-_PARAMS = {
-    "beta_ping":      _rng.uniform(3,   12,  _GEN_N).tolist(),
-    "beta_start":     _rng.uniform(50,  500, _GEN_N).tolist(),
-    "beta_durations": _rng.uniform(30,  300, _GEN_N).tolist(),
-    "ha":             _rng.uniform(HA_LOWER_BOUND + 1e-9, 5,   _GEN_N).tolist(),
-}
 
 def generate_agent_trajectory(params, city):
     """Generate dense and sparse trajectories for one agent."""
@@ -170,7 +161,10 @@ else:
     batch_results = Parallel(n_jobs=n_jobs, verbose=10)(
         delayed(generate_agent_batch)(batch) for batch in agent_batches
     )
-    results = list(chain.from_iterable(batch_results))
+    results = []
+    for batch_result in batch_results:
+        if batch_result is not None:
+            results.extend(batch_result)
 
     generation_time = time.time() - start_time
     print(f"Generated {_GEN_N} agents in {generation_time:.2f}s ({generation_time / _GEN_N:.2f}s per agent)")
@@ -223,6 +217,9 @@ diaries_df.loc[~diaries_df.location_id.isna(), 'dwell_length'] = (
 )
 
 sparse_df = loader.from_file("robustness-of-algorithms/sparse_traj_2", format="parquet")
+validation_users = diaries_df['user_id'].drop_duplicates().iloc[:10]
+diaries_df = diaries_df[diaries_df['user_id'].isin(validation_users)].copy()
+sparse_df = sparse_df[sparse_df['user_id'].isin(validation_users)].copy()
 sparse_gdf = gpd.GeoDataFrame(
     sparse_df, geometry=gpd.points_from_xy(sparse_df['x'], sparse_df['y']), crs='EPSG:3857',
 )
@@ -230,25 +227,38 @@ sparse_df['location_id'] = visits.poi_map(
     sparse_gdf, poi_table=poi_table, max_distance=12, location_id='location_id',
     x='x', y='y', data_crs='EPSG:3857',
 )
+truth_by_user = {
+    user: truth
+    for user, truth in diaries_df.groupby('user_id', sort=False)
+}
+sparse_df['oracle_location_id'] = pd.concat([
+    visits.oracle_map(
+        user_sparse,
+        truth_by_user[user],
+        timestamp='timestamp',
+        location_id='location_id',
+    )
+    for user, user_sparse in sparse_df.groupby('user_id', sort=False)
+])
 
 # %%
-# ── STOP SUMMARIZATION AND ALGORITHM CONFIGURATION ────────────────────────────
+# ── STOP DETECTION CONFIGURATION ──────────────────────────────────────────────
 
 registry = AlgorithmRegistry()
 
-registry.add_algorithm(seqscan_labels, family='seqscan', dist_thresh=30, time_thresh=120)
+registry.add_algorithm(seqscan_per_user, family='seqscan', dist_thresh=30, time_thresh=120, min_pts=3)
 
-registry.add_algorithm(hdbscan_labels,       family='ta-hdbscan',
-                       time_thresh=240, min_pts=3, min_cluster_size=1, include_border_points=True)
-registry.add_algorithm(grid_based_labels,  family='oracle',
-                       time_thresh=600, min_pts=0, location_id='id')
-registry.add_algorithm(ta_dbscan_labels,     family='tadbscan_coarse',
-                       time_thresh=240, min_pts=2, dist_thresh=30)
-registry.add_algorithm(ta_dbscan_labels,     family='tadbscan_fine',
-                       time_thresh=120, min_pts=3, dist_thresh=20)
-registry.add_algorithm(lachesis_labels,      family='lachesis_coarse',
+registry.add_algorithm(st_hdbscan_per_user,  family='ta-hdbscan',
+                       time_thresh=240, min_pts=3, min_cluster_size=1)
+registry.add_algorithm(grid_based_per_user, family='oracle',
+                       time_thresh=600, min_cluster_size=1, dur_min=0)
+registry.add_algorithm(ta_dbscan_per_user,   family='tadbscan_coarse',
+                       time_thresh=240, min_pts=2, dist_thresh=30, dur_min=0)
+registry.add_algorithm(ta_dbscan_per_user,   family='tadbscan_fine',
+                       time_thresh=120, min_pts=3, dist_thresh=20, dur_min=0)
+registry.add_algorithm(lachesis_per_user,    family='lachesis_coarse',
                        dt_max=240, delta_roam=40)
-registry.add_algorithm(lachesis_labels,      family='lachesis_fine',
+registry.add_algorithm(lachesis_per_user,    family='lachesis_fine',
                        dt_max=120, delta_roam=25)
 
 print(f"Registry: {len(registry)} algorithm configurations")
@@ -287,35 +297,40 @@ def compute_all_metrics(stops, truth, user, algo):
 
 
 # %% [markdown]
-# ### OPTIMIZED LOOP
+# ### PARALLEL STOP DETECTION AND VALIDATION
 
 # %%
 results_rows = []
 
-for user in tqdm(diaries_df.user_id.unique()[:10], desc='Processing users'):
-    user_sparse = sparse_df[sparse_df['user_id'] == user].copy()
-    user_truth = diaries_df[diaries_df['user_id'] == user].copy()
-    user_sparse['oracle_location_id'] = visits.oracle_map(
-        user_sparse, user_truth, timestamp='timestamp', location_id='location_id',
-    )
+def modal_location(values):
+    modes = values.mode()
+    return modes.iat[0] if not modes.empty else None
 
-    for algo in registry:
-        algorithm = algo["family"]
-        location_col = 'oracle_location_id' if algorithm == 'oracle' else 'location_id'
-        labels = registry.time_call(algo, user_sparse, timestamp='timestamp')
 
-        stops = utils.summarize_stops(
-            user_sparse, labels,
-            x='x', y='y', timestamp='timestamp',
-            keep_col_names=True, passthrough_cols=[location_col], complete_output=True,
-            passthrough_agg={
-                location_col: lambda values: values.mode().iat[0] if values.notna().any() else None,
-            },
+for algo in registry:
+    algorithm = algo['family']
+    location_col = 'oracle_location_id' if algorithm == 'oracle' else 'location_id'
+    call_kwargs = {
+        'n_jobs': -1,
+        'timestamp': 'timestamp',
+        'user_id': 'user_id',
+        'passthrough_cols': [location_col],
+        'passthrough_agg': {location_col: modal_location},
+    }
+    if algorithm == 'oracle':
+        call_kwargs['location_id'] = location_col
+
+    stops = registry.time_call(algo, sparse_df, **call_kwargs)
+    if algorithm == 'oracle':
+        stops = stops.rename(columns={'oracle_location_id': 'location_id'})
+
+    for user, user_truth in truth_by_user.items():
+        metric_rows = compute_all_metrics(
+            stops[stops['user_id'] == user],
+            user_truth,
+            user,
+            algorithm,
         )
-        if algorithm == 'oracle':
-            stops.rename(columns={'oracle_location_id': 'location_id'}, inplace=True)
-
-        metric_rows = compute_all_metrics(stops, user_truth, user, algorithm)
         results_rows.extend(metric_rows)
 
 results_df = pd.DataFrame(results_rows)
