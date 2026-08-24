@@ -17,7 +17,6 @@
 # %%
 from pathlib import Path
 import time
-import warnings
 
 import geopandas as gpd
 import numpy as np
@@ -26,7 +25,6 @@ from joblib import Parallel, delayed, effective_n_jobs
 
 import nomad.data as data_folder
 import nomad.io.base as loader
-from nomad.stop_detection.density_algs import seqscan_per_user
 from nomad.stop_detection.density_algs import st_hdbscan_per_user
 from nomad.stop_detection.density_algs import ta_dbscan_per_user
 from nomad.stop_detection.sequential_algs import grid_based_per_user
@@ -44,35 +42,11 @@ import nomad.visit_attribution.visit_attribution as visits
 from nomad.city_gen import City
 from nomad.map_utils import blocks_to_mercator_gdf
 
-warnings.filterwarnings("ignore", category=FutureWarning)
-
 
 # %%
 
 data_dir = Path(data_folder.__file__).parent
 city = City.from_geopackage(data_dir / "garden-city.gpkg")
-
-def classify_building_size(location_id):
-    building = city.buildings_df.loc[location_id]
-    n_blocks = len(building.blocks)
-    if n_blocks == 1:
-        return 'small'
-    elif 2 <= n_blocks <= 3:
-        return 'medium'
-    else:
-        return 'big'
-
-def classify_building_type(location_id):
-    building = city.buildings_df.loc[location_id]
-    return building.building_type
-
-def classify_dwell(duration):
-    if duration < 60:
-        return 'low'
-    elif 60 <= duration <= 180:
-        return 'mid'
-    else:
-        return 'high'
 
 
 # %%
@@ -80,7 +54,6 @@ _GEN_N     = 250
 _GEN_SEED  = 2025
 _GEN_START = pd.Timestamp("2024-06-01T00:00:00-04:00")
 _GEN_END   = pd.Timestamp("2024-06-08T00:00:00-04:00")
-_DATA_DIR  = Path(data_folder.__file__).parent
 
 _sparse_path  = Path("robustness-of-algorithms/sparse_traj_2")
 _diaries_path = Path("robustness-of-algorithms/diaries_2")
@@ -89,7 +62,7 @@ _homes_path   = Path("robustness-of-algorithms/homes_2")
 _Q_RANGE = (0.3, 0.9)
 _BETA_PING_RANGE = (3, 12)
 _BETA_DURATIONS_RANGE = (30, 300)
-HA_LOWER_BOUND = 8/15  # blocks; matches nomad.traj_gen._sample_horizontal_noise lower bound for pareto_prior
+_HA_LOWER_BOUND = 8/15  # blocks; matches nomad.traj_gen._sample_horizontal_noise lower bound for pareto_prior
 
 def generate_agent_trajectory(params, city):
     """Generate dense and sparse trajectories for one agent."""
@@ -115,18 +88,17 @@ def generate_agent_trajectory(params, city):
 
 def generate_agent_batch(params_batch):
     """Initialize one city and generate a batch of agent trajectories."""
-    city = City.from_geopackage(_DATA_DIR / "garden-city.gpkg")
+    city = City.from_geopackage(data_dir / "garden-city.gpkg")
     city._build_hub_network(hub_size=16)
     city.compute_gravity(exponent=2.0)
     city.compute_shortest_paths(callable_only=True)
     return [generate_agent_trajectory(params, city) for params in params_batch]
 
 if _sparse_path.exists() and _diaries_path.exists():
-    print("Data already exists — skipping generation.")
+    print("Data already exists; skipping generation.")
 else:
-    _city = City.from_geopackage(_DATA_DIR / "garden-city.gpkg")
     _rng = np.random.default_rng(_GEN_SEED)
-    population = Population(_city)
+    population = Population(city)
     population.generate_agents(N=_GEN_N, seed=_GEN_SEED, datetimes=_GEN_START)
 
     sampling_params = pd.DataFrame([
@@ -138,7 +110,7 @@ else:
         )
         for _ in range(_GEN_N)
     ])
-    sampling_params['ha'] = _rng.uniform(HA_LOWER_BOUND + 1e-9, 5, _GEN_N)
+    sampling_params['ha'] = _rng.uniform(_HA_LOWER_BOUND + 1e-9, 5, _GEN_N)
     sampling_params['seed'] = np.arange(_GEN_N)
 
     agent_params = pd.DataFrame([
@@ -163,8 +135,9 @@ else:
     )
     results = []
     for batch_result in batch_results:
-        if batch_result is not None:
-            results.extend(batch_result)
+        if batch_result is None:
+            raise RuntimeError("Trajectory generation returned no batch result")
+        results.extend(batch_result)
 
     generation_time = time.time() - start_time
     print(f"Generated {_GEN_N} agents in {generation_time:.2f}s ({generation_time / _GEN_N:.2f}s per agent)")
@@ -174,9 +147,9 @@ else:
         agent.diary = diary_df
 
     poi_data = pd.DataFrame({
-        'building_id': _city.buildings_gdf['id'].values,
-        'x': (_city.buildings_gdf['door_cell_x'].astype(float) + 0.5).values,
-        'y': (_city.buildings_gdf['door_cell_y'].astype(float) + 0.5).values,
+        'building_id': city.buildings_gdf['id'].values,
+        'x': (city.buildings_gdf['door_cell_x'].astype(float) + 0.5).values,
+        'y': (city.buildings_gdf['door_cell_y'].astype(float) + 0.5).values,
     })
     population.reproject_to_mercator(sparse_traj=True, diaries=True, poi_data=poi_data)
 
@@ -190,14 +163,14 @@ else:
         q=agent_params['q'].tolist(),
         ha=agent_params['ha'].tolist(),
     )
-    del _city, population, results, batch_results
+    del population, results, batch_results
     print(f"Generated {_GEN_N} agents in {generation_time:.2f}s -> {_diaries_path} / {_sparse_path}")
 
 # %%
-# ── DATA LOADING ──────────────────────────────────────────────────────────────
+# Data loading
 poi_table = gpd.read_file(data_dir / "garden-city.gpkg", layer='buildings')
 poi_table = poi_table.rename({'id': 'location_id', 'type': 'building_type'}, axis=1)
-# Project from local grid units → EPSG:3857 meters to match the saved sparse trajectories
+# Project from local grid units to EPSG:3857 meters to match the saved sparse trajectories.
 poi_table = blocks_to_mercator_gdf(
     poi_table,
     block_size=city.block_side_length,
@@ -205,15 +178,23 @@ poi_table = blocks_to_mercator_gdf(
     false_northing=city.web_mercator_origin_y,
     drop_garden_cols=False,
 )
-poi_table['building_size'] = poi_table['location_id'].apply(classify_building_size)
+poi_table['building_size'] = np.select(
+    [poi_table['size'].eq(1), poi_table['size'].between(2, 3)],
+    ['small', 'medium'],
+    default='big',
+)
 
 diaries_df = loader.from_file("robustness-of-algorithms/diaries_2", format="parquet")
 diaries_df = diaries_df.rename({'location': 'location_id'}, axis=1)
 diaries_df = diaries_df.merge(
     poi_table[['location_id', 'building_size', 'building_type']], on='location_id', how='left',
 )
-diaries_df.loc[~diaries_df.location_id.isna(), 'dwell_length'] = (
-    diaries_df.loc[~diaries_df.location_id.isna(), 'duration'].apply(classify_dwell)
+attributed_diaries = diaries_df['location_id'].notna()
+attributed_durations = diaries_df.loc[attributed_diaries, 'duration']
+diaries_df.loc[attributed_diaries, 'dwell_length'] = np.select(
+    [attributed_durations.lt(60), attributed_durations.le(180)],
+    ['low', 'mid'],
+    default='high',
 )
 
 sparse_df = loader.from_file("robustness-of-algorithms/sparse_traj_2", format="parquet")
@@ -242,11 +223,9 @@ sparse_df['oracle_location_id'] = pd.concat([
 ])
 
 # %%
-# ── STOP DETECTION CONFIGURATION ──────────────────────────────────────────────
+# Stop detection configuration
 
 registry = AlgorithmRegistry()
-
-registry.add_algorithm(seqscan_per_user, family='seqscan', dist_thresh=30, time_thresh=120, min_pts=3)
 
 registry.add_algorithm(st_hdbscan_per_user,  family='ta-hdbscan',
                        time_thresh=240, min_pts=3, min_cluster_size=1)
@@ -264,40 +243,44 @@ registry.add_algorithm(lachesis_per_user,    family='lachesis_fine',
 print(f"Registry: {len(registry)} algorithm configurations")
 
 # %%
-# ── METRICS FUNCTION ──────────────────────────────────────────────────────────
-def compute_all_metrics(stops, truth, user, algo):
-    gen = compute_stop_detection_metrics(
+# Metrics
+def compute_all_metrics(stops, truth, user, algorithm):
+    general_metrics = compute_stop_detection_metrics(
         stops,
         truth,
-        algorithm=algo,
+        algorithm=algorithm,
         prf_only=False,
         location_id='location_id',
         timestamp='timestamp',
     )
-    gen.update({'user': user, 'metric_category': 'general', 'category_value': 'all'})
-    gen.pop('user_id', None)
-    results = [gen]
+    general_metrics.update({'user': user, 'metric_category': 'general', 'category_value': 'all'})
+    general_metrics.pop('user_id', None)
+    results = [general_metrics]
 
     for category in ['building_size', 'building_type', 'dwell_length']:
-        for val in truth[category].dropna().unique():
-            truth_sub = truth[truth[category] == val]
-            cat = compute_stop_detection_metrics(
+        for category_value in truth[category].dropna().unique():
+            category_truth = truth[truth[category] == category_value]
+            category_metrics = compute_stop_detection_metrics(
                 stops,
-                truth_sub,
-                algorithm=algo,
+                category_truth,
+                algorithm=algorithm,
                 prf_only=False,
                 location_id='location_id',
                 timestamp='timestamp',
             )
-            cat.update({'user': user, 'metric_category': category, 'category_value': val})
-            cat.pop('user_id', None)
-            results.append(cat)
+            category_metrics.update({
+                'user': user,
+                'metric_category': category,
+                'category_value': category_value,
+            })
+            category_metrics.pop('user_id', None)
+            results.append(category_metrics)
 
     return results
 
 
-# %% [markdown]
-# ### PARALLEL STOP DETECTION AND VALIDATION
+# %% [markdown] language="markdown"
+# ### Stop detection and validation
 
 # %%
 results_rows = []
@@ -307,8 +290,8 @@ def modal_location(values):
     return modes.iat[0] if not modes.empty else None
 
 
-for algo in registry:
-    algorithm = algo['family']
+for algorithm_config in registry:
+    algorithm = algorithm_config['family']
     location_col = 'oracle_location_id' if algorithm == 'oracle' else 'location_id'
     call_kwargs = {
         'n_jobs': -1,
@@ -320,7 +303,7 @@ for algo in registry:
     if algorithm == 'oracle':
         call_kwargs['location_id'] = location_col
 
-    stops = registry.time_call(algo, sparse_df, **call_kwargs)
+    stops = registry.time_call(algorithm_config, sparse_df, **call_kwargs)
     if algorithm == 'oracle':
         stops = stops.rename(columns={'oracle_location_id': 'location_id'})
 
@@ -355,12 +338,15 @@ general_plot_df = bootstrap_metric_summary(
     random_state=2025,
 )
 
-# %% [markdown]
+# %% [markdown] language="markdown"
 # ### Plot per-user metric distributions for general trajectory
 
 # %%
 algo_order = ['oracle','ta-hdbscan','lachesis_coarse','tadbscan_coarse','lachesis_fine', 'tadbscan_fine']
-algorithm_groups = {algo['family']: algo['algorithm'] for algo in registry}
+algorithm_groups = {
+    algorithm_config['family']: algorithm_config['algorithm']
+    for algorithm_config in registry
+}
 
 # %%
 plot_metric_boxplots(
@@ -371,7 +357,7 @@ plot_metric_boxplots(
     save_path=Path('examples/research/errors_per_stop_boxplots'),
 )
 
-# %% [markdown]
+# %% [markdown] language="markdown"
 # ### Plot bootstrapped median metrics for general trajectory
 
 # %%
@@ -383,18 +369,18 @@ plot_metric_intervals(
     save_path=Path('examples/research/errors_per_stop_medians'),
 )
 
-# %% [markdown]
+# %% [markdown] language="markdown"
 # ### Metrics for each category value
 
 # %%
 # for each user, algo, and category_value
-if 'f1_as_pct_orac' not in results_df:
-    oracle_df = results_df.loc[results_df.algorithm == 'oracle', ['user', 'category_value','f1']].rename(columns={'f1':'f1_oracle'})
-    results_df = results_df.merge(oracle_df, on=['user','category_value'],  how='left')
-    results_df['f1_as_pct_orac'] = 100 * results_df['f1'] / results_df['f1_oracle']
+oracle_df = results_df.loc[
+    results_df.algorithm == 'oracle', ['user', 'category_value', 'f1']
+].rename(columns={'f1': 'f1_oracle'})
+results_df = results_df.merge(oracle_df, on=['user', 'category_value'], how='left')
+results_df['f1_as_pct_orac'] = 100 * results_df['f1'] / results_df['f1_oracle']
 
 # %%
-#table_results = results_df.loc[results_df.algorithm.isin(['ta-hdbscan', 'lachesis_coarse','tadbscan_coarse', 'lachesis_fine', 'tadbscan_fine'])]#
 table_results = results_df.loc[results_df.algorithm.isin(['ta-hdbscan', 'lachesis_coarse','tadbscan_coarse'])]
 table_results = table_results.loc[~table_results.category_value.isin(['all', 'big', 'medium', 'small', 'mid'])]
 table_results = table_results.groupby(['metric_category', 'category_value', 'algorithm'], as_index=True)[['f1', 'f1_as_pct_orac']].median().round(2)
