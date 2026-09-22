@@ -44,3 +44,27 @@ def test_algorithm_registry_persists_identifier_in_metrics_and_timings():
     assert annotated["family"] == "seqscan"
     assert timings.loc[0, "algorithm"] == "001__dist_thresh-30"
     assert timings.loc[0, "family"] == "seqscan"
+
+
+def test_algorithm_registry_tracks_external_parameters_without_forwarding_them():
+    registry = AlgorithmRegistry()
+    registry.add_algorithm(
+        labels_per_user,
+        family="gridbased",
+        external_params={"h3_resolution": [8, 9]},
+        dist_thresh=[30, 45],
+    )
+
+    algos = list(registry)
+    output = registry.time_call(algos[0], pd.DataFrame({"x": [1, 2, 3]}))
+    annotated = registry.annotate_metrics({"recall": 1.0}, algos[0])
+
+    assert [algo["algorithm"] for algo in algos] == [
+        "001__dist_thresh-30__h3_resolution-8",
+        "002__dist_thresh-30__h3_resolution-9",
+        "003__dist_thresh-45__h3_resolution-8",
+        "004__dist_thresh-45__h3_resolution-9",
+    ]
+    assert output["x"].tolist() == [1, 2, 3]
+    assert algos[0]["params"]["h3_resolution"] == 8
+    assert annotated["h3_resolution"] == 8
