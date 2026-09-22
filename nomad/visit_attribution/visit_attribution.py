@@ -1,7 +1,11 @@
 import geopandas as gpd
+import h3ronpy
+import h3ronpy.vector as h3vector
 import warnings
 import pandas as pd
 import pyproj
+import pyarrow as pa
+import pyarrow.compute as pc
 import numpy as np
 from sklearn.cluster import DBSCAN
 import nomad.io.base as loader
@@ -137,19 +141,24 @@ def point_in_polygon(data, poi_table, method='centroid', data_crs=None, max_dist
 # change to point_in_polygon, move to filters.py
 def poi_map(data, poi_table, max_distance=0, data_crs=None, location_id=None, traj_cols=None, **kwargs):
     """
-    Assign each point in `data` to a polygon in `poi_table`, using containment when
-    `max_distance==0` or the nearest neighbor within `max_distance` otherwise.
+    Assign each point or H3 containment area in `data` to a polygon in `poi_table`.
+
+    Points use geometric containment when `max_distance==0` or the nearest neighbor
+    within `max_distance` otherwise. H3 cells use intersecting POI cells or the POI
+    cell with the smallest H3 grid distance.
 
     Parameters
     ----------
     data : pd.DataFrame or gpd.GeoDataFrame
-        Input points, either as a DataFrame with coordinate columns or a GeoDataFrame.
+        Input points, either as a DataFrame with coordinate columns or a GeoDataFrame,
+        or a table containing H3 cells.
     poi_table : gpd.GeoDataFrame
         Polygons to match against, indexed or with `location_id` column.
     traj_cols : list of str, optional
         Names of the coordinate columns in `data` when it is a DataFrame.
     max_distance : float, default 0
-        Maximum search radius for nearest‐neighbor matching; zero invokes a point‐in‐polygon test.
+        Maximum search radius for nearest-neighbor matching. For H3 input, this is
+        the maximum grid distance in cells.
     data_crs : str or pyproj.CRS, optional
         CRS for `data` if it is a DataFrame; ignored for GeoDataFrames.
     location_id : str, optional
@@ -160,15 +169,83 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, location_id=None, tr
     Returns
     -------
     pd.Series
-        Indexed like `data`, with each entry set to the matching polygon’s ID (from
-        `location_id` or `poi_table.index`). Points not contained or beyond `max_distance`
-        yield NaN. When multiple polygons overlap a point, only the first match is kept.
+        Indexed like `data`, with each entry set to the matching polygon's ID (from
+        `location_id` or `poi_table.index`). Points or cells not contained or beyond
+        `max_distance` yield NaN. Ties retain the first POI in `poi_table`.
     """
     # column name handling
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, defaults={})
-        
+
     if poi_table.crs is None:
         raise ValueError(f"poi_table must have crs attribute for spatial join.")
+
+    if location_id is None and "location_id" in traj_cols:
+        location_id = traj_cols["location_id"]
+
+    out_col = location_id if location_id is not None else "location_id"
+    # choose where IDs come from: poi_table column (if it exists) else poi_table.index
+    use_col = (location_id is not None) and (location_id in poi_table.columns)
+
+    if location_id is None:
+        warnings.warn("location_id not provided; using poi_table.index for spatial join.")
+    elif not use_col:
+        warnings.warn(f"{location_id} column not found in poi_table; using poi_table.index for spatial join.")
+
+    h3_col = traj_cols.get("h3_cell", "h3_cell")
+    if h3_col in data.columns:
+        locations = pd.Series(index=data.index, name=out_col, dtype="object")
+        unique_cells = pd.Series(data[h3_col].dropna().unique(), dtype="string")
+        if unique_cells.empty or poi_table.empty:
+            return locations
+
+        parsed_cells = pa.array(h3ronpy.cells_parse(pa.array(unique_cells, type=pa.string())))
+        resolutions = pc.unique(pa.array(h3ronpy.cells_resolution(parsed_cells))).to_pylist()
+        if len(resolutions) != 1:
+            raise ValueError("All h3_cell values must have the same resolution.")
+
+        h3_crs = pyproj.CRS("EPSG:4326")
+        if not h3_crs.equals(pyproj.CRS(poi_table.crs)):
+            poi_table = poi_table.to_crs(h3_crs)
+            warnings.warn("CRS for `poi_table` is not EPSG:4326. Reprojecting for H3 attribution...")
+
+        poi_cell_lists = pa.array(h3vector.wkb_to_cells(
+            pa.array(poi_table.geometry.to_wkb()),
+            resolutions[0],
+            containment_mode=h3ronpy.ContainmentMode.Covers,
+        ))
+        poi_cells = pc.list_flatten(poi_cell_lists)
+        if len(poi_cells) == 0:
+            return locations
+
+        poi_positions = pc.list_parent_indices(poi_cell_lists).to_numpy()
+        poi_ids = (
+            poi_table[location_id] if use_col else pd.Series(poi_table.index)
+        ).reset_index(drop=True)
+        poi_coverage = pd.DataFrame({
+            "_candidate_cell": poi_cells.to_numpy(),
+            "_poi_position": poi_positions,
+            out_col: poi_ids.iloc[poi_positions].to_numpy(),
+        })
+
+        disk_distances = pa.table(h3ronpy.grid_disk_distances(parsed_cells, max_distance))
+        candidate_lists = disk_distances["cell"].combine_chunks()
+        candidates = pd.DataFrame({
+            "_input_position": pc.list_parent_indices(candidate_lists).to_numpy(),
+            "_candidate_cell": pc.list_flatten(candidate_lists).to_numpy(),
+            "_distance": pc.list_flatten(
+                disk_distances["k"].combine_chunks()
+            ).to_numpy(),
+        })
+        matches = candidates.merge(poi_coverage, on="_candidate_cell")
+        if matches.empty:
+            return locations
+
+        matches = matches.sort_values(
+            ["_input_position", "_distance", "_poi_position"], kind="stable"
+        ).drop_duplicates("_input_position")
+        lookup = pd.Series(index=unique_cells, dtype="object")
+        lookup.iloc[matches["_input_position"].to_numpy()] = matches[out_col].to_numpy()
+        return data[h3_col].astype("string").map(lookup).rename(out_col)
    
     # Determine which geometry to use
     if isinstance(data, gpd.GeoDataFrame):
@@ -215,15 +292,6 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, location_id=None, tr
         poi_table = poi_table.to_crs(data_crs)
         warnings.warn("CRS for `poi_table` does not match crs for `data`. Reprojecting...")
 
-    out_col = location_id if location_id is not None else "location_id"
-    # choose where IDs come from: poi_table column (if it exists) else poi_table.index
-    use_col = (location_id is not None) and (location_id in poi_table.columns)
-
-    if location_id is None:
-        warnings.warn("location_id not provided; using poi_table.index for spatial join.")
-    elif not use_col:
-        warnings.warn(f"{location_id} column not found in poi_table; using poi_table.index for spatial join.")
-        
     if max_distance>0:
         if data_crs.is_geographic:
             warnings.warn(f"Provided CRS {data_crs.name} is a geographic coordinate system. "

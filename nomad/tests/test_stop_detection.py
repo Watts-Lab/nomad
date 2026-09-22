@@ -5,6 +5,8 @@ import pytest
 from pathlib import Path
 import nomad.io.base as loader
 from nomad import filters
+import nomad.stop_detection.density_algs as density_algs
+import nomad.stop_detection.sequential_algs as sequential_algs
 from nomad.stop_detection.density_algs import (
     dbstop,
     dbstop_labels,
@@ -30,6 +32,7 @@ from nomad.stop_detection.sequential_algs import (
     detect_stops_per_user,
     grid_based,
     grid_based_labels,
+    grid_based_per_user,
     lachesis,
     lachesis_labels,
     lachesis_labels_per_user,
@@ -396,6 +399,21 @@ def simple_traj(stop_test_params):
     
     df["tz_offset"] = 0
     return df
+
+@pytest.fixture
+def passthrough_traj():
+    return pd.DataFrame({
+        "user_id": ["a", "a", "a", "b", "b", "b"],
+        "timestamp": [0, 600, 1200, 0, 600, 1200],
+        "x": [0.0, 0.0, 0.0, 10.0, 10.0, 10.0],
+        "y": [0.0, 0.0, 0.0, 10.0, 10.0, 10.0],
+        "h3_cell": ["cell-a"] * 3 + ["cell-b"] * 3,
+        "location_id": pd.Series(
+            ["first-a", "mode-a", "mode-a", "first-b", "mode-b", "mode-b"],
+            dtype="string",
+        ),
+        "place_code": pd.Series([1, 2, 2, 3, 4, 4], dtype="Int64"),
+    })
 
 @pytest.fixture(scope="module")
 def agent_traj_ground_truth():
@@ -1671,3 +1689,97 @@ def test_st_hdbscan_delta_roam(hdbscan_traj):
         delta_roam=50, traj_cols=traj_cols
     )
     assert isinstance(stops, pd.DataFrame)
+
+
+@pytest.mark.parametrize(
+    ("module", "stop_name", "label_name", "algorithm_kwargs"),
+    [
+        (sequential_algs, "detect_stops", "detect_stops_labels", {"delta_roam": 100, "dt_max": 60}),
+        (sequential_algs, "lachesis", "lachesis_labels", {"delta_roam": 100, "dt_max": 60}),
+        (density_algs, "ta_dbscan", "ta_dbscan_labels", {"dist_thresh": 100, "min_pts": 2, "time_thresh": 60}),
+        (density_algs, "dbstop", "dbstop_labels", {"dist_thresh": 100, "min_pts": 2, "time_thresh": 60}),
+        (density_algs, "seqscan", "seqscan_labels", {"dist_thresh": 100, "min_pts": 2, "time_thresh": 60}),
+        (density_algs, "st_hdbscan", "hdbscan_labels", {"time_thresh": 60}),
+    ],
+)
+def test_direct_stop_apis_forward_passthrough_agg_only_to_summarization(
+    passthrough_traj,
+    monkeypatch,
+    module,
+    stop_name,
+    label_name,
+    algorithm_kwargs,
+):
+    label_kwargs = []
+
+    def labels(data, **kwargs):
+        label_kwargs.append(kwargs)
+        return pd.Series(0, index=data.index, name="cluster")
+
+    monkeypatch.setattr(module, label_name, labels)
+    stops = getattr(module, stop_name)(
+        passthrough_traj.iloc[:3],
+        dur_min=0,
+        passthrough_cols=["location_id"],
+        passthrough_agg={"location_id": lambda values: values.mode().iloc[0]},
+        **algorithm_kwargs,
+    )
+
+    assert stops["location_id"].tolist() == ["mode-a"]
+    assert "passthrough_agg" not in label_kwargs[0]
+
+
+def test_per_user_stop_api_forwards_nullable_passthrough_agg(passthrough_traj):
+    stops = detect_stops_per_user(
+        passthrough_traj,
+        delta_roam=100,
+        dt_max=60,
+        dur_min=0,
+        passthrough_cols=["location_id", "place_code"],
+        passthrough_agg={
+            "location_id": lambda values: values.mode().iloc[0],
+            "place_code": lambda values: values.mode().iloc[0],
+        },
+        n_jobs=1,
+    )
+
+    assert stops["location_id"].tolist() == ["mode-a", "mode-b"]
+    assert stops["place_code"].tolist() == [2, 4]
+    assert str(stops["place_code"].dtype) == "Int64"
+
+
+def test_grid_based_applies_passthrough_agg_and_preserves_default(passthrough_traj):
+    kwargs = {
+        "time_thresh": 60,
+        "min_cluster_size": 2,
+        "dur_min": 0,
+        "passthrough_cols": ["location_id"],
+        "traj_cols": {"location_id": "h3_cell"},
+    }
+
+    default_stops = grid_based(passthrough_traj.iloc[:3], **kwargs)
+    modal_stops = grid_based(
+        passthrough_traj.iloc[:3],
+        passthrough_agg={"location_id": lambda values: values.mode().iloc[0]},
+        **kwargs,
+    )
+
+    assert default_stops["location_id"].tolist() == ["first-a"]
+    assert modal_stops["location_id"].tolist() == ["mode-a"]
+
+
+def test_grid_based_per_user_preserves_passthrough_schema_for_all_noise(passthrough_traj):
+    stops = grid_based_per_user(
+        passthrough_traj,
+        time_thresh=60,
+        min_cluster_size=4,
+        dur_min=0,
+        passthrough_cols=["location_id"],
+        passthrough_agg={"location_id": lambda values: values.mode().iloc[0]},
+        traj_cols={"location_id": "h3_cell"},
+        n_jobs=1,
+    )
+
+    assert stops.empty
+    assert "location_id" in stops.columns
+    assert "user_id" in stops.columns

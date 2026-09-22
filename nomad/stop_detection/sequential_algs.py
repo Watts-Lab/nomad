@@ -129,6 +129,7 @@ def detect_stops(
     passthrough_cols=None,
     keep_col_names=True,
     traj_cols=None,
+    passthrough_agg=None,
     **kwargs
 ):
     """
@@ -152,6 +153,8 @@ def detect_stops(
         If True, include additional summary statistics in output.
     passthrough_cols : list, optional
         Columns to retain (and summarize/propagate) per stop.
+    passthrough_agg : dict, optional
+        Aggregation functions for selected passthrough columns.
     keep_col_names : bool, default True
         Whether to keep original column names in output.
     traj_cols : dict, optional
@@ -193,6 +196,7 @@ def detect_stops(
         labels,
         complete_output=complete_output,
         passthrough_cols=passthrough_cols,
+        passthrough_agg=passthrough_agg,
         keep_col_names=keep_col_names,
         traj_cols=traj_cols,
         **kwargs,
@@ -211,6 +215,7 @@ def detect_stops_per_user(
     traj_cols=None,
     n_jobs=1,
     print_progress=False,
+    passthrough_agg=None,
     **kwargs
 ):
     """
@@ -232,6 +237,8 @@ def detect_stops_per_user(
         If True, include additional summary statistics in output.
     passthrough_cols : list, optional
         Columns to retain (and summarize/propagate) per stop.
+    passthrough_agg : dict, optional
+        Aggregation functions for selected passthrough columns.
     keep_col_names : bool, default True
         Whether to keep original column names in output.
     traj_cols : dict, optional
@@ -271,6 +278,7 @@ def detect_stops_per_user(
             "method": method,
             "complete_output": complete_output,
             "passthrough_cols": pt_cols,
+            "passthrough_agg": passthrough_agg,
             "keep_col_names": keep_col_names,
             "traj_cols": traj_cols,
             **kwargs,
@@ -497,6 +505,7 @@ def lachesis(
     postprocessing=None,
     eps=None,
     traj_cols=None,
+    passthrough_agg=None,
     **kwargs
 ):
     """
@@ -518,6 +527,8 @@ def lachesis(
         Passed along to the column‐detection helper.
     passthrough_cols : list, optional
         Columns to retain (and summarize/propagate) per stop.
+    passthrough_agg : dict, optional
+        Aggregation functions for selected passthrough columns.
     postprocessing : {None, 'dbscan'}, optional
         Optional stop postprocessing method.
     eps : float, optional
@@ -559,6 +570,7 @@ def lachesis(
         labels,
         complete_output=complete_output,
         passthrough_cols=passthrough_cols,
+        passthrough_agg=passthrough_agg,
         keep_col_names=keep_col_names,
         traj_cols=traj_cols,
         **kwargs,
@@ -577,6 +589,7 @@ def lachesis_per_user(
     traj_cols=None,
     n_jobs=1,
     print_progress=False,
+    passthrough_agg=None,
     **kwargs
 ):
     """
@@ -596,6 +609,8 @@ def lachesis_per_user(
         If True, include additional summary statistics in output.
     passthrough_cols : list, optional
         Columns to retain (and summarize/propagate) per stop.
+    passthrough_agg : dict, optional
+        Aggregation functions for selected passthrough columns.
     postprocessing : {None, 'dbscan'}, optional
         Optional stop postprocessing method applied separately to each user.
     eps : float, optional
@@ -639,6 +654,7 @@ def lachesis_per_user(
             "dur_min": dur_min,
             "complete_output": complete_output,
             "passthrough_cols": pt_cols,
+            "passthrough_agg": passthrough_agg,
             "postprocessing": postprocessing,
             "eps": eps,
             "traj_cols": traj_cols,
@@ -784,6 +800,7 @@ def grid_based(
     complete_output=False,
     passthrough_cols=None,
     traj_cols=None,
+    passthrough_agg=None,
     **kwargs
 ):
     """
@@ -801,6 +818,10 @@ def grid_based(
         Minimum duration in minutes for a valid stop. Default is 5.
     complete_output : bool, optional
         If True, include additional stop statistics in the output.
+    passthrough_cols : list, optional
+        Columns to retain per stop.
+    passthrough_agg : dict, optional
+        Aggregation functions for selected passthrough columns.
     traj_cols : dict, optional
         Mapping for 'timestamp', 'datetime', or 'location_id' column names.
     **kwargs
@@ -844,6 +865,7 @@ def grid_based(
             traj_cols=traj_cols,
             keep_col_names=True,
             passthrough_cols=passthrough_cols,
+            passthrough_agg=passthrough_agg,
             **kwargs
         ),
         include_groups=False
@@ -864,6 +886,7 @@ def grid_based_per_user(
     traj_cols=None,
     n_jobs=1,
     print_progress=False,
+    passthrough_agg=None,
     **kwargs
 ):
     """
@@ -892,6 +915,7 @@ def grid_based_per_user(
             "dur_min": dur_min,
             "complete_output": complete_output,
             "passthrough_cols": pt_cols,
+            "passthrough_agg": passthrough_agg,
             "traj_cols": traj_cols,
             **kwargs,
         },
