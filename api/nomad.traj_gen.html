@@ -23,7 +23,7 @@
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="visit_attribution" href="nomad.visit_attribution.html" />
-    <link rel="prev" title="stop_detection" href="nomad.stop_detection.html" /> 
+    <link rel="prev" title="viz" href="generated/nomad.stop_detection.viz.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -91,14 +91,27 @@
 <li class="toctree-l2"><a class="reference internal" href="nomad.stop_detection.html">stop_detection</a></li>
 <li class="toctree-l2 current"><a class="current reference internal" href="#">traj_gen</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#nomad.traj_gen.Agent"><code class="docutils literal notranslate"><span class="pre">Agent</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Agent.identifier"><code class="docutils literal notranslate"><span class="pre">Agent.identifier</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Agent.city"><code class="docutils literal notranslate"><span class="pre">Agent.city</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Agent.home"><code class="docutils literal notranslate"><span class="pre">Agent.home</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Agent.workplace"><code class="docutils literal notranslate"><span class="pre">Agent.workplace</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Agent.home_centroid"><code class="docutils literal notranslate"><span class="pre">Agent.home_centroid</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Agent.workplace_centroid"><code class="docutils literal notranslate"><span class="pre">Agent.workplace_centroid</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Agent.still_probs"><code class="docutils literal notranslate"><span class="pre">Agent.still_probs</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Agent.speeds"><code class="docutils literal notranslate"><span class="pre">Agent.speeds</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Agent.destination_diary"><code class="docutils literal notranslate"><span class="pre">Agent.destination_diary</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Agent.trajectory"><code class="docutils literal notranslate"><span class="pre">Agent.trajectory</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Agent.sparse_traj"><code class="docutils literal notranslate"><span class="pre">Agent.sparse_traj</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Agent.diary"><code class="docutils literal notranslate"><span class="pre">Agent.diary</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Agent.sparsity_params"><code class="docutils literal notranslate"><span class="pre">Agent.sparsity_params</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Agent.last_ping"><code class="docutils literal notranslate"><span class="pre">Agent.last_ping</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Agent.dt"><code class="docutils literal notranslate"><span class="pre">Agent.dt</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Agent.generate_dest_diary"><code class="docutils literal notranslate"><span class="pre">Agent.generate_dest_diary()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Agent.generate_trajectory"><code class="docutils literal notranslate"><span class="pre">Agent.generate_trajectory()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Agent.plot_traj"><code class="docutils literal notranslate"><span class="pre">Agent.plot_traj()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Agent.reset_trajectory"><code class="docutils literal notranslate"><span class="pre">Agent.reset_trajectory()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Agent.sample_trajectory"><code class="docutils literal notranslate"><span class="pre">Agent.sample_trajectory()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Agent.set_beta_params"><code class="docutils literal notranslate"><span class="pre">Agent.set_beta_params()</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#nomad.traj_gen.Population"><code class="docutils literal notranslate"><span class="pre">Population</span></code></a><ul>
@@ -106,16 +119,17 @@
 <li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Population.city"><code class="docutils literal notranslate"><span class="pre">Population.city</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Population.dt"><code class="docutils literal notranslate"><span class="pre">Population.dt</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Population.add_agent"><code class="docutils literal notranslate"><span class="pre">Population.add_agent()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Population.gen_params_target_f"><code class="docutils literal notranslate"><span class="pre">Population.gen_params_target_f()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Population.gen_params_target_q"><code class="docutils literal notranslate"><span class="pre">Population.gen_params_target_q()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Population.generate_agents"><code class="docutils literal notranslate"><span class="pre">Population.generate_agents()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Population.reproject_to_mercator"><code class="docutils literal notranslate"><span class="pre">Population.reproject_to_mercator()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Population.sample_from_intervals"><code class="docutils literal notranslate"><span class="pre">Population.sample_from_intervals()</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="#nomad.traj_gen.Population.save_pop"><code class="docutils literal notranslate"><span class="pre">Population.save_pop()</span></code></a></li>
 </ul>
 </li>
-<li class="toctree-l3"><a class="reference internal" href="#nomad.traj_gen.allowed_buildings"><code class="docutils literal notranslate"><span class="pre">allowed_buildings()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nomad.traj_gen.condense_destinations"><code class="docutils literal notranslate"><span class="pre">condense_destinations()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nomad.traj_gen.generate_ping_times"><code class="docutils literal notranslate"><span class="pre">generate_ping_times()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nomad.traj_gen.parse_agent_attr"><code class="docutils literal notranslate"><span class="pre">parse_agent_attr()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#nomad.traj_gen.sample_bursts_gaps"><code class="docutils literal notranslate"><span class="pre">sample_bursts_gaps()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nomad.traj_gen.thin_traj_by_times"><code class="docutils literal notranslate"><span class="pre">thin_traj_by_times()</span></code></a></li>
 </ul>
 </li>
@@ -153,9 +167,75 @@
 <span id="traj-gen"></span><h1>traj_gen<a class="headerlink" href="#module-nomad.traj_gen" title="Link to this heading"></a></h1>
 <dl class="py class">
 <dt class="sig sig-object py" id="nomad.traj_gen.Agent">
-<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">nomad.traj_gen.</span></span><span class="sig-name descname"><span class="pre">Agent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">identifier</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">city</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">home</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">workplace</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">still_probs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">{'home':</span> <span class="pre">0.9,</span> <span class="pre">'park':</span> <span class="pre">0.5,</span> <span class="pre">'retail':</span> <span class="pre">0.5,</span> <span class="pre">'workplace':</span> <span class="pre">0.9}</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">speeds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">{'home':</span> <span class="pre">0.3826530612244898,</span> <span class="pre">'park':</span> <span class="pre">1.0204081632653061,</span> <span class="pre">'retail':</span> <span class="pre">0.8928571428571429,</span> <span class="pre">'workplace':</span> <span class="pre">0.3826530612244898}</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">destination_diary</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">trajectory</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">diary</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">x</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">y</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">location</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">datetime</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timestamp</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/traj_gen.html#Agent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.traj_gen.Agent" title="Link to this definition"></a></dt>
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">nomad.traj_gen.</span></span><span class="sig-name descname"><span class="pre">Agent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">identifier</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">city</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">home</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">workplace</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">still_probs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">{'home':</span> <span class="pre">0.9,</span> <span class="pre">'park':</span> <span class="pre">0.5,</span> <span class="pre">'retail':</span> <span class="pre">0.5,</span> <span class="pre">'workplace':</span> <span class="pre">0.9}</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">speeds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">{'home':</span> <span class="pre">0.3826530612244898,</span> <span class="pre">'park':</span> <span class="pre">1.0204081632653061,</span> <span class="pre">'retail':</span> <span class="pre">0.8928571428571429,</span> <span class="pre">'workplace':</span> <span class="pre">0.3826530612244898}</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">destination_diary</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">trajectory</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">diary</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sparsity_params</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">x</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">y</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">location</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">datetime</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timestamp</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/traj_gen.html#Agent"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.traj_gen.Agent" title="Link to this definition"></a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
 <p>Represents an agent in the city simulation.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nomad.traj_gen.Agent.identifier">
+<span class="sig-name descname"><span class="pre">identifier</span></span><a class="headerlink" href="#nomad.traj_gen.Agent.identifier" title="Link to this definition"></a></dt>
+<dd><p>Agent identifier.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nomad.traj_gen.Agent.city">
+<span class="sig-name descname"><span class="pre">city</span></span><a class="headerlink" href="#nomad.traj_gen.Agent.city" title="Link to this definition"></a></dt>
+<dd><p>City object containing buildings and movement topology.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="nomad.city_gen.html#nomad.city_gen.City" title="nomad.city_gen.City">City</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nomad.traj_gen.Agent.home">
+<span class="sig-name descname"><span class="pre">home</span></span><a class="headerlink" href="#nomad.traj_gen.Agent.home" title="Link to this definition"></a></dt>
+<dd><p>Building ID for the agent’s home.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nomad.traj_gen.Agent.workplace">
+<span class="sig-name descname"><span class="pre">workplace</span></span><a class="headerlink" href="#nomad.traj_gen.Agent.workplace" title="Link to this definition"></a></dt>
+<dd><p>Building ID for the agent’s workplace.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nomad.traj_gen.Agent.home_centroid">
+<span class="sig-name descname"><span class="pre">home_centroid</span></span><a class="headerlink" href="#nomad.traj_gen.Agent.home_centroid" title="Link to this definition"></a></dt>
+<dd><p>Centroid of the agent’s home building.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>shapely.geometry.Point</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nomad.traj_gen.Agent.workplace_centroid">
+<span class="sig-name descname"><span class="pre">workplace_centroid</span></span><a class="headerlink" href="#nomad.traj_gen.Agent.workplace_centroid" title="Link to this definition"></a></dt>
+<dd><p>Centroid of the agent’s workplace building.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>shapely.geometry.Point</p>
+</dd>
+</dl>
+</dd></dl>
+
 <dl class="py attribute">
 <dt class="sig sig-object py" id="nomad.traj_gen.Agent.still_probs">
 <span class="sig-name descname"><span class="pre">still_probs</span></span><a class="headerlink" href="#nomad.traj_gen.Agent.still_probs" title="Link to this definition"></a></dt>
@@ -174,6 +254,72 @@
 <dl class="field-list simple">
 <dt class="field-odd">Type<span class="colon">:</span></dt>
 <dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nomad.traj_gen.Agent.destination_diary">
+<span class="sig-name descname"><span class="pre">destination_diary</span></span><a class="headerlink" href="#nomad.traj_gen.Agent.destination_diary" title="Link to this definition"></a></dt>
+<dd><p>Planned destinations with columns [‘datetime’, ‘timestamp’, ‘duration’, ‘location’].</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pandas.DataFrame</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nomad.traj_gen.Agent.trajectory">
+<span class="sig-name descname"><span class="pre">trajectory</span></span><a class="headerlink" href="#nomad.traj_gen.Agent.trajectory" title="Link to this definition"></a></dt>
+<dd><p>Full simulated trajectory.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pandas.DataFrame or None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nomad.traj_gen.Agent.sparse_traj">
+<span class="sig-name descname"><span class="pre">sparse_traj</span></span><a class="headerlink" href="#nomad.traj_gen.Agent.sparse_traj" title="Link to this definition"></a></dt>
+<dd><p>Sampled sparse trajectory.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pandas.DataFrame or None</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nomad.traj_gen.Agent.diary">
+<span class="sig-name descname"><span class="pre">diary</span></span><a class="headerlink" href="#nomad.traj_gen.Agent.diary" title="Link to this definition"></a></dt>
+<dd><p>Travel diary produced from trajectory generation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pandas.DataFrame</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nomad.traj_gen.Agent.sparsity_params">
+<span class="sig-name descname"><span class="pre">sparsity_params</span></span><a class="headerlink" href="#nomad.traj_gen.Agent.sparsity_params" title="Link to this definition"></a></dt>
+<dd><p>Sparse trajectory sampling parameters and metadata.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="nomad.traj_gen.Agent.last_ping">
+<span class="sig-name descname"><span class="pre">last_ping</span></span><a class="headerlink" href="#nomad.traj_gen.Agent.last_ping" title="Link to this definition"></a></dt>
+<dd><p>Most recent known agent state.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pandas.Series or None</p>
 </dd>
 </dl>
 </dd></dl>
@@ -268,23 +414,46 @@ This method is useful for reinitializing the agent after a simulation run.</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="nomad.traj_gen.Agent.sample_trajectory">
-<span class="sig-name descname"><span class="pre">sample_trajectory</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">beta_start</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_durations</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_ping</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ha</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.75</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pareto_prior</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dt</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">output_bursts</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">deduplicate</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">replace_sparse_traj</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cache_traj</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/traj_gen.html#Agent.sample_trajectory"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.traj_gen.Agent.sample_trajectory" title="Link to this definition"></a></dt>
-<dd><p>Samples a sparse trajectory using a hierarchical non-homogeneous Poisson process.</p>
+<span class="sig-name descname"><span class="pre">sample_trajectory</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ha</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.75</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pareto_prior</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">replace_sparse_traj</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">flush_traj_cache</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">debug_mode</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/traj_gen.html#Agent.sample_trajectory"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.traj_gen.Agent.sample_trajectory" title="Link to this definition"></a></dt>
+<dd><p>Samples a sparse trajectory using a hierarchical inhomogeneous Poisson process.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>beta_start</strong> (<em>float</em>) – The rate parameter governing the Poisson Process controlling
-the start of the trajectory.</p></li>
-<li><p><strong>beta_durations</strong> (<em>float</em>) – The rate parameter governing the Exponential controlling
-for the durations of the trajectory.</p></li>
-<li><p><strong>beta_ping</strong> (<em>float</em>) – The rate parameter governing the Poisson Process controlling
-which pings are sampled.</p></li>
 <li><p><strong>seed</strong> (<em>int</em>) – Random seed for reproducibility.</p></li>
 <li><p><strong>ha</strong> (<em>float</em>) – Horizontal accuracy</p></li>
-<li><p><strong>output_bursts</strong> (<em>bool</em>) – If True, outputs the latent variables on when bursts start and end.</p></li>
 <li><p><strong>replace_sparse_traj</strong> (<em>bool</em>) – if True, replaces existing sparse_traj field with the new sparsified trajectory
 rather than appending.</p></li>
-<li><p><strong>cache_traj</strong> (<em>bool</em>) – if True, empties the Agent’s trajectory DataFrame.</p></li>
+<li><p><strong>flush_traj_cache</strong> (<em>bool</em>) – If True, discards the dense trajectory except for its final ping.</p></li>
+<li><p><strong>debug_mode</strong> (<em>bool</em>) – If True, validates that dense and sparse trajectories are sorted
+chronologically.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Start and end times for bursts that produced at least one ping.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pandas.DataFrame</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.traj_gen.Agent.set_beta_params">
+<span class="sig-name descname"><span class="pre">set_beta_params</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">beta_params</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_start</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_durations</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_ping</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/traj_gen.html#Agent.set_beta_params"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.traj_gen.Agent.set_beta_params" title="Link to this definition"></a></dt>
+<dd><p>Set the parameters used to sample sparse trajectories.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>beta_params</strong> (<em>dict</em><em>, </em><em>optional</em>) – Parameter dictionary containing ‘beta_start’, ‘beta_durations’,
+and ‘beta_ping’. Additional values are retained. If provided,
+this dictionary takes precedence over the explicit parameters.</p></li>
+<li><p><strong>beta_start</strong> (<em>float</em><em> or </em><em>None</em>) – The rate parameter governing burst starts. Use 0 together with
+beta_durations=np.inf for one full-trajectory burst. A value of 0
+is stored as None.</p></li>
+<li><p><strong>beta_durations</strong> (<em>float</em><em> or </em><em>None</em>) – The rate parameter governing burst durations. Use np.inf together
+with beta_start=0 for one full-trajectory burst. A value of np.inf
+is stored as None.</p></li>
+<li><p><strong>beta_ping</strong> (<em>float</em>) – The rate parameter governing ping sampling.</p></li>
 </ul>
 </dd>
 </dl>
@@ -395,6 +564,24 @@ If the agent identifier already exists in the population, it will be replaced.</
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="nomad.traj_gen.Population.gen_params_target_f">
+<em class="property"><span class="pre">static</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">gen_params_target_f</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">f</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_start</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_ping</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_durations</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_start_probs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_ping_probs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_durations_probs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rng</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/traj_gen.html#Population.gen_params_target_f"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.traj_gen.Population.gen_params_target_f" title="Link to this definition"></a></dt>
+<dd><p>Sample burst parameters targeting expected ping frequency <code class="docutils literal notranslate"><span class="pre">f</span></code>,
+modeled as <code class="docutils literal notranslate"><span class="pre">beta_durations</span> <span class="pre">/</span> <span class="pre">(beta_start</span> <span class="pre">*</span> <span class="pre">beta_ping)</span></code>.</p>
+<p>Provide exactly two of <code class="docutils literal notranslate"><span class="pre">beta_start</span></code>, <code class="docutils literal notranslate"><span class="pre">beta_ping</span></code>, and
+<code class="docutils literal notranslate"><span class="pre">beta_durations</span></code>. The missing parameter is derived from <code class="docutils literal notranslate"><span class="pre">f</span></code>.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.traj_gen.Population.gen_params_target_q">
+<em class="property"><span class="pre">static</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">gen_params_target_q</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">q</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_start</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_ping</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_durations</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_start_probs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_ping_probs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_durations_probs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rng</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/traj_gen.html#Population.gen_params_target_q"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.traj_gen.Population.gen_params_target_q" title="Link to this definition"></a></dt>
+<dd><p>Sample burst parameters targeting coverage <code class="docutils literal notranslate"><span class="pre">q</span></code>, modeled as
+<code class="docutils literal notranslate"><span class="pre">beta_durations</span> <span class="pre">/</span> <span class="pre">beta_start</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">beta_ping</span></code> must be provided. Provide exactly one of <code class="docutils literal notranslate"><span class="pre">beta_start</span></code>
+and <code class="docutils literal notranslate"><span class="pre">beta_durations</span></code>; the other is derived from the sampled <code class="docutils literal notranslate"><span class="pre">q</span></code>.</p>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="nomad.traj_gen.Population.generate_agents">
 <span class="sig-name descname"><span class="pre">generate_agents</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">N</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name_count</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">agent_homes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">agent_workplaces</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">datetimes</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/traj_gen.html#Population.generate_agents"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.traj_gen.Population.generate_agents" title="Link to this definition"></a></dt>
 <dd><p>Generates N agents, with randomized attributes.</p>
@@ -416,6 +603,15 @@ If not provided, derived from city’s buildings_gdf using door coordinates.</p>
 </ul>
 </dd>
 </dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="nomad.traj_gen.Population.sample_from_intervals">
+<em class="property"><span class="pre">static</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">sample_from_intervals</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">beta_start</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_ping</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_durations</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_start_probs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_ping_probs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_durations_probs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rng</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/traj_gen.html#Population.sample_from_intervals"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.traj_gen.Population.sample_from_intervals" title="Link to this definition"></a></dt>
+<dd><p>Sample random trajectory parameters from specified ranges.</p>
+<p>Each beta parameter may be a scalar, a <code class="docutils literal notranslate"><span class="pre">(low,</span> <span class="pre">high)</span></code> tuple sampled
+uniformly, a list of exact values sampled uniformly, or a dict with
+<code class="docutils literal notranslate"><span class="pre">{&quot;values&quot;:</span> <span class="pre">[...],</span> <span class="pre">&quot;probs&quot;:</span> <span class="pre">[...]}</span></code>.</p>
 </dd></dl>
 
 <dl class="py method">
@@ -447,12 +643,6 @@ represents a column name and its values. Values must be a list/array of length N
 </dd></dl>
 
 <dl class="py function">
-<dt class="sig sig-object py" id="nomad.traj_gen.allowed_buildings">
-<span class="sig-prename descclassname"><span class="pre">nomad.traj_gen.</span></span><span class="sig-name descname"><span class="pre">allowed_buildings</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">local_ts</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/traj_gen.html#allowed_buildings"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.traj_gen.allowed_buildings" title="Link to this definition"></a></dt>
-<dd><p>Finds allowed buildings for the timestamp</p>
-</dd></dl>
-
-<dl class="py function">
 <dt class="sig sig-object py" id="nomad.traj_gen.condense_destinations">
 <span class="sig-prename descclassname"><span class="pre">nomad.traj_gen.</span></span><span class="sig-name descname"><span class="pre">condense_destinations</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">destination_diary</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/traj_gen.html#condense_destinations"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.traj_gen.condense_destinations" title="Link to this definition"></a></dt>
 <dd><p>Modifies a destination diary, joining consecutive entries for the same location
@@ -477,11 +667,8 @@ Defaults are ‘datetime’ and ‘timestamp’.</p></li>
 
 <dl class="py function">
 <dt class="sig sig-object py" id="nomad.traj_gen.generate_ping_times">
-<span class="sig-prename descclassname"><span class="pre">nomad.traj_gen.</span></span><span class="sig-name descname"><span class="pre">generate_ping_times</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">t0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">t_end</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_start</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_durations</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_ping</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">return_bursts</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tz</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/traj_gen.html#generate_ping_times"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.traj_gen.generate_ping_times" title="Link to this definition"></a></dt>
-<dd><p>Generate absolute ping timestamps (seconds) within [t0, t_end].</p>
-<p>If return_bursts is True, also returns a list of (start_time, end_time)
-for bursts that produced at least one ping. If tz is provided, start/end
-are timezone-aware pandas Timestamps; otherwise they are Unix seconds (int).</p>
+<span class="sig-prename descclassname"><span class="pre">nomad.traj_gen.</span></span><span class="sig-name descname"><span class="pre">generate_ping_times</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">t0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">t_end</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_start</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_durations</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_ping</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tz</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/traj_gen.html#generate_ping_times"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.traj_gen.generate_ping_times" title="Link to this definition"></a></dt>
+<dd><p>Generate ping timestamps and burst information within [t0, t_end].</p>
 </dd></dl>
 
 <dl class="py function">
@@ -509,35 +696,8 @@ are timezone-aware pandas Timestamps; otherwise they are Unix seconds (int).</p>
 </dd></dl>
 
 <dl class="py function">
-<dt class="sig sig-object py" id="nomad.traj_gen.sample_bursts_gaps">
-<span class="sig-prename descclassname"><span class="pre">nomad.traj_gen.</span></span><span class="sig-name descname"><span class="pre">sample_bursts_gaps</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">traj</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_start</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_durations</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta_ping</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ha</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.75</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pareto_prior</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">output_bursts</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">deduplicate</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/traj_gen.html#sample_bursts_gaps"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.traj_gen.sample_bursts_gaps" title="Link to this definition"></a></dt>
-<dd><p>Sample from simulated trajectory, drawn using hierarchical Poisson processes.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>traj</strong> (<em>numpy array</em>) – simulated trajectory from simulate_traj</p></li>
-<li><p><strong>beta_start</strong> (<em>float</em>) – scale parameter (mean) of Exponential distribution modeling burst inter-arrival times
-where 1/beta_start is the rate of events (bursts) per minute.</p></li>
-<li><p><strong>beta_durations</strong> (<em>float</em>) – scale parameter (mean) of Exponential distribution modeling burst durations.
-if beta_start and beta_durations are None, a single burst covering the whole trajectory is used.</p></li>
-<li><p><strong>beta_ping</strong> (<em>float</em>) – scale parameter (mean) of Exponential distribution modeling ping inter-arrival times
-within a burst, where 1/beta_ping is the rate of events (pings) per minute.</p></li>
-<li><p><strong>ha</strong> (<em>float</em>) – Mean horizontal-accuracy radius in 15 m blocks. The actual per-ping
-accuracy is random: ha &gt;= 8 m / 15 m and follows a Pareto distribution
-with that mean. For each ping the spatial noise (epsilon_x, epsilon_y)
-is drawn i.i.d. from N(0, sigma^2), with sigma = HA / 1.515 so that
-abs(epsilon) &lt;= HA with 68 percent probability.</p></li>
-<li><p><strong>seed</strong> (<em>int</em>) – The seed for random number generation.</p></li>
-<li><p><strong>output_bursts</strong> (<em>bool</em>) – If True, outputs the latent variables on when bursts start and end.</p></li>
-<li><p><strong>deduplicate</strong> (<em>bool</em>) – If True, sampled times are also discretized to be in ticks</p></li>
-</ul>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py function">
 <dt class="sig sig-object py" id="nomad.traj_gen.thin_traj_by_times">
-<span class="sig-prename descclassname"><span class="pre">nomad.traj_gen.</span></span><span class="sig-name descname"><span class="pre">thin_traj_by_times</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">traj</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ping_times</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">deduplicate</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/traj_gen.html#thin_traj_by_times"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.traj_gen.thin_traj_by_times" title="Link to this definition"></a></dt>
+<span class="sig-prename descclassname"><span class="pre">nomad.traj_gen.</span></span><span class="sig-name descname"><span class="pre">thin_traj_by_times</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">traj</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ping_times</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/traj_gen.html#thin_traj_by_times"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.traj_gen.thin_traj_by_times" title="Link to this definition"></a></dt>
 <dd><p>Apply ping_times to a dense traj via searchsorted thinning.</p>
 </dd></dl>
 
@@ -547,7 +707,7 @@ abs(epsilon) &lt;= HA with 68 percent probability.</p></li>
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="nomad.stop_detection.html" class="btn btn-neutral float-left" title="stop_detection" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="generated/nomad.stop_detection.viz.html" class="btn btn-neutral float-left" title="viz" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
         <a href="nomad.visit_attribution.html" class="btn btn-neutral float-right" title="visit_attribution" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 

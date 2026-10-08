@@ -1,0 +1,449 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>density_algs &mdash; NOMAD 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="postprocessing" href="nomad.stop_detection.postprocessing.html" />
+    <link rel="prev" title="stop_detection" href="../nomad.stop_detection.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html">
+            
+              <img src="../../_static/nomad-logo-black.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../data_ingestion.html">Data Ingestion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../filtering.html">Filtering &amp; Completeness</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tessellation.html">Tessellation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../stop_detection.html">Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../visit_attribution.html">Visit Attribution</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../metrics.html">Mobility Metrics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../colocation.html">Co-location &amp; Contact Networks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../aggregation.html">Aggregation &amp; Debiasing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../synthetic_data_generation.html">Synthetic Data Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../source/ingesting-data.html">Loading Trajectory Data</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/benchmarking_of_stop_detection_algorithms.html">Comparing runtimes of different stop detection algorithms on toy datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/lachesis_demo.html">Lachesis Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/tadbscan_demo.html">TADBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/hdbscan_demo.html">HDBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/grid_based_demo.html">Grid-Based Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/generate_synthetic_pois.html">Synthetic POI Generation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/download_poi_data_from_OSM.html">Downloading places of interest (POI) Data from OSM</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/generate_synthetic_trajectories.html">Synthetic Trajectory Generation with Nomad</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/random_city.html">Random City Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="../../api_reference.html">API Reference</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../nomad.agg.html">agg</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.aggregation.html">aggregation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.city_gen.html">city_gen</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.constants.html">constants</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.contact_estimation.html">contact_estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.displacement.html">displacement</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.filters.html">filters</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.filters_spark.html">filters_spark</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.generation.html">generation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.home_attribution.html">home_attribution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.io.html">io</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.map_utils.html">map_utils</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.metrics.html">metrics</a></li>
+<li class="toctree-l2 current"><a class="reference internal" href="../nomad.stop_detection.html">stop_detection</a><ul class="current">
+<li class="toctree-l3 current"><a class="current reference internal" href="#">density_algs</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.stop_detection.density_algs.dbstop"><code class="docutils literal notranslate"><span class="pre">dbstop()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.stop_detection.density_algs.dbstop_labels"><code class="docutils literal notranslate"><span class="pre">dbstop_labels()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.stop_detection.density_algs.dbstop_labels_per_user"><code class="docutils literal notranslate"><span class="pre">dbstop_labels_per_user()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.stop_detection.density_algs.dbstop_per_user"><code class="docutils literal notranslate"><span class="pre">dbstop_per_user()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.stop_detection.density_algs.hdbscan_labels"><code class="docutils literal notranslate"><span class="pre">hdbscan_labels()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.stop_detection.density_algs.hdbscan_labels_per_user"><code class="docutils literal notranslate"><span class="pre">hdbscan_labels_per_user()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.stop_detection.density_algs.seqscan"><code class="docutils literal notranslate"><span class="pre">seqscan()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.stop_detection.density_algs.seqscan_labels"><code class="docutils literal notranslate"><span class="pre">seqscan_labels()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.stop_detection.density_algs.seqscan_labels_per_user"><code class="docutils literal notranslate"><span class="pre">seqscan_labels_per_user()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.stop_detection.density_algs.seqscan_per_user"><code class="docutils literal notranslate"><span class="pre">seqscan_per_user()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.stop_detection.density_algs.st_hdbscan"><code class="docutils literal notranslate"><span class="pre">st_hdbscan()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.stop_detection.density_algs.st_hdbscan_per_user"><code class="docutils literal notranslate"><span class="pre">st_hdbscan_per_user()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.stop_detection.density_algs.ta_dbscan"><code class="docutils literal notranslate"><span class="pre">ta_dbscan()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.stop_detection.density_algs.ta_dbscan_labels"><code class="docutils literal notranslate"><span class="pre">ta_dbscan_labels()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.stop_detection.density_algs.ta_dbscan_labels_per_user"><code class="docutils literal notranslate"><span class="pre">ta_dbscan_labels_per_user()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.stop_detection.density_algs.ta_dbscan_per_user"><code class="docutils literal notranslate"><span class="pre">ta_dbscan_per_user()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.stop_detection.density_algs.window_graph"><code class="docutils literal notranslate"><span class="pre">window_graph()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="nomad.stop_detection.postprocessing.html">postprocessing</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nomad.stop_detection.preprocessing.html">preprocessing</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nomad.stop_detection.sequential_algs.html">sequential_algs</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nomad.stop_detection.utils.html">utils</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nomad.stop_detection.validation.html">validation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nomad.stop_detection.viz.html">viz</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.traj_gen.html">traj_gen</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.visit_attribution.html">visit_attribution</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">NOMAD</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../api_reference.html">API Reference</a></li>
+          <li class="breadcrumb-item"><a href="../nomad.stop_detection.html">stop_detection</a></li>
+      <li class="breadcrumb-item active">density_algs</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/api/generated/nomad.stop_detection.density_algs.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-nomad.stop_detection.density_algs">
+<span id="density-algs"></span><h1>density_algs<a class="headerlink" href="#module-nomad.stop_detection.density_algs" title="Link to this heading"></a></h1>
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.stop_detection.density_algs.dbstop">
+<span class="sig-prename descclassname"><span class="pre">nomad.stop_detection.density_algs.</span></span><span class="sig-name descname"><span class="pre">dbstop</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_pts</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dur_min</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">complete_output</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">passthrough_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">keep_col_names</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">passthrough_agg</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/stop_detection/density_algs.html#dbstop"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.stop_detection.density_algs.dbstop" title="Link to this definition"></a></dt>
+<dd><p>Temporal-augmented DBSCAN stop detection with summarization.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>pd.DataFrame</em>) – Input trajectory with spatial and temporal columns.</p></li>
+<li><p><strong>time_thresh</strong> (<em>int</em>) – Max time gap (minutes) for neighbors.</p></li>
+<li><p><strong>dist_thresh</strong> (<em>float</em>) – Max spatial distance for neighbors.</p></li>
+<li><p><strong>min_pts</strong> (<em>int</em>) – Minimum number of neighbors for a core point.</p></li>
+<li><p><strong>dur_min</strong> (<em>int</em><em>, </em><em>optional</em>) – Minimum duration (minutes) for a stop (default: 5).</p></li>
+<li><p><strong>complete_output</strong> (<em>bool</em><em>, </em><em>optional</em>) – Include extra stats if True (default: False).</p></li>
+<li><p><strong>passthrough_cols</strong> (<em>list</em><em>, </em><em>optional</em>) – Columns to retain per stop.</p></li>
+<li><p><strong>passthrough_agg</strong> (<em>dict</em><em>, </em><em>optional</em>) – Aggregation functions for selected passthrough columns.</p></li>
+<li><p><strong>traj_cols</strong> (<em>dict</em><em>, </em><em>optional</em>) – Mapping for column names.</p></li>
+<li><p><strong>**kwargs</strong> – Passed to internal helpers.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>One row per stop with medoid/centroid, duration, and optionally extra columns.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.DataFrame</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ValueError if multi-user data detected; use dbstop_per_user instead.</strong> – </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.stop_detection.density_algs.dbstop_labels">
+<span class="sig-prename descclassname"><span class="pre">nomad.stop_detection.density_algs.</span></span><span class="sig-name descname"><span class="pre">dbstop_labels</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_pts</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">return_cores</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/stop_detection/density_algs.html#dbstop_labels"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.stop_detection.density_algs.dbstop_labels" title="Link to this definition"></a></dt>
+<dd><p>Return density-based stop labels.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>return_cores</strong> (<em>bool</em><em>, </em><em>default False</em>) – Return core labels and <code class="docutils literal notranslate"><span class="pre">promotion_time</span></code> with cluster labels.
+<code class="docutils literal notranslate"><span class="pre">promotion_time</span></code> is the sweep time that propagates final membership.</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p><code class="docutils literal notranslate"><span class="pre">promotion_time</span></code> records approximate final-membership propagation time.
+For plotting, accent a ping at <code class="docutils literal notranslate"><span class="pre">max(ping_time,</span> <span class="pre">promotion_time)</span></code>. Its raw
+value can show propagation edges from cores, including to later pings.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.stop_detection.density_algs.dbstop_labels_per_user">
+<span class="sig-prename descclassname"><span class="pre">nomad.stop_detection.density_algs.</span></span><span class="sig-name descname"><span class="pre">dbstop_labels_per_user</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_pts</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">return_cores</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_jobs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">print_progress</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/stop_detection/density_algs.html#dbstop_labels_per_user"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.stop_detection.density_algs.dbstop_labels_per_user" title="Link to this definition"></a></dt>
+<dd><p>Run dbstop_labels on each user separately and concatenate labels.</p>
+<p>Raises if ‘user_id’ not in traj_cols or missing from data.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.stop_detection.density_algs.dbstop_per_user">
+<span class="sig-prename descclassname"><span class="pre">nomad.stop_detection.density_algs.</span></span><span class="sig-name descname"><span class="pre">dbstop_per_user</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_pts</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dur_min</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">complete_output</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">passthrough_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">keep_col_names</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_jobs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">print_progress</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">passthrough_agg</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/stop_detection/density_algs.html#dbstop_per_user"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.stop_detection.density_algs.dbstop_per_user" title="Link to this definition"></a></dt>
+<dd><p>Run dbstop on each user separately, then concatenate results.
+Raises if ‘user_id’ not in traj_cols or missing from data.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.stop_detection.density_algs.hdbscan_labels">
+<span class="sig-prename descclassname"><span class="pre">nomad.stop_detection.density_algs.</span></span><span class="sig-name descname"><span class="pre">hdbscan_labels</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_pts</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_cluster_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dur_min</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">delta_roam</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_thresh</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">return_cores</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/stop_detection/density_algs.html#hdbscan_labels"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.stop_detection.density_algs.hdbscan_labels" title="Link to this definition"></a></dt>
+<dd><p>Compute HDBSCAN cluster labels for trajectory data, with core/border assignment.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>pd.DataFrame</em>) – Input trajectory data.</p></li>
+<li><p><strong>time_thresh</strong> (<em>int</em>) – Maximum allowed time gap (minutes) for temporal neighbors.</p></li>
+<li><p><strong>min_pts</strong> (<em>int</em><em>, </em><em>optional</em>) – Minimum neighbors for a core point (default: 2).</p></li>
+<li><p><strong>min_cluster_size</strong> (<em>int</em><em>, </em><em>optional</em>) – Minimum cluster size for a valid stop (default: 1).</p></li>
+<li><p><strong>dur_min</strong> (<em>int</em><em>, </em><em>optional</em>) – Minimum duration (minutes) for a stop (default: 5).</p></li>
+<li><p><strong>return_cores</strong> (<em>bool</em><em>, </em><em>default False</em>) – Return core labels and <code class="docutils literal notranslate"><span class="pre">promotion_time</span></code> with cluster labels. Core
+pings use their own time; border pings use their propagating core time.</p></li>
+<li><p><strong>traj_cols</strong> (<em>dict</em><em>, </em><em>optional</em>) – Mapping for key columns.</p></li>
+<li><p><strong>**kwargs</strong> – Passed to internal helpers.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Cluster labels, or <code class="docutils literal notranslate"><span class="pre">cluster</span></code>, <code class="docutils literal notranslate"><span class="pre">core</span></code>, and <code class="docutils literal notranslate"><span class="pre">promotion_time</span></code> when
+<code class="docutils literal notranslate"><span class="pre">return_cores</span></code> is true.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.Series or pd.DataFrame</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p><code class="docutils literal notranslate"><span class="pre">promotion_time</span></code> records approximate final-membership propagation time.
+For plotting, accent a ping at <code class="docutils literal notranslate"><span class="pre">max(ping_time,</span> <span class="pre">promotion_time)</span></code>. Its raw
+value can show propagation edges from cores, including to later pings.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.stop_detection.density_algs.hdbscan_labels_per_user">
+<span class="sig-prename descclassname"><span class="pre">nomad.stop_detection.density_algs.</span></span><span class="sig-name descname"><span class="pre">hdbscan_labels_per_user</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_pts</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_cluster_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dur_min</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">delta_roam</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">return_cores</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_jobs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">print_progress</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/stop_detection/density_algs.html#hdbscan_labels_per_user"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.stop_detection.density_algs.hdbscan_labels_per_user" title="Link to this definition"></a></dt>
+<dd><p>Run hdbscan_labels on each user separately and concatenate labels.</p>
+<p>Raises if ‘user_id’ not in traj_cols or missing from data.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.stop_detection.density_algs.seqscan">
+<span class="sig-prename descclassname"><span class="pre">nomad.stop_detection.density_algs.</span></span><span class="sig-name descname"><span class="pre">seqscan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_pts</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dur_min</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">complete_output</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">passthrough_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">keep_col_names</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">passthrough_agg</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/stop_detection/density_algs.html#seqscan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.stop_detection.density_algs.seqscan" title="Link to this definition"></a></dt>
+<dd><p>Temporal-augmented DBSCAN stop detection with summarization.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>pd.DataFrame</em>) – Input trajectory with spatial and temporal columns.</p></li>
+<li><p><strong>time_thresh</strong> (<em>int</em>) – Max time gap (minutes) for neighbors.</p></li>
+<li><p><strong>dist_thresh</strong> (<em>float</em>) – Max spatial distance for neighbors.</p></li>
+<li><p><strong>min_pts</strong> (<em>int</em>) – Minimum number of neighbors for a core point.</p></li>
+<li><p><strong>dur_min</strong> (<em>int</em><em>, </em><em>optional</em>) – Minimum duration (minutes) for a stop (default: 5).</p></li>
+<li><p><strong>complete_output</strong> (<em>bool</em><em>, </em><em>optional</em>) – Include extra stats if True (default: False).</p></li>
+<li><p><strong>passthrough_cols</strong> (<em>list</em><em>, </em><em>optional</em>) – Columns to retain per stop.</p></li>
+<li><p><strong>passthrough_agg</strong> (<em>dict</em><em>, </em><em>optional</em>) – Aggregation functions for selected passthrough columns.</p></li>
+<li><p><strong>traj_cols</strong> (<em>dict</em><em>, </em><em>optional</em>) – Mapping for column names.</p></li>
+<li><p><strong>**kwargs</strong> – Passed to internal helpers.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>One row per stop with medoid/centroid, duration, and optionally extra columns.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.DataFrame</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ValueError if multi-user data detected; use ta_dbscan_per_user instead.</strong> – </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.stop_detection.density_algs.seqscan_labels">
+<span class="sig-prename descclassname"><span class="pre">nomad.stop_detection.density_algs.</span></span><span class="sig-name descname"><span class="pre">seqscan_labels</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dur_min</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_thresh</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">90</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_pts</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">user_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">return_cores</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">back_merge</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/stop_detection/density_algs.html#seqscan_labels"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.stop_detection.density_algs.seqscan_labels" title="Link to this definition"></a></dt>
+<dd><p>Return SeqScan labels.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>return_cores</strong> (<em>bool</em><em>, </em><em>default False</em>) – Return core labels and <code class="docutils literal notranslate"><span class="pre">promotion_time</span></code> with cluster labels.
+<code class="docutils literal notranslate"><span class="pre">promotion_time</span></code> is the scan time when final membership is retained.</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p><code class="docutils literal notranslate"><span class="pre">promotion_time</span></code> records approximate final-membership propagation time.
+For plotting, accent a ping at <code class="docutils literal notranslate"><span class="pre">max(ping_time,</span> <span class="pre">promotion_time)</span></code>. Its raw
+value can show propagation edges from cores, including to later pings.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.stop_detection.density_algs.seqscan_labels_per_user">
+<span class="sig-prename descclassname"><span class="pre">nomad.stop_detection.density_algs.</span></span><span class="sig-name descname"><span class="pre">seqscan_labels_per_user</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dur_min</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_thresh</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">90</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_pts</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">return_cores</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">back_merge</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_jobs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">print_progress</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/stop_detection/density_algs.html#seqscan_labels_per_user"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.stop_detection.density_algs.seqscan_labels_per_user" title="Link to this definition"></a></dt>
+<dd><p>Run seqscan_labels on each user separately and concatenate labels.</p>
+<p>Raises if ‘user_id’ not in traj_cols or missing from data.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.stop_detection.density_algs.seqscan_per_user">
+<span class="sig-prename descclassname"><span class="pre">nomad.stop_detection.density_algs.</span></span><span class="sig-name descname"><span class="pre">seqscan_per_user</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_pts</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dur_min</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">complete_output</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">passthrough_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">keep_col_names</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_jobs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">print_progress</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">passthrough_agg</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/stop_detection/density_algs.html#seqscan_per_user"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.stop_detection.density_algs.seqscan_per_user" title="Link to this definition"></a></dt>
+<dd><p>Run seqscan on each user separately, then concatenate results.
+Raises if ‘user_id’ not in traj_cols or missing from data.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.stop_detection.density_algs.st_hdbscan">
+<span class="sig-prename descclassname"><span class="pre">nomad.stop_detection.density_algs.</span></span><span class="sig-name descname"><span class="pre">st_hdbscan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_pts</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_cluster_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dur_min</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">complete_output</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">passthrough_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">passthrough_agg</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/stop_detection/density_algs.html#st_hdbscan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.stop_detection.density_algs.st_hdbscan" title="Link to this definition"></a></dt>
+<dd><p>HDBSCAN-based stop detection.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>pd.DataFrame</em>) – Input trajectory data.</p></li>
+<li><p><strong>time_thresh</strong> (<em>int</em>) – Maximum allowed time gap (minutes) for temporal neighbors.</p></li>
+<li><p><strong>min_pts</strong> (<em>int</em><em>, </em><em>optional</em>) – Minimum neighbors for a core point (default: 2).</p></li>
+<li><p><strong>min_cluster_size</strong> (<em>int</em><em>, </em><em>optional</em>) – Minimum cluster size for a valid stop (default: 1).</p></li>
+<li><p><strong>dur_min</strong> (<em>int</em><em>, </em><em>optional</em>) – Minimum duration (minutes) for a stop (default: 5).</p></li>
+<li><p><strong>complete_output</strong> (<em>bool</em><em>, </em><em>optional</em>) – If True, include extra stats.</p></li>
+<li><p><strong>passthrough_cols</strong> (<em>list</em><em>, </em><em>optional</em>) – Columns to passthrough to final stop table</p></li>
+<li><p><strong>passthrough_agg</strong> (<em>dict</em><em>, </em><em>optional</em>) – Aggregation functions for selected passthrough columns.</p></li>
+<li><p><strong>traj_cols</strong> (<em>dict</em><em>, </em><em>optional</em>) – Mapping for key columns.</p></li>
+<li><p><strong>**kwargs</strong> – Passed to internal helpers.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Stop table</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.DataFrame</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.stop_detection.density_algs.st_hdbscan_per_user">
+<span class="sig-prename descclassname"><span class="pre">nomad.stop_detection.density_algs.</span></span><span class="sig-name descname"><span class="pre">st_hdbscan_per_user</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_pts</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_cluster_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dur_min</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">complete_output</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">passthrough_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_jobs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">print_progress</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">passthrough_agg</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/stop_detection/density_algs.html#st_hdbscan_per_user"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.stop_detection.density_algs.st_hdbscan_per_user" title="Link to this definition"></a></dt>
+<dd><p>Run HDBSCAN-based stop detection on each user separately, then concatenate results.
+Raises if ‘user_id’ not in traj_cols or missing from data.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.stop_detection.density_algs.ta_dbscan">
+<span class="sig-prename descclassname"><span class="pre">nomad.stop_detection.density_algs.</span></span><span class="sig-name descname"><span class="pre">ta_dbscan</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_pts</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dur_min</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">remove_overlaps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">complete_output</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">passthrough_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">keep_col_names</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">passthrough_agg</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/stop_detection/density_algs.html#ta_dbscan"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.stop_detection.density_algs.ta_dbscan" title="Link to this definition"></a></dt>
+<dd><p>Temporal-augmented DBSCAN stop detection with summarization.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>pd.DataFrame</em>) – Input trajectory with spatial and temporal columns.</p></li>
+<li><p><strong>time_thresh</strong> (<em>int</em>) – Max time gap (minutes) for neighbors.</p></li>
+<li><p><strong>dist_thresh</strong> (<em>float</em>) – Max spatial distance for neighbors.</p></li>
+<li><p><strong>min_pts</strong> (<em>int</em>) – Minimum number of neighbors for a core point.</p></li>
+<li><p><strong>dur_min</strong> (<em>int</em><em>, </em><em>optional</em>) – Minimum duration (minutes) for a stop (default: 5).</p></li>
+<li><p><strong>complete_output</strong> (<em>bool</em><em>, </em><em>optional</em>) – Include extra stats if True (default: False).</p></li>
+<li><p><strong>passthrough_cols</strong> (<em>list</em><em>, </em><em>optional</em>) – Columns to retain per stop.</p></li>
+<li><p><strong>passthrough_agg</strong> (<em>dict</em><em>, </em><em>optional</em>) – Aggregation functions for selected passthrough columns.</p></li>
+<li><p><strong>traj_cols</strong> (<em>dict</em><em>, </em><em>optional</em>) – Mapping for column names.</p></li>
+<li><p><strong>**kwargs</strong> – Passed to internal helpers.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>One row per stop with medoid/centroid, duration, and optionally extra columns.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.DataFrame</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ValueError if multi-user data detected; use ta_dbscan_per_user instead.</strong> – </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.stop_detection.density_algs.ta_dbscan_labels">
+<span class="sig-prename descclassname"><span class="pre">nomad.stop_detection.density_algs.</span></span><span class="sig-name descname"><span class="pre">ta_dbscan_labels</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_pts</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">return_cores</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">remove_overlaps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/stop_detection/density_algs.html#ta_dbscan_labels"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.stop_detection.density_algs.ta_dbscan_labels" title="Link to this definition"></a></dt>
+<dd><p>Return temporal DBSCAN labels.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>return_cores</strong> (<em>bool</em><em>, </em><em>default False</em>) – Return core labels and <code class="docutils literal notranslate"><span class="pre">promotion_time</span></code> with cluster labels. Core
+pings use their own time; border pings use their propagating core time.</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p><code class="docutils literal notranslate"><span class="pre">promotion_time</span></code> records approximate final-membership propagation time.
+For plotting, accent a ping at <code class="docutils literal notranslate"><span class="pre">max(ping_time,</span> <span class="pre">promotion_time)</span></code>. Its raw
+value can show propagation edges from cores, including to later pings.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.stop_detection.density_algs.ta_dbscan_labels_per_user">
+<span class="sig-prename descclassname"><span class="pre">nomad.stop_detection.density_algs.</span></span><span class="sig-name descname"><span class="pre">ta_dbscan_labels_per_user</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_pts</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">return_cores</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">remove_overlaps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_jobs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">print_progress</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/stop_detection/density_algs.html#ta_dbscan_labels_per_user"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.stop_detection.density_algs.ta_dbscan_labels_per_user" title="Link to this definition"></a></dt>
+<dd><p>Run ta_dbscan_labels on each user separately and concatenate labels.</p>
+<p>Raises if ‘user_id’ not in traj_cols or missing from data.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.stop_detection.density_algs.ta_dbscan_per_user">
+<span class="sig-prename descclassname"><span class="pre">nomad.stop_detection.density_algs.</span></span><span class="sig-name descname"><span class="pre">ta_dbscan_per_user</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_pts</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_thresh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dur_min</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">complete_output</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">passthrough_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_jobs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">print_progress</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">passthrough_agg</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/stop_detection/density_algs.html#ta_dbscan_per_user"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.stop_detection.density_algs.ta_dbscan_per_user" title="Link to this definition"></a></dt>
+<dd><p>Run ta_dbscan on each user separately, then concatenate results.
+Raises if ‘user_id’ not in traj_cols or missing from data.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.stop_detection.density_algs.window_graph">
+<span class="sig-prename descclassname"><span class="pre">nomad.stop_detection.density_algs.</span></span><span class="sig-name descname"><span class="pre">window_graph</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">G</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lo</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">hi</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/stop_detection/density_algs.html#window_graph"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.stop_detection.density_algs.window_graph" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="../nomad.stop_detection.html" class="btn btn-neutral float-left" title="stop_detection" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="nomad.stop_detection.postprocessing.html" class="btn btn-neutral float-right" title="postprocessing" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, CSSLab.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

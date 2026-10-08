@@ -1,0 +1,331 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>base &mdash; NOMAD 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="snowflake" href="nomad.io.snowflake.html" />
+    <link rel="prev" title="io" href="../nomad.io.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html">
+            
+              <img src="../../_static/nomad-logo-black.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../data_ingestion.html">Data Ingestion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../filtering.html">Filtering &amp; Completeness</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tessellation.html">Tessellation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../stop_detection.html">Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../visit_attribution.html">Visit Attribution</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../metrics.html">Mobility Metrics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../colocation.html">Co-location &amp; Contact Networks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../aggregation.html">Aggregation &amp; Debiasing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../synthetic_data_generation.html">Synthetic Data Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../source/ingesting-data.html">Loading Trajectory Data</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/benchmarking_of_stop_detection_algorithms.html">Comparing runtimes of different stop detection algorithms on toy datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/lachesis_demo.html">Lachesis Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/tadbscan_demo.html">TADBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/hdbscan_demo.html">HDBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/grid_based_demo.html">Grid-Based Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/generate_synthetic_pois.html">Synthetic POI Generation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/download_poi_data_from_OSM.html">Downloading places of interest (POI) Data from OSM</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/generate_synthetic_trajectories.html">Synthetic Trajectory Generation with Nomad</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/random_city.html">Random City Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="../../api_reference.html">API Reference</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../nomad.agg.html">agg</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.aggregation.html">aggregation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.city_gen.html">city_gen</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.constants.html">constants</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.contact_estimation.html">contact_estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.displacement.html">displacement</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.filters.html">filters</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.filters_spark.html">filters_spark</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.generation.html">generation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.home_attribution.html">home_attribution</a></li>
+<li class="toctree-l2 current"><a class="reference internal" href="../nomad.io.html">io</a><ul class="current">
+<li class="toctree-l3 current"><a class="current reference internal" href="#">base</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.io.base.from_df"><code class="docutils literal notranslate"><span class="pre">from_df()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.io.base.from_file"><code class="docutils literal notranslate"><span class="pre">from_file()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.io.base.localize_from_offset"><code class="docutils literal notranslate"><span class="pre">localize_from_offset()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.io.base.naive_datetime_from_unix_and_offset"><code class="docutils literal notranslate"><span class="pre">naive_datetime_from_unix_and_offset()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.io.base.sample_from_file"><code class="docutils literal notranslate"><span class="pre">sample_from_file()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.io.base.sample_users"><code class="docutils literal notranslate"><span class="pre">sample_users()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.io.base.table_columns"><code class="docutils literal notranslate"><span class="pre">table_columns()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.io.base.to_file"><code class="docutils literal notranslate"><span class="pre">to_file()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.io.base.zoned_datetime_from_ts_and_offset"><code class="docutils literal notranslate"><span class="pre">zoned_datetime_from_ts_and_offset()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="nomad.io.snowflake.html">snowflake</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nomad.io.spark.html">spark</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.map_utils.html">map_utils</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.metrics.html">metrics</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.stop_detection.html">stop_detection</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.traj_gen.html">traj_gen</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.visit_attribution.html">visit_attribution</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">NOMAD</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../api_reference.html">API Reference</a></li>
+          <li class="breadcrumb-item"><a href="../nomad.io.html">io</a></li>
+      <li class="breadcrumb-item active">base</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/api/generated/nomad.io.base.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-nomad.io.base">
+<span id="base"></span><h1>base<a class="headerlink" href="#module-nomad.io.base" title="Link to this heading"></a></h1>
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.io.base.from_df">
+<span class="sig-prename descclassname"><span class="pre">nomad.io.base.</span></span><span class="sig-name descname"><span class="pre">from_df</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parse_dates</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mixed_timezone_behavior</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'naive'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fixed_format</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">filters</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sort_times</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/io/base.html#from_df"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.io.base.from_df" title="Link to this definition"></a></dt>
+<dd><p>Converts a DataFrame into a standardized trajectory format by validating and casting
+specified spatial and temporal columns.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>df</strong> (<em>pd.DataFrame</em><em> or </em><em>gpd.GeoDataFrame</em>) – The input DataFrame containing trajectory data.</p></li>
+<li><p><strong>traj_cols</strong> (<em>dict</em><em>, </em><em>optional</em>) – Mapping of expected trajectory column names (e.g., ‘latitude’, ‘longitude’, ‘datetime’,
+‘user_id’, etc.) to actual column names in <cite>df</cite>. If None, <cite>kwargs</cite> is used for inference.</p></li>
+<li><p><strong>parse_dates</strong> (<em>bool</em><em>, </em><em>default=True</em>) – Whether to parse datetime columns as pandas datetime objects.</p></li>
+<li><p><strong>mixed_timezone_behavior</strong> (<em>{'utc'</em><em>, </em><em>'naive'</em><em>, </em><em>'object'}</em><em>, </em><em>default='naive'</em>) – Controls how datetime columns with mixed time zones are handled:
+- <cite>‘utc’</cite>: Convert all datetimes to UTC.
+- <cite>‘naive’</cite>: Strip time zone information and store offsets separately.
+- <cite>‘object’</cite>: Keep timestamps as <cite>pd.Timestamp</cite> objects with mixed time zones.</p></li>
+<li><p><strong>fixed_format</strong> (<em>str</em><em>, </em><em>optional</em>) – Format string for faster parsing of datetime columns if known.</p></li>
+<li><p><strong>**kwargs</strong> (<em>dict</em>) – Additional parameters for column inference when <cite>traj_cols</cite> is not provided.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The processed DataFrame with validated and correctly typed trajectory columns.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.DataFrame</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>Any specified <cite>traj_cols</cite> that do not exist in <cite>df</cite> will trigger a warning.</p></li>
+<li><p>If <cite>traj_cols</cite> is not provided, missing trajectory columns are inferred from <cite>kwargs</cite> or filled with default schema values when possible.</p></li>
+<li><p>Spatial columns are validated, and datetime columns are processed based on <cite>parse_dates</cite> and <cite>mixed_timezone_behavior</cite>.</p></li>
+<li><p>If <cite>mixed_timezone_behavior=’naive’</cite>, a separate column storing UTC offsets (in seconds) is added.</p></li>
+</ul>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.io.base.from_file">
+<span class="sig-prename descclassname"><span class="pre">nomad.io.base.</span></span><span class="sig-name descname"><span class="pre">from_file</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filepath</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">format</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'csv'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parse_dates</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mixed_timezone_behavior</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'naive'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fixed_format</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sep</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">','</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">filters</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sort_times</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/io/base.html#from_file"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.io.base.from_file" title="Link to this definition"></a></dt>
+<dd><p>Load and cast trajectory data from a specified file path or list of paths.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>filepath</strong> (<em>str</em><em> or </em><em>list</em><em> of </em><em>str</em>) – Path or list of paths to the file(s) or directories containing the data.</p></li>
+<li><p><strong>format</strong> (<em>str</em><em>, </em><em>optional</em>) – The format of the data files, either ‘csv’ or ‘parquet’.</p></li>
+<li><p><strong>traj_cols</strong> (<em>dict</em><em>, </em><em>optional</em>) – Mapping from trajectory fields (e.g. ‘latitude’, ‘timestamp’) to
+column names in the input.</p></li>
+<li><p><strong>parse_dates</strong> (<em>bool</em><em>, </em><em>default True</em>) – Whether to parse timestamp columns as datetime.</p></li>
+<li><p><strong>mixed_timezone_behavior</strong> (<em>{'utc'</em><em>, </em><em>'naive'</em><em>, </em><em>'object'}</em><em>, </em><em>default='naive'</em>) – Controls how datetime columns with mixed time zones are handled:
+- <cite>‘utc’</cite>: Convert all datetimes to UTC.
+- <cite>‘naive’</cite>: Strip time zone information and store offsets separately.
+- <cite>‘object’</cite>: Keep timestamps as <cite>pd.Timestamp</cite> objects with mixed time zones.</p></li>
+<li><p><strong>fixed_format</strong> (<em>str</em><em>, </em><em>optional</em>) – strftime format string for datetime parsing.</p></li>
+<li><p><strong>sep</strong> (<em>str</em><em>, </em><em>default '</em><em>,</em><em>'</em>) – Field delimiter for CSV input.</p></li>
+<li><p><strong>filters</strong> (<em>pyarrow.dataset.Expression</em><em> or </em><em>tuple</em><em> or </em><em>list</em><em> of </em><em>tuples</em><em>, </em><em>optional</em>) – Read‐time filter for Parquet. Accepts a PyArrow Expression,
+a (column, operator, value) tuple, or a list of such tuples
+(AND‐chained).</p></li>
+<li><p><strong>**kwargs</strong> (<em>dict</em>) – Additional parameters for column inference when <cite>traj_cols</cite> is not provided.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>DataFrame with trajectory columns cast and dates parsed.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.DataFrame</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.io.base.localize_from_offset">
+<span class="sig-prename descclassname"><span class="pre">nomad.io.base.</span></span><span class="sig-name descname"><span class="pre">localize_from_offset</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">naive_dt</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timezone_offset</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/io/base.html#localize_from_offset"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.io.base.localize_from_offset" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.io.base.naive_datetime_from_unix_and_offset">
+<span class="sig-prename descclassname"><span class="pre">nomad.io.base.</span></span><span class="sig-name descname"><span class="pre">naive_datetime_from_unix_and_offset</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">utc_timestamps</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timezone_offset</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/io/base.html#naive_datetime_from_unix_and_offset"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.io.base.naive_datetime_from_unix_and_offset" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.io.base.sample_from_file">
+<span class="sig-prename descclassname"><span class="pre">nomad.io.base.</span></span><span class="sig-name descname"><span class="pre">sample_from_file</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filepath</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">users</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">format</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'csv'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">frac_users</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">frac_records</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parse_dates</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mixed_timezone_behavior</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'naive'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fixed_format</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sep</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">','</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">filters</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">within</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">poly_crs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_crs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sort_times</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/io/base.html#sample_from_file"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.io.base.sample_from_file" title="Link to this definition"></a></dt>
+<dd><p>Read and sample trajectory data from a file.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>filepath</strong> (<em>str</em><em> or </em><em>Path</em>) – Path to the input file.</p></li>
+<li><p><strong>users</strong> (<em>list</em><em> of </em><em>hashable</em><em> or </em><em>None</em><em>, </em><em>default None</em>) – If provided, only include these user IDs; if None, include all users.</p></li>
+<li><p><strong>format</strong> (<em>str</em><em>, </em><em>default &quot;csv&quot;</em>) – Data format, e.g. “csv” or “parquet”.</p></li>
+<li><p><strong>traj_cols</strong> (<em>dict</em><em> or </em><em>None</em><em>, </em><em>default None</em>) – Mapping of trajectory column names (e.g. {“uid”: “user_id”}), or None to use defaults.</p></li>
+<li><p><strong>frac_users</strong> (<em>float</em><em>, </em><em>default 1.0</em>) – Fraction of users to sample (0 &lt; frac_users ≤ 1).</p></li>
+<li><p><strong>frac_records</strong> (<em>float</em><em>, </em><em>default 1.0</em>) – Fraction of each user’s records to sample (0 &lt; frac_records ≤ 1).</p></li>
+<li><p><strong>seed</strong> (<em>int</em><em> or </em><em>None</em><em>, </em><em>default None</em>) – Random seed for reproducibility.</p></li>
+<li><p><strong>parse_dates</strong> (<em>bool</em><em>, </em><em>default True</em>) – Whether to parse date/time columns as datetime objects.</p></li>
+<li><p><strong>mixed_timezone_behavior</strong> (<em>str</em><em>, </em><em>default &quot;naive&quot;</em>) – How to handle mixed‐timezone timestamps; options might include “naive”, “utc”, etc.</p></li>
+<li><p><strong>fixed_format</strong> (<em>str</em><em> or </em><em>None</em><em>, </em><em>default None</em>) – If specified, enforce this input format (overrides autodetection).</p></li>
+<li><p><strong>sep</strong> (<em>str</em>) – Separator character for reader. Defaults to “,”.</p></li>
+<li><p><strong>filters</strong> (<em>pyarrow.dataset.Expression</em><em> or </em><em>tuple</em><em> or </em><em>list</em><em> of </em><em>tuples</em><em>, </em><em>optional</em>) – Read-time filter(s) for Parquet inputs. Ignored for single CSV files.</p></li>
+<li><p><strong>**kwargs</strong> – Passed through to the underlying reader (e.g. <cite>pandas.read_csv</cite>).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Sampled trajectory data.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pandas.DataFrame</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.io.base.sample_users">
+<span class="sig-prename descclassname"><span class="pre">nomad.io.base.</span></span><span class="sig-name descname"><span class="pre">sample_users</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filepath</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">format</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'csv'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sep</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">','</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">filters</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">within</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">poly_crs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_crs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/io/base.html#sample_users"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.io.base.sample_users" title="Link to this definition"></a></dt>
+<dd><p>Sample users from a dataset, with optional read-time filtering for Parquet.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>filepath</strong> (<em>str</em><em> or </em><em>Path</em>) – Path to the data file or directory.</p></li>
+<li><p><strong>format</strong> (<em>{'csv'</em><em>,</em><em>'parquet'}</em><em>, </em><em>default 'csv'</em>) – Input format.</p></li>
+<li><p><strong>size</strong> (<em>float</em><em> or </em><em>int</em><em>, </em><em>default 1.0</em>) – Fraction (0–1] or absolute number of users to sample.</p></li>
+<li><p><strong>seed</strong> (<em>int</em><em>, </em><em>optional</em>) – Random seed for reproducibility.</p></li>
+<li><p><strong>sep</strong> (<em>str</em><em>, </em><em>default '</em><em>,</em><em>'</em>) – CSV delimiter.</p></li>
+<li><p><strong>filters</strong> (<em>pyarrow.dataset.Expression</em><em> or </em><em>tuple</em><em> or </em><em>list</em><em> of </em><em>tuples</em><em>, </em><em>optional</em>) – Read-time filter(s) for Parquet inputs. Ignored for single CSV files.</p></li>
+<li><p><strong>within</strong> (<em>shapely Polygon/MultiPolygon</em><em> or </em><em>WKT str</em><em>, </em><em>default None</em>) – If supplied, keep only points whose coordinates fall inside this polygon.</p></li>
+<li><p><strong>data_crs</strong> (<em>str</em><em> or </em><em>pyproj.CRS</em><em>, </em><em>optional</em>) – CRS for <cite>data</cite> when it is a plain DataFrame; ignored if <cite>data</cite> is a GeoDataFrame.</p></li>
+<li><p><strong>traj_cols</strong> (<em>dict</em><em>, </em><em>optional</em>) – Mapping of logical names (‘user_id’, etc.) to actual column names.</p></li>
+<li><p><strong>**kwargs</strong> – Passed through to the underlying reader.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Sampled user IDs.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.Series</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.io.base.table_columns">
+<span class="sig-prename descclassname"><span class="pre">nomad.io.base.</span></span><span class="sig-name descname"><span class="pre">table_columns</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filepath</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">format</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'csv'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">include_schema</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sep</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">','</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/io/base.html#table_columns"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.io.base.table_columns" title="Link to this definition"></a></dt>
+<dd><p>Return column names or the full schema of a data source.</p>
+<p>The ‘sep’ argument specifies the delimiter and is only used for ‘csv’ format;
+it is ignored when reading ‘parquet’ files.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.io.base.to_file">
+<span class="sig-prename descclassname"><span class="pre">nomad.io.base.</span></span><span class="sig-name descname"><span class="pre">to_file</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">format</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'csv'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">output_traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">partition_by</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">filesystem</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_offset</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/io/base.html#to_file"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.io.base.to_file" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.io.base.zoned_datetime_from_ts_and_offset">
+<span class="sig-prename descclassname"><span class="pre">nomad.io.base.</span></span><span class="sig-name descname"><span class="pre">zoned_datetime_from_ts_and_offset</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">utc_timestamps</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timezone_offset</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/io/base.html#zoned_datetime_from_ts_and_offset"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.io.base.zoned_datetime_from_ts_and_offset" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="../nomad.io.html" class="btn btn-neutral float-left" title="io" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="nomad.io.snowflake.html" class="btn btn-neutral float-right" title="snowflake" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, CSSLab.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

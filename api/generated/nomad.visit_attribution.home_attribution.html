@@ -1,0 +1,392 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>home_attribution &mdash; NOMAD 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="visit_attribution" href="nomad.visit_attribution.visit_attribution.html" />
+    <link rel="prev" title="visit_attribution" href="../nomad.visit_attribution.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html">
+            
+              <img src="../../_static/nomad-logo-black.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../data_ingestion.html">Data Ingestion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../filtering.html">Filtering &amp; Completeness</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tessellation.html">Tessellation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../stop_detection.html">Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../visit_attribution.html">Visit Attribution</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../metrics.html">Mobility Metrics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../colocation.html">Co-location &amp; Contact Networks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../aggregation.html">Aggregation &amp; Debiasing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../synthetic_data_generation.html">Synthetic Data Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../source/ingesting-data.html">Loading Trajectory Data</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/benchmarking_of_stop_detection_algorithms.html">Comparing runtimes of different stop detection algorithms on toy datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/lachesis_demo.html">Lachesis Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/tadbscan_demo.html">TADBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/hdbscan_demo.html">HDBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/grid_based_demo.html">Grid-Based Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/generate_synthetic_pois.html">Synthetic POI Generation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/download_poi_data_from_OSM.html">Downloading places of interest (POI) Data from OSM</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/generate_synthetic_trajectories.html">Synthetic Trajectory Generation with Nomad</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/random_city.html">Random City Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="../../api_reference.html">API Reference</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../nomad.agg.html">agg</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.aggregation.html">aggregation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.city_gen.html">city_gen</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.constants.html">constants</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.contact_estimation.html">contact_estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.displacement.html">displacement</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.filters.html">filters</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.filters_spark.html">filters_spark</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.generation.html">generation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.home_attribution.html">home_attribution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.io.html">io</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.map_utils.html">map_utils</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.metrics.html">metrics</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.stop_detection.html">stop_detection</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.traj_gen.html">traj_gen</a></li>
+<li class="toctree-l2 current"><a class="reference internal" href="../nomad.visit_attribution.html">visit_attribution</a><ul class="current">
+<li class="toctree-l3 current"><a class="current reference internal" href="#">home_attribution</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.visit_attribution.home_attribution.compute_candidate_homes"><code class="docutils literal notranslate"><span class="pre">compute_candidate_homes()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.visit_attribution.home_attribution.compute_candidate_workplaces"><code class="docutils literal notranslate"><span class="pre">compute_candidate_workplaces()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.visit_attribution.home_attribution.nocturnal_stops"><code class="docutils literal notranslate"><span class="pre">nocturnal_stops()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.visit_attribution.home_attribution.select_home"><code class="docutils literal notranslate"><span class="pre">select_home()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.visit_attribution.home_attribution.select_workplace"><code class="docutils literal notranslate"><span class="pre">select_workplace()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.visit_attribution.home_attribution.workday_stops"><code class="docutils literal notranslate"><span class="pre">workday_stops()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="nomad.visit_attribution.visit_attribution.html">visit_attribution</a></li>
+<li class="toctree-l3"><a class="reference internal" href="nomad.visit_attribution.viz.html">viz</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">NOMAD</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../api_reference.html">API Reference</a></li>
+          <li class="breadcrumb-item"><a href="../nomad.visit_attribution.html">visit_attribution</a></li>
+      <li class="breadcrumb-item active">home_attribution</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/api/generated/nomad.visit_attribution.home_attribution.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-nomad.visit_attribution.home_attribution">
+<span id="home-attribution"></span><h1>home_attribution<a class="headerlink" href="#module-nomad.visit_attribution.home_attribution" title="Link to this heading"></a></h1>
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.visit_attribution.home_attribution.compute_candidate_homes">
+<span class="sig-prename descclassname"><span class="pre">nomad.visit_attribution.home_attribution.</span></span><span class="sig-name descname"><span class="pre">compute_candidate_homes</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">stops_table</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dusk_hour</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">19</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dawn_hour</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">6</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/visit_attribution/home_attribution.html#compute_candidate_homes"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.visit_attribution.home_attribution.compute_candidate_homes" title="Link to this definition"></a></dt>
+<dd><p>Aggregate night-time stop statistics that serve as features for home-location
+inference.</p>
+<p>Internally this calls <a class="reference internal" href="#nomad.visit_attribution.home_attribution.nocturnal_stops" title="nomad.visit_attribution.home_attribution.nocturnal_stops"><code class="xref py py-func docutils literal notranslate"><span class="pre">nocturnal_stops()</span></code></a> to keep only night portions of
+the stops, then counts how many distinct nights and ISO-8601 calendar weeks
+each user spent at each location.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>stops_table</strong> (<em>pandas.DataFrame</em>) – <p>A stop table with at least</p>
+<ul>
+<li><p>temporal columns (<code class="docutils literal notranslate"><span class="pre">start_*</span></code> and either <code class="docutils literal notranslate"><span class="pre">end_*</span></code> <strong>or</strong>
+<code class="docutils literal notranslate"><span class="pre">duration</span></code>),</p></li>
+<li><p>one user identifier, and</p></li>
+<li><p>one location identifier.</p></li>
+</ul>
+<p>Column names can be supplied/overridden via <em>traj_cols</em> or <em>kwargs</em>.</p>
+</p></li>
+<li><p><strong>dusk_hour</strong> (<em>int</em><em>, </em><em>optional</em>) – Same semantics as in <a class="reference internal" href="#nomad.visit_attribution.home_attribution.nocturnal_stops" title="nomad.visit_attribution.home_attribution.nocturnal_stops"><code class="xref py py-func docutils literal notranslate"><span class="pre">nocturnal_stops()</span></code></a>.</p></li>
+<li><p><strong>dawn_hour</strong> (<em>int</em><em>, </em><em>optional</em>) – Same semantics as in <a class="reference internal" href="#nomad.visit_attribution.home_attribution.nocturnal_stops" title="nomad.visit_attribution.home_attribution.nocturnal_stops"><code class="xref py py-func docutils literal notranslate"><span class="pre">nocturnal_stops()</span></code></a>.</p></li>
+<li><p><strong>traj_cols</strong> (<em>dict</em><em>, </em><em>optional</em>) – Mapping from canonical names (<code class="docutils literal notranslate"><span class="pre">&quot;user_id&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;location_id&quot;</span></code>,
+<code class="docutils literal notranslate"><span class="pre">&quot;start_timestamp&quot;</span></code>/<code class="docutils literal notranslate"><span class="pre">&quot;start_datetime&quot;</span></code>, etc.) to the actual column
+names in <em>stops_table</em>.</p></li>
+<li><p><strong>**kwargs</strong> – Column-overrides written as <code class="docutils literal notranslate"><span class="pre">&lt;canonical&gt;=&lt;actual&gt;</span></code>; passed through to
+the NOMAD I/O helpers.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><p>Columns:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">user_id</span></code>        – user identifier</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">location_id</span></code>    – candidate home location</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">num_nights</span></code>     – unique nights present at the location</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">num_weeks</span></code>      – unique ISO weeks present at the location</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">total_duration</span></code> – aggregated night-time minutes</p></li>
+</ul>
+</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pandas.DataFrame</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>ValueError</strong> – If neither an <em>end</em> column nor a <em>duration</em> column is present.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.visit_attribution.home_attribution.compute_candidate_workplaces">
+<span class="sig-prename descclassname"><span class="pre">nomad.visit_attribution.home_attribution.</span></span><span class="sig-name descname"><span class="pre">compute_candidate_workplaces</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">stops_table</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">work_start_hour</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">9</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">work_end_hour</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">17</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">include_weekends</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/visit_attribution/home_attribution.html#compute_candidate_workplaces"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.visit_attribution.home_attribution.compute_candidate_workplaces" title="Link to this definition"></a></dt>
+<dd><p>Build per‑location daytime presence features for workplace inference.</p>
+<p>Internally this calls <a class="reference internal" href="#nomad.visit_attribution.home_attribution.workday_stops" title="nomad.visit_attribution.home_attribution.workday_stops"><code class="xref py py-func docutils literal notranslate"><span class="pre">workday_stops()</span></code></a> to keep only weekday work‑hour
+portions of the stops, then counts how many distinct workdays and ISO weeks
+each user spent at each location.</p>
+<p>Returns a DataFrame with the columns
+<code class="docutils literal notranslate"><span class="pre">['user_id',</span> <span class="pre">'location_id',</span> <span class="pre">'num_work_days',</span> <span class="pre">'num_weeks',</span> <span class="pre">'total_duration']</span></code>.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.visit_attribution.home_attribution.nocturnal_stops">
+<span class="sig-prename descclassname"><span class="pre">nomad.visit_attribution.home_attribution.</span></span><span class="sig-name descname"><span class="pre">nocturnal_stops</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">stops_table</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dusk_hour</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">19</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dawn_hour</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">6</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start_datetime</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'start_datetime'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end_datetime</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'end_datetime'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">duration</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'duration'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/visit_attribution/home_attribution.html#nocturnal_stops"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.visit_attribution.home_attribution.nocturnal_stops" title="Link to this definition"></a></dt>
+<dd><p>Slice each stop so that only its <em>night-time</em> portion—defined by a daily
+window from <code class="docutils literal notranslate"><span class="pre">dusk_hour</span></code> to <code class="docutils literal notranslate"><span class="pre">dawn_hour</span></code>—is retained.</p>
+<p>The helper assumes that <code class="docutils literal notranslate"><span class="pre">stops_table</span></code> already contains fully parsed
+timezone-aware datetimes.  For every stop it constructs the set of
+candidate night windows it might intersect, clips the stop to those
+windows, recomputes the duration, and drops rows whose clipped duration
+is zero.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>stops_table</strong> (<em>pandas.DataFrame</em>) – <p>Output of a stop-detection algorithm with at least</p>
+<ul>
+<li><p>a <em>start</em> column named <code class="docutils literal notranslate"><span class="pre">start_datetime</span></code> (default
+<code class="docutils literal notranslate"><span class="pre">&quot;start_datetime&quot;</span></code>) and</p></li>
+<li><p>an <em>end</em> column named <code class="docutils literal notranslate"><span class="pre">end_datetime</span></code>   (default
+<code class="docutils literal notranslate"><span class="pre">&quot;end_datetime&quot;</span></code>).</p></li>
+</ul>
+<p>Both must be <code class="docutils literal notranslate"><span class="pre">datetime64[ns,</span> <span class="pre">tz]</span></code>.</p>
+</p></li>
+<li><p><strong>dusk_hour</strong> (<em>int</em><em>, </em><em>default 19</em>) – Local hour (0–23) that marks the beginning of the nocturnal window
+<strong>on the same calendar day</strong>.</p></li>
+<li><p><strong>dawn_hour</strong> (<em>int</em><em>, </em><em>default 6</em>) – Local hour (0–23) that marks the end of the nocturnal window
+<strong>on the following calendar day</strong>.</p></li>
+<li><p><strong>start_datetime</strong> (<em>str</em><em>, </em><em>optional</em>) – Column names if different from the defaults.</p></li>
+<li><p><strong>end_datetime</strong> (<em>str</em><em>, </em><em>optional</em>) – Column names if different from the defaults.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Same columns as the input plus an updated <code class="docutils literal notranslate"><span class="pre">duration</span></code> (integer minutes)
+and <em>only</em> those rows whose clipped duration is positive.  Temporary
+helper columns are removed.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pandas.DataFrame</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>A stop that spans several nights is exploded so that <strong>one row per night</strong>
+is produced.</p></li>
+<li><p>The duration is integer-divided by 60 s → minutes.</p></li>
+<li><p>Time-zone information is preserved.</p></li>
+</ul>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.visit_attribution.home_attribution.select_home">
+<span class="sig-prename descclassname"><span class="pre">nomad.visit_attribution.home_attribution.</span></span><span class="sig-name descname"><span class="pre">select_home</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">candidate_homes</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_days</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_weeks</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stops_table</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">last_date</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/visit_attribution/home_attribution.html#select_home"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.visit_attribution.home_attribution.select_home" title="Link to this definition"></a></dt>
+<dd><p>Choose the single most plausible <em>home</em> location for each user filtering
+<em>candidate_homes</em> by minimum presence thresholds, and
+ranking the remaining locations by</p>
+<ol class="arabic simple">
+<li><p>number of nights (descending) and</p></li>
+<li><p>total night-time duration (descending),</p></li>
+</ol>
+<p>and finally returns the top-ranked location together with the date of the
+last stop observation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>candidate_homes</strong> (<em>pandas.DataFrame</em>) – Output of <a class="reference internal" href="#nomad.visit_attribution.home_attribution.compute_candidate_homes" title="nomad.visit_attribution.home_attribution.compute_candidate_homes"><code class="xref py py-func docutils literal notranslate"><span class="pre">compute_candidate_homes()</span></code></a>.</p></li>
+<li><p><strong>stops_table</strong> (<em>pandas.DataFrame</em>) – Full stop table (not night-clipped) used only to determine the most
+recent observation date.</p></li>
+<li><p><strong>min_days</strong> (<em>int</em>) – Minimum number of distinct nights required for a location to qualify
+as home.</p></li>
+<li><p><strong>min_weeks</strong> (<em>int</em>) – Minimum number of distinct ISO weeks required for a location to qualify
+as home.</p></li>
+<li><p><strong>traj_cols</strong> (<em>dict</em><em>, </em><em>optional</em>) – Column mapping overrides, as in other NOMAD helpers.</p></li>
+<li><p><strong>**kwargs</strong> – Additional parameters</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Columns <code class="docutils literal notranslate"><span class="pre">['user_id',</span> <span class="pre">'location_id',</span> <span class="pre">'home_date']</span></code> with exactly one
+row per user.  <em>home_date</em> equals the date (YYYY-MM-DD) of the most
+recent stop in <em>stops_table</em>.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pandas.DataFrame</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>Ties beyond the ranking rules are broken by <strong>first occurrence</strong></p></li>
+<li><p>Users with no location meeting the thresholds are omitted</p></li>
+</ul>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.visit_attribution.home_attribution.select_workplace">
+<span class="sig-prename descclassname"><span class="pre">nomad.visit_attribution.home_attribution.</span></span><span class="sig-name descname"><span class="pre">select_workplace</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">candidate_workplaces</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_days</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_weeks</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stops_table</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">last_date</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/visit_attribution/home_attribution.html#select_workplace"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.visit_attribution.home_attribution.select_workplace" title="Link to this definition"></a></dt>
+<dd><p>Choose the single most plausible <em>workplace</em> for each user.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>candidate_workplaces</strong> (<em>pandas.DataFrame</em>) – Output of <a href="#id1"><span class="problematic" id="id2">:pyfunc:`compute_candidate_workplaces`</span></a>.</p></li>
+<li><p><strong>stops_table</strong> (<em>pandas.DataFrame</em>) – Full stop table used only to derive the date of the last observation.</p></li>
+<li><p><strong>min_days</strong> (<em>int</em>) – Presence thresholds.</p></li>
+<li><p><strong>min_weeks</strong> (<em>int</em>) – Presence thresholds.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Columns <code class="docutils literal notranslate"><span class="pre">['user_id',</span> <span class="pre">'location_id',</span> <span class="pre">'work_date']</span></code> with exactly one
+row per user.  <em>work_date</em> equals the date (YYYY-MM-DD) of the most
+recent stop in <em>stops_table</em>.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pandas.DataFrame</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p><code class="docutils literal notranslate"><span class="pre">candidate_workplaces</span></code> must contain
+<code class="docutils literal notranslate"><span class="pre">['user_id',</span> <span class="pre">'location_id',</span> <span class="pre">'num_work_days',</span> <span class="pre">'num_weeks',</span> <span class="pre">'total_duration']</span></code>
+as produced by <a class="reference internal" href="#nomad.visit_attribution.home_attribution.compute_candidate_workplaces" title="nomad.visit_attribution.home_attribution.compute_candidate_workplaces"><code class="xref py py-func docutils literal notranslate"><span class="pre">compute_candidate_workplaces()</span></code></a>.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.visit_attribution.home_attribution.workday_stops">
+<span class="sig-prename descclassname"><span class="pre">nomad.visit_attribution.home_attribution.</span></span><span class="sig-name descname"><span class="pre">workday_stops</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">stops_table</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">work_start_hour</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">9</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">work_end_hour</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">17</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">include_weekends</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start_datetime</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'start_datetime'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end_datetime</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'end_datetime'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">duration</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'duration'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/visit_attribution/home_attribution.html#workday_stops"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.visit_attribution.home_attribution.workday_stops" title="Link to this definition"></a></dt>
+<dd><p>Clip each stop to the daily work-hour window <code class="docutils literal notranslate"><span class="pre">work_start_hour</span></code> →
+<code class="docutils literal notranslate"><span class="pre">work_end_hour</span></code> and return only the portions that fall on workdays.</p>
+<p>Stops that span several calendar days are <em>exploded</em> into one row per day
+(exactly like the night-time helper) so long multi-day artefacts do <strong>not</strong>
+crash the logic.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>stops_table</strong> (<em>pandas.DataFrame</em>) – At minimum the two datetime columns given in <em>start_datetime</em> and
+<em>end_datetime</em> (timezone-aware).</p></li>
+<li><p><strong>work_start_hour</strong> (<em>int</em><em>, </em><em>optional</em>) – Local hours (0–23) delimiting the daily work block.  <code class="docutils literal notranslate"><span class="pre">work_start_hour</span></code>
+must be strictly &lt; <code class="docutils literal notranslate"><span class="pre">work_end_hour</span></code>; otherwise a <code class="docutils literal notranslate"><span class="pre">ValueError</span></code> is
+raised.</p></li>
+<li><p><strong>work_end_hour</strong> (<em>int</em><em>, </em><em>optional</em>) – Local hours (0–23) delimiting the daily work block.  <code class="docutils literal notranslate"><span class="pre">work_start_hour</span></code>
+must be strictly &lt; <code class="docutils literal notranslate"><span class="pre">work_end_hour</span></code>; otherwise a <code class="docutils literal notranslate"><span class="pre">ValueError</span></code> is
+raised.</p></li>
+<li><p><strong>include_weekends</strong> (<em>bool</em><em>, </em><em>default False</em>) – If <em>False</em> (default) rows whose clipped interval falls entirely on
+Saturday or Sunday are dropped.</p></li>
+<li><p><strong>start_datetime</strong> (<em>str</em><em>, </em><em>optional</em>) – Column names overriding the defaults.</p></li>
+<li><p><strong>end_datetime</strong> (<em>str</em><em>, </em><em>optional</em>) – Column names overriding the defaults.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Same schema as the input plus an updated integer-minute <code class="docutils literal notranslate"><span class="pre">duration</span></code> and
+only rows whose clipped duration is positive.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pandas.DataFrame</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>Night‑shift workplace detection (where <em>work_start_hour</em> ≥ <em>work_end_hour</em>)
+is <strong>not implemented</strong> because it conflicts conceptually with the night‑
+time logic used for home inference.  A dedicated routine should be
+implemented for such cases.</p></li>
+</ul>
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="../nomad.visit_attribution.html" class="btn btn-neutral float-left" title="visit_attribution" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="nomad.visit_attribution.visit_attribution.html" class="btn btn-neutral float-right" title="visit_attribution" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, CSSLab.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

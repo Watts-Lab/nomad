@@ -1,0 +1,7 @@
+﻿home_attribution
+================
+
+.. automodule:: nomad.visit_attribution.home_attribution
+   :members:
+   :undoc-members:
+   :show-inheritance:

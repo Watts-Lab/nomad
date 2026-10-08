@@ -1,0 +1,7 @@
+﻿viz
+===
+
+.. automodule:: nomad.visit_attribution.viz
+   :members:
+   :undoc-members:
+   :show-inheritance:

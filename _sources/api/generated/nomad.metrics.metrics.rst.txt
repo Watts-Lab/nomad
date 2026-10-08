@@ -1,0 +1,7 @@
+﻿metrics
+=======
+
+.. automodule:: nomad.metrics.metrics
+   :members:
+   :undoc-members:
+   :show-inheritance:

@@ -123,7 +123,10 @@
 <h1>API Reference<a class="headerlink" href="#api-reference" title="Link to this heading"></a></h1>
 <div class="toctree-wrapper compound">
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="api/nomad.agg.html">agg</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/nomad.agg.html">agg</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="api/generated/nomad.agg.privacy.html">privacy</a></li>
+</ul>
+</li>
 <li class="toctree-l1"><a class="reference internal" href="api/nomad.aggregation.html">aggregation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api/nomad.city_gen.html">city_gen</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="api/nomad.city_gen.html#nomad.city_gen.City"><code class="docutils literal notranslate"><span class="pre">City</span></code></a></li>
@@ -142,6 +145,8 @@
 </li>
 <li class="toctree-l1"><a class="reference internal" href="api/nomad.constants.html">constants</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api/nomad.contact_estimation.html">contact_estimation</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="api/nomad.contact_estimation.html#nomad.contact_estimation.compute_contact_weights"><code class="docutils literal notranslate"><span class="pre">compute_contact_weights()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/nomad.contact_estimation.html#nomad.contact_estimation.estimate_contacts"><code class="docutils literal notranslate"><span class="pre">estimate_contacts()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/nomad.contact_estimation.html#nomad.contact_estimation.overlapping_visits"><code class="docutils literal notranslate"><span class="pre">overlapping_visits()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/nomad.contact_estimation.html#nomad.contact_estimation.precision_recall_f1_from_minutes"><code class="docutils literal notranslate"><span class="pre">precision_recall_f1_from_minutes()</span></code></a></li>
 </ul>
@@ -171,14 +176,22 @@
 <li class="toctree-l2"><a class="reference internal" href="api/nomad.filters_spark.html#nomad.filters_spark.to_projection"><code class="docutils literal notranslate"><span class="pre">to_projection()</span></code></a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="api/nomad.generation.html">generation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/nomad.generation.html">generation</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="api/generated/nomad.generation.viz.html">viz</a></li>
+</ul>
+</li>
 <li class="toctree-l1"><a class="reference internal" href="api/nomad.home_attribution.html">home_attribution</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="api/nomad.home_attribution.html#nomad.home_attribution.compute_candidate_homes"><code class="docutils literal notranslate"><span class="pre">compute_candidate_homes()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/nomad.home_attribution.html#nomad.home_attribution.nocturnal_stops"><code class="docutils literal notranslate"><span class="pre">nocturnal_stops()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/nomad.home_attribution.html#nomad.home_attribution.select_home"><code class="docutils literal notranslate"><span class="pre">select_home()</span></code></a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="api/nomad.io.html">io</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/nomad.io.html">io</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="api/generated/nomad.io.base.html">base</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/generated/nomad.io.snowflake.html">snowflake</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/generated/nomad.io.spark.html">spark</a></li>
+</ul>
+</li>
 <li class="toctree-l1"><a class="reference internal" href="api/nomad.map_utils.html">map_utils</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="api/nomad.map_utils.html#nomad.map_utils.blocks_to_mercator"><code class="docutils literal notranslate"><span class="pre">blocks_to_mercator()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/nomad.map_utils.html#nomad.map_utils.blocks_to_mercator_gdf"><code class="docutils literal notranslate"><span class="pre">blocks_to_mercator_gdf()</span></code></a></li>
@@ -197,20 +210,36 @@
 <li class="toctree-l2"><a class="reference internal" href="api/nomad.map_utils.html#nomad.map_utils.save_geodata"><code class="docutils literal notranslate"><span class="pre">save_geodata()</span></code></a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="api/nomad.metrics.html">metrics</a></li>
-<li class="toctree-l1"><a class="reference internal" href="api/nomad.stop_detection.html">stop_detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/nomad.metrics.html">metrics</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="api/generated/nomad.metrics.metrics.html">metrics</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/generated/nomad.metrics.spark.html">spark</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="api/nomad.stop_detection.html">stop_detection</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="api/generated/nomad.stop_detection.density_algs.html">density_algs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/generated/nomad.stop_detection.postprocessing.html">postprocessing</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/generated/nomad.stop_detection.preprocessing.html">preprocessing</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/generated/nomad.stop_detection.sequential_algs.html">sequential_algs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/generated/nomad.stop_detection.utils.html">utils</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/generated/nomad.stop_detection.validation.html">validation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/generated/nomad.stop_detection.viz.html">viz</a></li>
+</ul>
+</li>
 <li class="toctree-l1"><a class="reference internal" href="api/nomad.traj_gen.html">traj_gen</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="api/nomad.traj_gen.html#nomad.traj_gen.Agent"><code class="docutils literal notranslate"><span class="pre">Agent</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/nomad.traj_gen.html#nomad.traj_gen.Population"><code class="docutils literal notranslate"><span class="pre">Population</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/nomad.traj_gen.html#nomad.traj_gen.allowed_buildings"><code class="docutils literal notranslate"><span class="pre">allowed_buildings()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/nomad.traj_gen.html#nomad.traj_gen.condense_destinations"><code class="docutils literal notranslate"><span class="pre">condense_destinations()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/nomad.traj_gen.html#nomad.traj_gen.generate_ping_times"><code class="docutils literal notranslate"><span class="pre">generate_ping_times()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/nomad.traj_gen.html#nomad.traj_gen.parse_agent_attr"><code class="docutils literal notranslate"><span class="pre">parse_agent_attr()</span></code></a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/nomad.traj_gen.html#nomad.traj_gen.sample_bursts_gaps"><code class="docutils literal notranslate"><span class="pre">sample_bursts_gaps()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/nomad.traj_gen.html#nomad.traj_gen.thin_traj_by_times"><code class="docutils literal notranslate"><span class="pre">thin_traj_by_times()</span></code></a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="api/nomad.visit_attribution.html">visit_attribution</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/nomad.visit_attribution.html">visit_attribution</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="api/generated/nomad.visit_attribution.home_attribution.html">home_attribution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/generated/nomad.visit_attribution.visit_attribution.html">visit_attribution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/generated/nomad.visit_attribution.viz.html">viz</a></li>
+</ul>
+</li>
 </ul>
 </div>
 </section>

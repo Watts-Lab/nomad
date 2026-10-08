@@ -1,0 +1,7 @@
+﻿preprocessing
+=============
+
+.. automodule:: nomad.stop_detection.preprocessing
+   :members:
+   :undoc-members:
+   :show-inheritance:

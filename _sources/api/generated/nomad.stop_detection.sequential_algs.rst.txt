@@ -1,0 +1,7 @@
+﻿sequential_algs
+===============
+
+.. automodule:: nomad.stop_detection.sequential_algs
+   :members:
+   :undoc-members:
+   :show-inheritance:

@@ -1,0 +1,7 @@
+﻿spark
+=====
+
+.. automodule:: nomad.io.spark
+   :members:
+   :undoc-members:
+   :show-inheritance:

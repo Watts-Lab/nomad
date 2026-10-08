@@ -80,6 +80,8 @@
 <li class="toctree-l2"><a class="reference internal" href="nomad.city_gen.html">city_gen</a></li>
 <li class="toctree-l2"><a class="reference internal" href="nomad.constants.html">constants</a></li>
 <li class="toctree-l2 current"><a class="current reference internal" href="#">contact_estimation</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#nomad.contact_estimation.compute_contact_weights"><code class="docutils literal notranslate"><span class="pre">compute_contact_weights()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#nomad.contact_estimation.estimate_contacts"><code class="docutils literal notranslate"><span class="pre">estimate_contacts()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nomad.contact_estimation.overlapping_visits"><code class="docutils literal notranslate"><span class="pre">overlapping_visits()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#nomad.contact_estimation.precision_recall_f1_from_minutes"><code class="docutils literal notranslate"><span class="pre">precision_recall_f1_from_minutes()</span></code></a></li>
 </ul>
@@ -127,6 +129,67 @@
   <section id="module-nomad.contact_estimation">
 <span id="contact-estimation"></span><h1>contact_estimation<a class="headerlink" href="#module-nomad.contact_estimation" title="Link to this heading"></a></h1>
 <p>Various algorithms for estimating individual co-location</p>
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.contact_estimation.compute_contact_weights">
+<span class="sig-prename descclassname"><span class="pre">nomad.contact_estimation.</span></span><span class="sig-name descname"><span class="pre">compute_contact_weights</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">contacts</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'duration'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">distance_threshold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/contact_estimation.html#compute_contact_weights"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.contact_estimation.compute_contact_weights" title="Link to this definition"></a></dt>
+<dd><p>Compute contact weights from a contact event table.</p>
+<p>Supported methods are <code class="docutils literal notranslate"><span class="pre">&quot;duration&quot;</span></code> and <code class="docutils literal notranslate"><span class="pre">&quot;linear_distance&quot;</span></code>. Linear
+distance weighting uses <code class="docutils literal notranslate"><span class="pre">duration</span> <span class="pre">*</span> <span class="pre">max(0,</span> <span class="pre">1</span> <span class="pre">-</span> <span class="pre">distance</span> <span class="pre">/</span> <span class="pre">threshold)</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>contacts</strong> (<em>pd.DataFrame</em>) – Contact event table from estimate_contacts.</p></li>
+<li><p><strong>method</strong> (<em>str</em>) – Either ‘duration’ or ‘linear_distance’.</p></li>
+<li><p><strong>distance_threshold</strong> (<em>float</em><em>, </em><em>optional</em>) – Contact radius used by ‘linear_distance’; required for that method.
+Linear-distance weights require contacts generated with
+complete_output=True.</p></li>
+<li><p><strong>traj_cols</strong> (<em>dict</em><em>, </em><em>optional</em>) – Mapping for duration and distance.</p></li>
+<li><p><strong>**kwargs</strong> – Column-name overrides forwarded to the traj_cols resolver.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Series named <code class="docutils literal notranslate"><span class="pre">contact_weight</span></code> and indexed like <code class="docutils literal notranslate"><span class="pre">contacts</span></code>.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pandas.Series</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.contact_estimation.estimate_contacts">
+<span class="sig-prename descclassname"><span class="pre">nomad.contact_estimation.</span></span><span class="sig-name descname"><span class="pre">estimate_contacts</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">stops</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">distance_threshold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">complete_output</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/contact_estimation.html#estimate_contacts"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.contact_estimation.estimate_contacts" title="Link to this definition"></a></dt>
+<dd><p>Estimate undirected co-location/contact events from a stop table.</p>
+<p>With <code class="docutils literal notranslate"><span class="pre">distance_threshold=None</span></code>, contacts are stops from different users at
+the same <code class="docutils literal notranslate"><span class="pre">location_id</span></code> with strictly overlapping times. With a distance
+threshold, contacts are stops from different users within that radius and
+with strictly overlapping times. Latitude/longitude thresholds are meters;
+projected x/y thresholds use the coordinate units.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>stops</strong> (<em>pd.DataFrame</em>) – Stop table with user_id, a start time (datetime or timestamp), an end
+time or duration, and either location_id (exact mode) or coordinates
+(radius mode).</p></li>
+<li><p><strong>distance_threshold</strong> (<em>float</em><em>, </em><em>optional</em>) – Contact radius. None selects exact-location mode. Meters for lat/lon,
+coordinate units for projected x/y.</p></li>
+<li><p><strong>complete_output</strong> (<em>bool</em><em>, </em><em>default False</em>) – Include the contact end time and location_id or distance.</p></li>
+<li><p><strong>traj_cols</strong> (<em>dict</em><em>, </em><em>optional</em>) – Mapping for user_id, time, duration, location_id, and coordinates.</p></li>
+<li><p><strong>**kwargs</strong> – Column-name overrides forwarded to the traj_cols resolver.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Contact events with user_id_1, user_id_2, start time, and duration.
+With complete_output=True, also includes end time and location_id or
+distance. Time columns preserve the input representation and duration
+is in minutes.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.DataFrame</p>
+</dd>
+</dl>
+</dd></dl>
+
 <dl class="py function">
 <dt class="sig sig-object py" id="nomad.contact_estimation.overlapping_visits">
 <span class="sig-prename descclassname"><span class="pre">nomad.contact_estimation.</span></span><span class="sig-name descname"><span class="pre">overlapping_visits</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">left</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">right</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">match_location</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">right_traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/contact_estimation.html#overlapping_visits"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.contact_estimation.overlapping_visits" title="Link to this definition"></a></dt>

@@ -23,7 +23,7 @@
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="metrics" href="nomad.metrics.html" />
-    <link rel="prev" title="io" href="nomad.io.html" /> 
+    <link rel="prev" title="spark" href="generated/nomad.io.spark.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -260,7 +260,7 @@ If a boundary cannot be retrieved, returns (None, None, None).</p>
 
 <dl class="py function">
 <dt class="sig sig-object py" id="nomad.map_utils.load_geodata">
-<span class="sig-prename descclassname"><span class="pre">nomad.map_utils.</span></span><span class="sig-name descname"><span class="pre">load_geodata</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">layer</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">GeoDataFrame</span></span></span><a class="reference internal" href="../_modules/nomad/map_utils.html#load_geodata"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.map_utils.load_geodata" title="Link to this definition"></a></dt>
+<span class="sig-prename descclassname"><span class="pre">nomad.map_utils.</span></span><span class="sig-name descname"><span class="pre">load_geodata</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">layer</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">GeoDataFrame</span></span></span><a class="reference internal" href="../_modules/nomad/map_utils.html#load_geodata"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.map_utils.load_geodata" title="Link to this definition"></a></dt>
 <dd><p>Load a GeoDataFrame from disk based on file extension.</p>
 <p>Supports .geojson/.json, .parquet/.geoparquet, .shp, .gpkg</p>
 </dd></dl>
@@ -357,7 +357,7 @@ efficiency.</p>
 
 <dl class="py function">
 <dt class="sig sig-object py" id="nomad.map_utils.save_geodata">
-<span class="sig-prename descclassname"><span class="pre">nomad.map_utils.</span></span><span class="sig-name descname"><span class="pre">save_geodata</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">gdf</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">GeoDataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">layer</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/map_utils.html#save_geodata"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.map_utils.save_geodata" title="Link to this definition"></a></dt>
+<span class="sig-prename descclassname"><span class="pre">nomad.map_utils.</span></span><span class="sig-name descname"><span class="pre">save_geodata</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">gdf</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">GeoDataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">layer</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/nomad/map_utils.html#save_geodata"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.map_utils.save_geodata" title="Link to this definition"></a></dt>
 <dd><p>Persist a GeoDataFrame to disk based on file extension.</p>
 <p>Supported formats:
 - .geojson/.json -&gt; GeoJSON
@@ -372,7 +372,7 @@ efficiency.</p>
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="nomad.io.html" class="btn btn-neutral float-left" title="io" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="generated/nomad.io.spark.html" class="btn btn-neutral float-left" title="spark" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
         <a href="nomad.metrics.html" class="btn btn-neutral float-right" title="metrics" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 

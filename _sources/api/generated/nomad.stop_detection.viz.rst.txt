@@ -1,0 +1,7 @@
+﻿viz
+===
+
+.. automodule:: nomad.stop_detection.viz
+   :members:
+   :undoc-members:
+   :show-inheritance:

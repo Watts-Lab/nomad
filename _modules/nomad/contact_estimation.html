@@ -107,6 +107,322 @@
 <span class="kn">import</span> <span class="nn">nomad.io.base</span> <span class="k">as</span> <span class="nn">loader</span>
 <span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
 <span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">from</span> <span class="nn">nomad.constants</span> <span class="kn">import</span> <span class="n">EARTH_RADIUS_METERS</span>
+<span class="kn">from</span> <span class="nn">nomad.stop_detection.utils</span> <span class="kn">import</span> <span class="n">_haversine_distance</span>
+<span class="kn">from</span> <span class="nn">sklearn.neighbors</span> <span class="kn">import</span> <span class="n">BallTree</span><span class="p">,</span> <span class="n">KDTree</span>
+
+<span class="n">_TEMPORAL_BLOCK_SECONDS</span> <span class="o">=</span> <span class="mi">60</span> <span class="o">*</span> <span class="mi">60</span>
+
+<span class="k">def</span> <span class="nf">_temporal_blocks</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return stop-to-hour block memberships for non-empty intervals.&quot;&quot;&quot;</span>
+    <span class="n">valid</span> <span class="o">=</span> <span class="n">end</span> <span class="o">&gt;</span> <span class="n">start</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">valid</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;block&quot;</span><span class="p">,</span> <span class="s2">&quot;stop&quot;</span><span class="p">])</span>
+
+    <span class="n">stop</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="n">valid</span><span class="p">)</span>
+    <span class="n">start_bin</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">floor_divide</span><span class="p">(</span><span class="n">start</span><span class="p">[</span><span class="n">valid</span><span class="p">],</span> <span class="n">_TEMPORAL_BLOCK_SECONDS</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+    <span class="n">end_bin</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">floor_divide</span><span class="p">(</span><span class="n">end</span><span class="p">[</span><span class="n">valid</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">_TEMPORAL_BLOCK_SECONDS</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
+    <span class="n">counts</span> <span class="o">=</span> <span class="n">end_bin</span> <span class="o">-</span> <span class="n">start_bin</span> <span class="o">+</span> <span class="mi">1</span>
+    <span class="n">offsets</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">r_</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">counts</span><span class="o">.</span><span class="n">cumsum</span><span class="p">()[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]],</span> <span class="n">counts</span><span class="p">)</span>
+    <span class="n">block</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">start_bin</span><span class="p">,</span> <span class="n">counts</span><span class="p">)</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">counts</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span> <span class="o">-</span> <span class="n">offsets</span>
+    <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s2">&quot;block&quot;</span><span class="p">:</span> <span class="n">block</span><span class="p">,</span> <span class="s2">&quot;stop&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">stop</span><span class="p">,</span> <span class="n">counts</span><span class="p">)})</span>
+
+
+<span class="k">def</span> <span class="nf">_radius_candidates</span><span class="p">(</span>
+    <span class="n">query_coords</span><span class="p">,</span>
+    <span class="n">distance_threshold</span><span class="p">,</span>
+    <span class="n">start</span><span class="p">,</span>
+    <span class="n">end</span><span class="p">,</span>
+    <span class="n">users</span><span class="p">,</span>
+    <span class="n">use_lon_lat</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return stop row pairs within distance_threshold and their distances.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">use_lon_lat</span><span class="p">:</span>
+        <span class="n">radius</span> <span class="o">=</span> <span class="n">distance_threshold</span> <span class="o">/</span> <span class="n">EARTH_RADIUS_METERS</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">radius</span> <span class="o">=</span> <span class="n">distance_threshold</span>
+
+    <span class="n">blocks</span> <span class="o">=</span> <span class="n">_temporal_blocks</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">)</span>
+    <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">cols</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">block_stops</span> <span class="ow">in</span> <span class="n">blocks</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s2">&quot;block&quot;</span><span class="p">,</span> <span class="n">sort</span><span class="o">=</span><span class="kc">False</span><span class="p">)[</span><span class="s2">&quot;stop&quot;</span><span class="p">]:</span>
+        <span class="n">block_stops</span> <span class="o">=</span> <span class="n">block_stops</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">block_stops</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="k">continue</span>
+
+        <span class="n">tree</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">BallTree</span><span class="p">(</span><span class="n">query_coords</span><span class="p">[</span><span class="n">block_stops</span><span class="p">],</span> <span class="n">metric</span><span class="o">=</span><span class="s2">&quot;haversine&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">use_lon_lat</span>
+            <span class="k">else</span> <span class="n">KDTree</span><span class="p">(</span><span class="n">query_coords</span><span class="p">[</span><span class="n">block_stops</span><span class="p">])</span>
+        <span class="p">)</span>
+        <span class="n">indices</span> <span class="o">=</span> <span class="n">tree</span><span class="o">.</span><span class="n">query_radius</span><span class="p">(</span>
+            <span class="n">query_coords</span><span class="p">[</span><span class="n">block_stops</span><span class="p">],</span>
+            <span class="n">r</span><span class="o">=</span><span class="n">radius</span><span class="p">,</span>
+            <span class="n">return_distance</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">sort_results</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">counts</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="nb">len</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="n">indices</span><span class="p">])</span>
+        <span class="n">row</span> <span class="o">=</span> <span class="n">block_stops</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">block_stops</span><span class="p">)),</span> <span class="n">counts</span><span class="p">)]</span>
+        <span class="n">col</span> <span class="o">=</span> <span class="n">block_stops</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">indices</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)]</span>
+        <span class="n">keep</span> <span class="o">=</span> <span class="n">row</span> <span class="o">&lt;</span> <span class="n">col</span>
+        <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="n">keep</span><span class="p">])</span>
+        <span class="n">cols</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">col</span><span class="p">[</span><span class="n">keep</span><span class="p">])</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">rows</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">int</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">int</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+
+    <span class="n">stop_1</span><span class="p">,</span> <span class="n">stop_2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span>
+        <span class="n">np</span><span class="o">.</span><span class="n">column_stack</span><span class="p">((</span><span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">rows</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span><span class="n">cols</span><span class="p">))),</span>
+        <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">T</span>
+    <span class="n">keep</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="p">(</span><span class="n">users</span><span class="p">[</span><span class="n">stop_1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">users</span><span class="p">[</span><span class="n">stop_2</span><span class="p">])</span>
+        <span class="o">&amp;</span> <span class="p">(</span><span class="n">start</span><span class="p">[</span><span class="n">stop_1</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">end</span><span class="p">[</span><span class="n">stop_2</span><span class="p">])</span>
+        <span class="o">&amp;</span> <span class="p">(</span><span class="n">start</span><span class="p">[</span><span class="n">stop_2</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">end</span><span class="p">[</span><span class="n">stop_1</span><span class="p">])</span>
+    <span class="p">)</span>
+    <span class="n">stop_1</span><span class="p">,</span> <span class="n">stop_2</span> <span class="o">=</span> <span class="n">stop_1</span><span class="p">[</span><span class="n">keep</span><span class="p">],</span> <span class="n">stop_2</span><span class="p">[</span><span class="n">keep</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">use_lon_lat</span><span class="p">:</span>
+        <span class="n">distance</span> <span class="o">=</span> <span class="n">_haversine_distance</span><span class="p">(</span>
+            <span class="n">query_coords</span><span class="p">[</span><span class="n">stop_1</span><span class="p">]</span><span class="o">.</span><span class="n">T</span><span class="p">,</span>
+            <span class="n">query_coords</span><span class="p">[</span><span class="n">stop_2</span><span class="p">]</span><span class="o">.</span><span class="n">T</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">distance</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">query_coords</span><span class="p">[</span><span class="n">stop_1</span><span class="p">]</span> <span class="o">-</span> <span class="n">query_coords</span><span class="p">[</span><span class="n">stop_2</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">stop_1</span><span class="p">,</span> <span class="n">stop_2</span><span class="p">,</span> <span class="n">distance</span>
+
+
+<div class="viewcode-block" id="estimate_contacts">
+<a class="viewcode-back" href="../../api/nomad.contact_estimation.html#nomad.contact_estimation.estimate_contacts">[docs]</a>
+<span class="k">def</span> <span class="nf">estimate_contacts</span><span class="p">(</span>
+    <span class="n">stops</span><span class="p">,</span>
+    <span class="n">distance_threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">complete_output</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">traj_cols</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Estimate undirected co-location/contact events from a stop table.</span>
+
+<span class="sd">    With ``distance_threshold=None``, contacts are stops from different users at</span>
+<span class="sd">    the same ``location_id`` with strictly overlapping times. With a distance</span>
+<span class="sd">    threshold, contacts are stops from different users within that radius and</span>
+<span class="sd">    with strictly overlapping times. Latitude/longitude thresholds are meters;</span>
+<span class="sd">    projected x/y thresholds use the coordinate units.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    stops : pd.DataFrame</span>
+<span class="sd">        Stop table with user_id, a start time (datetime or timestamp), an end</span>
+<span class="sd">        time or duration, and either location_id (exact mode) or coordinates</span>
+<span class="sd">        (radius mode).</span>
+<span class="sd">    distance_threshold : float, optional</span>
+<span class="sd">        Contact radius. None selects exact-location mode. Meters for lat/lon,</span>
+<span class="sd">        coordinate units for projected x/y.</span>
+<span class="sd">    complete_output : bool, default False</span>
+<span class="sd">        Include the contact end time and location_id or distance.</span>
+<span class="sd">    traj_cols : dict, optional</span>
+<span class="sd">        Mapping for user_id, time, duration, location_id, and coordinates.</span>
+<span class="sd">    **kwargs</span>
+<span class="sd">        Column-name overrides forwarded to the traj_cols resolver.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.DataFrame</span>
+<span class="sd">        Contact events with user_id_1, user_id_2, start time, and duration.</span>
+<span class="sd">        With complete_output=True, also includes end time and location_id or</span>
+<span class="sd">        distance. Time columns preserve the input representation and duration</span>
+<span class="sd">        is in minutes.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">t_key</span><span class="p">,</span> <span class="n">use_datetime</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_fallback_time_cols_dt</span><span class="p">(</span>
+        <span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span>
+        <span class="n">traj_cols</span><span class="p">,</span>
+        <span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">distance_threshold</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">coord_key1</span><span class="p">,</span> <span class="n">coord_key2</span><span class="p">,</span> <span class="n">use_lon_lat</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_fallback_spatial_cols</span><span class="p">(</span>
+            <span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span>
+            <span class="n">traj_cols</span><span class="p">,</span>
+            <span class="n">kwargs</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="n">traj_cols</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_parse_traj_cols</span><span class="p">(</span><span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">warn</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">loader</span><span class="o">.</span><span class="n">_has_user_cols</span><span class="p">(</span><span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">)</span>
+
+    <span class="n">start_key</span> <span class="o">=</span> <span class="s2">&quot;start_datetime&quot;</span> <span class="k">if</span> <span class="n">use_datetime</span> <span class="k">else</span> <span class="s2">&quot;start_timestamp&quot;</span>
+    <span class="n">end_key</span> <span class="o">=</span> <span class="s2">&quot;end_datetime&quot;</span> <span class="k">if</span> <span class="n">use_datetime</span> <span class="k">else</span> <span class="s2">&quot;end_timestamp&quot;</span>
+    <span class="n">traj_cols</span><span class="p">[</span><span class="n">start_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">distance_threshold</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">traj_cols</span><span class="p">[</span><span class="s2">&quot;location_id&quot;</span><span class="p">]</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;Exact-location contact estimation requires a location_id column.&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">stops</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s2">&quot;location_id&quot;</span><span class="p">]]</span><span class="o">.</span><span class="n">isna</span><span class="p">()</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;Exact-location contact estimation requires non-missing location_id values.&quot;</span>
+            <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">traj_cols</span><span class="p">[</span><span class="n">end_key</span><span class="p">]</span> <span class="ow">in</span> <span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">end_time</span> <span class="o">=</span> <span class="n">stops</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">end_key</span><span class="p">]]</span>
+    <span class="k">elif</span> <span class="n">loader</span><span class="o">.</span><span class="n">_has_duration_cols</span><span class="p">(</span><span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">use_datetime</span><span class="p">:</span>
+            <span class="n">end_time</span> <span class="o">=</span> <span class="n">stops</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]]</span> <span class="o">+</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_timedelta</span><span class="p">(</span>
+                <span class="n">stops</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s2">&quot;duration&quot;</span><span class="p">]],</span>
+                <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;m&quot;</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">end_time</span> <span class="o">=</span> <span class="n">stops</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]]</span> <span class="o">+</span> <span class="n">stops</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s2">&quot;duration&quot;</span><span class="p">]]</span> <span class="o">*</span> <span class="mi">60</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Contact estimation requires an end time or duration column.&quot;</span><span class="p">)</span>
+
+    <span class="n">output_cols</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;user_id_1&quot;</span><span class="p">,</span> <span class="s2">&quot;user_id_2&quot;</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">[</span><span class="n">start_key</span><span class="p">],</span> <span class="s2">&quot;duration&quot;</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">complete_output</span><span class="p">:</span>
+        <span class="n">output_cols</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">end_key</span><span class="p">])</span>
+        <span class="k">if</span> <span class="n">distance_threshold</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">output_cols</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">traj_cols</span><span class="p">[</span><span class="s2">&quot;location_id&quot;</span><span class="p">])</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">output_cols</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">traj_cols</span><span class="p">[</span><span class="s2">&quot;distance&quot;</span><span class="p">])</span>
+    <span class="k">if</span> <span class="n">stops</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="n">output_cols</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">use_datetime</span><span class="p">:</span>
+        <span class="n">start</span> <span class="o">=</span> <span class="n">filters</span><span class="o">.</span><span class="n">to_timestamp</span><span class="p">(</span><span class="n">stops</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]])</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+        <span class="n">end</span> <span class="o">=</span> <span class="n">filters</span><span class="o">.</span><span class="n">to_timestamp</span><span class="p">(</span><span class="n">end_time</span><span class="p">)</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">start</span> <span class="o">=</span> <span class="n">stops</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+        <span class="n">end</span> <span class="o">=</span> <span class="n">end_time</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+
+    <span class="n">users</span> <span class="o">=</span> <span class="n">stops</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s2">&quot;user_id&quot;</span><span class="p">]]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+
+    <span class="k">if</span> <span class="n">distance_threshold</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Pair stops sharing a location, then keep distinct users with overlap.</span>
+        <span class="n">candidates</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">stops</span><span class="p">[[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s2">&quot;location_id&quot;</span><span class="p">]]]</span>
+            <span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="o">.</span><span class="n">rename_axis</span><span class="p">(</span><span class="s2">&quot;stop&quot;</span><span class="p">)</span>
+            <span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+        <span class="p">)</span>
+        <span class="n">pairs</span> <span class="o">=</span> <span class="n">candidates</span><span class="o">.</span><span class="n">merge</span><span class="p">(</span>
+            <span class="n">candidates</span><span class="p">,</span>
+            <span class="n">on</span><span class="o">=</span><span class="n">traj_cols</span><span class="p">[</span><span class="s2">&quot;location_id&quot;</span><span class="p">],</span>
+            <span class="n">suffixes</span><span class="o">=</span><span class="p">(</span><span class="s2">&quot;_1&quot;</span><span class="p">,</span> <span class="s2">&quot;_2&quot;</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="n">stop_1</span> <span class="o">=</span> <span class="n">pairs</span><span class="p">[</span><span class="s2">&quot;stop_1&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+        <span class="n">stop_2</span> <span class="o">=</span> <span class="n">pairs</span><span class="p">[</span><span class="s2">&quot;stop_2&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+        <span class="n">keep</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="p">(</span><span class="n">stop_1</span> <span class="o">&lt;</span> <span class="n">stop_2</span><span class="p">)</span>
+            <span class="o">&amp;</span> <span class="p">(</span><span class="n">users</span><span class="p">[</span><span class="n">stop_1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">users</span><span class="p">[</span><span class="n">stop_2</span><span class="p">])</span>
+            <span class="o">&amp;</span> <span class="p">(</span><span class="n">start</span><span class="p">[</span><span class="n">stop_1</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">end</span><span class="p">[</span><span class="n">stop_2</span><span class="p">])</span>
+            <span class="o">&amp;</span> <span class="p">(</span><span class="n">start</span><span class="p">[</span><span class="n">stop_2</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">end</span><span class="p">[</span><span class="n">stop_1</span><span class="p">])</span>
+        <span class="p">)</span>
+        <span class="n">stop_1</span><span class="p">,</span> <span class="n">stop_2</span> <span class="o">=</span> <span class="n">stop_1</span><span class="p">[</span><span class="n">keep</span><span class="p">],</span> <span class="n">stop_2</span><span class="p">[</span><span class="n">keep</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">query_coords</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span>
+                <span class="n">stops</span><span class="p">[[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">coord_key2</span><span class="p">],</span> <span class="n">traj_cols</span><span class="p">[</span><span class="n">coord_key1</span><span class="p">]]]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">use_lon_lat</span>
+            <span class="k">else</span> <span class="n">stops</span><span class="p">[[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">coord_key1</span><span class="p">],</span> <span class="n">traj_cols</span><span class="p">[</span><span class="n">coord_key2</span><span class="p">]]]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+        <span class="p">)</span>
+        <span class="n">stop_1</span><span class="p">,</span> <span class="n">stop_2</span><span class="p">,</span> <span class="n">distance</span> <span class="o">=</span> <span class="n">_radius_candidates</span><span class="p">(</span>
+            <span class="n">query_coords</span><span class="p">,</span>
+            <span class="n">distance_threshold</span><span class="p">,</span>
+            <span class="n">start</span><span class="p">,</span>
+            <span class="n">end</span><span class="p">,</span>
+            <span class="n">users</span><span class="p">,</span>
+            <span class="n">use_lon_lat</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="n">contact_start</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span>
+        <span class="n">stops</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">stop_1</span><span class="p">]</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+        <span class="n">stops</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">stop_2</span><span class="p">]</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+    <span class="p">)</span>
+    <span class="n">contact_end</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">minimum</span><span class="p">(</span>
+        <span class="n">end_time</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">stop_1</span><span class="p">]</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+        <span class="n">end_time</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">stop_2</span><span class="p">]</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
+    <span class="p">)</span>
+    <span class="n">duration</span> <span class="o">=</span> <span class="n">contact_end</span> <span class="o">-</span> <span class="n">contact_start</span>
+    <span class="k">if</span> <span class="n">use_datetime</span><span class="p">:</span>
+        <span class="n">duration</span> <span class="o">=</span> <span class="n">duration</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span>
+
+    <span class="n">output</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;user_id_1&quot;</span><span class="p">:</span> <span class="n">users</span><span class="p">[</span><span class="n">stop_1</span><span class="p">],</span>
+        <span class="s2">&quot;user_id_2&quot;</span><span class="p">:</span> <span class="n">users</span><span class="p">[</span><span class="n">stop_2</span><span class="p">],</span>
+        <span class="n">traj_cols</span><span class="p">[</span><span class="n">start_key</span><span class="p">]:</span> <span class="n">contact_start</span><span class="p">,</span>
+        <span class="s2">&quot;duration&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">duration</span> <span class="o">//</span> <span class="mi">60</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">),</span>
+    <span class="p">}</span>
+    <span class="k">if</span> <span class="n">complete_output</span><span class="p">:</span>
+        <span class="n">output</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">end_key</span><span class="p">]]</span> <span class="o">=</span> <span class="n">contact_end</span>
+        <span class="k">if</span> <span class="n">distance_threshold</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">output</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s2">&quot;location_id&quot;</span><span class="p">]]</span> <span class="o">=</span> <span class="n">stops</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s2">&quot;location_id&quot;</span><span class="p">]]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">stop_1</span><span class="p">]</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">output</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s2">&quot;distance&quot;</span><span class="p">]]</span> <span class="o">=</span> <span class="n">distance</span>
+    <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">output</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="n">output_cols</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="compute_contact_weights">
+<a class="viewcode-back" href="../../api/nomad.contact_estimation.html#nomad.contact_estimation.compute_contact_weights">[docs]</a>
+<span class="k">def</span> <span class="nf">compute_contact_weights</span><span class="p">(</span>
+    <span class="n">contacts</span><span class="p">,</span>
+    <span class="n">method</span><span class="o">=</span><span class="s2">&quot;duration&quot;</span><span class="p">,</span>
+    <span class="n">distance_threshold</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">traj_cols</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Compute contact weights from a contact event table.</span>
+
+<span class="sd">    Supported methods are ``&quot;duration&quot;`` and ``&quot;linear_distance&quot;``. Linear</span>
+<span class="sd">    distance weighting uses ``duration * max(0, 1 - distance / threshold)``.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    contacts : pd.DataFrame</span>
+<span class="sd">        Contact event table from estimate_contacts.</span>
+<span class="sd">    method : str</span>
+<span class="sd">        Either &#39;duration&#39; or &#39;linear_distance&#39;.</span>
+<span class="sd">    distance_threshold : float, optional</span>
+<span class="sd">        Contact radius used by &#39;linear_distance&#39;; required for that method.</span>
+<span class="sd">        Linear-distance weights require contacts generated with</span>
+<span class="sd">        complete_output=True.</span>
+<span class="sd">    traj_cols : dict, optional</span>
+<span class="sd">        Mapping for duration and distance.</span>
+<span class="sd">    **kwargs</span>
+<span class="sd">        Column-name overrides forwarded to the traj_cols resolver.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pandas.Series</span>
+<span class="sd">        Series named ``contact_weight`` and indexed like ``contacts``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">traj_cols</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_parse_traj_cols</span><span class="p">(</span><span class="n">contacts</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">loader</span><span class="o">.</span><span class="n">_has_duration_cols</span><span class="p">(</span><span class="n">contacts</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Missing required duration column &#39;</span><span class="si">{</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;duration&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39;.&quot;</span>
+        <span class="p">)</span>
+
+    <span class="n">method</span> <span class="o">=</span> <span class="n">method</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+
+    <span class="k">if</span> <span class="n">method</span> <span class="o">==</span> <span class="s2">&quot;duration&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">contacts</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s2">&quot;duration&quot;</span><span class="p">]]</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="s2">&quot;contact_weight&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">method</span> <span class="o">!=</span> <span class="s2">&quot;linear_distance&quot;</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;method must be one of &#39;duration&#39; or &#39;linear_distance&#39;.&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">distance_threshold</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">&quot;method=&#39;linear_distance&#39; requires an explicit distance_threshold.&quot;</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">traj_cols</span><span class="p">[</span><span class="s2">&quot;distance&quot;</span><span class="p">]</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">contacts</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;method=&#39;linear_distance&#39; requires a &#39;</span><span class="si">{</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;distance&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39; column.&quot;</span>
+        <span class="p">)</span>
+
+    <span class="k">return</span> <span class="p">(</span>
+        <span class="n">contacts</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s2">&quot;duration&quot;</span><span class="p">]]</span>
+        <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">contacts</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s2">&quot;distance&quot;</span><span class="p">]]</span> <span class="o">/</span> <span class="n">distance_threshold</span><span class="p">)</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="s2">&quot;contact_weight&quot;</span><span class="p">)</span></div>
+
 
 
 <div class="viewcode-block" id="overlapping_visits">

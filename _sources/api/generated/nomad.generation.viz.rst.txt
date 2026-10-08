@@ -1,0 +1,7 @@
+﻿viz
+===
+
+.. automodule:: nomad.generation.viz
+   :members:
+   :undoc-members:
+   :show-inheritance:

@@ -1,0 +1,7 @@
+﻿density_algs
+============
+
+.. automodule:: nomad.stop_detection.density_algs
+   :members:
+   :undoc-members:
+   :show-inheritance:

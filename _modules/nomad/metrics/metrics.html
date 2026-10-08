@@ -1,0 +1,524 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nomad.metrics.metrics &mdash; NOMAD 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-design.min.css?v=95c83b7e" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../../../_static/design-tabs.js?v=f930bc37"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html">
+            
+              <img src="../../../_static/nomad-logo-black.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../data_ingestion.html">Data Ingestion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../filtering.html">Filtering &amp; Completeness</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../tessellation.html">Tessellation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../stop_detection.html">Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../visit_attribution.html">Visit Attribution</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../metrics.html">Mobility Metrics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../colocation.html">Co-location &amp; Contact Networks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../aggregation.html">Aggregation &amp; Debiasing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../synthetic_data_generation.html">Synthetic Data Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/ingesting-data.html">Loading Trajectory Data</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/benchmarking_of_stop_detection_algorithms.html">Comparing runtimes of different stop detection algorithms on toy datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/lachesis_demo.html">Lachesis Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/tadbscan_demo.html">TADBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/hdbscan_demo.html">HDBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/grid_based_demo.html">Grid-Based Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/generate_synthetic_pois.html">Synthetic POI Generation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/download_poi_data_from_OSM.html">Downloading places of interest (POI) Data from OSM</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/generate_synthetic_trajectories.html">Synthetic Trajectory Generation with Nomad</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/random_city.html">Random City Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_reference.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">NOMAD</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">nomad.metrics.metrics</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nomad.metrics.metrics</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">from</span> <span class="nn">nomad.constants</span> <span class="kn">import</span> <span class="n">SEC_PER_UNIT</span>
+<span class="kn">from</span> <span class="nn">nomad.stop_detection</span> <span class="kn">import</span> <span class="n">utils</span>
+<span class="kn">import</span> <span class="nn">nomad.io.base</span> <span class="k">as</span> <span class="nn">loader</span>
+<span class="kn">import</span> <span class="nn">warnings</span>
+
+<span class="k">def</span> <span class="nf">_centroid</span><span class="p">(</span><span class="n">coords</span><span class="p">,</span> <span class="n">metric</span><span class="o">=</span><span class="s1">&#39;euclidean&#39;</span><span class="p">,</span> <span class="n">weight</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Calculate the centroid (arithmetic mean) of a set of coordinates.</span>
+<span class="sd">    For &#39;haversine&#39;, computes the spherical centroid (lat, lon in degrees).</span>
+<span class="sd">    If weight is given, computes the weighted centroid.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    coords : numpy.ndarray</span>
+<span class="sd">        Array of coordinates, each row a point.</span>
+<span class="sd">    metric : str, optional</span>
+<span class="sd">        &#39;euclidean&#39; or &#39;haversine&#39;. For &#39;haversine&#39;, coords should be in degrees.</span>
+<span class="sd">    weight : array-like, optional</span>
+<span class="sd">        Non-negative weights for each coordinate (length = len(coords)).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    numpy.ndarray</span>
+<span class="sd">        The centroid as a single point (same shape as input).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">coords</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">coords</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">coords</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">coords</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">weight</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">weight</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">weight</span><span class="p">)</span>
+        <span class="n">weight</span> <span class="o">=</span> <span class="n">weight</span> <span class="o">/</span> <span class="n">weight</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">weight</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">coords</span><span class="p">),</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">coords</span><span class="p">))</span>
+
+    <span class="k">if</span> <span class="n">metric</span> <span class="o">==</span> <span class="s1">&#39;haversine&#39;</span><span class="p">:</span>
+        <span class="n">rad</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">coords</span><span class="p">)</span>
+        <span class="n">lat</span><span class="p">,</span> <span class="n">lon</span> <span class="o">=</span> <span class="n">rad</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">rad</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">lat</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">lon</span><span class="p">)</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">lat</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">lon</span><span class="p">)</span>
+        <span class="n">z</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">lat</span><span class="p">)</span>
+        <span class="n">x_mean</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">x</span> <span class="o">*</span> <span class="n">weight</span><span class="p">)</span>
+        <span class="n">y_mean</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">y</span> <span class="o">*</span> <span class="n">weight</span><span class="p">)</span>
+        <span class="n">z_mean</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">z</span> <span class="o">*</span> <span class="n">weight</span><span class="p">)</span>
+        <span class="n">hyp</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">hypot</span><span class="p">(</span><span class="n">x_mean</span><span class="p">,</span> <span class="n">y_mean</span><span class="p">)</span>
+        <span class="n">lat_c</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arctan2</span><span class="p">(</span><span class="n">z_mean</span><span class="p">,</span> <span class="n">hyp</span><span class="p">)</span>
+        <span class="n">lon_c</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arctan2</span><span class="p">(</span><span class="n">y_mean</span><span class="p">,</span> <span class="n">x_mean</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">degrees</span><span class="p">([</span><span class="n">lat_c</span><span class="p">,</span> <span class="n">lon_c</span><span class="p">])</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">coords</span> <span class="o">*</span> <span class="n">weight</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="social_interaction_potential">
+<a class="viewcode-back" href="../../../api/generated/nomad.metrics.metrics.html#nomad.metrics.metrics.social_interaction_potential">[docs]</a>
+<span class="k">def</span> <span class="nf">social_interaction_potential</span><span class="p">(</span><span class="n">contacts</span><span class="p">,</span> <span class="n">weight</span><span class="o">=</span><span class="s2">&quot;duration&quot;</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Aggregate undirected contact events into user-level SIP.</span>
+
+<span class="sd">    Each contact contributes its weight to both users.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    contacts : pandas.DataFrame</span>
+<span class="sd">        Contact event table with one row per undirected contact and canonical</span>
+<span class="sd">        user_id_1 and user_id_2 columns.</span>
+<span class="sd">    weight : str, default &quot;duration&quot;</span>
+<span class="sd">        Name of the column containing the weight contributed by each contact.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pandas.DataFrame</span>
+<span class="sd">        User-level SIP table with columns ``user_id`` and ``sip``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="p">(</span>
+        <span class="n">contacts</span><span class="o">.</span><span class="n">melt</span><span class="p">(</span>
+            <span class="n">id_vars</span><span class="o">=</span><span class="n">weight</span><span class="p">,</span>
+            <span class="n">value_vars</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;user_id_1&quot;</span><span class="p">,</span> <span class="s2">&quot;user_id_2&quot;</span><span class="p">],</span>
+            <span class="n">value_name</span><span class="o">=</span><span class="s2">&quot;user_id&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s2">&quot;user_id&quot;</span><span class="p">,</span> <span class="n">as_index</span><span class="o">=</span><span class="kc">False</span><span class="p">)[</span><span class="n">weight</span><span class="p">]</span>
+        <span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+        <span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="n">weight</span><span class="p">:</span> <span class="s2">&quot;sip&quot;</span><span class="p">})</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="rog">
+<a class="viewcode-back" href="../../../api/generated/nomad.metrics.metrics.html#nomad.metrics.metrics.rog">[docs]</a>
+<span class="k">def</span> <span class="nf">rog</span><span class="p">(</span><span class="n">stops</span><span class="p">,</span> <span class="n">agg_freq</span><span class="o">=</span><span class="s1">&#39;d&#39;</span><span class="p">,</span> <span class="n">weighted</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">time_weights</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">exploded</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    if weighted AND time_weights, then</span>
+<span class="sd">        1. weights = duration * time_weights</span>
+<span class="sd">    if (weighted) AND (time_weights is None and not found in colunmns), then</span>
+<span class="sd">        2. weights = duration</span>
+<span class="sd">    if (weighted) AND (time_weights is None and found in columns), then</span>
+<span class="sd">        3. weights = duration * time_weights</span>
+<span class="sd">    if NOT weighted, then</span>
+<span class="sd">        4. weights = 1</span>
+<span class="sd">            </span>
+<span class="sd">    Compute radius of gyration per bucket (and per user, if present).</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    stops : pd.DataFrame</span>
+<span class="sd">    agg_freq : str</span>
+<span class="sd">        Pandas offset alias for time‐bucketing (e.g. &#39;d&#39;,&#39;w&#39;,&#39;m&#39;).</span>
+<span class="sd">    weighted : bool</span>
+<span class="sd">        If True, weight by duration; else unweighted.</span>
+<span class="sd">    traj_cols : dict, optional</span>
+<span class="sd">        Mapping for x/y (or lon/lat), timestamp/datetime, duration, user_id.</span>
+<span class="sd">    time_weights : pd.Series, optional</span>
+<span class="sd">        If None or 1 and weighted is True, weights = duration. Otherwise, stops have weights = time_weights * duration.</span>
+<span class="sd">    weight_freq : str, optional</span>
+<span class="sd">        &#39;D&#39; for daily, &#39;H&#39; for hourly weights. Default is &#39;D&#39;.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.DataFrame</span>
+<span class="sd">        Columns = [bucket, user_id? , rog].</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">stops</span> <span class="o">=</span> <span class="n">stops</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+    <span class="c1"># Restrict agg_freq to days and weeks only</span>
+    <span class="n">allowed_freqs</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;d&#39;</span><span class="p">,</span> <span class="s1">&#39;w&#39;</span><span class="p">,</span> <span class="s1">&#39;D&#39;</span><span class="p">,</span> <span class="s1">&#39;W&#39;</span><span class="p">]</span>  <span class="c1"># Allow both cases</span>
+    <span class="k">if</span> <span class="n">agg_freq</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">allowed_freqs</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;agg_freq must be one of </span><span class="si">{</span><span class="n">allowed_freqs</span><span class="si">}</span><span class="s2"> (got &#39;</span><span class="si">{</span><span class="n">agg_freq</span><span class="si">}</span><span class="s2">&#39;)&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Add time_weights column if provided and matches index</span>
+    <span class="k">if</span> <span class="n">time_weights</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">time_weights</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">time_weights</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">stops</span><span class="p">)):</span>
+            <span class="n">stops</span><span class="p">[</span><span class="s1">&#39;time_weights&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">time_weights</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;time_weights must be a pd.Series with the same length and index as stops.&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">exploded</span><span class="p">:</span>
+        <span class="n">stops</span> <span class="o">=</span> <span class="n">utils</span><span class="o">.</span><span class="n">explode_stops</span><span class="p">(</span><span class="n">stops</span><span class="p">,</span> <span class="n">agg_freq</span><span class="o">=</span><span class="n">agg_freq</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Some stops straddle multiple </span><span class="si">{</span><span class="n">agg_freq</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span><span class="si">}</span><span class="s2">s. They will be exploded into separate rows.&quot;</span><span class="p">,</span>
+            <span class="ne">UserWarning</span>
+        <span class="p">)</span>
+    
+    <span class="c1"># 1) column mapping + check</span>
+    <span class="n">t_key</span><span class="p">,</span> <span class="n">coord_x</span><span class="p">,</span> <span class="n">coord_y</span><span class="p">,</span> <span class="n">use_datetime</span><span class="p">,</span> <span class="n">use_lon_lat</span> <span class="o">=</span> <span class="n">utils</span><span class="o">.</span><span class="n">_fallback_st_cols</span><span class="p">(</span><span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+    <span class="n">traj_cols</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_parse_traj_cols</span><span class="p">(</span><span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">warn</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">dur_key</span> <span class="o">=</span> <span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;duration&#39;</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">dur_key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Missing required &#39;duration&#39; column&quot;</span><span class="p">)</span>
+
+    <span class="n">stops</span> <span class="o">=</span> <span class="n">stops</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    
+    <span class="c1"># 2) time buckets</span>
+    <span class="k">if</span> <span class="n">use_datetime</span><span class="p">:</span>
+        <span class="n">temp_dt</span> <span class="o">=</span> <span class="n">stops</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">temp_dt</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">stops</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]],</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;s&#39;</span><span class="p">)</span> 
+    <span class="k">if</span> <span class="n">agg_freq</span> <span class="o">==</span> <span class="s2">&quot;W&quot;</span><span class="p">:</span>
+        <span class="n">agg_freq</span> <span class="o">=</span> <span class="s2">&quot;W-MON&quot;</span>
+
+    <span class="n">stops</span><span class="p">[</span><span class="s1">&#39;period&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">temp_dt</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">to_period</span><span class="p">(</span><span class="n">agg_freq</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">start_time</span>
+
+    <span class="c1"># 3) grouping keys</span>
+    <span class="n">keys</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;period&#39;</span><span class="p">]</span>
+    <span class="n">uid_key</span> <span class="o">=</span> <span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;user_id&#39;</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">uid_key</span> <span class="ow">in</span> <span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">keys</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">uid_key</span><span class="p">)</span>
+
+    <span class="c1"># 4) compute per‐group centroid</span>
+    <span class="n">metric</span> <span class="o">=</span> <span class="s1">&#39;haversine&#39;</span> <span class="k">if</span> <span class="n">use_lon_lat</span> <span class="k">else</span> <span class="s1">&#39;euclidean&#39;</span>
+
+    <span class="k">def</span> <span class="nf">_group_centroid</span><span class="p">(</span><span class="n">g</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">metric</span> <span class="o">==</span> <span class="s1">&#39;haversine&#39;</span><span class="p">:</span>
+            <span class="n">pts</span> <span class="o">=</span> <span class="n">g</span><span class="p">[[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;latitude&#39;</span><span class="p">],</span> <span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;longitude&#39;</span><span class="p">]]]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">pts</span> <span class="o">=</span> <span class="n">g</span><span class="p">[[</span><span class="n">coord_x</span><span class="p">,</span> <span class="n">coord_y</span><span class="p">]]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+        <span class="c1"># Weight logic</span>
+        <span class="k">if</span> <span class="n">weighted</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">time_weights</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">w</span> <span class="o">=</span> <span class="n">g</span><span class="p">[</span><span class="n">dur_key</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span> <span class="o">*</span> <span class="n">time_weights</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">g</span><span class="o">.</span><span class="n">index</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+            <span class="k">elif</span> <span class="s1">&#39;time_weights&#39;</span> <span class="ow">in</span> <span class="n">g</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+                <span class="n">w</span> <span class="o">=</span> <span class="n">g</span><span class="p">[</span><span class="n">dur_key</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span> <span class="o">*</span> <span class="n">g</span><span class="p">[</span><span class="s1">&#39;time_weights&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">w</span> <span class="o">=</span> <span class="n">g</span><span class="p">[</span><span class="n">dur_key</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">w</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="n">_centroid</span><span class="p">(</span><span class="n">pts</span><span class="p">,</span> <span class="n">metric</span><span class="o">=</span><span class="n">metric</span><span class="p">,</span> <span class="n">weight</span><span class="o">=</span><span class="n">w</span><span class="p">)</span>
+
+    <span class="n">cent</span> <span class="o">=</span> <span class="n">stops</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="n">keys</span><span class="p">)</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">_group_centroid</span><span class="p">)</span>
+    
+    <span class="n">cent_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+        <span class="n">cent</span><span class="o">.</span><span class="n">tolist</span><span class="p">(),</span>
+        <span class="n">index</span><span class="o">=</span><span class="n">cent</span><span class="o">.</span><span class="n">index</span><span class="p">,</span>
+        <span class="n">columns</span><span class="o">=</span><span class="p">([</span><span class="s1">&#39;lat_c&#39;</span><span class="p">,</span><span class="s1">&#39;lon_c&#39;</span><span class="p">]</span> <span class="k">if</span> <span class="n">metric</span><span class="o">==</span><span class="s1">&#39;haversine&#39;</span> <span class="k">else</span> <span class="p">[</span><span class="n">coord_x</span><span class="o">+</span><span class="s1">&#39;_c&#39;</span><span class="p">,</span><span class="n">coord_y</span><span class="o">+</span><span class="s1">&#39;_c&#39;</span><span class="p">])</span>
+    <span class="p">)</span>
+
+    <span class="c1"># 5) join back and compute squared distances</span>
+    <span class="n">stops</span> <span class="o">=</span> <span class="n">stops</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">cent_df</span><span class="p">,</span> <span class="n">on</span><span class="o">=</span><span class="n">keys</span><span class="p">)</span>
+    
+    <span class="k">if</span> <span class="n">metric</span> <span class="o">==</span> <span class="s1">&#39;haversine&#39;</span><span class="p">:</span>
+        <span class="k">def</span> <span class="nf">_sq_hav</span><span class="p">(</span><span class="n">r</span><span class="p">):</span>
+            <span class="n">c1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">([</span><span class="n">r</span><span class="p">[</span><span class="s1">&#39;lat_c&#39;</span><span class="p">],</span> <span class="n">r</span><span class="p">[</span><span class="s1">&#39;lon_c&#39;</span><span class="p">]])</span>
+            <span class="n">p1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">([</span><span class="n">r</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;latitude&#39;</span><span class="p">]],</span> <span class="n">r</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;longitude&#39;</span><span class="p">]]])</span>
+            <span class="n">d</span> <span class="o">=</span> <span class="n">utils</span><span class="o">.</span><span class="n">_haversine_distance</span><span class="p">(</span><span class="n">p1</span><span class="p">,</span> <span class="n">c1</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">d</span><span class="o">*</span><span class="n">d</span>
+        <span class="n">stops</span><span class="p">[</span><span class="s1">&#39;d2&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">stops</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">_sq_hav</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">dx</span> <span class="o">=</span> <span class="n">stops</span><span class="p">[</span><span class="n">coord_x</span><span class="p">]</span> <span class="o">-</span> <span class="n">stops</span><span class="p">[</span><span class="n">coord_x</span><span class="o">+</span><span class="s1">&#39;_c&#39;</span><span class="p">]</span>
+        <span class="n">dy</span> <span class="o">=</span> <span class="n">stops</span><span class="p">[</span><span class="n">coord_y</span><span class="p">]</span> <span class="o">-</span> <span class="n">stops</span><span class="p">[</span><span class="n">coord_y</span><span class="o">+</span><span class="s1">&#39;_c&#39;</span><span class="p">]</span>
+        <span class="n">stops</span><span class="p">[</span><span class="s1">&#39;d2&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">dx</span><span class="o">*</span><span class="n">dx</span> <span class="o">+</span> <span class="n">dy</span><span class="o">*</span><span class="n">dy</span>
+
+    <span class="c1"># 6) aggregate into rog</span>
+    <span class="k">def</span> <span class="nf">_group_rog</span><span class="p">(</span><span class="n">g</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">weighted</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">time_weights</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">weights</span> <span class="o">=</span> <span class="n">g</span><span class="p">[</span><span class="n">dur_key</span><span class="p">]</span> <span class="o">*</span> <span class="n">time_weights</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">g</span><span class="o">.</span><span class="n">index</span><span class="p">]</span>
+            <span class="k">elif</span> <span class="s1">&#39;time_weights&#39;</span> <span class="ow">in</span> <span class="n">g</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+                <span class="n">weights</span> <span class="o">=</span> <span class="n">g</span><span class="p">[</span><span class="n">dur_key</span><span class="p">]</span> <span class="o">*</span> <span class="n">g</span><span class="p">[</span><span class="s1">&#39;time_weights&#39;</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">weights</span> <span class="o">=</span> <span class="n">g</span><span class="p">[</span><span class="n">dur_key</span><span class="p">]</span>
+            <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">((</span><span class="n">g</span><span class="p">[</span><span class="s1">&#39;d2&#39;</span><span class="p">]</span> <span class="o">*</span> <span class="n">weights</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">/</span> <span class="n">weights</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">g</span><span class="p">[</span><span class="s1">&#39;d2&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span>
+
+    <span class="n">rog</span> <span class="o">=</span> <span class="n">stops</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="n">keys</span><span class="p">)</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">_group_rog</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">rog</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s1">&#39;rog&#39;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="self_containment">
+<a class="viewcode-back" href="../../../api/generated/nomad.metrics.metrics.html#nomad.metrics.metrics.self_containment">[docs]</a>
+<span class="k">def</span> <span class="nf">self_containment</span><span class="p">(</span><span class="n">stops</span><span class="p">,</span> <span class="n">threshold</span><span class="p">,</span> <span class="n">agg_freq</span><span class="o">=</span><span class="s1">&#39;d&#39;</span><span class="p">,</span> <span class="n">weighted</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">home_activity_type</span><span class="o">=</span><span class="s1">&#39;home&#39;</span><span class="p">,</span>
+                     <span class="n">traj_cols</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">time_weights</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                     <span class="n">exploded</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Compute self-containment (proportion of non-home time spent within threshold distance from home).</span>
+
+<span class="sd">    Self-containment describes the propensity of individuals to stay close to home. It is calculated</span>
+<span class="sd">    as the time-weighted proportion of non-home activities that are within a threshold distance from home.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    stops : pd.DataFrame</span>
+<span class="sd">        Stop data with spatial coordinates, duration, and location_id.</span>
+<span class="sd">    threshold : float</span>
+<span class="sd">        Distance threshold in the same units as coordinates (meters for projected, degrees for lat/lon).</span>
+<span class="sd">        Activities within this distance from home are considered &quot;contained&quot;.</span>
+<span class="sd">    agg_freq : str</span>
+<span class="sd">        Pandas offset alias for time-bucketing (e.g. &#39;d&#39;,&#39;w&#39;,&#39;m&#39;).</span>
+<span class="sd">    weighted : bool</span>
+<span class="sd">        If True, weight by duration; else unweighted (count activities).</span>
+<span class="sd">    home_activity_type : str</span>
+<span class="sd">        Value in location_id column that identifies home locations. Default is &#39;home&#39;.</span>
+<span class="sd">        Can be &#39;home_id&#39; or any other location_id value.</span>
+<span class="sd">    traj_cols : dict, optional</span>
+<span class="sd">        Mapping for x/y (or lon/lat), timestamp/datetime, duration, user_id, location_id.</span>
+<span class="sd">    time_weights : pd.Series, optional</span>
+<span class="sd">        Additional time weights to multiply with duration (if weighted=True).</span>
+<span class="sd">    exploded : bool</span>
+<span class="sd">        If True, explode stops that straddle multiple time periods. Default is True.</span>
+<span class="sd">    **kwargs</span>
+<span class="sd">        Additional arguments passed to explode_stops or column overrides.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.DataFrame</span>
+<span class="sd">        Columns = [period, user_id?, self_containment].</span>
+<span class="sd">        self_containment is the proportion [0, 1] of non-home time spent within threshold from home.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">stops</span> <span class="o">=</span> <span class="n">stops</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+    <span class="c1"># Restrict agg_freq to days and weeks only</span>
+    <span class="n">allowed_freqs</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;d&#39;</span><span class="p">,</span> <span class="s1">&#39;w&#39;</span><span class="p">,</span> <span class="s1">&#39;D&#39;</span><span class="p">,</span> <span class="s1">&#39;W&#39;</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">agg_freq</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">allowed_freqs</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;agg_freq must be one of </span><span class="si">{</span><span class="n">allowed_freqs</span><span class="si">}</span><span class="s2"> (got &#39;</span><span class="si">{</span><span class="n">agg_freq</span><span class="si">}</span><span class="s2">&#39;)&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Parse column mappings (similar to compute_candidate_homes)</span>
+    <span class="n">traj_cols</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_parse_traj_cols</span><span class="p">(</span><span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="c1"># Check for required location_id column</span>
+    <span class="k">if</span> <span class="n">traj_cols</span><span class="p">[</span><span class="s2">&quot;location_id&quot;</span><span class="p">]</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Missing required &#39;</span><span class="si">{</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;location_id&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39; column&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Warn if no home locations exist in the entire dataset</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">stops</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s2">&quot;location_id&quot;</span><span class="p">]]</span> <span class="o">==</span> <span class="n">home_activity_type</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;No home locations found (location_id == &#39;</span><span class="si">{</span><span class="n">home_activity_type</span><span class="si">}</span><span class="s2">&#39;). &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;Self-containment cannot be calculated without home locations.&quot;</span><span class="p">,</span>
+            <span class="ne">UserWarning</span>
+        <span class="p">)</span>
+
+    <span class="c1"># Add time_weights column if provided</span>
+    <span class="k">if</span> <span class="n">time_weights</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">time_weights</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">time_weights</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">stops</span><span class="p">)):</span>
+            <span class="n">stops</span><span class="p">[</span><span class="s1">&#39;time_weights&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">time_weights</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;time_weights must be a pd.Series with the same length and index as stops.&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">exploded</span><span class="p">:</span>
+        <span class="n">stops</span> <span class="o">=</span> <span class="n">utils</span><span class="o">.</span><span class="n">explode_stops</span><span class="p">(</span><span class="n">stops</span><span class="p">,</span> <span class="n">agg_freq</span><span class="o">=</span><span class="n">agg_freq</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Some stops straddle multiple </span><span class="si">{</span><span class="n">agg_freq</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span><span class="si">}</span><span class="s2">s. They will be exploded into separate rows.&quot;</span><span class="p">,</span>
+            <span class="ne">UserWarning</span>
+        <span class="p">)</span>
+
+    <span class="c1"># 1) Column mapping + check</span>
+    <span class="n">t_key</span><span class="p">,</span> <span class="n">coord_x</span><span class="p">,</span> <span class="n">coord_y</span><span class="p">,</span> <span class="n">use_datetime</span><span class="p">,</span> <span class="n">use_lon_lat</span> <span class="o">=</span> <span class="n">utils</span><span class="o">.</span><span class="n">_fallback_st_cols</span><span class="p">(</span><span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+    <span class="n">dur_key</span> <span class="o">=</span> <span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;duration&#39;</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">dur_key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Missing required &#39;duration&#39; column&quot;</span><span class="p">)</span>
+
+    <span class="c1"># 2) Time buckets</span>
+    <span class="k">if</span> <span class="n">use_datetime</span><span class="p">:</span>
+        <span class="n">temp_dt</span> <span class="o">=</span> <span class="n">stops</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">temp_dt</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">stops</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]],</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;s&#39;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">agg_freq</span> <span class="o">==</span> <span class="s2">&quot;W&quot;</span><span class="p">:</span>
+        <span class="n">agg_freq</span> <span class="o">=</span> <span class="s2">&quot;W-MON&quot;</span>
+
+    <span class="n">stops</span><span class="p">[</span><span class="s1">&#39;period&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">temp_dt</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">to_period</span><span class="p">(</span><span class="n">agg_freq</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">start_time</span>
+
+    <span class="c1"># 3) Grouping keys</span>
+    <span class="n">keys</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;period&#39;</span><span class="p">]</span>
+    <span class="n">uid_key</span> <span class="o">=</span> <span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;user_id&#39;</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">uid_key</span> <span class="ow">in</span> <span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">keys</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">uid_key</span><span class="p">)</span>
+
+    <span class="c1"># 4) Calculate distance from home for each group</span>
+    <span class="n">metric</span> <span class="o">=</span> <span class="s1">&#39;haversine&#39;</span> <span class="k">if</span> <span class="n">use_lon_lat</span> <span class="k">else</span> <span class="s1">&#39;euclidean&#39;</span>
+
+    <span class="c1"># Initialize distance column</span>
+    <span class="n">stops</span><span class="p">[</span><span class="s1">&#39;dist_from_home&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
+
+    <span class="c1"># Calculate for each group</span>
+    <span class="k">for</span> <span class="n">group_keys_tuple</span><span class="p">,</span> <span class="n">group_df</span> <span class="ow">in</span> <span class="n">stops</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="n">keys</span><span class="p">):</span>
+        <span class="n">home_stops</span> <span class="o">=</span> <span class="n">group_df</span><span class="p">[</span><span class="n">group_df</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s2">&quot;location_id&quot;</span><span class="p">]]</span> <span class="o">==</span> <span class="n">home_activity_type</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">home_stops</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="c1"># No home location in this group</span>
+            <span class="k">continue</span>
+
+        <span class="c1"># Use the first home location as reference</span>
+        <span class="k">if</span> <span class="n">metric</span> <span class="o">==</span> <span class="s1">&#39;haversine&#39;</span><span class="p">:</span>
+            <span class="n">home_coords</span> <span class="o">=</span> <span class="n">home_stops</span><span class="p">[[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;latitude&#39;</span><span class="p">],</span> <span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;longitude&#39;</span><span class="p">]]]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">values</span>
+            <span class="n">home_coords_rad</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">home_coords</span><span class="p">)</span>
+
+            <span class="c1"># Calculate distance for each point in group</span>
+            <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">group_df</span><span class="o">.</span><span class="n">iterrows</span><span class="p">():</span>
+                <span class="n">point_coords</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">([</span><span class="n">row</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;latitude&#39;</span><span class="p">]],</span> <span class="n">row</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;longitude&#39;</span><span class="p">]]])</span>
+                <span class="n">stops</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">idx</span><span class="p">,</span> <span class="s1">&#39;dist_from_home&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">utils</span><span class="o">.</span><span class="n">_haversine_distance</span><span class="p">(</span><span class="n">point_coords</span><span class="p">,</span> <span class="n">home_coords_rad</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">home_coords</span> <span class="o">=</span> <span class="n">home_stops</span><span class="p">[[</span><span class="n">coord_x</span><span class="p">,</span> <span class="n">coord_y</span><span class="p">]]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">values</span>
+            <span class="n">dx</span> <span class="o">=</span> <span class="n">group_df</span><span class="p">[</span><span class="n">coord_x</span><span class="p">]</span> <span class="o">-</span> <span class="n">home_coords</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">dy</span> <span class="o">=</span> <span class="n">group_df</span><span class="p">[</span><span class="n">coord_y</span><span class="p">]</span> <span class="o">-</span> <span class="n">home_coords</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+            <span class="n">distances</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">dx</span><span class="o">*</span><span class="n">dx</span> <span class="o">+</span> <span class="n">dy</span><span class="o">*</span><span class="n">dy</span><span class="p">)</span>
+            <span class="n">stops</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">group_df</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="s1">&#39;dist_from_home&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">distances</span><span class="o">.</span><span class="n">values</span>
+
+    <span class="c1"># 5) Calculate self-containment per group</span>
+    <span class="k">def</span> <span class="nf">_group_self_containment</span><span class="p">(</span><span class="n">g</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Calculate self-containment for a group (time period + user).&quot;&quot;&quot;</span>
+        <span class="c1"># If no activities at all, return NaN</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">g</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
+
+        <span class="c1"># Filter for non-home activities</span>
+        <span class="n">non_home</span> <span class="o">=</span> <span class="n">g</span><span class="p">[</span><span class="n">g</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s2">&quot;location_id&quot;</span><span class="p">]]</span> <span class="o">!=</span> <span class="n">home_activity_type</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">non_home</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">1.0</span>  <span class="c1"># No non-home activities = perfectly contained at home</span>
+
+        <span class="c1"># Check which are within threshold</span>
+        <span class="n">within_threshold</span> <span class="o">=</span> <span class="n">non_home</span><span class="p">[</span><span class="s1">&#39;dist_from_home&#39;</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="n">threshold</span>
+
+        <span class="k">if</span> <span class="n">weighted</span><span class="p">:</span>
+            <span class="c1"># Calculate weights</span>
+            <span class="k">if</span> <span class="n">time_weights</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">weights</span> <span class="o">=</span> <span class="n">non_home</span><span class="p">[</span><span class="n">dur_key</span><span class="p">]</span> <span class="o">*</span> <span class="n">time_weights</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">non_home</span><span class="o">.</span><span class="n">index</span><span class="p">]</span>
+            <span class="k">elif</span> <span class="s1">&#39;time_weights&#39;</span> <span class="ow">in</span> <span class="n">non_home</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+                <span class="n">weights</span> <span class="o">=</span> <span class="n">non_home</span><span class="p">[</span><span class="n">dur_key</span><span class="p">]</span> <span class="o">*</span> <span class="n">non_home</span><span class="p">[</span><span class="s1">&#39;time_weights&#39;</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">weights</span> <span class="o">=</span> <span class="n">non_home</span><span class="p">[</span><span class="n">dur_key</span><span class="p">]</span>
+
+            <span class="c1"># Time-weighted proportion</span>
+            <span class="n">total_weight</span> <span class="o">=</span> <span class="n">weights</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">total_weight</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
+            <span class="n">within_weight</span> <span class="o">=</span> <span class="p">(</span><span class="n">weights</span> <span class="o">*</span> <span class="n">within_threshold</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+            <span class="k">return</span> <span class="n">within_weight</span> <span class="o">/</span> <span class="n">total_weight</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Unweighted proportion (count of activities)</span>
+            <span class="k">return</span> <span class="n">within_threshold</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">non_home</span><span class="p">)</span>
+
+    <span class="n">result</span> <span class="o">=</span> <span class="n">stops</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="n">keys</span><span class="p">)</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">_group_self_containment</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">result</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s1">&#39;self_containment&#39;</span><span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, CSSLab.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

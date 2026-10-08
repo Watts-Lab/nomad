@@ -129,10 +129,10 @@
 <span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
 <span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
 <span class="kn">from</span> <span class="nn">nomad.stop_detection.viz</span> <span class="kn">import</span> <span class="n">plot_stops_barcode</span><span class="p">,</span> <span class="n">plot_pings</span><span class="p">,</span> <span class="n">plot_stops</span><span class="p">,</span> <span class="n">plot_time_barcode</span>
-<span class="kn">import</span> <span class="nn">nomad.stop_detection.dbscan</span> <span class="k">as</span> <span class="nn">DBSCAN</span>
-<span class="kn">import</span> <span class="nn">nomad.stop_detection.lachesis</span> <span class="k">as</span> <span class="nn">LACHESIS</span>
-<span class="kn">import</span> <span class="nn">nomad.stop_detection.grid_based</span> <span class="k">as</span> <span class="nn">GRID_BASED</span>
-<span class="kn">import</span> <span class="nn">nomad.stop_detection.hdbscan</span> <span class="k">as</span> <span class="nn">HDBSCAN</span>
+<span class="kn">from</span> <span class="nn">nomad.stop_detection.density_algs</span> <span class="kn">import</span> <span class="n">ta_dbscan_labels</span>
+<span class="kn">from</span> <span class="nn">nomad.stop_detection.sequential_algs</span> <span class="kn">import</span> <span class="n">lachesis</span>
+<span class="kn">from</span> <span class="nn">nomad.stop_detection.sequential_algs</span> <span class="kn">import</span> <span class="n">grid_based</span>
+<span class="kn">from</span> <span class="nn">nomad.stop_detection.density_algs</span> <span class="kn">import</span> <span class="n">hdbscan_labels</span>
 <span class="kn">import</span> <span class="nn">nomad.filters</span> <span class="k">as</span> <span class="nn">filters</span>
 <span class="kn">import</span> <span class="nn">nomad.stop_detection.postprocessing</span> <span class="k">as</span> <span class="nn">post</span>
 <span class="kn">import</span> <span class="nn">time</span>
@@ -145,7 +145,7 @@
 <span class="n">city</span> <span class="o">=</span> <span class="n">gpd</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="n">data_dir</span> <span class="o">/</span> <span class="s1">&#39;garden-city-buildings-mercator.parquet&#39;</span><span class="p">)</span>
 <span class="n">outer_box</span> <span class="o">=</span> <span class="n">box</span><span class="p">(</span><span class="o">*</span><span class="n">city</span><span class="o">.</span><span class="n">total_bounds</span><span class="p">)</span><span class="o">.</span><span class="n">buffer</span><span class="p">(</span><span class="mi">15</span><span class="p">,</span> <span class="n">join_style</span><span class="o">=</span><span class="s1">&#39;mitre&#39;</span><span class="p">)</span>
 
-<span class="n">filepath_root</span> <span class="o">=</span> <span class="s1">&#39;gc_data_long/&#39;</span>
+<span class="n">filepath_root</span> <span class="o">=</span> <span class="n">data_dir</span> <span class="o">/</span> <span class="s2">&quot;gc_data_long&quot;</span>
 <span class="n">tc</span> <span class="o">=</span> <span class="p">{</span>
     <span class="s2">&quot;user_id&quot;</span><span class="p">:</span> <span class="s2">&quot;gc_identifier&quot;</span><span class="p">,</span>
     <span class="s2">&quot;timestamp&quot;</span><span class="p">:</span> <span class="s2">&quot;unix_ts&quot;</span><span class="p">,</span>
@@ -159,13 +159,13 @@
 
 <span class="c1"># Lachesis (sequential stop detection)</span>
 <span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
-<span class="n">stops</span> <span class="o">=</span> <span class="n">LACHESIS</span><span class="o">.</span><span class="n">lachesis</span><span class="p">(</span><span class="n">traj</span><span class="p">,</span> <span class="n">delta_roam</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span> <span class="n">dt_max</span> <span class="o">=</span> <span class="mi">60</span><span class="p">,</span> <span class="n">dur_min</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">complete_output</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">keep_col_names</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="n">tc</span><span class="p">)</span>
+<span class="n">stops</span> <span class="o">=</span> <span class="n">lachesis</span><span class="p">(</span><span class="n">traj</span><span class="p">,</span> <span class="n">delta_roam</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span> <span class="n">dt_max</span> <span class="o">=</span> <span class="mi">60</span><span class="p">,</span> <span class="n">dur_min</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">complete_output</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">keep_col_names</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="n">tc</span><span class="p">)</span>
 <span class="n">execution_time_lachesis</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">start_time</span>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Lachesis execution time: </span><span class="si">{</span><span class="n">execution_time_lachesis</span><span class="si">}</span><span class="s2"> seconds&quot;</span><span class="p">)</span>
 
 <span class="c1"># Density based stop detection (Temporal DBSCAN)</span>
 <span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
-<span class="n">user_data_tadb</span> <span class="o">=</span> <span class="n">traj</span><span class="o">.</span><span class="n">assign</span><span class="p">(</span><span class="n">cluster</span><span class="o">=</span><span class="n">DBSCAN</span><span class="o">.</span><span class="n">ta_dbscan_labels</span><span class="p">(</span><span class="n">traj</span><span class="p">,</span> <span class="n">time_thresh</span><span class="o">=</span><span class="mi">240</span><span class="p">,</span> <span class="n">dist_thresh</span><span class="o">=</span><span class="mi">15</span><span class="p">,</span> <span class="n">min_pts</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="n">tc</span><span class="p">))</span>
+<span class="n">user_data_tadb</span> <span class="o">=</span> <span class="n">traj</span><span class="o">.</span><span class="n">assign</span><span class="p">(</span><span class="n">cluster</span><span class="o">=</span><span class="n">ta_dbscan_labels</span><span class="p">(</span><span class="n">traj</span><span class="p">,</span> <span class="n">time_thresh</span><span class="o">=</span><span class="mi">240</span><span class="p">,</span> <span class="n">dist_thresh</span><span class="o">=</span><span class="mi">15</span><span class="p">,</span> <span class="n">min_pts</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="n">tc</span><span class="p">))</span>
 <span class="n">clustering_time_tadbscan</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">start_time</span>
 <span class="n">start_time_post</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
 <span class="n">cluster_labels_tadb</span> <span class="o">=</span> <span class="n">user_data_tadb</span><span class="p">[</span><span class="s1">&#39;cluster&#39;</span><span class="p">]</span>
@@ -178,13 +178,13 @@
 <span class="c1"># Grid-based</span>
 <span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
 <span class="n">traj</span><span class="p">[</span><span class="s1">&#39;h3_cell&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">filters</span><span class="o">.</span><span class="n">to_tessellation</span><span class="p">(</span><span class="n">traj</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="s2">&quot;h3&quot;</span><span class="p">,</span> <span class="n">res</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="n">tc</span><span class="p">,</span> <span class="n">data_crs</span><span class="o">=</span><span class="s1">&#39;EPSG:3857&#39;</span><span class="p">)</span>
-<span class="n">stops_gb</span> <span class="o">=</span> <span class="n">GRID_BASED</span><span class="o">.</span><span class="n">grid_based</span><span class="p">(</span><span class="n">traj</span><span class="p">,</span> <span class="n">time_thresh</span><span class="o">=</span><span class="mi">240</span><span class="p">,</span> <span class="n">complete_output</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="n">tc</span><span class="p">,</span> <span class="n">location_id</span><span class="o">=</span><span class="s1">&#39;h3_cell&#39;</span><span class="p">)</span>
+<span class="n">stops_gb</span> <span class="o">=</span> <span class="n">grid_based</span><span class="p">(</span><span class="n">traj</span><span class="p">,</span> <span class="n">time_thresh</span><span class="o">=</span><span class="mi">240</span><span class="p">,</span> <span class="n">complete_output</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="n">tc</span><span class="p">,</span> <span class="n">location_id</span><span class="o">=</span><span class="s1">&#39;h3_cell&#39;</span><span class="p">)</span>
 <span class="n">execution_time_grid</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">start_time</span>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Grid-Based execution time: </span><span class="si">{</span><span class="n">execution_time_grid</span><span class="si">}</span><span class="s2"> seconds&quot;</span><span class="p">)</span>
 
 <span class="c1"># HDBSCAN</span>
 <span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
-<span class="n">user_data_hdb</span> <span class="o">=</span> <span class="n">traj</span><span class="o">.</span><span class="n">assign</span><span class="p">(</span><span class="n">cluster</span><span class="o">=</span><span class="n">HDBSCAN</span><span class="o">.</span><span class="n">hdbscan_labels</span><span class="p">(</span><span class="n">traj</span><span class="p">,</span> <span class="n">time_thresh</span><span class="o">=</span><span class="mi">240</span><span class="p">,</span> <span class="n">min_pts</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">min_cluster_size</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="n">tc</span><span class="p">))</span>
+<span class="n">user_data_hdb</span> <span class="o">=</span> <span class="n">traj</span><span class="o">.</span><span class="n">assign</span><span class="p">(</span><span class="n">cluster</span><span class="o">=</span><span class="n">hdbscan_labels</span><span class="p">(</span><span class="n">traj</span><span class="p">,</span> <span class="n">time_thresh</span><span class="o">=</span><span class="mi">240</span><span class="p">,</span> <span class="n">min_pts</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">min_cluster_size</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="n">tc</span><span class="p">))</span>
 <span class="n">clustering_time_hdbscan</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">start_time</span>
 <span class="n">start_time_post</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
 <span class="n">cluster_labels_hdb</span> <span class="o">=</span> <span class="n">user_data_hdb</span><span class="p">[</span><span class="s1">&#39;cluster&#39;</span><span class="p">]</span>
@@ -201,13 +201,13 @@
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Lachesis execution time: 0.01671910285949707 seconds
-TA-DBSCAN execution time: 0.015048027038574219 seconds
-TA-DBSCAN clustering time: 0.0 seconds
-TA-DBSCAN label extraction time: 0.015048027038574219 seconds
-Grid-Based execution time: 0.01604151725769043 seconds
-HDBSCAN execution time: 0.24063372611999512 seconds
-HDBSCAN clustering time: 0.24063372611999512 seconds
+Lachesis execution time: 0.02348613739013672 seconds
+TA-DBSCAN execution time: 0.06668949127197266 seconds
+TA-DBSCAN clustering time: 0.06668949127197266 seconds
+TA-DBSCAN label extraction time: 0.0 seconds
+Grid-Based execution time: 0.03886771202087402 seconds
+HDBSCAN execution time: 0.45995259284973145 seconds
+HDBSCAN clustering time: 0.45995259284973145 seconds
 HDBSCAN label extraction time: 0.0 seconds
 </pre></div></div>
 </div>
@@ -262,10 +262,10 @@ HDBSCAN label extraction time: 0.0 seconds
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 Summary of Single-User Performance
-Lachesis execution time: 0.01671910285949707 seconds
-TA-DBSCAN execution time: 0.015048027038574219 seconds
-Grid-Based execution time: 0.01604151725769043 seconds
-HDBSCAN execution time: 0.24063372611999512 seconds
+Lachesis execution time: 0.02348613739013672 seconds
+TA-DBSCAN execution time: 0.06668949127197266 seconds
+Grid-Based execution time: 0.03886771202087402 seconds
+HDBSCAN execution time: 0.45995259284973145 seconds
 </pre></div></div>
 </div>
 <div class="nbinput docutils container">
@@ -291,14 +291,14 @@ HDBSCAN execution time: 0.24063372611999512 seconds
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 Runtime Disaggregation
-Lachesis clustering time: 0.01671910285949707 seconds
+Lachesis clustering time: 0.02348613739013672 seconds
 --------------------------------
-TA-DBSCAN clustering time: 0.0 seconds
-TA-DBSCAN label extraction time: 0.015048027038574219 seconds
+TA-DBSCAN clustering time: 0.06668949127197266 seconds
+TA-DBSCAN label extraction time: 0.0 seconds
 --------------------------------
-Grid-Based clustering time: 0.01604151725769043 seconds
+Grid-Based clustering time: 0.03886771202087402 seconds
 --------------------------------
-HDBSCAN clustering time: 0.24063372611999512 seconds
+HDBSCAN clustering time: 0.45995259284973145 seconds
 HDBSCAN label extraction time: 0.0 seconds
 </pre></div></div>
 </div>
@@ -318,7 +318,7 @@ HDBSCAN label extraction time: 0.0 seconds
 </pre></div>
 </div>
 </div>
-<div class="nbinput docutils container">
+<div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
 </pre></div>
 </div>
@@ -329,19 +329,19 @@ HDBSCAN label extraction time: 0.0 seconds
 
     <span class="c1"># For location based</span>
     <span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
-    <span class="n">stops_gb</span> <span class="o">=</span> <span class="n">GRID_BASED</span><span class="o">.</span><span class="n">grid_based</span><span class="p">(</span><span class="n">user_data</span><span class="p">,</span> <span class="n">time_thresh</span><span class="o">=</span><span class="mi">240</span><span class="p">,</span> <span class="n">complete_output</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="n">tc</span><span class="p">,</span> <span class="n">location_id</span><span class="o">=</span><span class="s1">&#39;h3_cell&#39;</span><span class="p">)</span>
+    <span class="n">stops_gb</span> <span class="o">=</span> <span class="n">grid_based</span><span class="p">(</span><span class="n">user_data</span><span class="p">,</span> <span class="n">time_thresh</span><span class="o">=</span><span class="mi">240</span><span class="p">,</span> <span class="n">complete_output</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="n">tc</span><span class="p">,</span> <span class="n">location_id</span><span class="o">=</span><span class="s1">&#39;h3_cell&#39;</span><span class="p">)</span>
     <span class="n">execution_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">start_time</span>
     <span class="n">results</span> <span class="o">+=</span> <span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">({</span><span class="s1">&#39;user&#39;</span><span class="p">:</span><span class="n">user</span><span class="p">,</span> <span class="s1">&#39;algo&#39;</span><span class="p">:</span><span class="s1">&#39;grid_based&#39;</span><span class="p">,</span> <span class="s1">&#39;execution_time&#39;</span><span class="p">:</span><span class="n">execution_time</span><span class="p">,</span> <span class="s1">&#39;n_pings&#39;</span><span class="p">:</span><span class="n">n_pings</span><span class="p">})]</span>
 
     <span class="c1"># For Lachesis</span>
     <span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
-    <span class="n">stops_lac</span> <span class="o">=</span> <span class="n">LACHESIS</span><span class="o">.</span><span class="n">lachesis</span><span class="p">(</span><span class="n">user_data</span><span class="p">,</span> <span class="n">delta_roam</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">dt_max</span><span class="o">=</span><span class="mi">240</span><span class="p">,</span> <span class="n">complete_output</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="n">tc</span><span class="p">)</span>
+    <span class="n">stops_lac</span> <span class="o">=</span> <span class="n">lachesis</span><span class="p">(</span><span class="n">user_data</span><span class="p">,</span> <span class="n">delta_roam</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">dt_max</span><span class="o">=</span><span class="mi">240</span><span class="p">,</span> <span class="n">complete_output</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="n">tc</span><span class="p">)</span>
     <span class="n">execution_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">start_time</span>
     <span class="n">results</span> <span class="o">+=</span> <span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">({</span><span class="s1">&#39;user&#39;</span><span class="p">:</span><span class="n">user</span><span class="p">,</span> <span class="s1">&#39;algo&#39;</span><span class="p">:</span><span class="s1">&#39;lachesis&#39;</span><span class="p">,</span> <span class="s1">&#39;execution_time&#39;</span><span class="p">:</span><span class="n">execution_time</span><span class="p">,</span> <span class="s1">&#39;n_pings&#39;</span><span class="p">:</span><span class="n">n_pings</span><span class="p">})]</span>
 
     <span class="c1"># For TADbscan</span>
     <span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
-    <span class="n">user_data_tadb</span> <span class="o">=</span> <span class="n">user_data</span><span class="o">.</span><span class="n">assign</span><span class="p">(</span><span class="n">cluster</span><span class="o">=</span><span class="n">DBSCAN</span><span class="o">.</span><span class="n">ta_dbscan_labels</span><span class="p">(</span><span class="n">user_data</span><span class="p">,</span> <span class="n">time_thresh</span><span class="o">=</span><span class="mi">240</span><span class="p">,</span> <span class="n">dist_thresh</span><span class="o">=</span><span class="mi">15</span><span class="p">,</span> <span class="n">min_pts</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="n">tc</span><span class="p">))</span>
+    <span class="n">user_data_tadb</span> <span class="o">=</span> <span class="n">user_data</span><span class="o">.</span><span class="n">assign</span><span class="p">(</span><span class="n">cluster</span><span class="o">=</span><span class="n">ta_dbscan_labels</span><span class="p">(</span><span class="n">user_data</span><span class="p">,</span> <span class="n">time_thresh</span><span class="o">=</span><span class="mi">240</span><span class="p">,</span> <span class="n">dist_thresh</span><span class="o">=</span><span class="mi">15</span><span class="p">,</span> <span class="n">min_pts</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="n">tc</span><span class="p">))</span>
     <span class="c1"># - post-processing</span>
     <span class="n">stops_tadb</span> <span class="o">=</span> <span class="n">user_data_tadb</span><span class="p">[</span><span class="n">user_data_tadb</span><span class="o">.</span><span class="n">cluster</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">]</span>
     <span class="n">execution_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">start_time</span>
@@ -349,7 +349,7 @@ HDBSCAN label extraction time: 0.0 seconds
 
     <span class="c1"># For HDBSCAN</span>
     <span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
-    <span class="n">user_data_hdb</span> <span class="o">=</span> <span class="n">user_data</span><span class="o">.</span><span class="n">assign</span><span class="p">(</span><span class="n">cluster</span><span class="o">=</span><span class="n">HDBSCAN</span><span class="o">.</span><span class="n">hdbscan_labels</span><span class="p">(</span><span class="n">user_data</span><span class="p">,</span> <span class="n">time_thresh</span><span class="o">=</span><span class="mi">240</span><span class="p">,</span> <span class="n">min_pts</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">min_cluster_size</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="n">tc</span><span class="p">))</span>
+    <span class="n">user_data_hdb</span> <span class="o">=</span> <span class="n">user_data</span><span class="o">.</span><span class="n">assign</span><span class="p">(</span><span class="n">cluster</span><span class="o">=</span><span class="n">hdbscan_labels</span><span class="p">(</span><span class="n">user_data</span><span class="p">,</span> <span class="n">time_thresh</span><span class="o">=</span><span class="mi">240</span><span class="p">,</span> <span class="n">min_pts</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">min_cluster_size</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="n">tc</span><span class="p">))</span>
     <span class="c1"># - post-processing</span>
     <span class="n">stops_hdb</span> <span class="o">=</span> <span class="n">user_data_hdb</span><span class="p">[</span><span class="n">user_data_hdb</span><span class="o">.</span><span class="n">cluster</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">]</span>
     <span class="n">execution_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">start_time</span>
@@ -358,15 +358,6 @@ HDBSCAN label extraction time: 0.0 seconds
 <span class="n">results</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">results</span><span class="p">)</span>
 </pre></div>
 </div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-100%|██████████████████████████████████████████████████████████████████████████████████| 37/37 [00:24&lt;00:00,  1.50it/s]
-100%|███████████████████████████████████████████████████| 4/4 [00:00&lt;00:00,  7.10it/s]
-</pre></div></div>
 </div>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:

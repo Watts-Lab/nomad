@@ -1,0 +1,286 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nomad.io.spark &mdash; NOMAD 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-design.min.css?v=95c83b7e" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../../../_static/design-tabs.js?v=f930bc37"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html">
+            
+              <img src="../../../_static/nomad-logo-black.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../data_ingestion.html">Data Ingestion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../filtering.html">Filtering &amp; Completeness</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../tessellation.html">Tessellation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../stop_detection.html">Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../visit_attribution.html">Visit Attribution</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../metrics.html">Mobility Metrics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../colocation.html">Co-location &amp; Contact Networks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../aggregation.html">Aggregation &amp; Debiasing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../synthetic_data_generation.html">Synthetic Data Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/ingesting-data.html">Loading Trajectory Data</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/benchmarking_of_stop_detection_algorithms.html">Comparing runtimes of different stop detection algorithms on toy datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/lachesis_demo.html">Lachesis Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/tadbscan_demo.html">TADBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/hdbscan_demo.html">HDBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/grid_based_demo.html">Grid-Based Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/generate_synthetic_pois.html">Synthetic POI Generation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/download_poi_data_from_OSM.html">Downloading places of interest (POI) Data from OSM</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/generate_synthetic_trajectories.html">Synthetic Trajectory Generation with Nomad</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/random_city.html">Random City Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_reference.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">NOMAD</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">nomad.io.spark</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nomad.io.spark</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">geopandas</span> <span class="k">as</span> <span class="nn">gpd</span>
+<span class="kn">import</span> <span class="nn">pyproj</span>
+<span class="kn">from</span> <span class="nn">functools</span> <span class="kn">import</span> <span class="n">partial</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">from</span> <span class="nn">pyspark.sql</span> <span class="kn">import</span> <span class="n">SparkSession</span>
+
+<span class="kn">from</span> <span class="nn">pyspark.sql</span> <span class="kn">import</span> <span class="n">functions</span> <span class="k">as</span> <span class="n">F</span>
+<span class="kn">from</span> <span class="nn">nomad.constants</span> <span class="kn">import</span> <span class="n">DEFAULT_SCHEMA</span>
+<span class="kn">import</span> <span class="nn">warnings</span>
+<span class="kn">import</span> <span class="nn">inspect</span>
+<span class="kn">from</span> <span class="nn">nomad.constants</span> <span class="kn">import</span> <span class="n">FILTER_OPERATORS</span>
+<span class="kn">from</span> <span class="nn">nomad.io.base</span> <span class="kn">import</span> <span class="n">_fallback_spatial_cols</span><span class="p">,</span> <span class="n">_parse_traj_cols</span>
+
+<div class="viewcode-block" id="table_columns">
+<a class="viewcode-back" href="../../../api/generated/nomad.io.spark.html#nomad.io.spark.table_columns">[docs]</a>
+<span class="k">def</span> <span class="nf">table_columns</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">include_schema</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">spark</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Return column names or full schema of a parquet dataset (including partition columns).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">spark</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">spark</span> <span class="o">=</span> <span class="n">SparkSession</span><span class="o">.</span><span class="n">builder</span><span class="o">.</span><span class="n">getOrCreate</span><span class="p">()</span>
+    <span class="n">df</span> <span class="o">=</span> <span class="n">spark</span><span class="o">.</span><span class="n">read</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="s2">&quot;parquet&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+    <span class="n">schema</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">schema</span>
+    <span class="k">return</span> <span class="n">schema</span> <span class="k">if</span> <span class="n">include_schema</span> <span class="k">else</span> <span class="p">[</span><span class="n">f</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">schema</span><span class="o">.</span><span class="n">fields</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="sample_users">
+<a class="viewcode-back" href="../../../api/generated/nomad.io.spark.html#nomad.io.spark.sample_users">[docs]</a>
+<span class="k">def</span> <span class="nf">sample_users</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">frac_users</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">user_id</span><span class="o">=</span><span class="s2">&quot;user_id&quot;</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Return a sample of users using hashing without shuffle</span>
+<span class="sd">    &quot;&quot;&quot;</span>    
+    <span class="n">sampled_users</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">withColumn</span><span class="p">(</span><span class="s2">&quot;bucket&quot;</span><span class="p">,</span> <span class="n">F</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">xxhash64</span><span class="p">(</span><span class="s2">&quot;user_id&quot;</span><span class="p">))</span> <span class="o">%</span> <span class="mi">1000</span><span class="p">)</span>
+          <span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">F</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">&quot;bucket&quot;</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">frac_users</span><span class="o">*</span><span class="mi">1000</span><span class="p">)</span>          <span class="c1"># ≈ 1 % of users, no shuffle yet</span>
+          <span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="s2">&quot;user_id&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">distinct</span><span class="p">()</span>        <span class="c1"># one small shuffle</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">sampled_users</span><span class="o">.</span><span class="n">toPandas</span><span class="p">()</span></div>
+
+
+<span class="k">def</span> <span class="nf">_is_traj_df_spark</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">psp</span><span class="o">.</span><span class="n">sql</span><span class="o">.</span><span class="n">dataframe</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">False</span>
+
+    <span class="n">traj_cols</span> <span class="o">=</span> <span class="n">_parse_traj_cols</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">_has_spatial_cols</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">_has_time_cols</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">False</span>
+
+    <span class="k">if</span> <span class="s1">&#39;datetime&#39;</span> <span class="ow">in</span> <span class="n">traj_cols</span> <span class="ow">and</span> <span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;datetime&#39;</span><span class="p">]</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">schema</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;datetime&#39;</span><span class="p">]]</span><span class="o">.</span><span class="n">dataType</span><span class="p">,</span> <span class="n">TimestampType</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">False</span>
+
+    <span class="k">if</span> <span class="s1">&#39;timestamp&#39;</span> <span class="ow">in</span> <span class="n">traj_cols</span> <span class="ow">and</span> <span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;timestamp&#39;</span><span class="p">]</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">schema</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;timestamp&#39;</span><span class="p">]]</span><span class="o">.</span><span class="n">dataType</span><span class="p">,</span> <span class="p">(</span><span class="n">IntegerType</span><span class="p">,</span> <span class="n">LongType</span><span class="p">,</span> <span class="n">TimestampType</span><span class="p">)):</span>
+            <span class="k">return</span> <span class="kc">False</span>
+
+    <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;latitude&#39;</span><span class="p">,</span> <span class="s1">&#39;longitude&#39;</span><span class="p">,</span> <span class="s1">&#39;x&#39;</span><span class="p">,</span> <span class="s1">&#39;y&#39;</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">traj_cols</span> <span class="ow">and</span> <span class="n">traj_cols</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">schema</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">col</span><span class="p">]]</span><span class="o">.</span><span class="n">dataType</span><span class="p">,</span> <span class="p">(</span><span class="n">FloatType</span><span class="p">,</span> <span class="n">DoubleType</span><span class="p">)):</span>
+                <span class="k">return</span> <span class="kc">False</span>
+
+    <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;user_id&#39;</span><span class="p">,</span> <span class="s1">&#39;geohash&#39;</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">traj_cols</span> <span class="ow">and</span> <span class="n">traj_cols</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">schema</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">col</span><span class="p">]]</span><span class="o">.</span><span class="n">dataType</span><span class="p">,</span> <span class="n">StringType</span><span class="p">):</span>
+                <span class="k">return</span> <span class="kc">False</span>
+
+    <span class="k">return</span> <span class="kc">True</span>
+
+<span class="c1"># Cast data types and address datetime issues</span>
+
+<span class="k">def</span> <span class="nf">_cast_traj_cols_spark</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Casts specified trajectory columns in a loaded Spark DataFrame to their expected data types, </span>
+<span class="sd">    with warnings for timestamp precision and timezone-naive datetimes.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    df : pyspark.sql.DataFrame</span>
+<span class="sd">        The DataFrame containing the data to be cast.</span>
+<span class="sd">    traj_cols : dict</span>
+<span class="sd">        Dictionary mapping expected trajectory column names </span>
+<span class="sd">        (e.g., &#39;latitude&#39;, &#39;longitude&#39;, &#39;timestamp&#39;, &#39;datetime&#39;, &#39;user_id&#39;, &#39;geohash&#39;)</span>
+<span class="sd">        to the actual column names in the DataFrame.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pyspark.sql.DataFrame</span>
+<span class="sd">        The DataFrame with specified columns cast to their expected types.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    - The &#39;datetime&#39; column is cast to Datetime64 or Object series (with Timestamps) if not already of that type.</span>
+<span class="sd">      A warning is issued if the first row appears timezone-naive.</span>
+<span class="sd">    - The &#39;timestamp&#39; column is cast to IntegerType, with a warning for possible millisecond or nanosecond precision.</span>
+<span class="sd">    - Spatial columns (&#39;latitude&#39;, &#39;longitude&#39;, &#39;x&#39;, &#39;y&#39;) are cast to FloatType if necessary.</span>
+<span class="sd">    - User identifier and geohash columns are cast to StringType.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1"># Cast &#39;datetime&#39; column appropriately</span>
+    <span class="k">if</span> <span class="s1">&#39;datetime&#39;</span> <span class="ow">in</span> <span class="n">traj_cols</span> <span class="ow">and</span> <span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;datetime&#39;</span><span class="p">]</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">datetime_col</span> <span class="o">=</span> <span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;datetime&#39;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">schema</span><span class="p">[</span><span class="n">datetime_col</span><span class="p">]</span><span class="o">.</span><span class="n">dataType</span><span class="p">,</span> <span class="n">TimestampType</span><span class="p">):</span>
+            <span class="n">df</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">withColumn</span><span class="p">(</span><span class="n">datetime_col</span><span class="p">,</span> <span class="n">col</span><span class="p">(</span><span class="n">datetime_col</span><span class="p">)</span><span class="o">.</span><span class="n">cast</span><span class="p">(</span><span class="n">TimestampType</span><span class="p">()))</span>
+        
+        <span class="c1"># Check if the first row is timezone-naive (PySpark doesn&#39;t store tz info)</span>
+        <span class="n">first_row</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">datetime_col</span><span class="p">)</span><span class="o">.</span><span class="n">first</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">first_row</span> <span class="ow">and</span> <span class="n">first_row</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">first_row</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tzinfo</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;The &#39;</span><span class="si">{</span><span class="n">datetime_col</span><span class="si">}</span><span class="s2">&#39; column appears to be timezone-naive. &quot;</span>
+                    <span class="s2">&quot;Consider localizing to a timezone to avoid inconsistencies.&quot;</span>
+                <span class="p">)</span>
+
+    <span class="c1"># Cast &#39;timestamp&#39; column to IntegerType and check precision</span>
+    <span class="k">if</span> <span class="s1">&#39;timestamp&#39;</span> <span class="ow">in</span> <span class="n">traj_cols</span> <span class="ow">and</span> <span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;timestamp&#39;</span><span class="p">]</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">timestamp_col</span> <span class="o">=</span> <span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;timestamp&#39;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">schema</span><span class="p">[</span><span class="n">timestamp_col</span><span class="p">]</span><span class="o">.</span><span class="n">dataType</span><span class="p">,</span> <span class="p">(</span><span class="n">IntegerType</span><span class="p">,</span> <span class="n">LongType</span><span class="p">)):</span>
+            <span class="n">df</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">withColumn</span><span class="p">(</span><span class="n">timestamp_col</span><span class="p">,</span> <span class="n">col</span><span class="p">(</span><span class="n">timestamp_col</span><span class="p">)</span><span class="o">.</span><span class="n">cast</span><span class="p">(</span><span class="n">IntegerType</span><span class="p">()))</span>
+
+        <span class="c1"># Check for millisecond/nanosecond values by inspecting first row</span>
+        <span class="n">first_timestamp</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">timestamp_col</span><span class="p">)</span><span class="o">.</span><span class="n">first</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">first_timestamp</span> <span class="ow">and</span> <span class="n">first_timestamp</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span> <span class="c1"># different index?</span>
+            <span class="n">timestamp_length</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">first_timestamp</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span>
+            
+            <span class="k">if</span> <span class="n">timestamp_length</span> <span class="o">==</span> <span class="mi">13</span><span class="p">:</span>
+                <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;The &#39;</span><span class="si">{</span><span class="n">timestamp_col</span><span class="si">}</span><span class="s2">&#39; column appears to be in milliseconds. &quot;</span>
+                    <span class="s2">&quot;This may lead to inconsistencies, converting to seconds is recommended.&quot;</span>
+                <span class="p">)</span>
+            <span class="k">elif</span> <span class="n">timestamp_length</span> <span class="o">==</span> <span class="mi">19</span><span class="p">:</span>
+                <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;The &#39;</span><span class="si">{</span><span class="n">timestamp_col</span><span class="si">}</span><span class="s2">&#39; column appears to be in nanoseconds. &quot;</span>
+                    <span class="s2">&quot;This may lead to inconsistencies, converting to seconds is recommended.&quot;</span>
+                <span class="p">)</span>
+
+    <span class="c1"># Cast spatial columns to FloatType or DoubleType</span>
+    <span class="n">float_cols</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;latitude&#39;</span><span class="p">,</span> <span class="s1">&#39;longitude&#39;</span><span class="p">,</span> <span class="s1">&#39;x&#39;</span><span class="p">,</span> <span class="s1">&#39;y&#39;</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">col_name</span> <span class="ow">in</span> <span class="n">float_cols</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">col_name</span> <span class="ow">in</span> <span class="n">traj_cols</span> <span class="ow">and</span> <span class="n">traj_cols</span><span class="p">[</span><span class="n">col_name</span><span class="p">]</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="n">actual_col</span> <span class="o">=</span> <span class="n">traj_cols</span><span class="p">[</span><span class="n">col_name</span><span class="p">]</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">schema</span><span class="p">[</span><span class="n">actual_col</span><span class="p">]</span><span class="o">.</span><span class="n">dataType</span><span class="p">,</span> <span class="p">(</span><span class="n">FloatType</span><span class="p">,</span> <span class="n">DoubleType</span><span class="p">)):</span>
+                <span class="n">df</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">withColumn</span><span class="p">(</span><span class="n">actual_col</span><span class="p">,</span> <span class="n">col</span><span class="p">(</span><span class="n">actual_col</span><span class="p">)</span><span class="o">.</span><span class="n">cast</span><span class="p">(</span><span class="n">FloatType</span><span class="p">()))</span>
+
+    <span class="c1"># Cast identifier and geohash columns to StringType</span>
+    <span class="n">string_cols</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;user_id&#39;</span><span class="p">,</span> <span class="s1">&#39;geohash&#39;</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">col_name</span> <span class="ow">in</span> <span class="n">string_cols</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">col_name</span> <span class="ow">in</span> <span class="n">traj_cols</span> <span class="ow">and</span> <span class="n">traj_cols</span><span class="p">[</span><span class="n">col_name</span><span class="p">]</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="n">actual_col</span> <span class="o">=</span> <span class="n">traj_cols</span><span class="p">[</span><span class="n">col_name</span><span class="p">]</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">schema</span><span class="p">[</span><span class="n">actual_col</span><span class="p">]</span><span class="o">.</span><span class="n">dataType</span><span class="p">,</span> <span class="n">StringType</span><span class="p">):</span>
+                <span class="n">df</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">withColumn</span><span class="p">(</span><span class="n">actual_col</span><span class="p">,</span> <span class="n">col</span><span class="p">(</span><span class="n">actual_col</span><span class="p">)</span><span class="o">.</span><span class="n">cast</span><span class="p">(</span><span class="n">StringType</span><span class="p">()))</span>
+
+    <span class="k">return</span> <span class="n">df</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, CSSLab.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

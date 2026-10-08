@@ -1,0 +1,936 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nomad.stop_detection.utils &mdash; NOMAD 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-design.min.css?v=95c83b7e" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../../../_static/design-tabs.js?v=f930bc37"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html">
+            
+              <img src="../../../_static/nomad-logo-black.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../data_ingestion.html">Data Ingestion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../filtering.html">Filtering &amp; Completeness</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../tessellation.html">Tessellation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../stop_detection.html">Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../visit_attribution.html">Visit Attribution</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../metrics.html">Mobility Metrics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../colocation.html">Co-location &amp; Contact Networks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../aggregation.html">Aggregation &amp; Debiasing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../synthetic_data_generation.html">Synthetic Data Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/ingesting-data.html">Loading Trajectory Data</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/benchmarking_of_stop_detection_algorithms.html">Comparing runtimes of different stop detection algorithms on toy datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/lachesis_demo.html">Lachesis Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/tadbscan_demo.html">TADBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/hdbscan_demo.html">HDBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/grid_based_demo.html">Grid-Based Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/generate_synthetic_pois.html">Synthetic POI Generation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/download_poi_data_from_OSM.html">Downloading places of interest (POI) Data from OSM</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/generate_synthetic_trajectories.html">Synthetic Trajectory Generation with Nomad</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/random_city.html">Random City Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_reference.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">NOMAD</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">nomad.stop_detection.utils</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nomad.stop_detection.utils</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">from</span> <span class="nn">scipy.spatial.distance</span> <span class="kn">import</span> <span class="n">pdist</span><span class="p">,</span> <span class="n">cdist</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">datetime</span> <span class="k">as</span> <span class="nn">dt</span>
+<span class="kn">import</span> <span class="nn">itertools</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">nomad.io.base</span> <span class="k">as</span> <span class="nn">loader</span>
+<span class="kn">from</span> <span class="nn">nomad.constants</span> <span class="kn">import</span> <span class="n">DEFAULT_SCHEMA</span><span class="p">,</span> <span class="n">EARTH_RADIUS_METERS</span><span class="p">,</span> <span class="n">SCHEMA_DTYPES</span>
+<span class="kn">import</span> <span class="nn">h3</span>
+<span class="kn">import</span> <span class="nn">warnings</span>
+<span class="kn">from</span> <span class="nn">datetime</span> <span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">time</span><span class="p">,</span> <span class="n">timedelta</span>
+<span class="kn">from</span> <span class="nn">nomad.filters</span> <span class="kn">import</span> <span class="n">to_timestamp</span>
+<span class="kn">from</span> <span class="nn">joblib</span> <span class="kn">import</span> <span class="n">Parallel</span><span class="p">,</span> <span class="n">delayed</span>
+<span class="kn">from</span> <span class="nn">tqdm</span> <span class="kn">import</span> <span class="n">tqdm</span>
+
+<span class="k">def</span> <span class="nf">_diameter</span><span class="p">(</span><span class="n">coords</span><span class="p">,</span> <span class="n">metric</span><span class="o">=</span><span class="s1">&#39;euclidean&#39;</span><span class="p">,</span> <span class="n">witness</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Calculate the diameter of a set of coordinates, defined as the maximum pairwise distance.</span>
+<span class="sd">    </span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    coords : numpy.ndarray</span>
+<span class="sd">        Array of coordinates, where each row represents a point in space.</span>
+<span class="sd">    metric : str, optional</span>
+<span class="sd">        Distance metric to use. Supported metrics include &#39;euclidean&#39; (default) </span>
+<span class="sd">        and &#39;haversine&#39;. If &#39;haversine&#39; is used, coordinates should be in degrees.</span>
+<span class="sd">    witness : bool, default False</span>
+<span class="sd">        Return the earliest endpoint of a maximum-diameter pair.</span>
+<span class="sd">    </span>
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    float or tuple</span>
+<span class="sd">        The diameter, or the diameter and witness row offset.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">coords</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="k">if</span> <span class="n">witness</span> <span class="k">else</span> <span class="mi">0</span>
+   
+    <span class="k">if</span> <span class="n">metric</span> <span class="o">==</span> <span class="s1">&#39;haversine&#39;</span><span class="p">:</span>
+        <span class="n">radians</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">coords</span><span class="p">)</span>
+        <span class="n">pairwise_dists</span> <span class="o">=</span> <span class="n">pdist</span><span class="p">(</span>
+            <span class="n">radians</span><span class="p">,</span> <span class="n">metric</span><span class="o">=</span><span class="k">lambda</span> <span class="n">u</span><span class="p">,</span> <span class="n">v</span><span class="p">:</span> <span class="n">_haversine_distance</span><span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
+        <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">pairwise_dists</span> <span class="o">=</span> <span class="n">pdist</span><span class="p">(</span><span class="n">coords</span><span class="p">,</span> <span class="n">metric</span><span class="o">=</span><span class="n">metric</span><span class="p">)</span>
+
+    <span class="n">diameter</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">pairwise_dists</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">witness</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">diameter</span>
+
+    <span class="n">left</span><span class="p">,</span> <span class="n">right</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">triu_indices</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">coords</span><span class="p">),</span> <span class="n">k</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">diameter_pairs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="n">pairwise_dists</span> <span class="o">==</span> <span class="n">diameter</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">diameter</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="n">left</span><span class="p">[</span><span class="n">diameter_pairs</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">(),</span> <span class="n">right</span><span class="p">[</span><span class="n">diameter_pairs</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">())</span>
+
+<span class="k">def</span> <span class="nf">_medoid</span><span class="p">(</span><span class="n">coords</span><span class="p">,</span> <span class="n">metric</span><span class="o">=</span><span class="s1">&#39;euclidean&#39;</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Calculate the medoid of a set of coordinates, defined as the point with the minimal </span>
+<span class="sd">    sum of distances to all other points.</span>
+<span class="sd">    </span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    coords : numpy.ndarray</span>
+<span class="sd">        Array of coordinates, where each row represents a point in space.</span>
+<span class="sd">    metric : str, optional</span>
+<span class="sd">        Distance metric to use. Supported metrics include &#39;euclidean&#39; (default) </span>
+<span class="sd">        and &#39;haversine&#39;. If &#39;haversine&#39; is used, coordinates should be in degrees.</span>
+<span class="sd">    </span>
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    numpy.ndarray</span>
+<span class="sd">        The medoid of the coordinate set, represented as a single point. If there</span>
+<span class="sd">        is only one point, returns that point.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">coords</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">coords</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    
+    <span class="k">if</span> <span class="n">metric</span> <span class="o">==</span> <span class="s1">&#39;haversine&#39;</span><span class="p">:</span>
+        <span class="n">distances</span> <span class="o">=</span> <span class="n">_pairwise_haversine</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">coords</span><span class="p">))</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">distances</span> <span class="o">=</span> <span class="n">cdist</span><span class="p">(</span><span class="n">coords</span><span class="p">,</span> <span class="n">coords</span><span class="p">,</span> <span class="n">metric</span><span class="o">=</span><span class="n">metric</span><span class="p">)</span>
+
+    <span class="n">sum_distances</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">distances</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">medoid_index</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argmin</span><span class="p">(</span><span class="n">sum_distances</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">coords</span><span class="p">[</span><span class="n">medoid_index</span><span class="p">,</span> <span class="p">:]</span>
+
+<span class="k">def</span> <span class="nf">_haversine_distance</span><span class="p">(</span><span class="n">coord1</span><span class="p">,</span> <span class="n">coord2</span><span class="p">,</span> <span class="n">radians</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Compute the haversine distance between two points on Earth.</span>
+
+<span class="sd">    Parameters:</span>
+<span class="sd">        coord1: [lat1, lon1] in radians</span>
+<span class="sd">        coord2: [lat2, lon2] in radians</span>
+<span class="sd">        radians: If True, input coordinates are in radians; if False, they are in degrees.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        Distance in meters.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">radians</span><span class="p">:</span>
+        <span class="n">coord1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">coord1</span><span class="p">)</span>
+        <span class="n">coord2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">coord2</span><span class="p">)</span>
+        <span class="n">delta_lat</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">coord2</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="n">coord1</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">delta_lon</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">coord2</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">coord1</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">delta_lat</span> <span class="o">=</span> <span class="n">coord2</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="n">coord1</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">delta_lon</span> <span class="o">=</span> <span class="n">coord2</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">coord1</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">a</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">delta_lat</span> <span class="o">/</span> <span class="mf">2.0</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span><span class="n">coord1</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">cos</span><span class="p">(</span>
+        <span class="n">coord2</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">delta_lon</span> <span class="o">/</span> <span class="mf">2.0</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span>
+    <span class="n">c</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">arctan2</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">a</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">a</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">EARTH_RADIUS_METERS</span> <span class="o">*</span> <span class="n">c</span>  <span class="c1"># Distance in meters</span>
+
+
+<span class="k">def</span> <span class="nf">_pairwise_haversine</span><span class="p">(</span><span class="n">coords</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Compute the pairwise Haversine distances between a set of coordinates.</span>
+<span class="sd">    </span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    coords : numpy.ndarray</span>
+<span class="sd">        Array of coordinates, where each row represents a point in [latitude, longitude] </span>
+<span class="sd">        in radians.</span>
+<span class="sd">    </span>
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    numpy.ndarray</span>
+<span class="sd">        A symmetric 2D array where the element at [i, j] represents the Haversine </span>
+<span class="sd">        distance between the i-th and j-th points.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">coords</span><span class="p">)</span>
+    <span class="n">distances</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">n</span><span class="p">,</span> <span class="n">n</span><span class="p">))</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
+            <span class="n">distances</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">_haversine_distance</span><span class="p">(</span><span class="n">coords</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">coords</span><span class="p">[</span><span class="n">j</span><span class="p">])</span>
+            <span class="n">distances</span><span class="p">[</span><span class="n">j</span><span class="p">,</span> <span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">distances</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">distances</span>
+
+    
+<span class="k">def</span> <span class="nf">_update_diameter</span><span class="p">(</span><span class="n">c_j</span><span class="p">,</span> <span class="n">coords_prev</span><span class="p">,</span> <span class="n">D_prev</span><span class="p">,</span> <span class="n">metric</span><span class="o">=</span><span class="s1">&#39;euclidean&#39;</span><span class="p">,</span> <span class="n">witness</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">witness_index</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Update the diameter of a set of coordinates when a new point is added.</span>
+<span class="sd">    </span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    c_j : numpy.ndarray</span>
+<span class="sd">        The new point being added to the coordinate set.</span>
+<span class="sd">    coords_prev : numpy.ndarray</span>
+<span class="sd">        Array of existing coordinates, where each row represents a point.</span>
+<span class="sd">    D_prev : float</span>
+<span class="sd">        The previous diameter of the coordinate set, before adding the new point.</span>
+<span class="sd">    metric : str, optional</span>
+<span class="sd">        Distance metric to use. Supported metrics are &#39;euclidean&#39; (default) and &#39;haversine&#39;.</span>
+<span class="sd">        If &#39;haversine&#39; is used, coordinates should be in degrees.</span>
+<span class="sd">    witness_index : int, optional</span>
+<span class="sd">        Earliest endpoint of a previous maximum-diameter pair.</span>
+<span class="sd">    witness : bool, default False</span>
+<span class="sd">        Return the updated witness with the diameter.</span>
+<span class="sd">    </span>
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    float or tuple</span>
+<span class="sd">        The updated diameter, or the diameter and witness row offset.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">metric</span> <span class="o">==</span> <span class="s1">&#39;euclidean&#39;</span><span class="p">:</span>
+        <span class="n">X_prev</span> <span class="o">=</span> <span class="n">coords_prev</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span>
+        <span class="n">Y_prev</span> <span class="o">=</span> <span class="n">coords_prev</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]</span>
+        <span class="n">x_j</span><span class="p">,</span> <span class="n">y_j</span> <span class="o">=</span> <span class="n">c_j</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">c_j</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">new_dists</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">((</span><span class="n">X_prev</span> <span class="o">-</span> <span class="n">x_j</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span> <span class="o">+</span> <span class="p">(</span><span class="n">Y_prev</span> <span class="o">-</span> <span class="n">y_j</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+
+    <span class="k">elif</span> <span class="n">metric</span> <span class="o">==</span> <span class="s1">&#39;haversine&#39;</span><span class="p">:</span>
+        <span class="n">coords_prev</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">coords_prev</span><span class="p">)</span>
+        <span class="n">c_j</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">c_j</span><span class="p">)</span>
+
+        <span class="n">lat_j</span><span class="p">,</span> <span class="n">lon_j</span> <span class="o">=</span> <span class="n">c_j</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">c_j</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">new_dists</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span>
+            <span class="n">_haversine_distance</span><span class="p">([</span><span class="n">lat_j</span><span class="p">,</span> <span class="n">lon_j</span><span class="p">],</span> <span class="p">[</span><span class="n">lat_i</span><span class="p">,</span> <span class="n">lon_i</span><span class="p">])</span>
+            <span class="k">for</span> <span class="n">lat_i</span><span class="p">,</span> <span class="n">lon_i</span> <span class="ow">in</span> <span class="n">coords_prev</span>
+        <span class="p">])</span>
+
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;metric must be &#39;euclidean&#39; or &#39;haversine&#39;&quot;</span><span class="p">)</span>
+
+    <span class="n">new_diameter</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">new_dists</span><span class="p">)</span>
+    <span class="n">D_i_jp1</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">([</span><span class="n">D_prev</span><span class="p">,</span> <span class="n">new_diameter</span><span class="p">])</span>
+
+    <span class="k">if</span> <span class="n">witness</span><span class="p">:</span>
+        <span class="n">new_witness</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flatnonzero</span><span class="p">(</span><span class="n">new_dists</span> <span class="o">==</span> <span class="n">new_diameter</span><span class="p">)</span><span class="o">.</span><span class="n">min</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">witness_index</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">new_diameter</span> <span class="o">&gt;</span> <span class="n">D_prev</span><span class="p">:</span>
+            <span class="n">witness_index</span> <span class="o">=</span> <span class="n">new_witness</span>
+        <span class="k">elif</span> <span class="n">new_diameter</span> <span class="o">==</span> <span class="n">D_prev</span><span class="p">:</span>
+            <span class="n">witness_index</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">witness_index</span><span class="p">,</span> <span class="n">new_witness</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">D_i_jp1</span><span class="p">,</span> <span class="n">witness_index</span>
+
+    <span class="k">return</span> <span class="n">D_i_jp1</span>
+
+<span class="k">def</span> <span class="nf">_fallback_st_cols</span><span class="p">(</span><span class="n">col_names</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    Helper function to decide whether to use latitude and longitude or x,y,</span>
+<span class="sd">    as well as datetime vs timestamp in cases of ambiguity</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="n">coord_key1</span><span class="p">,</span> <span class="n">coord_key2</span><span class="p">,</span> <span class="n">use_lon_lat</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_fallback_spatial_cols</span><span class="p">(</span><span class="n">col_names</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+    <span class="n">t_key</span><span class="p">,</span> <span class="n">use_datetime</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_fallback_time_cols_dt</span><span class="p">(</span><span class="n">col_names</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">t_key</span><span class="p">,</span> <span class="n">coord_key1</span><span class="p">,</span> <span class="n">coord_key2</span><span class="p">,</span> <span class="n">use_datetime</span><span class="p">,</span> <span class="n">use_lon_lat</span>
+
+
+<div class="viewcode-block" id="applyParallel">
+<a class="viewcode-back" href="../../../api/generated/nomad.stop_detection.utils.html#nomad.stop_detection.utils.applyParallel">[docs]</a>
+<span class="k">def</span> <span class="nf">applyParallel</span><span class="p">(</span>
+    <span class="n">groups</span><span class="p">,</span>
+    <span class="n">algorithm</span><span class="p">,</span>
+    <span class="n">algorithm_kwargs</span><span class="p">,</span>
+    <span class="n">reset_index</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">n_jobs</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+    <span class="n">print_progress</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Apply a callable over grouped data, optionally in parallel.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    groups : DataFrameGroupBy</span>
+<span class="sd">        Grouped dataframe iterator (e.g. data.groupby(user_id)).</span>
+<span class="sd">    algorithm : callable</span>
+<span class="sd">        Function applied to each group DataFrame.</span>
+<span class="sd">    algorithm_kwargs : dict</span>
+<span class="sd">        Arguments passed unchanged to ``algorithm``.</span>
+<span class="sd">    reset_index : bool, default False</span>
+<span class="sd">        Reset each group DataFrame before calling ``algorithm``.</span>
+<span class="sd">    n_jobs : int, default 1</span>
+<span class="sd">        Number of parallel jobs. 1 executes sequentially.</span>
+<span class="sd">    print_progress : bool, default False</span>
+<span class="sd">        Whether to show a progress bar.</span>
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    list</span>
+<span class="sd">        List with one result per group.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">group_frames</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">group</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">if</span> <span class="n">reset_index</span> <span class="k">else</span> <span class="n">group</span>
+        <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">groups</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">print_progress</span><span class="p">:</span>
+        <span class="n">group_frames</span> <span class="o">=</span> <span class="n">tqdm</span><span class="p">(</span><span class="n">group_frames</span><span class="p">,</span> <span class="n">desc</span><span class="o">=</span><span class="s2">&quot;Processing users&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">n_jobs</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">print_progress</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[</span><span class="n">algorithm</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">group</span><span class="p">,</span> <span class="o">**</span><span class="n">algorithm_kwargs</span><span class="p">)</span> <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">tqdm</span><span class="p">(</span><span class="n">group_frames</span><span class="p">,</span> <span class="n">desc</span><span class="o">=</span><span class="s2">&quot;Processing users&quot;</span><span class="p">)]</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">algorithm</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">group</span><span class="p">,</span> <span class="o">**</span><span class="n">algorithm_kwargs</span><span class="p">)</span> <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">group_frames</span><span class="p">]</span>
+
+    <span class="n">group_frames</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">group_frames</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">print_progress</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">Parallel</span><span class="p">(</span><span class="n">n_jobs</span><span class="o">=</span><span class="n">n_jobs</span><span class="p">,</span> <span class="n">return_as</span><span class="o">=</span><span class="s2">&quot;generator&quot;</span><span class="p">)(</span>
+            <span class="n">delayed</span><span class="p">(</span><span class="n">algorithm</span><span class="p">)(</span><span class="n">data</span><span class="o">=</span><span class="n">group</span><span class="p">,</span> <span class="o">**</span><span class="n">algorithm_kwargs</span><span class="p">)</span> <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">tqdm</span><span class="p">(</span><span class="n">group_frames</span><span class="p">,</span> <span class="n">desc</span><span class="o">=</span><span class="s2">&quot;Processing users&quot;</span><span class="p">)</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">Parallel</span><span class="p">(</span><span class="n">n_jobs</span><span class="o">=</span><span class="n">n_jobs</span><span class="p">,</span> <span class="n">return_as</span><span class="o">=</span><span class="s2">&quot;generator&quot;</span><span class="p">)(</span>
+        <span class="n">delayed</span><span class="p">(</span><span class="n">algorithm</span><span class="p">)(</span><span class="n">data</span><span class="o">=</span><span class="n">group</span><span class="p">,</span> <span class="o">**</span><span class="n">algorithm_kwargs</span><span class="p">)</span> <span class="k">for</span> <span class="n">group</span> <span class="ow">in</span> <span class="n">group_frames</span>
+    <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="summarize_stop">
+<a class="viewcode-back" href="../../../api/generated/nomad.stop_detection.utils.html#nomad.stop_detection.utils.summarize_stop">[docs]</a>
+<span class="k">def</span> <span class="nf">summarize_stop</span><span class="p">(</span>
+    <span class="n">grouped_data</span><span class="p">,</span>
+    <span class="n">method</span><span class="o">=</span><span class="s1">&#39;medoid&#39;</span><span class="p">,</span>
+    <span class="n">complete_output</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">keep_col_names</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">passthrough_cols</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">passthrough_agg</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">traj_cols</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+<span class="p">):</span>
+    <span class="k">if</span> <span class="n">passthrough_cols</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">passthrough_cols</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="n">passthrough_agg</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">passthrough_agg</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">t_key</span><span class="p">,</span> <span class="n">coord_key1</span><span class="p">,</span> <span class="n">coord_key2</span><span class="p">,</span> <span class="n">use_datetime</span><span class="p">,</span> <span class="n">use_lon_lat</span> <span class="o">=</span> <span class="n">_fallback_st_cols</span><span class="p">(</span><span class="n">grouped_data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+    <span class="n">traj_cols</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_parse_traj_cols</span><span class="p">(</span><span class="n">grouped_data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">warn</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">metric</span> <span class="o">=</span> <span class="s1">&#39;haversine&#39;</span> <span class="k">if</span> <span class="n">use_lon_lat</span> <span class="k">else</span> <span class="s1">&#39;euclidean&#39;</span>    
+    <span class="n">start_t_key</span> <span class="o">=</span> <span class="s1">&#39;start_datetime&#39;</span> <span class="k">if</span> <span class="n">use_datetime</span> <span class="k">else</span> <span class="s1">&#39;start_timestamp&#39;</span>
+    <span class="n">end_t_key</span> <span class="o">=</span> <span class="s1">&#39;end_datetime&#39;</span> <span class="k">if</span> <span class="n">use_datetime</span> <span class="k">else</span> <span class="s1">&#39;end_timestamp&#39;</span>
+    
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">keep_col_names</span><span class="p">:</span>
+       <span class="n">traj_cols</span><span class="p">[</span><span class="n">coord_key1</span><span class="p">]</span> <span class="o">=</span> <span class="n">DEFAULT_SCHEMA</span><span class="p">[</span><span class="n">coord_key1</span><span class="p">]</span>
+       <span class="n">traj_cols</span><span class="p">[</span><span class="n">coord_key2</span><span class="p">]</span> <span class="o">=</span> <span class="n">DEFAULT_SCHEMA</span><span class="p">[</span><span class="n">coord_key2</span><span class="p">]</span>
+       <span class="c1"># traj_cols[start_t_key] holds default or user provided value</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># use same time column key for start time</span>
+        <span class="c1"># e.g. start time col in stops will be &#39;unix_timestamp&#39; instead of default &#39;start_timestamp&#39;</span>
+        <span class="n">traj_cols</span><span class="p">[</span><span class="n">start_t_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]</span>
+    
+    <span class="c1"># Compute stop statistics</span>
+    <span class="n">coords</span> <span class="o">=</span> <span class="n">grouped_data</span><span class="p">[[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">coord_key1</span><span class="p">],</span> <span class="n">traj_cols</span><span class="p">[</span><span class="n">coord_key2</span><span class="p">]]]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+    <span class="n">medoid</span> <span class="o">=</span> <span class="n">_medoid</span><span class="p">(</span><span class="n">coords</span><span class="p">,</span> <span class="n">metric</span><span class="o">=</span><span class="n">metric</span><span class="p">)</span>
+    <span class="n">end_time</span> <span class="o">=</span> <span class="n">grouped_data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+
+    <span class="n">stop_attr</span> <span class="o">=</span> <span class="p">{}</span> <span class="c1"># the pandas series for the output</span>
+    <span class="n">stop_attr</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">coord_key1</span><span class="p">]]</span> <span class="o">=</span> <span class="n">medoid</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">stop_attr</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">coord_key2</span><span class="p">]]</span> <span class="o">=</span> <span class="n">medoid</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">stop_attr</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">start_t_key</span><span class="p">]]</span>  <span class="o">=</span> <span class="n">grouped_data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">complete_output</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;ha&#39;</span><span class="p">]</span> <span class="ow">in</span> <span class="n">grouped_data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="n">stop_attr</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;ha&#39;</span><span class="p">]]</span> <span class="o">=</span> <span class="n">grouped_data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;ha&#39;</span><span class="p">]]</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+        <span class="n">stop_attr</span><span class="p">[</span><span class="s1">&#39;diameter&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">_diameter</span><span class="p">(</span><span class="n">coords</span><span class="p">,</span> <span class="n">metric</span><span class="o">=</span><span class="n">metric</span><span class="p">)</span>
+        <span class="n">stop_attr</span><span class="p">[</span><span class="s1">&#39;n_pings&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">grouped_data</span><span class="p">)</span>
+        <span class="n">stop_attr</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">end_t_key</span><span class="p">]]</span> <span class="o">=</span> <span class="n">end_time</span>
+        
+        <span class="n">time_diffs</span> <span class="o">=</span> <span class="n">grouped_data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]]</span><span class="o">.</span><span class="n">diff</span><span class="p">()</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span>
+        <span class="c1"># postprocessing can split a cluster down to a single ping, which has no gap to measure</span>
+        <span class="n">max_gap</span> <span class="o">=</span> <span class="n">time_diffs</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">time_diffs</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">Timedelta</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="k">if</span> <span class="n">use_datetime</span> <span class="k">else</span> <span class="mi">0</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">use_datetime</span><span class="p">:</span>
+        <span class="n">stop_attr</span><span class="p">[</span><span class="s1">&#39;duration&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">((</span><span class="n">end_time</span> <span class="o">-</span> <span class="n">stop_attr</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">start_t_key</span><span class="p">]])</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">())</span><span class="o">//</span><span class="mi">60</span>
+        <span class="k">if</span> <span class="n">complete_output</span><span class="p">:</span>
+            <span class="n">stop_attr</span><span class="p">[</span><span class="s1">&#39;max_gap&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">max_gap</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">())</span><span class="o">//</span><span class="mi">60</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">stop_attr</span><span class="p">[</span><span class="s1">&#39;duration&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">end_time</span> <span class="o">-</span> <span class="n">stop_attr</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">start_t_key</span><span class="p">]])</span><span class="o">//</span><span class="mi">60</span>
+        <span class="k">if</span> <span class="n">complete_output</span><span class="p">:</span>
+            <span class="n">stop_attr</span><span class="p">[</span><span class="s1">&#39;max_gap&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">max_gap</span><span class="o">//</span><span class="mi">60</span>
+
+    <span class="c1"># passthrough columns: e.g. location_id</span>
+    <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">passthrough_cols</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">grouped_data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="n">stop_attr</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">grouped_data</span><span class="p">[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">agg</span><span class="p">(</span><span class="n">passthrough_agg</span><span class="p">[</span><span class="n">col</span><span class="p">])</span>
+                <span class="k">if</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">passthrough_agg</span>
+                <span class="k">else</span> <span class="n">grouped_data</span><span class="p">[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="p">)</span>
+    <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">stop_attr</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="s2">&quot;object&quot;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="summarize_stops">
+<a class="viewcode-back" href="../../../api/generated/nomad.stop_detection.utils.html#nomad.stop_detection.utils.summarize_stops">[docs]</a>
+<span class="k">def</span> <span class="nf">summarize_stops</span><span class="p">(</span>
+    <span class="n">data</span><span class="p">,</span>
+    <span class="n">labels</span><span class="p">,</span>
+    <span class="n">complete_output</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">dur_min</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">passthrough_cols</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">passthrough_agg</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">keep_col_names</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">traj_cols</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Summarize non-noise point labels into one row per stop.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    data : pd.DataFrame</span>
+<span class="sd">        Input trajectory.</span>
+<span class="sd">    labels : pd.Series</span>
+<span class="sd">        Cluster label for each trajectory row, with ``-1`` denoting noise.</span>
+<span class="sd">    complete_output : bool</span>
+<span class="sd">        Whether to include extended stop statistics.</span>
+<span class="sd">    dur_min : number, optional</span>
+<span class="sd">        Minimum summarized stop duration to retain.</span>
+<span class="sd">    passthrough_cols : list, optional</span>
+<span class="sd">        Columns copied into each stop summary. The first value is used by default.</span>
+<span class="sd">    passthrough_agg : dict, optional</span>
+<span class="sd">        Pandas-compatible aggregation function for each passthrough column that</span>
+<span class="sd">        should not use its first value.</span>
+<span class="sd">    keep_col_names : bool</span>
+<span class="sd">        Whether to retain input coordinate and time column names.</span>
+<span class="sd">    traj_cols : dict, optional</span>
+<span class="sd">        Canonical-to-actual column mapping.</span>
+<span class="sd">    **kwargs</span>
+<span class="sd">        Additional column mappings.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.DataFrame</span>
+<span class="sd">        One row per non-noise cluster.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">passthrough_cols</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">passthrough_cols</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="n">empty_stops</span> <span class="o">=</span> <span class="n">_get_empty_stop_df</span><span class="p">(</span>
+        <span class="n">data</span><span class="p">,</span>
+        <span class="n">complete_output</span><span class="p">,</span>
+        <span class="n">passthrough_cols</span><span class="p">,</span>
+        <span class="n">traj_cols</span><span class="p">,</span>
+        <span class="n">keep_col_names</span><span class="p">,</span>
+        <span class="n">is_grid_based</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">merged</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">labels</span><span class="p">)</span>
+    <span class="n">merged</span> <span class="o">=</span> <span class="n">merged</span><span class="p">[</span><span class="n">merged</span><span class="o">.</span><span class="n">cluster</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">merged</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">empty_stops</span>
+
+    <span class="n">stops</span> <span class="o">=</span> <span class="n">merged</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s1">&#39;cluster&#39;</span><span class="p">,</span> <span class="n">as_index</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">sort</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span>
+        <span class="k">lambda</span> <span class="n">group</span><span class="p">:</span> <span class="n">summarize_stop</span><span class="p">(</span>
+            <span class="n">group</span><span class="p">,</span>
+            <span class="n">complete_output</span><span class="o">=</span><span class="n">complete_output</span><span class="p">,</span>
+            <span class="n">traj_cols</span><span class="o">=</span><span class="n">traj_cols</span><span class="p">,</span>
+            <span class="n">keep_col_names</span><span class="o">=</span><span class="n">keep_col_names</span><span class="p">,</span>
+            <span class="n">passthrough_cols</span><span class="o">=</span><span class="n">passthrough_cols</span><span class="p">,</span>
+            <span class="n">passthrough_agg</span><span class="o">=</span><span class="n">passthrough_agg</span><span class="p">,</span>
+            <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+        <span class="p">),</span>
+        <span class="n">include_groups</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">dur_min</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">stops</span> <span class="o">=</span> <span class="n">stops</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">stops</span><span class="p">[</span><span class="s1">&#39;duration&#39;</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">dur_min</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">_cast_to_stop_schema</span><span class="p">(</span><span class="n">stops</span><span class="p">,</span> <span class="n">empty_stops</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="summarize_stop_grid">
+<a class="viewcode-back" href="../../../api/generated/nomad.stop_detection.utils.html#nomad.stop_detection.utils.summarize_stop_grid">[docs]</a>
+<span class="k">def</span> <span class="nf">summarize_stop_grid</span><span class="p">(</span>
+    <span class="n">grouped_data</span><span class="p">,</span>
+    <span class="n">complete_output</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">keep_col_names</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">passthrough_cols</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">traj_cols</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">passthrough_agg</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">kwargs</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Summarize index/grid‐based stop clusters (location_id only).</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    grouped_data : pd.DataFrame or gpd.GeoDataFrame</span>
+<span class="sd">        All pings sharing the same location_id.</span>
+<span class="sd">    complete_output : bool</span>
+<span class="sd">        If True, include n_pings, duration, and max_gap.</span>
+<span class="sd">    keep_col_names : bool</span>
+<span class="sd">        If False, output start_/end_ keys are DEFAULT_SCHEMA ones;</span>
+<span class="sd">        if True, they use the user&#39;s time‐column name.</span>
+<span class="sd">    passthrough_cols : list[str], optional</span>
+<span class="sd">        Additional columns (e.g. &#39;user_id&#39;) to carry through.</span>
+<span class="sd">    passthrough_agg : dict, optional</span>
+<span class="sd">        Pandas-compatible aggregation function for each passthrough column that</span>
+<span class="sd">        should not use its first value.</span>
+<span class="sd">    traj_cols : dict, optional</span>
+<span class="sd">        Column‐name overrides.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.Series</span>
+<span class="sd">        One‐row summary with:</span>
+<span class="sd">          - start_[timestamp|datetime],</span>
+<span class="sd">          - end_[timestamp|datetime] (if complete_output),</span>
+<span class="sd">          - duration, n_pings, max_gap (if complete_output),</span>
+<span class="sd">          - location_id, geometry (if present), plus passthrough_cols.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">passthrough_cols</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">passthrough_cols</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="n">passthrough_agg</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">passthrough_agg</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="c1"># 1) pick time key</span>
+    <span class="n">t_key</span><span class="p">,</span> <span class="n">use_datetime</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_fallback_time_cols_dt</span><span class="p">(</span><span class="n">grouped_data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="c1"># 2) parse full mapping</span>
+    <span class="n">cols</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_parse_traj_cols</span><span class="p">(</span><span class="n">grouped_data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">warn</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+    <span class="c1"># 3) decide output key names</span>
+    <span class="n">start_key</span> <span class="o">=</span> <span class="s1">&#39;start_datetime&#39;</span> <span class="k">if</span> <span class="n">use_datetime</span> <span class="k">else</span> <span class="s1">&#39;start_timestamp&#39;</span>
+    <span class="n">end_key</span>   <span class="o">=</span> <span class="s1">&#39;end_datetime&#39;</span>   <span class="k">if</span> <span class="n">use_datetime</span> <span class="k">else</span> <span class="s1">&#39;end_timestamp&#39;</span>
+
+    <span class="k">if</span> <span class="n">keep_col_names</span><span class="p">:</span>
+        <span class="n">cols</span><span class="p">[</span><span class="n">start_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]</span>
+        <span class="n">cols</span><span class="p">[</span><span class="n">end_key</span><span class="p">]</span>   <span class="o">=</span> <span class="n">cols</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">end_key</span><span class="p">,</span> <span class="n">end_key</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">cols</span><span class="p">[</span><span class="n">start_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">start_key</span>
+        <span class="n">cols</span><span class="p">[</span><span class="n">end_key</span><span class="p">]</span>   <span class="o">=</span> <span class="n">end_key</span>
+
+    <span class="c1"># 4) time bounds</span>
+    <span class="n">times</span>      <span class="o">=</span> <span class="n">grouped_data</span><span class="p">[</span><span class="n">cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]]</span>
+    <span class="n">start_ts</span>   <span class="o">=</span> <span class="n">times</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">end_ts</span>     <span class="o">=</span> <span class="n">times</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">cols</span><span class="p">[</span><span class="n">start_key</span><span class="p">]:</span> <span class="n">start_ts</span><span class="p">,</span>
+    <span class="p">}</span>
+    
+    <span class="c1"># Always include duration (consistent with other algorithms)</span>
+    <span class="n">out</span><span class="p">[</span><span class="s1">&#39;duration&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="p">(</span><span class="n">end_ts</span> <span class="o">-</span> <span class="n">start_ts</span><span class="p">)</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span><span class="o">//</span><span class="mi">60</span>
+        <span class="k">if</span> <span class="n">use_datetime</span> <span class="k">else</span>
+        <span class="p">(</span><span class="n">end_ts</span> <span class="o">-</span> <span class="n">start_ts</span><span class="p">)</span><span class="o">//</span><span class="mi">60</span>
+    <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">complete_output</span><span class="p">:</span>
+        <span class="n">out</span><span class="p">[</span><span class="n">cols</span><span class="p">[</span><span class="n">end_key</span><span class="p">]]</span> <span class="o">=</span> <span class="n">end_ts</span>
+        <span class="n">out</span><span class="p">[</span><span class="s1">&#39;n_pings&#39;</span><span class="p">]</span>    <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">grouped_data</span><span class="p">)</span>
+        <span class="n">diffs</span> <span class="o">=</span> <span class="n">times</span><span class="o">.</span><span class="n">diff</span><span class="p">()</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span>
+        <span class="n">max_gap</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="nb">int</span><span class="p">(</span><span class="n">diffs</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span><span class="o">//</span><span class="mi">60</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">use_datetime</span> <span class="k">else</span>
+            <span class="nb">int</span><span class="p">(</span><span class="n">diffs</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="o">//</span><span class="mi">60</span><span class="p">)</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">diffs</span><span class="p">)</span> <span class="k">else</span> <span class="mi">0</span>
+        <span class="p">)</span>
+        <span class="n">out</span><span class="p">[</span><span class="s1">&#39;max_gap&#39;</span><span class="p">]</span>    <span class="o">=</span> <span class="n">max_gap</span>
+
+
+    <span class="c1"># 5) always pass through location_id &amp; geometry &amp; any others</span>
+    <span class="n">to_pass</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">passthrough_cols</span><span class="p">)</span>
+    <span class="n">loc_col</span> <span class="o">=</span> <span class="n">cols</span><span class="p">[</span><span class="s1">&#39;location_id&#39;</span><span class="p">]</span>
+    <span class="n">to_pass</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">loc_col</span><span class="p">)</span>
+    <span class="k">if</span> <span class="s1">&#39;geometry&#39;</span> <span class="ow">in</span> <span class="n">grouped_data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">to_pass</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s1">&#39;geometry&#39;</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">to_pass</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">grouped_data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="n">out</span><span class="p">[</span><span class="n">c</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">grouped_data</span><span class="p">[</span><span class="n">c</span><span class="p">]</span><span class="o">.</span><span class="n">agg</span><span class="p">(</span><span class="n">passthrough_agg</span><span class="p">[</span><span class="n">c</span><span class="p">])</span>
+                <span class="k">if</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">passthrough_agg</span>
+                <span class="k">else</span> <span class="n">grouped_data</span><span class="p">[</span><span class="n">c</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">out</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="s1">&#39;object&#39;</span><span class="p">)</span></div>
+
+
+<span class="k">def</span> <span class="nf">_get_empty_aux_df</span><span class="p">(</span><span class="n">time_col</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">return_cores</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">return_anchors</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Build the empty output of a stop detection labeling algorithm.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    time_col : pd.Series, optional</span>
+<span class="sd">        Time column the auxiliary times are aligned to. Needed for auxiliary output.</span>
+<span class="sd">    return_cores : bool</span>
+<span class="sd">        Whether to include the core metadata of density-based algorithms.</span>
+<span class="sd">    return_anchors : bool</span>
+<span class="sd">        Whether to include Lachesis diameter-witness metadata.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.Series or pd.DataFrame</span>
+<span class="sd">        Empty cluster labels, with auxiliary columns when requested.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">cluster</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="s1">&#39;int64&#39;</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s1">&#39;cluster&#39;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">return_cores</span> <span class="ow">or</span> <span class="n">return_anchors</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">cluster</span>
+
+    <span class="c1"># unix timestamps widen so that noise points can hold a missing time</span>
+    <span class="n">time_dtype</span> <span class="o">=</span> <span class="s1">&#39;Int64&#39;</span> <span class="k">if</span> <span class="n">pd</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">types</span><span class="o">.</span><span class="n">is_integer_dtype</span><span class="p">(</span><span class="n">time_col</span><span class="p">)</span> <span class="k">else</span> <span class="n">time_col</span><span class="o">.</span><span class="n">dtype</span>
+
+    <span class="n">output</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;cluster&#39;</span><span class="p">:</span> <span class="n">cluster</span><span class="p">}</span>
+    <span class="k">if</span> <span class="n">return_cores</span><span class="p">:</span>
+        <span class="n">output</span><span class="p">[</span><span class="s1">&#39;core&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="s1">&#39;int64&#39;</span><span class="p">)</span>
+        <span class="n">output</span><span class="p">[</span><span class="s1">&#39;promotion_time&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">time_dtype</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">return_anchors</span><span class="p">:</span>
+        <span class="n">output</span><span class="p">[</span><span class="s1">&#39;anchor_time&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">time_dtype</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">output</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">_get_empty_stop_df</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">complete_output</span><span class="p">,</span> <span class="n">passthrough_cols</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">keep_col_names</span><span class="p">,</span> <span class="n">is_grid_based</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Build the empty stop table declaring the columns, their order and their dtypes.</span>
+
+<span class="sd">    Both the summarized and the no-cluster paths are built from this, so the two</span>
+<span class="sd">    cannot disagree.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    data : pd.DataFrame or gpd.GeoDataFrame</span>
+<span class="sd">        Source trajectory, supplying the time dtype and the passthrough dtypes.</span>
+<span class="sd">    complete_output : bool</span>
+<span class="sd">        Whether extended stop statistics are included.</span>
+<span class="sd">    passthrough_cols : list</span>
+<span class="sd">        Additional columns to pass through to stop summary.</span>
+<span class="sd">    traj_cols : dict</span>
+<span class="sd">        Column mapping dictionary.</span>
+<span class="sd">    keep_col_names : bool</span>
+<span class="sd">        Whether to keep original coordinate and time column names.</span>
+<span class="sd">    is_grid_based : bool, optional</span>
+<span class="sd">        Whether this is for grid-based summarization.</span>
+<span class="sd">    **kwargs</span>
+<span class="sd">        Additional column mappings.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.DataFrame</span>
+<span class="sd">        Empty stop table with schema-aligned dtypes.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">passthrough_cols</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">passthrough_cols</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="n">cols</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_parse_traj_cols</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">warn</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">is_grid_based</span><span class="p">:</span>
+        <span class="n">t_key</span><span class="p">,</span> <span class="n">use_datetime</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_fallback_time_cols_dt</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">t_key</span><span class="p">,</span> <span class="n">coord_key1</span><span class="p">,</span> <span class="n">coord_key2</span><span class="p">,</span> <span class="n">use_datetime</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">_fallback_st_cols</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="n">start_t_key</span> <span class="o">=</span> <span class="s1">&#39;start_datetime&#39;</span> <span class="k">if</span> <span class="n">use_datetime</span> <span class="k">else</span> <span class="s1">&#39;start_timestamp&#39;</span>
+    <span class="n">end_t_key</span> <span class="o">=</span> <span class="s1">&#39;end_datetime&#39;</span> <span class="k">if</span> <span class="n">use_datetime</span> <span class="k">else</span> <span class="s1">&#39;end_timestamp&#39;</span>
+
+    <span class="k">if</span> <span class="n">keep_col_names</span><span class="p">:</span>
+        <span class="n">cols</span><span class="p">[</span><span class="n">start_t_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]</span>
+    <span class="k">elif</span> <span class="ow">not</span> <span class="n">is_grid_based</span><span class="p">:</span>
+        <span class="n">cols</span><span class="p">[</span><span class="n">coord_key1</span><span class="p">]</span> <span class="o">=</span> <span class="n">DEFAULT_SCHEMA</span><span class="p">[</span><span class="n">coord_key1</span><span class="p">]</span>
+        <span class="n">cols</span><span class="p">[</span><span class="n">coord_key2</span><span class="p">]</span> <span class="o">=</span> <span class="n">DEFAULT_SCHEMA</span><span class="p">[</span><span class="n">coord_key2</span><span class="p">]</span>
+
+    <span class="c1"># start and end times mirror the input column, so a timezone survives summarization</span>
+    <span class="n">time_dtype</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]]</span><span class="o">.</span><span class="n">dtype</span> <span class="k">if</span> <span class="n">use_datetime</span> <span class="k">else</span> <span class="n">SCHEMA_DTYPES</span><span class="p">[</span><span class="n">start_t_key</span><span class="p">]</span>
+
+    <span class="c1"># the per-ping cluster label, kept so stops can be reconciled with labeled pings</span>
+    <span class="n">schema</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;cluster&#39;</span><span class="p">:</span> <span class="n">SCHEMA_DTYPES</span><span class="p">[</span><span class="s1">&#39;label&#39;</span><span class="p">]}</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">is_grid_based</span><span class="p">:</span>
+        <span class="n">schema</span><span class="p">[</span><span class="n">cols</span><span class="p">[</span><span class="n">coord_key1</span><span class="p">]]</span> <span class="o">=</span> <span class="n">SCHEMA_DTYPES</span><span class="p">[</span><span class="n">coord_key1</span><span class="p">]</span>
+        <span class="n">schema</span><span class="p">[</span><span class="n">cols</span><span class="p">[</span><span class="n">coord_key2</span><span class="p">]]</span> <span class="o">=</span> <span class="n">SCHEMA_DTYPES</span><span class="p">[</span><span class="n">coord_key2</span><span class="p">]</span>
+
+    <span class="n">schema</span><span class="p">[</span><span class="n">cols</span><span class="p">[</span><span class="n">start_t_key</span><span class="p">]]</span> <span class="o">=</span> <span class="n">time_dtype</span>
+
+    <span class="k">if</span> <span class="n">is_grid_based</span><span class="p">:</span>
+        <span class="n">schema</span><span class="p">[</span><span class="s1">&#39;duration&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">SCHEMA_DTYPES</span><span class="p">[</span><span class="s1">&#39;duration&#39;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">complete_output</span><span class="p">:</span>
+            <span class="n">schema</span><span class="p">[</span><span class="n">cols</span><span class="p">[</span><span class="n">end_t_key</span><span class="p">]]</span> <span class="o">=</span> <span class="n">time_dtype</span>
+            <span class="n">schema</span><span class="p">[</span><span class="s1">&#39;n_pings&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">SCHEMA_DTYPES</span><span class="p">[</span><span class="s1">&#39;n_pings&#39;</span><span class="p">]</span>
+            <span class="n">schema</span><span class="p">[</span><span class="s1">&#39;max_gap&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">SCHEMA_DTYPES</span><span class="p">[</span><span class="s1">&#39;max_gap&#39;</span><span class="p">]</span>
+        <span class="n">loc_col</span> <span class="o">=</span> <span class="n">cols</span><span class="p">[</span><span class="s1">&#39;location_id&#39;</span><span class="p">]</span>
+        <span class="n">schema</span><span class="p">[</span><span class="n">loc_col</span><span class="p">]</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">loc_col</span><span class="p">]</span><span class="o">.</span><span class="n">dtype</span> <span class="k">if</span> <span class="n">loc_col</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span> <span class="k">else</span> <span class="n">SCHEMA_DTYPES</span><span class="p">[</span><span class="s1">&#39;location_id&#39;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="s1">&#39;geometry&#39;</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="n">schema</span><span class="p">[</span><span class="s1">&#39;geometry&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s1">&#39;object&#39;</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">complete_output</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">cols</span><span class="p">[</span><span class="s1">&#39;ha&#39;</span><span class="p">]</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+                <span class="n">schema</span><span class="p">[</span><span class="n">cols</span><span class="p">[</span><span class="s1">&#39;ha&#39;</span><span class="p">]]</span> <span class="o">=</span> <span class="n">SCHEMA_DTYPES</span><span class="p">[</span><span class="s1">&#39;ha&#39;</span><span class="p">]</span>
+            <span class="n">schema</span><span class="p">[</span><span class="s1">&#39;diameter&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">SCHEMA_DTYPES</span><span class="p">[</span><span class="s1">&#39;diameter&#39;</span><span class="p">]</span>
+            <span class="n">schema</span><span class="p">[</span><span class="s1">&#39;n_pings&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">SCHEMA_DTYPES</span><span class="p">[</span><span class="s1">&#39;n_pings&#39;</span><span class="p">]</span>
+            <span class="n">schema</span><span class="p">[</span><span class="n">cols</span><span class="p">[</span><span class="n">end_t_key</span><span class="p">]]</span> <span class="o">=</span> <span class="n">time_dtype</span>
+        <span class="n">schema</span><span class="p">[</span><span class="s1">&#39;duration&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">SCHEMA_DTYPES</span><span class="p">[</span><span class="s1">&#39;duration&#39;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">complete_output</span><span class="p">:</span>
+            <span class="n">schema</span><span class="p">[</span><span class="s1">&#39;max_gap&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">SCHEMA_DTYPES</span><span class="p">[</span><span class="s1">&#39;max_gap&#39;</span><span class="p">]</span>
+
+    <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">passthrough_cols</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span> <span class="ow">and</span> <span class="n">col</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">schema</span><span class="p">:</span>
+            <span class="n">schema</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">dtype</span>
+
+    <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="n">col</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">)</span> <span class="k">for</span> <span class="n">col</span><span class="p">,</span> <span class="n">dtype</span> <span class="ow">in</span> <span class="n">schema</span><span class="o">.</span><span class="n">items</span><span class="p">()})</span>
+
+
+<span class="k">def</span> <span class="nf">_cast_to_stop_schema</span><span class="p">(</span><span class="n">stops</span><span class="p">,</span> <span class="n">empty_stops</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Order and cast a summarized stop table to the schema of its empty counterpart.&quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">col</span><span class="p">,</span> <span class="n">dtype</span> <span class="ow">in</span> <span class="n">empty_stops</span><span class="o">.</span><span class="n">dtypes</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="c1"># summarize_stop returns object Series, and diameters and gaps arrive as floats</span>
+        <span class="n">stops</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">pd</span><span class="o">.</span><span class="n">to_numeric</span><span class="p">(</span><span class="n">stops</span><span class="p">[</span><span class="n">col</span><span class="p">])</span><span class="o">.</span><span class="n">round</span><span class="p">()</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">dtype</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">dtype</span> <span class="o">==</span> <span class="s1">&#39;Int64&#39;</span>
+            <span class="k">else</span> <span class="n">stops</span><span class="p">[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">dtype</span><span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="n">extra_cols</span> <span class="o">=</span> <span class="p">[</span><span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">stops</span><span class="o">.</span><span class="n">columns</span> <span class="k">if</span> <span class="n">col</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">empty_stops</span><span class="o">.</span><span class="n">columns</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">stops</span><span class="p">[</span><span class="nb">list</span><span class="p">(</span><span class="n">empty_stops</span><span class="o">.</span><span class="n">columns</span><span class="p">)</span> <span class="o">+</span> <span class="n">extra_cols</span><span class="p">]</span>
+
+
+<div class="viewcode-block" id="has_overlapping_stops">
+<a class="viewcode-back" href="../../../api/generated/nomad.stop_detection.utils.html#nomad.stop_detection.utils.has_overlapping_stops">[docs]</a>
+<span class="k">def</span> <span class="nf">has_overlapping_stops</span><span class="p">(</span><span class="n">stop_data</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Return True when any stop interval overlaps with the previous interval.</span>
+
+<span class="sd">    Intervals are interpreted from start/end columns when available, otherwise</span>
+<span class="sd">    end times are reconstructed from duration in minutes.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">stop_data</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span>
+
+    <span class="n">t_key</span><span class="p">,</span> <span class="n">use_datetime</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_fallback_time_cols_dt</span><span class="p">(</span><span class="n">stop_data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+    <span class="n">end_t_key</span> <span class="o">=</span> <span class="s1">&#39;end_datetime&#39;</span> <span class="k">if</span> <span class="n">use_datetime</span> <span class="k">else</span> <span class="s1">&#39;end_timestamp&#39;</span>
+
+    <span class="n">traj_cols</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_parse_traj_cols</span><span class="p">(</span><span class="n">stop_data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">warn</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">end_col_present</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_has_end_cols</span><span class="p">(</span><span class="n">stop_data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">)</span>
+    <span class="n">duration_col_present</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_has_duration_cols</span><span class="p">(</span><span class="n">stop_data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">end_col_present</span> <span class="ow">or</span> <span class="n">duration_col_present</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Missing required (end or duration) temporal columns for stop_table dataframe.&quot;</span><span class="p">)</span>
+
+    <span class="n">starts</span> <span class="o">=</span> <span class="n">stop_data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]]</span>
+    <span class="k">if</span> <span class="n">end_col_present</span><span class="p">:</span>
+        <span class="n">ends</span> <span class="o">=</span> <span class="n">stop_data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">end_t_key</span><span class="p">]]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">dur_mins</span> <span class="o">=</span> <span class="n">stop_data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;duration&#39;</span><span class="p">]]</span>
+        <span class="k">if</span> <span class="n">use_datetime</span><span class="p">:</span>
+            <span class="n">ends</span> <span class="o">=</span> <span class="n">starts</span> <span class="o">+</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_timedelta</span><span class="p">(</span><span class="n">dur_mins</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;m&#39;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">ends</span> <span class="o">=</span> <span class="n">starts</span> <span class="o">+</span> <span class="n">dur_mins</span> <span class="o">*</span> <span class="mi">60</span>
+
+    <span class="n">intervals</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s2">&quot;_start&quot;</span><span class="p">:</span> <span class="n">starts</span><span class="p">,</span> <span class="s2">&quot;_end&quot;</span><span class="p">:</span> <span class="n">ends</span><span class="p">})</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s2">&quot;_start&quot;</span><span class="p">,</span> <span class="n">kind</span><span class="o">=</span><span class="s2">&quot;mergesort&quot;</span><span class="p">)</span>
+    <span class="n">prev_end</span> <span class="o">=</span> <span class="n">intervals</span><span class="p">[</span><span class="s2">&quot;_end&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">shift</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">overlap_mask</span> <span class="o">=</span> <span class="p">(</span><span class="n">intervals</span><span class="p">[</span><span class="s2">&quot;_start&quot;</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">prev_end</span><span class="p">)</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+    <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">overlap_mask</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">())</span></div>
+
+
+<div class="viewcode-block" id="pad_short_stops">
+<a class="viewcode-back" href="../../../api/generated/nomad.stop_detection.utils.html#nomad.stop_detection.utils.pad_short_stops">[docs]</a>
+<span class="k">def</span> <span class="nf">pad_short_stops</span><span class="p">(</span><span class="n">stop_data</span><span class="p">,</span> <span class="n">pad</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">dur_min</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">traj_cols</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Helper that pads stops shorter or equal than dur_min minutes </span>
+<span class="sd">    extending the duration by pad minutes, but avoiding overlap. </span>
+<span class="sd">    stop_data must be sorted chronologically and not overlap.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">stop_data</span> <span class="o">=</span> <span class="n">stop_data</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">dur_min</span><span class="p">:</span>
+        <span class="n">dur_min</span> <span class="o">=</span> <span class="n">pad</span>
+    <span class="n">pad</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">pad</span><span class="p">,</span> <span class="n">dur_min</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span> <span class="c1"># we never shorten a stop</span>
+    
+    <span class="n">t_key</span><span class="p">,</span> <span class="n">use_datetime</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_fallback_time_cols_dt</span><span class="p">(</span><span class="n">stop_data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+    <span class="n">end_t_key</span> <span class="o">=</span> <span class="s1">&#39;end_datetime&#39;</span> <span class="k">if</span> <span class="n">use_datetime</span> <span class="k">else</span> <span class="s1">&#39;end_timestamp&#39;</span>
+
+    <span class="c1"># Load default col names</span>
+    <span class="n">traj_cols</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_parse_traj_cols</span><span class="p">(</span><span class="n">stop_data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>    
+    <span class="c1"># check is diary table</span>
+    <span class="n">end_col_present</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_has_end_cols</span><span class="p">(</span><span class="n">stop_data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">)</span>
+    <span class="n">duration_col_present</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_has_duration_cols</span><span class="p">(</span><span class="n">stop_data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">end_col_present</span> <span class="ow">or</span> <span class="n">duration_col_present</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Missing required (end or duration) temporal columns for stop_table dataframe.&quot;</span><span class="p">)</span>
+
+    <span class="c1"># to compute time differences</span>
+    <span class="n">ts</span> <span class="o">=</span> <span class="n">to_timestamp</span><span class="p">(</span><span class="n">stop_data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]])</span> <span class="k">if</span> <span class="n">use_datetime</span> <span class="k">else</span> <span class="n">stop_data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]]</span>
+    <span class="n">next_ts</span> <span class="o">=</span> <span class="n">ts</span><span class="o">.</span><span class="n">shift</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">fill_value</span><span class="o">=</span><span class="n">ts</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">+</span><span class="mi">3</span><span class="o">*</span><span class="n">pad</span><span class="o">*</span><span class="mi">60</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">duration_col_present</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">use_datetime</span><span class="p">:</span>
+            <span class="n">stop_data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;duration&#39;</span><span class="p">]]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">((</span><span class="n">stop_data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">end_t_key</span><span class="p">]]</span> <span class="o">-</span> <span class="n">stop_data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]])</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">())</span><span class="o">//</span><span class="mi">60</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">stop_data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;duration&#39;</span><span class="p">]]</span> <span class="o">=</span> <span class="p">(</span><span class="n">stop_data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">end_t_key</span><span class="p">]]</span> <span class="o">-</span> <span class="n">stop_data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]])</span><span class="o">//</span><span class="mi">60</span>
+    
+    <span class="n">new_duration</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">minimum</span><span class="p">((</span><span class="n">next_ts</span> <span class="o">-</span> <span class="n">ts</span><span class="p">)</span><span class="o">//</span><span class="p">(</span><span class="mi">2</span><span class="o">*</span><span class="mi">60</span><span class="p">),</span> <span class="n">pad</span><span class="p">)</span>
+    <span class="n">mask</span> <span class="o">=</span> <span class="p">(</span><span class="n">stop_data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;duration&#39;</span><span class="p">]]</span> <span class="o">&lt;=</span> <span class="n">dur_min</span><span class="p">)</span>
+    <span class="n">stop_data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;duration&#39;</span><span class="p">]]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">new_duration</span><span class="o">*</span><span class="n">mask</span><span class="p">,</span> <span class="n">stop_data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;duration&#39;</span><span class="p">]])</span>
+
+    <span class="c1"># fix end column</span>
+    <span class="k">if</span> <span class="n">end_col_present</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">use_datetime</span><span class="p">:</span>
+            <span class="n">stop_data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">end_t_key</span><span class="p">]]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">stop_data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">end_t_key</span><span class="p">]],</span>
+                                                         <span class="n">stop_data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]]</span> <span class="o">+</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_timedelta</span><span class="p">(</span><span class="n">stop_data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;duration&#39;</span><span class="p">]]</span><span class="o">*</span><span class="mi">60</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;s&#39;</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">stop_data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">end_t_key</span><span class="p">]]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">stop_data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">end_t_key</span><span class="p">]],</span>
+                                                         <span class="n">stop_data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]]</span> <span class="o">+</span> <span class="n">stop_data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;duration&#39;</span><span class="p">]]</span><span class="o">*</span><span class="mi">60</span><span class="p">)</span>   
+    <span class="k">return</span> <span class="n">stop_data</span></div>
+
+
+<div class="viewcode-block" id="explode_stops">
+<a class="viewcode-back" href="../../../api/generated/nomad.stop_detection.utils.html#nomad.stop_detection.utils.explode_stops">[docs]</a>
+<span class="k">def</span> <span class="nf">explode_stops</span><span class="p">(</span><span class="n">stops</span><span class="p">,</span> <span class="n">agg_freq</span><span class="o">=</span><span class="s2">&quot;d&quot;</span><span class="p">,</span> <span class="n">start_col</span><span class="o">=</span><span class="s2">&quot;start_datetime&quot;</span><span class="p">,</span> <span class="n">end_col</span><span class="o">=</span><span class="s2">&quot;end_datetime&quot;</span><span class="p">,</span> <span class="n">use_datetime</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Explode each stop into one row per time bucket (day or week) based on agg_freq.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    stops : pd.DataFrame</span>
+<span class="sd">    agg_freq : str</span>
+<span class="sd">        &quot;d&quot; for daily, &quot;w&quot; for weekly.</span>
+<span class="sd">    start_col, end_col : str</span>
+<span class="sd">        Column names for start and end times.</span>
+<span class="sd">    use_datetime : bool</span>
+<span class="sd">        If False, converts start/end columns from unix seconds to datetime.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.DataFrame</span>
+<span class="sd">        Exploded table with updated start/end/duration per bucket.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">stops</span> <span class="o">=</span> <span class="n">stops</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">stops</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;n_pings&quot;</span><span class="p">,</span> <span class="s2">&quot;diameter&quot;</span><span class="p">,</span> <span class="s2">&quot;max_gap&quot;</span><span class="p">,</span> <span class="s2">&quot;identifier&quot;</span><span class="p">],</span> <span class="n">errors</span><span class="o">=</span><span class="s2">&quot;ignore&quot;</span><span class="p">,</span> <span class="n">inplace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="c1"># Convert to datetime if needed</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">use_datetime</span><span class="p">:</span>
+        <span class="n">stops</span><span class="p">[</span><span class="n">start_col</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">stops</span><span class="p">[</span><span class="n">start_col</span><span class="p">],</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;s&#39;</span><span class="p">)</span>
+        <span class="n">stops</span><span class="p">[</span><span class="n">end_col</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">stops</span><span class="p">[</span><span class="n">end_col</span><span class="p">],</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;s&#39;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">agg_freq</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;d&quot;</span><span class="p">:</span>
+        <span class="c1"># Daily buckets</span>
+        <span class="n">stops</span><span class="p">[</span><span class="s2">&quot;_bucket_start&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">stops</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span>
+            <span class="k">lambda</span> <span class="n">r</span><span class="p">:</span> <span class="p">[</span>
+                <span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">(</span><span class="n">datetime</span><span class="o">.</span><span class="n">combine</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">time</span><span class="p">(</span><span class="mi">0</span><span class="p">)),</span> <span class="n">tz</span><span class="o">=</span><span class="n">r</span><span class="p">[</span><span class="n">start_col</span><span class="p">]</span><span class="o">.</span><span class="n">tzinfo</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">pd</span><span class="o">.</span><span class="n">date_range</span><span class="p">(</span><span class="n">r</span><span class="p">[</span><span class="n">start_col</span><span class="p">]</span><span class="o">.</span><span class="n">date</span><span class="p">(),</span> <span class="n">r</span><span class="p">[</span><span class="n">end_col</span><span class="p">]</span><span class="o">.</span><span class="n">date</span><span class="p">(),</span> <span class="n">freq</span><span class="o">=</span><span class="s2">&quot;D&quot;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">(</span><span class="n">datetime</span><span class="o">.</span><span class="n">combine</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">time</span><span class="p">(</span><span class="mi">0</span><span class="p">)),</span> <span class="n">tz</span><span class="o">=</span><span class="n">r</span><span class="p">[</span><span class="n">start_col</span><span class="p">]</span><span class="o">.</span><span class="n">tzinfo</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">r</span><span class="p">[</span><span class="n">end_col</span><span class="p">]</span>
+            <span class="p">],</span>
+            <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">stops</span> <span class="o">=</span> <span class="n">stops</span><span class="o">.</span><span class="n">explode</span><span class="p">(</span><span class="s2">&quot;_bucket_start&quot;</span><span class="p">,</span> <span class="n">ignore_index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">stops</span><span class="p">[</span><span class="s2">&quot;_bucket_end&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">stops</span><span class="p">[</span><span class="s2">&quot;_bucket_start&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">days</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">agg_freq</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;w&quot;</span><span class="p">:</span>
+        <span class="c1"># Weekly buckets (start on Monday)</span>
+        <span class="n">stops</span><span class="p">[</span><span class="s2">&quot;_bucket_start&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">stops</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span>
+            <span class="k">lambda</span> <span class="n">r</span><span class="p">:</span> <span class="p">[</span>
+                <span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">tz</span><span class="o">=</span><span class="n">r</span><span class="p">[</span><span class="n">start_col</span><span class="p">]</span><span class="o">.</span><span class="n">tzinfo</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">pd</span><span class="o">.</span><span class="n">date_range</span><span class="p">(</span>
+                    <span class="n">r</span><span class="p">[</span><span class="n">start_col</span><span class="p">]</span><span class="o">.</span><span class="n">date</span><span class="p">()</span> <span class="o">-</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">days</span><span class="o">=</span><span class="n">r</span><span class="p">[</span><span class="n">start_col</span><span class="p">]</span><span class="o">.</span><span class="n">weekday</span><span class="p">()),</span>
+                    <span class="n">r</span><span class="p">[</span><span class="n">end_col</span><span class="p">]</span><span class="o">.</span><span class="n">date</span><span class="p">(),</span>
+                    <span class="n">freq</span><span class="o">=</span><span class="s2">&quot;W-MON&quot;</span>
+                <span class="p">)</span>
+                <span class="k">if</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">tz</span><span class="o">=</span><span class="n">r</span><span class="p">[</span><span class="n">start_col</span><span class="p">]</span><span class="o">.</span><span class="n">tzinfo</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">r</span><span class="p">[</span><span class="n">end_col</span><span class="p">]</span>
+            <span class="p">],</span>
+            <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">stops</span> <span class="o">=</span> <span class="n">stops</span><span class="o">.</span><span class="n">explode</span><span class="p">(</span><span class="s2">&quot;_bucket_start&quot;</span><span class="p">,</span> <span class="n">ignore_index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">stops</span><span class="p">[</span><span class="s2">&quot;_bucket_end&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">stops</span><span class="p">[</span><span class="s2">&quot;_bucket_start&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">days</span><span class="o">=</span><span class="mi">7</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;agg_freq must be &#39;d&#39; (day) or &#39;w&#39; (week)&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Clip the stop to the bucket interval</span>
+    <span class="n">stops</span><span class="p">[</span><span class="n">start_col</span><span class="p">]</span> <span class="o">=</span> <span class="n">stops</span><span class="p">[[</span><span class="n">start_col</span><span class="p">,</span> <span class="s2">&quot;_bucket_start&quot;</span><span class="p">]]</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">stops</span><span class="p">[</span><span class="n">end_col</span><span class="p">]</span> <span class="o">=</span> <span class="n">stops</span><span class="p">[[</span><span class="n">end_col</span><span class="p">,</span> <span class="s2">&quot;_bucket_end&quot;</span><span class="p">]]</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">stops</span><span class="p">[</span><span class="s2">&quot;duration&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="p">(</span><span class="n">stops</span><span class="p">[</span><span class="n">end_col</span><span class="p">]</span> <span class="o">-</span> <span class="n">stops</span><span class="p">[</span><span class="n">start_col</span><span class="p">])</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span> <span class="o">//</span> <span class="mi">60</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">stops</span><span class="p">[</span><span class="n">stops</span><span class="p">[</span><span class="s2">&quot;duration&quot;</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;_bucket_start&quot;</span><span class="p">,</span> <span class="s2">&quot;_bucket_end&quot;</span><span class="p">])</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, CSSLab.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -120,7 +120,8 @@
 <span class="kn">import</span> <span class="nn">geopandas</span> <span class="k">as</span> <span class="nn">gpd</span>
 <span class="kn">from</span> <span class="nn">shapely.geometry</span> <span class="kn">import</span> <span class="n">box</span>
 <span class="kn">from</span> <span class="nn">nomad.stop_detection.viz</span> <span class="kn">import</span> <span class="n">plot_stops_barcode</span><span class="p">,</span> <span class="n">plot_time_barcode</span><span class="p">,</span> <span class="n">plot_stops</span><span class="p">,</span> <span class="n">plot_pings</span>
-<span class="kn">import</span> <span class="nn">nomad.stop_detection.hdbscan</span> <span class="k">as</span> <span class="nn">HDBSCAN</span>
+<span class="kn">from</span> <span class="nn">nomad.stop_detection.density_algs</span> <span class="kn">import</span> <span class="n">st_hdbscan</span>
+<span class="kn">import</span> <span class="nn">time</span>
 
 <span class="c1"># Load data</span>
 <span class="kn">import</span> <span class="nn">nomad.data</span> <span class="k">as</span> <span class="nn">data_folder</span>
@@ -129,13 +130,13 @@
 <span class="n">city</span> <span class="o">=</span> <span class="n">gpd</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="n">data_dir</span> <span class="o">/</span> <span class="s1">&#39;garden-city-buildings-mercator.parquet&#39;</span><span class="p">)</span>
 <span class="n">outer_box</span> <span class="o">=</span> <span class="n">box</span><span class="p">(</span><span class="o">*</span><span class="n">city</span><span class="o">.</span><span class="n">total_bounds</span><span class="p">)</span>
 
-<span class="n">filepath_root</span> <span class="o">=</span> <span class="s1">&#39;gc_data_long/&#39;</span>
+<span class="n">filepath_root</span> <span class="o">=</span> <span class="n">data_dir</span> <span class="o">/</span> <span class="s2">&quot;gc_data_long&quot;</span>
 <span class="n">tc</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;user_id&quot;</span><span class="p">:</span> <span class="s2">&quot;gc_identifier&quot;</span><span class="p">,</span> <span class="s2">&quot;x&quot;</span><span class="p">:</span> <span class="s2">&quot;dev_x&quot;</span><span class="p">,</span> <span class="s2">&quot;y&quot;</span><span class="p">:</span> <span class="s2">&quot;dev_y&quot;</span><span class="p">,</span> <span class="s2">&quot;timestamp&quot;</span><span class="p">:</span> <span class="s2">&quot;unix_ts&quot;</span><span class="p">}</span>
 
 <span class="n">users</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;admiring_brattain&#39;</span><span class="p">]</span>
 <span class="n">traj</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">sample_from_file</span><span class="p">(</span><span class="n">filepath_root</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s1">&#39;parquet&#39;</span><span class="p">,</span> <span class="n">users</span><span class="o">=</span><span class="n">users</span><span class="p">,</span> <span class="n">filters</span><span class="o">=</span><span class="p">(</span><span class="s1">&#39;date&#39;</span><span class="p">,</span><span class="s1">&#39;==&#39;</span><span class="p">,</span> <span class="s1">&#39;2024-01-01&#39;</span><span class="p">),</span> <span class="n">traj_cols</span><span class="o">=</span><span class="n">tc</span><span class="p">)</span>
 
-<span class="n">stops_hdb</span> <span class="o">=</span> <span class="n">HDBSCAN</span><span class="o">.</span><span class="n">st_hdbscan</span><span class="p">(</span><span class="n">traj</span><span class="p">,</span>
+<span class="n">stops_hdb</span> <span class="o">=</span> <span class="n">st_hdbscan</span><span class="p">(</span><span class="n">traj</span><span class="p">,</span>
                     <span class="n">time_thresh</span><span class="o">=</span><span class="mi">720</span><span class="p">,</span>
                     <span class="n">min_pts</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
                     <span class="n">complete_output</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>

@@ -1,0 +1,336 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>visit_attribution &mdash; NOMAD 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="viz" href="nomad.visit_attribution.viz.html" />
+    <link rel="prev" title="home_attribution" href="nomad.visit_attribution.home_attribution.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html">
+            
+              <img src="../../_static/nomad-logo-black.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../data_ingestion.html">Data Ingestion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../filtering.html">Filtering &amp; Completeness</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tessellation.html">Tessellation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../stop_detection.html">Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../visit_attribution.html">Visit Attribution</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../metrics.html">Mobility Metrics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../colocation.html">Co-location &amp; Contact Networks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../aggregation.html">Aggregation &amp; Debiasing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../synthetic_data_generation.html">Synthetic Data Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../source/ingesting-data.html">Loading Trajectory Data</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/benchmarking_of_stop_detection_algorithms.html">Comparing runtimes of different stop detection algorithms on toy datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/lachesis_demo.html">Lachesis Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/tadbscan_demo.html">TADBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/hdbscan_demo.html">HDBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/grid_based_demo.html">Grid-Based Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/generate_synthetic_pois.html">Synthetic POI Generation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/download_poi_data_from_OSM.html">Downloading places of interest (POI) Data from OSM</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/generate_synthetic_trajectories.html">Synthetic Trajectory Generation with Nomad</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/random_city.html">Random City Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="../../api_reference.html">API Reference</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../nomad.agg.html">agg</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.aggregation.html">aggregation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.city_gen.html">city_gen</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.constants.html">constants</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.contact_estimation.html">contact_estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.displacement.html">displacement</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.filters.html">filters</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.filters_spark.html">filters_spark</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.generation.html">generation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.home_attribution.html">home_attribution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.io.html">io</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.map_utils.html">map_utils</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.metrics.html">metrics</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.stop_detection.html">stop_detection</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.traj_gen.html">traj_gen</a></li>
+<li class="toctree-l2 current"><a class="reference internal" href="../nomad.visit_attribution.html">visit_attribution</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="nomad.visit_attribution.home_attribution.html">home_attribution</a></li>
+<li class="toctree-l3 current"><a class="current reference internal" href="#">visit_attribution</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.visit_attribution.visit_attribution.clip_stays_date"><code class="docutils literal notranslate"><span class="pre">clip_stays_date()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.visit_attribution.visit_attribution.count_nights"><code class="docutils literal notranslate"><span class="pre">count_nights()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.visit_attribution.visit_attribution.dawn_time"><code class="docutils literal notranslate"><span class="pre">dawn_time()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.visit_attribution.visit_attribution.detect_locations"><code class="docutils literal notranslate"><span class="pre">detect_locations()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.visit_attribution.visit_attribution.duration_at_night_fast"><code class="docutils literal notranslate"><span class="pre">duration_at_night_fast()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.visit_attribution.visit_attribution.dusk_time"><code class="docutils literal notranslate"><span class="pre">dusk_time()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.visit_attribution.visit_attribution.night_stops"><code class="docutils literal notranslate"><span class="pre">night_stops()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.visit_attribution.visit_attribution.oracle_map"><code class="docutils literal notranslate"><span class="pre">oracle_map()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.visit_attribution.visit_attribution.poi_map"><code class="docutils literal notranslate"><span class="pre">poi_map()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.visit_attribution.visit_attribution.point_in_polygon"><code class="docutils literal notranslate"><span class="pre">point_in_polygon()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.visit_attribution.visit_attribution.slice_datetimes_interval_fast"><code class="docutils literal notranslate"><span class="pre">slice_datetimes_interval_fast()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="nomad.visit_attribution.viz.html">viz</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">NOMAD</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../api_reference.html">API Reference</a></li>
+          <li class="breadcrumb-item"><a href="../nomad.visit_attribution.html">visit_attribution</a></li>
+      <li class="breadcrumb-item active">visit_attribution</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/api/generated/nomad.visit_attribution.visit_attribution.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-nomad.visit_attribution.visit_attribution">
+<span id="visit-attribution"></span><h1>visit_attribution<a class="headerlink" href="#module-nomad.visit_attribution.visit_attribution" title="Link to this heading"></a></h1>
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.visit_attribution.visit_attribution.clip_stays_date">
+<span class="sig-prename descclassname"><span class="pre">nomad.visit_attribution.visit_attribution.</span></span><span class="sig-name descname"><span class="pre">clip_stays_date</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">traj</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dates</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dawn_hour</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">6</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dusk_hour</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">19</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/visit_attribution/visit_attribution.html#clip_stays_date"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.visit_attribution.visit_attribution.clip_stays_date" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.visit_attribution.visit_attribution.count_nights">
+<span class="sig-prename descclassname"><span class="pre">nomad.visit_attribution.visit_attribution.</span></span><span class="sig-name descname"><span class="pre">count_nights</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">usr_polygon</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dawn_hour</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">6</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dusk_hour</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">19</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_dwell</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/visit_attribution/visit_attribution.html#count_nights"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.visit_attribution.visit_attribution.count_nights" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.visit_attribution.visit_attribution.dawn_time">
+<span class="sig-prename descclassname"><span class="pre">nomad.visit_attribution.visit_attribution.</span></span><span class="sig-name descname"><span class="pre">dawn_time</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">day_part</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dawn_hour</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">6</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/visit_attribution/visit_attribution.html#dawn_time"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.visit_attribution.visit_attribution.dawn_time" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.visit_attribution.visit_attribution.detect_locations">
+<span class="sig-prename descclassname"><span class="pre">nomad.visit_attribution.visit_attribution.</span></span><span class="sig-name descname"><span class="pre">detect_locations</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">epsilon</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_pts</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">return_locations</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'dbscan'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">algorithm</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">algorithm_kwargs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/visit_attribution/visit_attribution.html#detect_locations"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.visit_attribution.visit_attribution.detect_locations" title="Link to this definition"></a></dt>
+<dd><p>Assign recurring-location IDs to coordinate points.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>pd.DataFrame</em>) – Coordinate points or stop rows with x/y or longitude/latitude columns.</p></li>
+<li><p><strong>epsilon</strong> (<em>float</em><em>, </em><em>default 100</em>) – Maximum distance between rows in the same location. Units match projected
+coordinates or are meters for longitude/latitude coordinates.</p></li>
+<li><p><strong>min_pts</strong> (<em>int</em><em>, </em><em>default 1</em>) – Minimum number of stops required to form a location</p></li>
+<li><p><strong>return_locations</strong> (<em>bool</em><em>, </em><em>default False</em>) – If True, also return a GeoDataFrame summarizing each location. Location
+summaries currently require projected x/y coordinates.</p></li>
+<li><p><strong>method</strong> (<em>{'dbscan'</em><em>, </em><em>'custom'</em><em>, </em><em>'infomap'}</em><em>, </em><em>default 'dbscan'</em>) – Location-detection method. Infomap is reserved for future multi-user
+stop-table support and currently raises <code class="docutils literal notranslate"><span class="pre">NotImplementedError</span></code>.</p></li>
+<li><p><strong>algorithm</strong> (<em>callable</em><em>, </em><em>optional</em>) – Location-detection callable required when <code class="docutils literal notranslate"><span class="pre">method='custom'</span></code>. It must
+return one label per input row.</p></li>
+<li><p><strong>algorithm_kwargs</strong> (<em>dict</em><em>, </em><em>optional</em>) – Arguments for a custom location-detection callable.</p></li>
+<li><p><strong>traj_cols</strong> (<em>dict</em><em>, </em><em>optional</em>) – Column name mappings for coordinates and location_id.</p></li>
+<li><p><strong>**kwargs</strong> – Additional arguments passed to column detection</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Location IDs aligned with <code class="docutils literal notranslate"><span class="pre">data.index</span></code> and, when requested, location
+centers, extents, and row counts.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.Series or tuple of (pd.Series, gpd.GeoDataFrame)</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>Each noise row is retained as its own nonnegative location.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.visit_attribution.visit_attribution.duration_at_night_fast">
+<span class="sig-prename descclassname"><span class="pre">nomad.visit_attribution.visit_attribution.</span></span><span class="sig-name descname"><span class="pre">duration_at_night_fast</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">start</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dawn_hour</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">6</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dusk_hour</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">19</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/visit_attribution/visit_attribution.html#duration_at_night_fast"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.visit_attribution.visit_attribution.duration_at_night_fast" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.visit_attribution.visit_attribution.dusk_time">
+<span class="sig-prename descclassname"><span class="pre">nomad.visit_attribution.visit_attribution.</span></span><span class="sig-name descname"><span class="pre">dusk_time</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">day_part</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dusk_hour</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">19</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/visit_attribution/visit_attribution.html#dusk_time"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.visit_attribution.visit_attribution.dusk_time" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.visit_attribution.visit_attribution.night_stops">
+<span class="sig-prename descclassname"><span class="pre">nomad.visit_attribution.visit_attribution.</span></span><span class="sig-name descname"><span class="pre">night_stops</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">stop_table</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">user</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'user'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dawn_hour</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">6</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dusk_hour</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">19</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_dwell</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/visit_attribution/visit_attribution.html#night_stops"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.visit_attribution.visit_attribution.night_stops" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.visit_attribution.visit_attribution.oracle_map">
+<span class="sig-prename descclassname"><span class="pre">nomad.visit_attribution.visit_attribution.</span></span><span class="sig-name descname"><span class="pre">oracle_map</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">true_visits</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/visit_attribution/visit_attribution.html#oracle_map"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.visit_attribution.visit_attribution.oracle_map" title="Link to this definition"></a></dt>
+<dd><p>Map elements in traj to ground truth location based solely on time.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>pd.DataFrame</em>) – The trajectory DataFrame containing x and y coordinates.</p></li>
+<li><p><strong>true_visits</strong> (<em>pd.DataFrame</em>) – A visitation table containing location IDs, start times, and durations/end times.</p></li>
+<li><p><strong>traj_cols</strong> (<em>list</em>) – The columns in the trajectory DataFrame to be used for mapping.</p></li>
+<li><p><strong>**kwargs</strong> (<em>dict</em>) – Additional keyword arguments.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A Series containing the location IDs corresponding to the pings in the trajectory.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.Series</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.visit_attribution.visit_attribution.poi_map">
+<span class="sig-prename descclassname"><span class="pre">nomad.visit_attribution.visit_attribution.</span></span><span class="sig-name descname"><span class="pre">poi_map</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">poi_table</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_distance</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_crs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">location_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/visit_attribution/visit_attribution.html#poi_map"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.visit_attribution.visit_attribution.poi_map" title="Link to this definition"></a></dt>
+<dd><p>Assign each point or H3 containment area in <cite>data</cite> to a polygon in <cite>poi_table</cite>.</p>
+<p>Points use geometric containment when <cite>max_distance==0</cite> or the nearest neighbor
+within <cite>max_distance</cite> otherwise. H3 cells use intersecting POI cells or the POI
+cell with the smallest H3 grid distance.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>pd.DataFrame</em><em> or </em><em>gpd.GeoDataFrame</em>) – Input points, either as a DataFrame with coordinate columns or a GeoDataFrame,
+or a table containing H3 cells.</p></li>
+<li><p><strong>poi_table</strong> (<em>gpd.GeoDataFrame</em>) – Polygons to match against, indexed or with <cite>location_id</cite> column.</p></li>
+<li><p><strong>traj_cols</strong> (<em>list</em><em> of </em><em>str</em><em>, </em><em>optional</em>) – Names of the coordinate columns in <cite>data</cite> when it is a DataFrame.</p></li>
+<li><p><strong>max_distance</strong> (<em>float</em><em>, </em><em>default 0</em>) – Maximum search radius for nearest-neighbor matching. For H3 input, this is
+the maximum grid distance in cells.</p></li>
+<li><p><strong>data_crs</strong> (<em>str</em><em> or </em><em>pyproj.CRS</em><em>, </em><em>optional</em>) – CRS for <cite>data</cite> if it is a DataFrame; ignored for GeoDataFrames.</p></li>
+<li><p><strong>location_id</strong> (<em>str</em><em>, </em><em>optional</em>) – Name of the geometry ID column in <cite>poi_table</cite>; uses the GeoDataFrame index if not provided.</p></li>
+<li><p><strong>**kwargs</strong> – Passed to trajectory‐column parsing helper.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Indexed like <cite>data</cite>, with each entry set to the matching polygon’s ID (from
+<cite>location_id</cite> or <cite>poi_table.index</cite>). Points or cells not contained or beyond
+<cite>max_distance</cite> yield NaN. Ties retain the first POI in <cite>poi_table</cite>.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.Series</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.visit_attribution.visit_attribution.point_in_polygon">
+<span class="sig-prename descclassname"><span class="pre">nomad.visit_attribution.visit_attribution.</span></span><span class="sig-name descname"><span class="pre">point_in_polygon</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">poi_table</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'centroid'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">data_crs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_distance</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cluster_label</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">location_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">recompute_location</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/visit_attribution/visit_attribution.html#point_in_polygon"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.visit_attribution.visit_attribution.point_in_polygon" title="Link to this definition"></a></dt>
+<dd><p>Assign each stop or cluster of pings in <cite>data</cite> to a polygon in <cite>poi_table</cite>,
+either by the cluster’s centroid location or by the most frequent polygon hit.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>pd.DataFrame</em><em> or </em><em>gpd.GeoDataFrame</em>) – A table of pings (with optional stop/duration columns) or stops,
+indexed by observation or cluster.</p></li>
+<li><p><strong>poi_table</strong> (<em>gpd.GeoDataFrame</em>) – Polygons to match against, with CRS set and optional ID column.</p></li>
+<li><p><strong>method</strong> (<em>{'centroid'</em><em>, </em><em>'majority'}</em><em>, </em><em>default 'centroid'</em>) – ‘centroid’ uses each cluster’s mean point; ‘majority’ picks the polygon
+most often visited within each cluster (only for ping data).</p></li>
+<li><p><strong>data_crs</strong> (<em>str</em><em> or </em><em>pyproj.CRS</em><em>, </em><em>optional</em>) – CRS for <cite>data</cite> when it is a plain DataFrame; ignored if <cite>data</cite> is a GeoDataFrame.</p></li>
+<li><p><strong>max_distance</strong> (<em>float</em><em>, </em><em>default 0</em>) – Search radius for nearest‐neighbor fall-back; zero triggers strict
+point-in-polygon matching.</p></li>
+<li><p><strong>cluster_label</strong> (<em>str</em><em>, </em><em>optional</em>) – Column name holding cluster IDs in ping data; inferred from <cite>data</cite> if absent.</p></li>
+<li><p><strong>location_id</strong> (<em>str</em><em>, </em><em>optional</em>) – Column in <cite>poi_table</cite> containing the output ID; uses the GeoDataFrame index if None.</p></li>
+<li><p><strong>recompute_location</strong> (<em>bool</em><em>, </em><em>default True</em>) – For labeled ping data, ignored for stop data. If False and a location column
+(as determined by <cite>location_id</cite>) already exists in <cite>data</cite>, it will
+be reused instead of overwritten.</p></li>
+<li><p><strong>traj_cols</strong> (<em>list</em><em> of </em><em>str</em><em>, </em><em>optional</em>) – Names of the coordinate columns in <cite>data</cite> when it is a DataFrame.</p></li>
+<li><p><strong>**kwargs</strong> – Passed through to <cite>poi_map</cite> or the trajectory-column parser.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Indexed like <cite>data</cite>, giving the matched polygon ID for each stop or ping.
+Points or clusters that fall outside every polygon or beyond <cite>max_distance</cite>
+are set to NaN.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.Series</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.visit_attribution.visit_attribution.slice_datetimes_interval_fast">
+<span class="sig-prename descclassname"><span class="pre">nomad.visit_attribution.visit_attribution.</span></span><span class="sig-name descname"><span class="pre">slice_datetimes_interval_fast</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">start</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/visit_attribution/visit_attribution.html#slice_datetimes_interval_fast"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.visit_attribution.visit_attribution.slice_datetimes_interval_fast" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="nomad.visit_attribution.home_attribution.html" class="btn btn-neutral float-left" title="home_attribution" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="nomad.visit_attribution.viz.html" class="btn btn-neutral float-right" title="viz" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, CSSLab.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,264 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>metrics &mdash; NOMAD 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="spark" href="nomad.metrics.spark.html" />
+    <link rel="prev" title="metrics" href="../nomad.metrics.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html">
+            
+              <img src="../../_static/nomad-logo-black.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../data_ingestion.html">Data Ingestion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../filtering.html">Filtering &amp; Completeness</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../tessellation.html">Tessellation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../stop_detection.html">Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../visit_attribution.html">Visit Attribution</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../metrics.html">Mobility Metrics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../colocation.html">Co-location &amp; Contact Networks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../aggregation.html">Aggregation &amp; Debiasing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../synthetic_data_generation.html">Synthetic Data Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../source/ingesting-data.html">Loading Trajectory Data</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/benchmarking_of_stop_detection_algorithms.html">Comparing runtimes of different stop detection algorithms on toy datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/lachesis_demo.html">Lachesis Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/tadbscan_demo.html">TADBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/hdbscan_demo.html">HDBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/grid_based_demo.html">Grid-Based Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/generate_synthetic_pois.html">Synthetic POI Generation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/download_poi_data_from_OSM.html">Downloading places of interest (POI) Data from OSM</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/generate_synthetic_trajectories.html">Synthetic Trajectory Generation with Nomad</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../source/random_city.html">Random City Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="../../api_reference.html">API Reference</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../nomad.agg.html">agg</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.aggregation.html">aggregation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.city_gen.html">city_gen</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.constants.html">constants</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.contact_estimation.html">contact_estimation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.displacement.html">displacement</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.filters.html">filters</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.filters_spark.html">filters_spark</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.generation.html">generation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.home_attribution.html">home_attribution</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.io.html">io</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.map_utils.html">map_utils</a></li>
+<li class="toctree-l2 current"><a class="reference internal" href="../nomad.metrics.html">metrics</a><ul class="current">
+<li class="toctree-l3 current"><a class="current reference internal" href="#">metrics</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.metrics.metrics.rog"><code class="docutils literal notranslate"><span class="pre">rog()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.metrics.metrics.self_containment"><code class="docutils literal notranslate"><span class="pre">self_containment()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#nomad.metrics.metrics.social_interaction_potential"><code class="docutils literal notranslate"><span class="pre">social_interaction_potential()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="nomad.metrics.spark.html">spark</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.stop_detection.html">stop_detection</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.traj_gen.html">traj_gen</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nomad.visit_attribution.html">visit_attribution</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">NOMAD</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../api_reference.html">API Reference</a></li>
+          <li class="breadcrumb-item"><a href="../nomad.metrics.html">metrics</a></li>
+      <li class="breadcrumb-item active">metrics</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/api/generated/nomad.metrics.metrics.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-nomad.metrics.metrics">
+<span id="metrics"></span><h1>metrics<a class="headerlink" href="#module-nomad.metrics.metrics" title="Link to this heading"></a></h1>
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.metrics.metrics.rog">
+<span class="sig-prename descclassname"><span class="pre">nomad.metrics.metrics.</span></span><span class="sig-name descname"><span class="pre">rog</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">stops</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">agg_freq</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'d'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">weighted</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_weights</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exploded</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/metrics/metrics.html#rog"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.metrics.metrics.rog" title="Link to this definition"></a></dt>
+<dd><dl class="simple">
+<dt>if weighted AND time_weights, then</dt><dd><ol class="arabic simple">
+<li><p>weights = duration * time_weights</p></li>
+</ol>
+</dd>
+<dt>if (weighted) AND (time_weights is None and not found in colunmns), then</dt><dd><ol class="arabic simple" start="2">
+<li><p>weights = duration</p></li>
+</ol>
+</dd>
+<dt>if (weighted) AND (time_weights is None and found in columns), then</dt><dd><ol class="arabic simple" start="3">
+<li><p>weights = duration * time_weights</p></li>
+</ol>
+</dd>
+<dt>if NOT weighted, then</dt><dd><ol class="arabic simple" start="4">
+<li><p>weights = 1</p></li>
+</ol>
+</dd>
+</dl>
+<p>Compute radius of gyration per bucket (and per user, if present).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>stops</strong> (<em>pd.DataFrame</em>)</p></li>
+<li><p><strong>agg_freq</strong> (<em>str</em>) – Pandas offset alias for time‐bucketing (e.g. ‘d’,’w’,’m’).</p></li>
+<li><p><strong>weighted</strong> (<em>bool</em>) – If True, weight by duration; else unweighted.</p></li>
+<li><p><strong>traj_cols</strong> (<em>dict</em><em>, </em><em>optional</em>) – Mapping for x/y (or lon/lat), timestamp/datetime, duration, user_id.</p></li>
+<li><p><strong>time_weights</strong> (<em>pd.Series</em><em>, </em><em>optional</em>) – If None or 1 and weighted is True, weights = duration. Otherwise, stops have weights = time_weights * duration.</p></li>
+<li><p><strong>weight_freq</strong> (<em>str</em><em>, </em><em>optional</em>) – ‘D’ for daily, ‘H’ for hourly weights. Default is ‘D’.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Columns = [bucket, user_id? , rog].</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.DataFrame</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.metrics.metrics.self_containment">
+<span class="sig-prename descclassname"><span class="pre">nomad.metrics.metrics.</span></span><span class="sig-name descname"><span class="pre">self_containment</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">stops</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">threshold</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">agg_freq</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'d'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">weighted</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">home_activity_type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'home'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">traj_cols</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_weights</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">exploded</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/metrics/metrics.html#self_containment"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.metrics.metrics.self_containment" title="Link to this definition"></a></dt>
+<dd><p>Compute self-containment (proportion of non-home time spent within threshold distance from home).</p>
+<p>Self-containment describes the propensity of individuals to stay close to home. It is calculated
+as the time-weighted proportion of non-home activities that are within a threshold distance from home.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>stops</strong> (<em>pd.DataFrame</em>) – Stop data with spatial coordinates, duration, and location_id.</p></li>
+<li><p><strong>threshold</strong> (<em>float</em>) – Distance threshold in the same units as coordinates (meters for projected, degrees for lat/lon).
+Activities within this distance from home are considered “contained”.</p></li>
+<li><p><strong>agg_freq</strong> (<em>str</em>) – Pandas offset alias for time-bucketing (e.g. ‘d’,’w’,’m’).</p></li>
+<li><p><strong>weighted</strong> (<em>bool</em>) – If True, weight by duration; else unweighted (count activities).</p></li>
+<li><p><strong>home_activity_type</strong> (<em>str</em>) – Value in location_id column that identifies home locations. Default is ‘home’.
+Can be ‘home_id’ or any other location_id value.</p></li>
+<li><p><strong>traj_cols</strong> (<em>dict</em><em>, </em><em>optional</em>) – Mapping for x/y (or lon/lat), timestamp/datetime, duration, user_id, location_id.</p></li>
+<li><p><strong>time_weights</strong> (<em>pd.Series</em><em>, </em><em>optional</em>) – Additional time weights to multiply with duration (if weighted=True).</p></li>
+<li><p><strong>exploded</strong> (<em>bool</em>) – If True, explode stops that straddle multiple time periods. Default is True.</p></li>
+<li><p><strong>**kwargs</strong> – Additional arguments passed to explode_stops or column overrides.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Columns = [period, user_id?, self_containment].
+self_containment is the proportion [0, 1] of non-home time spent within threshold from home.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pd.DataFrame</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="nomad.metrics.metrics.social_interaction_potential">
+<span class="sig-prename descclassname"><span class="pre">nomad.metrics.metrics.</span></span><span class="sig-name descname"><span class="pre">social_interaction_potential</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">contacts</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">weight</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'duration'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../_modules/nomad/metrics/metrics.html#social_interaction_potential"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#nomad.metrics.metrics.social_interaction_potential" title="Link to this definition"></a></dt>
+<dd><p>Aggregate undirected contact events into user-level SIP.</p>
+<p>Each contact contributes its weight to both users.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>contacts</strong> (<em>pandas.DataFrame</em>) – Contact event table with one row per undirected contact and canonical
+user_id_1 and user_id_2 columns.</p></li>
+<li><p><strong>weight</strong> (<em>str</em><em>, </em><em>default &quot;duration&quot;</em>) – Name of the column containing the weight contributed by each contact.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>User-level SIP table with columns <code class="docutils literal notranslate"><span class="pre">user_id</span></code> and <code class="docutils literal notranslate"><span class="pre">sip</span></code>.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>pandas.DataFrame</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="../nomad.metrics.html" class="btn btn-neutral float-left" title="metrics" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="nomad.metrics.spark.html" class="btn btn-neutral float-right" title="spark" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, CSSLab.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

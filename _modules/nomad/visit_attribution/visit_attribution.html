@@ -1,0 +1,900 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nomad.visit_attribution.visit_attribution &mdash; NOMAD 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-design.min.css?v=95c83b7e" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../../../_static/design-tabs.js?v=f930bc37"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html">
+            
+              <img src="../../../_static/nomad-logo-black.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../data_ingestion.html">Data Ingestion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../filtering.html">Filtering &amp; Completeness</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../tessellation.html">Tessellation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../stop_detection.html">Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../visit_attribution.html">Visit Attribution</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../metrics.html">Mobility Metrics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../colocation.html">Co-location &amp; Contact Networks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../aggregation.html">Aggregation &amp; Debiasing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../synthetic_data_generation.html">Synthetic Data Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/ingesting-data.html">Loading Trajectory Data</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/benchmarking_of_stop_detection_algorithms.html">Comparing runtimes of different stop detection algorithms on toy datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/lachesis_demo.html">Lachesis Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/tadbscan_demo.html">TADBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/hdbscan_demo.html">HDBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/grid_based_demo.html">Grid-Based Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/generate_synthetic_pois.html">Synthetic POI Generation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/download_poi_data_from_OSM.html">Downloading places of interest (POI) Data from OSM</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/generate_synthetic_trajectories.html">Synthetic Trajectory Generation with Nomad</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/random_city.html">Random City Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_reference.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">NOMAD</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">nomad.visit_attribution.visit_attribution</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nomad.visit_attribution.visit_attribution</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">geopandas</span> <span class="k">as</span> <span class="nn">gpd</span>
+<span class="kn">import</span> <span class="nn">h3ronpy</span>
+<span class="kn">import</span> <span class="nn">h3ronpy.vector</span> <span class="k">as</span> <span class="nn">h3vector</span>
+<span class="kn">import</span> <span class="nn">warnings</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">import</span> <span class="nn">pyproj</span>
+<span class="kn">import</span> <span class="nn">pyarrow</span> <span class="k">as</span> <span class="nn">pa</span>
+<span class="kn">import</span> <span class="nn">pyarrow.compute</span> <span class="k">as</span> <span class="nn">pc</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">sklearn.cluster</span> <span class="kn">import</span> <span class="n">DBSCAN</span>
+<span class="kn">import</span> <span class="nn">nomad.io.base</span> <span class="k">as</span> <span class="nn">loader</span>
+<span class="kn">from</span> <span class="nn">nomad.constants</span> <span class="kn">import</span> <span class="n">EARTH_RADIUS_METERS</span>
+
+<span class="c1"># TO DO: change to stops_to_poi</span>
+<div class="viewcode-block" id="point_in_polygon">
+<a class="viewcode-back" href="../../../api/generated/nomad.visit_attribution.visit_attribution.html#nomad.visit_attribution.visit_attribution.point_in_polygon">[docs]</a>
+<span class="k">def</span> <span class="nf">point_in_polygon</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">poi_table</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s1">&#39;centroid&#39;</span><span class="p">,</span> <span class="n">data_crs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_distance</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                     <span class="n">cluster_label</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">location_id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">recompute_location</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Assign each stop or cluster of pings in `data` to a polygon in `poi_table`, </span>
+<span class="sd">    either by the cluster’s centroid location or by the most frequent polygon hit.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    data : pd.DataFrame or gpd.GeoDataFrame</span>
+<span class="sd">        A table of pings (with optional stop/duration columns) or stops, </span>
+<span class="sd">        indexed by observation or cluster.</span>
+<span class="sd">    poi_table : gpd.GeoDataFrame</span>
+<span class="sd">        Polygons to match against, with CRS set and optional ID column.</span>
+<span class="sd">    method : {&#39;centroid&#39;, &#39;majority&#39;}, default &#39;centroid&#39;</span>
+<span class="sd">        ‘centroid’ uses each cluster’s mean point; ‘majority’ picks the polygon </span>
+<span class="sd">        most often visited within each cluster (only for ping data).</span>
+<span class="sd">    data_crs : str or pyproj.CRS, optional</span>
+<span class="sd">        CRS for `data` when it is a plain DataFrame; ignored if `data` is a GeoDataFrame.</span>
+<span class="sd">    max_distance : float, default 0</span>
+<span class="sd">        Search radius for nearest‐neighbor fall-back; zero triggers strict </span>
+<span class="sd">        point-in-polygon matching.</span>
+<span class="sd">    cluster_label : str, optional</span>
+<span class="sd">        Column name holding cluster IDs in ping data; inferred from `data` if absent.</span>
+<span class="sd">    location_id : str, optional</span>
+<span class="sd">        Column in `poi_table` containing the output ID; uses the GeoDataFrame index if None.</span>
+<span class="sd">    recompute_location : bool, default True</span>
+<span class="sd">        For labeled ping data, ignored for stop data. If False and a location column</span>
+<span class="sd">        (as determined by `location_id`) already exists in `data`, it will</span>
+<span class="sd">        be reused instead of overwritten.</span>
+<span class="sd">    traj_cols : list of str, optional</span>
+<span class="sd">        Names of the coordinate columns in `data` when it is a DataFrame.</span>
+<span class="sd">    **kwargs</span>
+<span class="sd">        Passed through to `poi_map` or the trajectory-column parser.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.Series</span>
+<span class="sd">        Indexed like `data`, giving the matched polygon ID for each stop or ping.</span>
+<span class="sd">        Points or clusters that fall outside every polygon or beyond `max_distance`</span>
+<span class="sd">        are set to NaN.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># check if it is stop table</span>
+    <span class="n">coord_key1</span><span class="p">,</span> <span class="n">coord_key2</span><span class="p">,</span> <span class="n">use_lon_lat</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_fallback_spatial_cols</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>   
+    <span class="n">traj_cols_outer</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_parse_traj_cols</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+    
+    <span class="n">end_col_present</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_has_end_cols</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols_outer</span><span class="p">)</span>
+    <span class="n">duration_col_present</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_has_duration_cols</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols_outer</span><span class="p">)</span>
+    <span class="n">is_stop_table</span> <span class="o">=</span> <span class="p">(</span><span class="n">end_col_present</span> <span class="ow">or</span> <span class="n">duration_col_present</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">is_stop_table</span><span class="p">:</span>
+        <span class="c1"># is stop table</span>
+        <span class="k">if</span> <span class="n">method</span><span class="o">==</span><span class="s1">&#39;majority&#39;</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;Method `majority&#39; requires ping data with cluster labels,</span><span class="se">\</span>
+<span class="s2">                            but a stop table was provided&quot;</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">method</span><span class="o">==</span><span class="s1">&#39;centroid&#39;</span><span class="p">:</span>
+            <span class="n">stop_table</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+            <span class="n">location</span> <span class="o">=</span> <span class="n">poi_map</span><span class="p">(</span>
+                <span class="n">data</span><span class="o">=</span><span class="n">stop_table</span><span class="p">,</span>
+                <span class="n">poi_table</span><span class="o">=</span><span class="n">poi_table</span><span class="p">,</span>
+                <span class="n">max_distance</span><span class="o">=</span><span class="n">max_distance</span><span class="p">,</span>
+                <span class="n">data_crs</span><span class="o">=</span><span class="n">data_crs</span><span class="p">,</span>
+                <span class="n">location_id</span><span class="o">=</span><span class="n">location_id</span><span class="p">,</span>
+                <span class="n">traj_cols</span><span class="o">=</span><span class="n">traj_cols</span><span class="p">,</span>
+                <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+            <span class="k">return</span> <span class="n">location</span>
+            
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Method </span><span class="si">{</span><span class="n">method</span><span class="si">}</span><span class="s2"> not among implemented methods: `centroid&#39; and `majority&#39;&quot;</span><span class="p">)</span>
+
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># is labeled pings</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">cluster_label</span><span class="p">:</span> <span class="c1">#try defaults and raise</span>
+            <span class="k">if</span> <span class="s1">&#39;cluster_label&#39;</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+                <span class="n">cluster_label</span> <span class="o">=</span> <span class="s1">&#39;cluster_label&#39;</span>
+            <span class="k">elif</span> <span class="s1">&#39;cluster&#39;</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+                <span class="n">cluster_label</span> <span class="o">=</span> <span class="s1">&#39;cluster&#39;</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Argument `cluster_label` is required for visit attribution of labeled pings.&quot;</span><span class="p">)</span>
+
+        <span class="n">loc_col</span> <span class="o">=</span> <span class="n">location_id</span> <span class="k">if</span> <span class="n">location_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">&quot;location_id&quot;</span>
+        <span class="n">clustered_pings</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">data</span><span class="p">[</span><span class="n">cluster_label</span><span class="p">]</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">method</span><span class="o">==</span><span class="s1">&#39;majority&#39;</span><span class="p">:</span> 
+            <span class="k">if</span> <span class="n">recompute_location</span> <span class="ow">or</span> <span class="p">(</span><span class="n">loc_col</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">):</span>
+                <span class="n">location</span> <span class="o">=</span> <span class="n">poi_map</span><span class="p">(</span>
+                    <span class="n">data</span><span class="o">=</span><span class="n">clustered_pings</span><span class="p">,</span>
+                    <span class="n">poi_table</span><span class="o">=</span><span class="n">poi_table</span><span class="p">,</span>
+                    <span class="n">max_distance</span><span class="o">=</span><span class="n">max_distance</span><span class="p">,</span>
+                    <span class="n">data_crs</span><span class="o">=</span><span class="n">data_crs</span><span class="p">,</span>
+                    <span class="n">location_id</span><span class="o">=</span><span class="n">location_id</span><span class="p">,</span>
+                    <span class="n">traj_cols</span><span class="o">=</span><span class="n">traj_cols</span><span class="p">,</span>
+                    <span class="o">**</span><span class="n">kwargs</span>
+                <span class="p">)</span>
+                <span class="n">loc_col</span> <span class="o">=</span> <span class="n">location</span><span class="o">.</span><span class="n">name</span>
+                <span class="n">clustered_pings</span> <span class="o">=</span> <span class="n">clustered_pings</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">location</span><span class="p">)</span>
+            
+            <span class="n">major</span> <span class="o">=</span> <span class="n">clustered_pings</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="n">cluster_label</span><span class="p">)[</span><span class="n">loc_col</span><span class="p">]</span><span class="o">.</span><span class="n">agg</span><span class="p">(</span>
+                <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">mode</span><span class="p">()</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">x</span><span class="o">.</span><span class="n">mode</span><span class="p">()</span><span class="o">.</span><span class="n">empty</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span> 
+            
+            <span class="k">return</span> <span class="n">data</span><span class="p">[[</span><span class="n">cluster_label</span><span class="p">]]</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">major</span><span class="p">,</span> <span class="n">on</span><span class="o">=</span><span class="n">cluster_label</span><span class="p">)[</span><span class="n">loc_col</span><span class="p">]</span>
+            
+        <span class="k">elif</span> <span class="n">method</span><span class="o">==</span><span class="s1">&#39;centroid&#39;</span><span class="p">:</span> <span class="c1"># should be medoid?</span>
+            
+            <span class="k">if</span> <span class="n">use_lon_lat</span><span class="p">:</span>
+                <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s2">&quot;Spherical (&#39;longitude&#39;, &#39;latitude&#39;) coordinates were passed. Centroids will not agree with geodetic distances&quot;</span><span class="p">)</span>              
+                <span class="n">centr_data</span> <span class="o">=</span> <span class="n">clustered_pings</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="n">cluster_label</span><span class="p">)</span><span class="o">.</span><span class="n">agg</span><span class="p">({</span><span class="n">traj_cols_outer</span><span class="p">[</span><span class="s1">&#39;longitude&#39;</span><span class="p">]:</span><span class="s1">&#39;mean&#39;</span><span class="p">,</span> <span class="n">traj_cols_outer</span><span class="p">[</span><span class="s1">&#39;latitude&#39;</span><span class="p">]:</span><span class="s1">&#39;mean&#39;</span><span class="p">})</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">centr_data</span> <span class="o">=</span> <span class="n">clustered_pings</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="n">cluster_label</span><span class="p">)</span><span class="o">.</span><span class="n">agg</span><span class="p">({</span><span class="n">traj_cols_outer</span><span class="p">[</span><span class="s1">&#39;x&#39;</span><span class="p">]:</span><span class="s1">&#39;mean&#39;</span><span class="p">,</span> <span class="n">traj_cols_outer</span><span class="p">[</span><span class="s1">&#39;y&#39;</span><span class="p">]:</span><span class="s1">&#39;mean&#39;</span><span class="p">})</span>
+
+            <span class="n">location</span> <span class="o">=</span> <span class="n">poi_map</span><span class="p">(</span>
+                <span class="n">data</span><span class="o">=</span><span class="n">centr_data</span><span class="p">,</span>
+                <span class="n">poi_table</span><span class="o">=</span><span class="n">poi_table</span><span class="p">,</span>
+                <span class="n">max_distance</span><span class="o">=</span><span class="n">max_distance</span><span class="p">,</span>
+                <span class="n">data_crs</span><span class="o">=</span><span class="n">data_crs</span><span class="p">,</span>
+                <span class="n">location_id</span><span class="o">=</span><span class="n">location_id</span><span class="p">,</span>
+                <span class="n">traj_cols</span><span class="o">=</span><span class="n">traj_cols</span><span class="p">,</span>
+                <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+            <span class="n">loc_col</span> <span class="o">=</span> <span class="n">location</span><span class="o">.</span><span class="n">name</span>
+            
+            <span class="k">return</span> <span class="n">data</span><span class="p">[[</span><span class="n">cluster_label</span><span class="p">]]</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">location</span><span class="p">,</span> <span class="n">on</span><span class="o">=</span><span class="n">cluster_label</span><span class="p">)[</span><span class="n">loc_col</span><span class="p">]</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Method </span><span class="si">{</span><span class="n">method</span><span class="si">}</span><span class="s2"> not among implemented methods: `centroid&#39; and `majority&#39;&quot;</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="kc">None</span></div>
+
+    
+<span class="c1"># change to point_in_polygon, move to filters.py</span>
+<div class="viewcode-block" id="poi_map">
+<a class="viewcode-back" href="../../../api/generated/nomad.visit_attribution.visit_attribution.html#nomad.visit_attribution.visit_attribution.poi_map">[docs]</a>
+<span class="k">def</span> <span class="nf">poi_map</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">poi_table</span><span class="p">,</span> <span class="n">max_distance</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">data_crs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">location_id</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Assign each point or H3 containment area in `data` to a polygon in `poi_table`.</span>
+
+<span class="sd">    Points use geometric containment when `max_distance==0` or the nearest neighbor</span>
+<span class="sd">    within `max_distance` otherwise. H3 cells use intersecting POI cells or the POI</span>
+<span class="sd">    cell with the smallest H3 grid distance.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    data : pd.DataFrame or gpd.GeoDataFrame</span>
+<span class="sd">        Input points, either as a DataFrame with coordinate columns or a GeoDataFrame,</span>
+<span class="sd">        or a table containing H3 cells.</span>
+<span class="sd">    poi_table : gpd.GeoDataFrame</span>
+<span class="sd">        Polygons to match against, indexed or with `location_id` column.</span>
+<span class="sd">    traj_cols : list of str, optional</span>
+<span class="sd">        Names of the coordinate columns in `data` when it is a DataFrame.</span>
+<span class="sd">    max_distance : float, default 0</span>
+<span class="sd">        Maximum search radius for nearest-neighbor matching. For H3 input, this is</span>
+<span class="sd">        the maximum grid distance in cells.</span>
+<span class="sd">    data_crs : str or pyproj.CRS, optional</span>
+<span class="sd">        CRS for `data` if it is a DataFrame; ignored for GeoDataFrames.</span>
+<span class="sd">    location_id : str, optional</span>
+<span class="sd">        Name of the geometry ID column in `poi_table`; uses the GeoDataFrame index if not provided.</span>
+<span class="sd">    **kwargs</span>
+<span class="sd">        Passed to trajectory‐column parsing helper.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.Series</span>
+<span class="sd">        Indexed like `data`, with each entry set to the matching polygon&#39;s ID (from</span>
+<span class="sd">        `location_id` or `poi_table.index`). Points or cells not contained or beyond</span>
+<span class="sd">        `max_distance` yield NaN. Ties retain the first POI in `poi_table`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># column name handling</span>
+    <span class="n">traj_cols</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_parse_traj_cols</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">defaults</span><span class="o">=</span><span class="p">{})</span>
+
+    <span class="k">if</span> <span class="n">poi_table</span><span class="o">.</span><span class="n">crs</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;poi_table must have crs attribute for spatial join.&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">location_id</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="s2">&quot;location_id&quot;</span> <span class="ow">in</span> <span class="n">traj_cols</span><span class="p">:</span>
+        <span class="n">location_id</span> <span class="o">=</span> <span class="n">traj_cols</span><span class="p">[</span><span class="s2">&quot;location_id&quot;</span><span class="p">]</span>
+
+    <span class="n">out_col</span> <span class="o">=</span> <span class="n">location_id</span> <span class="k">if</span> <span class="n">location_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">&quot;location_id&quot;</span>
+    <span class="c1"># choose where IDs come from: poi_table column (if it exists) else poi_table.index</span>
+    <span class="n">use_col</span> <span class="o">=</span> <span class="p">(</span><span class="n">location_id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="n">location_id</span> <span class="ow">in</span> <span class="n">poi_table</span><span class="o">.</span><span class="n">columns</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">location_id</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s2">&quot;location_id not provided; using poi_table.index for spatial join.&quot;</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="ow">not</span> <span class="n">use_col</span><span class="p">:</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">location_id</span><span class="si">}</span><span class="s2"> column not found in poi_table; using poi_table.index for spatial join.&quot;</span><span class="p">)</span>
+
+    <span class="n">h3_col</span> <span class="o">=</span> <span class="n">traj_cols</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;h3_cell&quot;</span><span class="p">,</span> <span class="s2">&quot;h3_cell&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">h3_col</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">locations</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="n">out_col</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="s2">&quot;object&quot;</span><span class="p">)</span>
+        <span class="n">unique_cells</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="n">h3_col</span><span class="p">]</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span><span class="o">.</span><span class="n">unique</span><span class="p">(),</span> <span class="n">dtype</span><span class="o">=</span><span class="s2">&quot;string&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">unique_cells</span><span class="o">.</span><span class="n">empty</span> <span class="ow">or</span> <span class="n">poi_table</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">locations</span>
+
+        <span class="n">parsed_cells</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">h3ronpy</span><span class="o">.</span><span class="n">cells_parse</span><span class="p">(</span><span class="n">pa</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">unique_cells</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="n">pa</span><span class="o">.</span><span class="n">string</span><span class="p">())))</span>
+        <span class="n">resolutions</span> <span class="o">=</span> <span class="n">pc</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="n">pa</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">h3ronpy</span><span class="o">.</span><span class="n">cells_resolution</span><span class="p">(</span><span class="n">parsed_cells</span><span class="p">)))</span><span class="o">.</span><span class="n">to_pylist</span><span class="p">()</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">resolutions</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;All h3_cell values must have the same resolution.&quot;</span><span class="p">)</span>
+
+        <span class="n">h3_crs</span> <span class="o">=</span> <span class="n">pyproj</span><span class="o">.</span><span class="n">CRS</span><span class="p">(</span><span class="s2">&quot;EPSG:4326&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">h3_crs</span><span class="o">.</span><span class="n">equals</span><span class="p">(</span><span class="n">pyproj</span><span class="o">.</span><span class="n">CRS</span><span class="p">(</span><span class="n">poi_table</span><span class="o">.</span><span class="n">crs</span><span class="p">)):</span>
+            <span class="n">poi_table</span> <span class="o">=</span> <span class="n">poi_table</span><span class="o">.</span><span class="n">to_crs</span><span class="p">(</span><span class="n">h3_crs</span><span class="p">)</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s2">&quot;CRS for `poi_table` is not EPSG:4326. Reprojecting for H3 attribution...&quot;</span><span class="p">)</span>
+
+        <span class="n">poi_cell_lists</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">h3vector</span><span class="o">.</span><span class="n">wkb_to_cells</span><span class="p">(</span>
+            <span class="n">pa</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">poi_table</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">to_wkb</span><span class="p">()),</span>
+            <span class="n">resolutions</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+            <span class="n">containment_mode</span><span class="o">=</span><span class="n">h3ronpy</span><span class="o">.</span><span class="n">ContainmentMode</span><span class="o">.</span><span class="n">Covers</span><span class="p">,</span>
+        <span class="p">))</span>
+        <span class="n">poi_cells</span> <span class="o">=</span> <span class="n">pc</span><span class="o">.</span><span class="n">list_flatten</span><span class="p">(</span><span class="n">poi_cell_lists</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">poi_cells</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">locations</span>
+
+        <span class="n">poi_positions</span> <span class="o">=</span> <span class="n">pc</span><span class="o">.</span><span class="n">list_parent_indices</span><span class="p">(</span><span class="n">poi_cell_lists</span><span class="p">)</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+        <span class="n">poi_ids</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">poi_table</span><span class="p">[</span><span class="n">location_id</span><span class="p">]</span> <span class="k">if</span> <span class="n">use_col</span> <span class="k">else</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">poi_table</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">poi_coverage</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span>
+            <span class="s2">&quot;_candidate_cell&quot;</span><span class="p">:</span> <span class="n">poi_cells</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(),</span>
+            <span class="s2">&quot;_poi_position&quot;</span><span class="p">:</span> <span class="n">poi_positions</span><span class="p">,</span>
+            <span class="n">out_col</span><span class="p">:</span> <span class="n">poi_ids</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">poi_positions</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(),</span>
+        <span class="p">})</span>
+
+        <span class="n">disk_distances</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">table</span><span class="p">(</span><span class="n">h3ronpy</span><span class="o">.</span><span class="n">grid_disk_distances</span><span class="p">(</span><span class="n">parsed_cells</span><span class="p">,</span> <span class="n">max_distance</span><span class="p">))</span>
+        <span class="n">candidate_lists</span> <span class="o">=</span> <span class="n">disk_distances</span><span class="p">[</span><span class="s2">&quot;cell&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">combine_chunks</span><span class="p">()</span>
+        <span class="n">candidates</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span>
+            <span class="s2">&quot;_input_position&quot;</span><span class="p">:</span> <span class="n">pc</span><span class="o">.</span><span class="n">list_parent_indices</span><span class="p">(</span><span class="n">candidate_lists</span><span class="p">)</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(),</span>
+            <span class="s2">&quot;_candidate_cell&quot;</span><span class="p">:</span> <span class="n">pc</span><span class="o">.</span><span class="n">list_flatten</span><span class="p">(</span><span class="n">candidate_lists</span><span class="p">)</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(),</span>
+            <span class="s2">&quot;_distance&quot;</span><span class="p">:</span> <span class="n">pc</span><span class="o">.</span><span class="n">list_flatten</span><span class="p">(</span>
+                <span class="n">disk_distances</span><span class="p">[</span><span class="s2">&quot;k&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">combine_chunks</span><span class="p">()</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(),</span>
+        <span class="p">})</span>
+        <span class="n">matches</span> <span class="o">=</span> <span class="n">candidates</span><span class="o">.</span><span class="n">merge</span><span class="p">(</span><span class="n">poi_coverage</span><span class="p">,</span> <span class="n">on</span><span class="o">=</span><span class="s2">&quot;_candidate_cell&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">matches</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">locations</span>
+
+        <span class="n">matches</span> <span class="o">=</span> <span class="n">matches</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span>
+            <span class="p">[</span><span class="s2">&quot;_input_position&quot;</span><span class="p">,</span> <span class="s2">&quot;_distance&quot;</span><span class="p">,</span> <span class="s2">&quot;_poi_position&quot;</span><span class="p">],</span> <span class="n">kind</span><span class="o">=</span><span class="s2">&quot;stable&quot;</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">drop_duplicates</span><span class="p">(</span><span class="s2">&quot;_input_position&quot;</span><span class="p">)</span>
+        <span class="n">lookup</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="n">unique_cells</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="s2">&quot;object&quot;</span><span class="p">)</span>
+        <span class="n">lookup</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">matches</span><span class="p">[</span><span class="s2">&quot;_input_position&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()]</span> <span class="o">=</span> <span class="n">matches</span><span class="p">[</span><span class="n">out_col</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">data</span><span class="p">[</span><span class="n">h3_col</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="s2">&quot;string&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">lookup</span><span class="p">)</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">out_col</span><span class="p">)</span>
+   
+    <span class="c1"># Determine which geometry to use</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">gpd</span><span class="o">.</span><span class="n">GeoDataFrame</span><span class="p">):</span>
+        <span class="n">pings_gdf</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">geometry</span>
+        <span class="c1"># if geodataframe, data_crs is ignored but we Raise if conflicting crs because it is suspect</span>
+        <span class="k">if</span> <span class="n">data_crs</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">pyproj</span><span class="o">.</span><span class="n">CRS</span><span class="p">(</span><span class="n">pings_gdf</span><span class="o">.</span><span class="n">crs</span><span class="p">)</span><span class="o">.</span><span class="n">equals</span><span class="p">(</span><span class="n">pyproj</span><span class="o">.</span><span class="n">CRS</span><span class="p">(</span><span class="n">data_crs</span><span class="p">)):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Provided CRS </span><span class="si">{</span><span class="n">data_crs</span><span class="si">}</span><span class="s2"> conflicts with traj CRS </span><span class="si">{</span><span class="n">data</span><span class="o">.</span><span class="n">crs</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+        <span class="n">coord_key1</span><span class="p">,</span> <span class="n">coord_key2</span><span class="p">,</span> <span class="n">use_lon_lat</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_fallback_spatial_cols</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span> 
+
+        <span class="k">if</span> <span class="n">use_lon_lat</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">data_crs</span><span class="p">:</span>
+                <span class="n">data_crs</span> <span class="o">=</span> <span class="n">pyproj</span><span class="o">.</span><span class="n">CRS</span><span class="p">(</span><span class="n">data_crs</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">data_crs</span><span class="o">.</span><span class="n">is_projected</span><span class="p">:</span>
+                    <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Provided CRS </span><span class="si">{</span><span class="n">data_crs</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> is a projected coordinate system, but &quot;</span>
+                                 <span class="s2">&quot;spherical (&#39;longitude&#39;, &#39;latitude&#39;) coordinates were passed. Did you mean to pass data_crs=&#39;EPSG:4326&#39;?&quot;</span>
+                                 <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span> <span class="c1"># we assume EPSG:4326</span>
+                <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s2">&quot;Argument `data_crs` not provided, assuming EPSG:4326 for (&#39;longitude&#39;, &#39;latitude&#39;) coordinates&quot;</span><span class="p">)</span>
+                <span class="n">data_crs</span> <span class="o">=</span> <span class="n">pyproj</span><span class="o">.</span><span class="n">CRS</span><span class="p">(</span><span class="s2">&quot;EPSG:4326&quot;</span><span class="p">)</span>
+            
+            <span class="n">pings_gdf</span><span class="o">=</span> <span class="n">gpd</span><span class="o">.</span><span class="n">points_from_xy</span><span class="p">(</span>
+                <span class="n">data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;longitude&#39;</span><span class="p">]],</span>
+                <span class="n">data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;latitude&#39;</span><span class="p">]],</span>
+                <span class="n">crs</span><span class="o">=</span><span class="n">data_crs</span><span class="p">)</span> <span class="c1"># order matters: lon first</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">data_crs</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;data_crs must be provided when using projected coordinates.&quot;</span><span class="p">)</span>
+            <span class="n">data_crs</span> <span class="o">=</span> <span class="n">pyproj</span><span class="o">.</span><span class="n">CRS</span><span class="p">(</span><span class="n">data_crs</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">data_crs</span><span class="o">.</span><span class="n">is_geographic</span><span class="p">:</span>
+                <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Provided CRS </span><span class="si">{</span><span class="n">data_crs</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> is a geographic coordinate system. &quot;</span>
+                             <span class="s2">&quot;This will lead to errors if passed coordinates (&#39;x&#39;, &#39;y&#39;) are projected.&quot;</span>
+                             <span class="sa">f</span><span class="s2">&quot;Did you mean to use </span><span class="si">{</span><span class="n">poi_table</span><span class="o">.</span><span class="n">crs</span><span class="si">}</span><span class="s2">?&quot;</span>
+                             <span class="p">)</span>
+            <span class="n">pings_gdf</span><span class="o">=</span> <span class="n">gpd</span><span class="o">.</span><span class="n">points_from_xy</span><span class="p">(</span>
+                <span class="n">data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;x&#39;</span><span class="p">]],</span>
+                <span class="n">data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;y&#39;</span><span class="p">]],</span>
+                <span class="n">crs</span><span class="o">=</span><span class="n">data_crs</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;`data` must be a pandas DataFrame or a GeoDataFrame.&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">data_crs</span><span class="o">.</span><span class="n">equals</span><span class="p">(</span><span class="n">pyproj</span><span class="o">.</span><span class="n">CRS</span><span class="p">(</span><span class="n">poi_table</span><span class="o">.</span><span class="n">crs</span><span class="p">)):</span>
+        <span class="n">poi_table</span> <span class="o">=</span> <span class="n">poi_table</span><span class="o">.</span><span class="n">to_crs</span><span class="p">(</span><span class="n">data_crs</span><span class="p">)</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s2">&quot;CRS for `poi_table` does not match crs for `data`. Reprojecting...&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">max_distance</span><span class="o">&gt;</span><span class="mi">0</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">data_crs</span><span class="o">.</span><span class="n">is_geographic</span><span class="p">:</span>
+            <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Provided CRS </span><span class="si">{</span><span class="n">data_crs</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> is a geographic coordinate system. &quot;</span>
+                             <span class="s2">&quot;This will lead to errors when computing euclidean distances.&quot;</span>
+                             <span class="sa">f</span><span class="s2">&quot;Did you mean to use `max_distance=0&#39;?&quot;</span>
+                         <span class="p">)</span>        
+        
+        <span class="n">p_idx</span><span class="p">,</span> <span class="n">idx</span> <span class="o">=</span> <span class="n">poi_table</span><span class="o">.</span><span class="n">sindex</span><span class="o">.</span><span class="n">nearest</span><span class="p">(</span><span class="n">pings_gdf</span><span class="p">,</span> <span class="n">max_distance</span><span class="o">=</span><span class="n">max_distance</span><span class="p">,</span> <span class="n">return_all</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+        <span class="n">values</span> <span class="o">=</span> <span class="n">poi_table</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">idx</span><span class="p">][</span><span class="n">location_id</span><span class="p">]</span> <span class="k">if</span> <span class="n">use_col</span> <span class="k">else</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">poi_table</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">values</span><span class="o">.</span><span class="n">set_axis</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">index</span><span class="p">[</span><span class="n">p_idx</span><span class="p">])</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">out_col</span><span class="p">)</span><span class="o">.</span><span class="n">reindex</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+
+    <span class="k">else</span><span class="p">:</span> <span class="c1"># default max_distance = 0</span>
+        <span class="n">p_idx</span><span class="p">,</span> <span class="n">idx</span> <span class="o">=</span> <span class="n">poi_table</span><span class="o">.</span><span class="n">sindex</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">pings_gdf</span><span class="p">,</span> <span class="n">predicate</span><span class="o">=</span><span class="s2">&quot;within&quot;</span><span class="p">)</span> <span class="c1"># boundary counts; use &quot;contains&quot; to exclude it</span>
+        <span class="n">values</span> <span class="o">=</span> <span class="n">poi_table</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">idx</span><span class="p">][</span><span class="n">location_id</span><span class="p">]</span> <span class="k">if</span> <span class="n">use_col</span> <span class="k">else</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">poi_table</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        
+        <span class="n">s</span> <span class="o">=</span> <span class="n">values</span><span class="o">.</span><span class="n">set_axis</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">index</span><span class="p">[</span><span class="n">p_idx</span><span class="p">])</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">out_col</span><span class="p">)</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="n">s</span><span class="p">[</span><span class="o">~</span><span class="n">s</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">duplicated</span><span class="p">()]</span>          <span class="c1"># keep first match per ping</span>
+        <span class="k">return</span> <span class="n">s</span><span class="o">.</span><span class="n">reindex</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">index</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="oracle_map">
+<a class="viewcode-back" href="../../../api/generated/nomad.visit_attribution.visit_attribution.html#nomad.visit_attribution.visit_attribution.oracle_map">[docs]</a>
+<span class="k">def</span> <span class="nf">oracle_map</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">true_visits</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Map elements in traj to ground truth location based solely on time.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    data : pd.DataFrame</span>
+<span class="sd">        The trajectory DataFrame containing x and y coordinates.</span>
+<span class="sd">    true_visits : pd.DataFrame</span>
+<span class="sd">        A visitation table containing location IDs, start times, and durations/end times.       </span>
+<span class="sd">    traj_cols : list</span>
+<span class="sd">        The columns in the trajectory DataFrame to be used for mapping.</span>
+<span class="sd">    **kwargs : dict</span>
+<span class="sd">        Additional keyword arguments.</span>
+<span class="sd">    </span>
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.Series</span>
+<span class="sd">        A Series containing the location IDs corresponding to the pings in the trajectory.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">true_visits</span> <span class="o">=</span> <span class="n">true_visits</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+       
+    <span class="c1"># determine temporal columns to use</span>
+    <span class="n">t_key_l</span><span class="p">,</span> <span class="n">use_datetime_l</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_fallback_time_cols_dt</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+    <span class="n">t_key_r</span><span class="p">,</span> <span class="n">use_datetime_r</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_fallback_time_cols_dt</span><span class="p">(</span><span class="n">true_visits</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+
+    
+    <span class="n">traj_cols</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_parse_traj_cols</span><span class="p">(</span><span class="n">true_visits</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span> <span class="c1">#load defaults</span>
+    <span class="k">if</span> <span class="n">use_datetime_l</span> <span class="o">!=</span> <span class="n">use_datetime_r</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Mismatch in temporal columns </span><span class="si">{</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key_l</span><span class="p">]</span><span class="si">}</span><span class="s2"> vs </span><span class="si">{</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key_r</span><span class="p">]</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+
+    <span class="c1"># check is diary table</span>
+    <span class="n">end_col_present</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_has_end_cols</span><span class="p">(</span><span class="n">true_visits</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">)</span>
+    <span class="n">duration_col_present</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_has_duration_cols</span><span class="p">(</span><span class="n">true_visits</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">end_col_present</span> <span class="ow">or</span> <span class="n">duration_col_present</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Missing required (end or duration) temporal columns for true_visits dataframe.&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;location_id&#39;</span><span class="p">]</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">true_visits</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Missing </span><span class="si">{</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">location_id</span><span class="p">]</span><span class="si">}</span><span class="s2"> column in </span><span class="si">{</span><span class="n">true_visits</span><span class="o">.</span><span class="n">columns</span><span class="si">}</span><span class="s2">.&quot;</span>
+                        <span class="s2">&quot;pass `location_id` as keyword argument or in traj_cols.&quot;</span>
+                        <span class="p">)</span>
+    
+    <span class="n">end_t_key</span> <span class="o">=</span> <span class="s1">&#39;end_datetime&#39;</span> <span class="k">if</span> <span class="n">use_datetime_r</span> <span class="k">else</span> <span class="s1">&#39;end_timestamp&#39;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">end_col_present</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">use_datetime_r</span><span class="p">:</span>
+            <span class="n">true_visits</span><span class="p">[</span><span class="n">end_t_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">true_visits</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key_r</span><span class="p">]]</span> <span class="o">+</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_timedelta</span><span class="p">(</span><span class="n">true_visits</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;duration&#39;</span><span class="p">]]</span><span class="o">*</span><span class="mi">60</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;s&#39;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">true_visits</span><span class="p">[</span><span class="n">end_t_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">true_visits</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key_r</span><span class="p">]]</span> <span class="o">+</span> <span class="n">true_visits</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;duration&#39;</span><span class="p">]]</span><span class="o">*</span><span class="mi">60</span>
+
+    
+    <span class="c1"># t_key_l and t_key_r match in type, and end_t_key exists</span>
+    <span class="n">data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;location_id&#39;</span><span class="p">]]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">NA</span>
+    <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">true_visits</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="o">~</span><span class="n">true_visits</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;location_id&#39;</span><span class="p">]]</span><span class="o">.</span><span class="n">isna</span><span class="p">()]</span><span class="o">.</span><span class="n">iterrows</span><span class="p">():</span>
+        <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">loc</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key_r</span><span class="p">]],</span> <span class="n">row</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">end_t_key</span><span class="p">]],</span> <span class="n">row</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;location_id&#39;</span><span class="p">]]</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">loc</span><span class="p">[(</span><span class="n">data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key_l</span><span class="p">]]</span><span class="o">&gt;=</span><span class="n">start</span><span class="p">)</span><span class="o">&amp;</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key_l</span><span class="p">]]</span><span class="o">&lt;</span><span class="n">end</span><span class="p">),</span> <span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;location_id&#39;</span><span class="p">]]</span> <span class="o">=</span> <span class="n">loc</span>
+        
+    <span class="k">return</span> <span class="n">data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;location_id&#39;</span><span class="p">]]</span></div>
+
+
+
+<div class="viewcode-block" id="dawn_time">
+<a class="viewcode-back" href="../../../api/generated/nomad.visit_attribution.visit_attribution.html#nomad.visit_attribution.visit_attribution.dawn_time">[docs]</a>
+<span class="k">def</span> <span class="nf">dawn_time</span><span class="p">(</span><span class="n">day_part</span><span class="p">,</span> <span class="n">dawn_hour</span><span class="o">=</span><span class="mi">6</span><span class="p">):</span>
+    <span class="n">s</span><span class="p">,</span><span class="n">e</span> <span class="o">=</span> <span class="n">day_part</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">min</span><span class="p">([(</span><span class="n">e</span><span class="o">.</span><span class="n">hour</span><span class="o">*</span><span class="mi">60</span> <span class="o">+</span> <span class="n">e</span><span class="o">.</span><span class="n">minute</span><span class="p">),</span><span class="n">dawn_hour</span><span class="o">*</span><span class="mi">60</span><span class="p">])</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">min</span><span class="p">([(</span><span class="n">s</span><span class="o">.</span><span class="n">hour</span><span class="o">*</span><span class="mi">60</span> <span class="o">+</span> <span class="n">s</span><span class="o">.</span><span class="n">minute</span><span class="p">),</span><span class="n">dawn_hour</span><span class="o">*</span><span class="mi">60</span><span class="p">])</span> </div>
+
+
+<div class="viewcode-block" id="dusk_time">
+<a class="viewcode-back" href="../../../api/generated/nomad.visit_attribution.visit_attribution.html#nomad.visit_attribution.visit_attribution.dusk_time">[docs]</a>
+<span class="k">def</span> <span class="nf">dusk_time</span><span class="p">(</span><span class="n">day_part</span><span class="p">,</span> <span class="n">dusk_hour</span><span class="o">=</span><span class="mi">19</span><span class="p">):</span>
+    <span class="n">s</span><span class="p">,</span><span class="n">e</span> <span class="o">=</span> <span class="n">day_part</span>
+    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">([(</span><span class="n">e</span><span class="o">.</span><span class="n">hour</span><span class="o">*</span><span class="mi">60</span> <span class="o">+</span> <span class="n">e</span><span class="o">.</span><span class="n">minute</span><span class="p">)</span><span class="o">-</span><span class="n">dusk_hour</span><span class="o">*</span><span class="mi">60</span><span class="p">,</span><span class="mi">0</span><span class="p">])</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">([(</span><span class="n">s</span><span class="o">.</span><span class="n">hour</span><span class="o">*</span><span class="mi">60</span> <span class="o">+</span> <span class="n">s</span><span class="o">.</span><span class="n">minute</span><span class="p">)</span><span class="o">-</span><span class="n">dusk_hour</span><span class="o">*</span><span class="mi">60</span><span class="p">,</span> <span class="mi">0</span><span class="p">])</span></div>
+
+
+<div class="viewcode-block" id="slice_datetimes_interval_fast">
+<a class="viewcode-back" href="../../../api/generated/nomad.visit_attribution.visit_attribution.html#nomad.visit_attribution.visit_attribution.slice_datetimes_interval_fast">[docs]</a>
+<span class="k">def</span> <span class="nf">slice_datetimes_interval_fast</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">):</span>
+    <span class="n">full_days</span> <span class="o">=</span> <span class="p">(</span><span class="n">datetime</span><span class="o">.</span><span class="n">combine</span><span class="p">(</span><span class="n">end</span><span class="p">,</span> <span class="n">time</span><span class="o">.</span><span class="n">min</span><span class="p">)</span> <span class="o">-</span> <span class="n">datetime</span><span class="o">.</span><span class="n">combine</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">time</span><span class="o">.</span><span class="n">max</span><span class="p">))</span><span class="o">.</span><span class="n">days</span>
+    <span class="k">if</span> <span class="n">full_days</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">day_parts</span> <span class="o">=</span> <span class="p">[(</span><span class="n">start</span><span class="o">.</span><span class="n">time</span><span class="p">(),</span> <span class="n">time</span><span class="o">.</span><span class="n">max</span><span class="p">),</span> <span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">min</span><span class="p">,</span> <span class="n">end</span><span class="o">.</span><span class="n">time</span><span class="p">())]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">full_days</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">day_parts</span> <span class="o">=</span> <span class="p">[(</span><span class="n">start</span><span class="o">.</span><span class="n">time</span><span class="p">(),</span> <span class="n">end</span><span class="o">.</span><span class="n">time</span><span class="p">()),</span> <span class="p">(</span><span class="n">start</span><span class="o">.</span><span class="n">time</span><span class="p">(),</span> <span class="n">start</span><span class="o">.</span><span class="n">time</span><span class="p">())]</span>
+    <span class="k">return</span> <span class="n">full_days</span><span class="p">,</span> <span class="n">day_parts</span></div>
+
+
+<div class="viewcode-block" id="duration_at_night_fast">
+<a class="viewcode-back" href="../../../api/generated/nomad.visit_attribution.visit_attribution.html#nomad.visit_attribution.visit_attribution.duration_at_night_fast">[docs]</a>
+<span class="k">def</span> <span class="nf">duration_at_night_fast</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">dawn_hour</span> <span class="o">=</span> <span class="mi">6</span><span class="p">,</span> <span class="n">dusk_hour</span> <span class="o">=</span> <span class="mi">19</span><span class="p">):</span>
+    <span class="n">full_days</span><span class="p">,</span> <span class="p">(</span><span class="n">part1</span><span class="p">,</span> <span class="n">part2</span><span class="p">)</span> <span class="o">=</span> <span class="n">slice_datetimes_interval_fast</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">)</span>
+    <span class="n">total_dawn_time</span> <span class="o">=</span> <span class="n">dawn_time</span><span class="p">(</span><span class="n">part1</span><span class="p">,</span> <span class="n">dawn_hour</span><span class="p">)</span><span class="o">+</span><span class="n">dawn_time</span><span class="p">(</span><span class="n">part2</span><span class="p">,</span> <span class="n">dawn_hour</span><span class="p">)</span>
+    <span class="n">total_dusk_time</span> <span class="o">=</span> <span class="n">dusk_time</span><span class="p">(</span><span class="n">part1</span><span class="p">,</span> <span class="n">dusk_hour</span><span class="p">)</span><span class="o">+</span><span class="n">dusk_time</span><span class="p">(</span><span class="n">part2</span><span class="p">,</span> <span class="n">dusk_hour</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">total_dawn_time</span> <span class="o">+</span> <span class="n">total_dusk_time</span> <span class="o">+</span> <span class="n">full_days</span><span class="o">*</span><span class="p">(</span><span class="n">dawn_hour</span> <span class="o">+</span> <span class="p">(</span><span class="mi">24</span><span class="o">-</span><span class="n">dusk_hour</span><span class="p">))</span><span class="o">*</span><span class="mi">60</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="clip_stays_date">
+<a class="viewcode-back" href="../../../api/generated/nomad.visit_attribution.visit_attribution.html#nomad.visit_attribution.visit_attribution.clip_stays_date">[docs]</a>
+<span class="k">def</span> <span class="nf">clip_stays_date</span><span class="p">(</span><span class="n">traj</span><span class="p">,</span> <span class="n">dates</span><span class="p">,</span> <span class="n">dawn_hour</span> <span class="o">=</span> <span class="mi">6</span><span class="p">,</span> <span class="n">dusk_hour</span> <span class="o">=</span> <span class="mi">19</span><span class="p">):</span>
+    <span class="n">start</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">traj</span><span class="p">[</span><span class="s1">&#39;start_datetime&#39;</span><span class="p">])</span>
+    <span class="n">duration</span> <span class="o">=</span> <span class="n">traj</span><span class="p">[</span><span class="s1">&#39;duration&#39;</span><span class="p">]</span>
+
+    <span class="c1"># Ensure timezone-aware clipping bounds</span>
+    <span class="n">tz</span> <span class="o">=</span> <span class="n">start</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">tz</span>
+    <span class="n">date_0</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">(</span><span class="n">parse</span><span class="p">(</span><span class="n">dates</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="n">tz</span><span class="o">=</span><span class="n">tz</span><span class="p">)</span>
+    <span class="n">date_1</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">(</span><span class="n">parse</span><span class="p">(</span><span class="n">dates</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="n">tz</span><span class="o">=</span><span class="n">tz</span><span class="p">)</span>
+
+    <span class="n">end</span> <span class="o">=</span> <span class="n">start</span> <span class="o">+</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_timedelta</span><span class="p">(</span><span class="n">duration</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;m&#39;</span><span class="p">)</span>
+
+    <span class="c1"># Clip to date range</span>
+    <span class="n">start_clipped</span> <span class="o">=</span> <span class="n">start</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">lower</span><span class="o">=</span><span class="n">date_0</span><span class="p">,</span> <span class="n">upper</span><span class="o">=</span><span class="n">date_1</span><span class="p">)</span>
+    <span class="n">end_clipped</span> <span class="o">=</span> <span class="n">end</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">lower</span><span class="o">=</span><span class="n">date_0</span><span class="p">,</span> <span class="n">upper</span><span class="o">=</span><span class="n">date_1</span><span class="p">)</span>
+
+    <span class="c1"># Recompute durations</span>
+    <span class="n">duration_clipped</span> <span class="o">=</span> <span class="p">((</span><span class="n">end_clipped</span> <span class="o">-</span> <span class="n">start_clipped</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span> <span class="o">//</span> <span class="mi">60</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span>
+    <span class="n">duration_night</span> <span class="o">=</span> <span class="p">[</span><span class="n">duration_at_night_fast</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">dawn_hour</span><span class="p">,</span> <span class="n">dusk_hour</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="n">e</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">start_clipped</span><span class="p">,</span> <span class="n">end_clipped</span><span class="p">)]</span>
+
+    <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span>
+        <span class="s1">&#39;id&#39;</span><span class="p">:</span> <span class="n">traj</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">,</span>
+        <span class="s1">&#39;start&#39;</span><span class="p">:</span> <span class="n">start_clipped</span><span class="p">,</span>
+        <span class="s1">&#39;duration&#39;</span><span class="p">:</span> <span class="n">duration_clipped</span><span class="p">,</span>
+        <span class="s1">&#39;duration_night&#39;</span><span class="p">:</span> <span class="n">duration_night</span><span class="p">,</span>
+        <span class="s1">&#39;location&#39;</span><span class="p">:</span> <span class="n">traj</span><span class="p">[</span><span class="s1">&#39;location&#39;</span><span class="p">]</span>
+    <span class="p">})</span></div>
+
+
+<div class="viewcode-block" id="count_nights">
+<a class="viewcode-back" href="../../../api/generated/nomad.visit_attribution.visit_attribution.html#nomad.visit_attribution.visit_attribution.count_nights">[docs]</a>
+<span class="k">def</span> <span class="nf">count_nights</span><span class="p">(</span><span class="n">usr_polygon</span><span class="p">,</span> <span class="n">dawn_hour</span> <span class="o">=</span> <span class="mi">6</span><span class="p">,</span> <span class="n">dusk_hour</span> <span class="o">=</span> <span class="mi">19</span><span class="p">,</span> <span class="n">min_dwell</span> <span class="o">=</span> <span class="mi">10</span><span class="p">):</span>   
+    <span class="n">nights</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="n">weeks</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+
+    <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">usr_polygon</span><span class="o">.</span><span class="n">iterrows</span><span class="p">():</span>
+        <span class="n">d</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="s1">&#39;start&#39;</span><span class="p">]</span>
+        <span class="n">d</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+        <span class="n">full_days</span><span class="p">,</span> <span class="p">(</span><span class="n">part1</span><span class="p">,</span> <span class="n">part2</span><span class="p">)</span> <span class="o">=</span> <span class="n">slice_datetimes_interval_fast</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">d</span> <span class="o">+</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_timedelta</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="s1">&#39;duration&#39;</span><span class="p">],</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;m&#39;</span><span class="p">))</span>
+
+        <span class="n">dawn1</span> <span class="o">=</span> <span class="n">dawn_time</span><span class="p">(</span><span class="n">part1</span><span class="p">,</span> <span class="n">dawn_hour</span><span class="p">)</span>
+        <span class="n">dusk1</span> <span class="o">=</span> <span class="n">dusk_time</span><span class="p">(</span><span class="n">part1</span><span class="p">,</span> <span class="n">dusk_hour</span><span class="p">)</span>
+        <span class="n">dawn2</span> <span class="o">=</span> <span class="n">dawn_time</span><span class="p">(</span><span class="n">part2</span><span class="p">,</span> <span class="n">dawn_hour</span><span class="p">)</span>
+        <span class="n">dusk2</span> <span class="o">=</span> <span class="n">dusk_time</span><span class="p">(</span><span class="n">part2</span><span class="p">,</span> <span class="n">dusk_hour</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">full_days</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">dawn1</span> <span class="o">&gt;=</span> <span class="n">min_dwell</span><span class="p">:</span>
+                <span class="n">night</span> <span class="o">=</span> <span class="n">d</span> <span class="o">-</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">days</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+                <span class="n">nights</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">night</span><span class="o">.</span><span class="n">date</span><span class="p">())</span>
+                <span class="n">weeks</span><span class="o">.</span><span class="n">add</span><span class="p">((</span><span class="n">night</span> <span class="o">-</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">days</span><span class="o">=</span><span class="n">night</span><span class="o">.</span><span class="n">weekday</span><span class="p">()))</span><span class="o">.</span><span class="n">date</span><span class="p">())</span>
+
+            <span class="k">if</span> <span class="p">(</span><span class="n">dusk1</span> <span class="o">+</span> <span class="n">dawn2</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">min_dwell</span><span class="p">:</span>
+                <span class="n">night</span> <span class="o">=</span> <span class="n">d</span>
+                <span class="n">nights</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">night</span><span class="o">.</span><span class="n">date</span><span class="p">())</span>
+                <span class="n">weeks</span><span class="o">.</span><span class="n">add</span><span class="p">((</span><span class="n">night</span> <span class="o">-</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">days</span><span class="o">=</span><span class="n">night</span><span class="o">.</span><span class="n">weekday</span><span class="p">()))</span><span class="o">.</span><span class="n">date</span><span class="p">())</span>
+
+            <span class="k">if</span> <span class="n">dusk2</span> <span class="o">&gt;=</span> <span class="n">min_dwell</span><span class="p">:</span>
+                <span class="n">night</span> <span class="o">=</span> <span class="n">d</span> <span class="o">+</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">days</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+                <span class="n">nights</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">night</span><span class="o">.</span><span class="n">date</span><span class="p">())</span>
+                <span class="n">weeks</span><span class="o">.</span><span class="n">add</span><span class="p">((</span><span class="n">night</span> <span class="o">-</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">days</span><span class="o">=</span><span class="n">night</span><span class="o">.</span><span class="n">weekday</span><span class="p">()))</span><span class="o">.</span><span class="n">date</span><span class="p">())</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">dawn1</span> <span class="o">&gt;=</span> <span class="n">min_dwell</span><span class="p">:</span>
+                <span class="n">night</span> <span class="o">=</span> <span class="n">d</span> <span class="o">-</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">days</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+                <span class="n">nights</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">night</span><span class="o">.</span><span class="n">date</span><span class="p">())</span>
+                <span class="n">weeks</span><span class="o">.</span><span class="n">add</span><span class="p">((</span><span class="n">night</span> <span class="o">-</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">days</span><span class="o">=</span><span class="n">night</span><span class="o">.</span><span class="n">weekday</span><span class="p">()))</span><span class="o">.</span><span class="n">date</span><span class="p">())</span>
+
+            <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">full_days</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+                <span class="n">night</span> <span class="o">=</span> <span class="n">d</span> <span class="o">+</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">days</span><span class="o">=</span><span class="n">t</span><span class="p">)</span>
+                <span class="n">nights</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">night</span><span class="o">.</span><span class="n">date</span><span class="p">())</span>
+                <span class="n">weeks</span><span class="o">.</span><span class="n">add</span><span class="p">((</span><span class="n">night</span> <span class="o">-</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">days</span><span class="o">=</span><span class="n">night</span><span class="o">.</span><span class="n">weekday</span><span class="p">()))</span><span class="o">.</span><span class="n">date</span><span class="p">())</span>
+
+            <span class="k">if</span> <span class="n">dusk2</span> <span class="o">&gt;=</span> <span class="n">min_dwell</span><span class="p">:</span>
+                <span class="n">night</span> <span class="o">=</span> <span class="n">d</span> <span class="o">+</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">days</span><span class="o">=</span><span class="n">full_days</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+                <span class="n">nights</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">night</span><span class="o">.</span><span class="n">date</span><span class="p">())</span>
+                <span class="n">weeks</span><span class="o">.</span><span class="n">add</span><span class="p">((</span><span class="n">night</span> <span class="o">-</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">days</span><span class="o">=</span><span class="n">night</span><span class="o">.</span><span class="n">weekday</span><span class="p">()))</span><span class="o">.</span><span class="n">date</span><span class="p">())</span>
+
+    <span class="n">identifier</span> <span class="o">=</span> <span class="n">usr_polygon</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">location</span> <span class="o">=</span> <span class="n">usr_polygon</span><span class="p">[</span><span class="s1">&#39;location&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">([{</span>
+        <span class="s1">&#39;id&#39;</span><span class="p">:</span> <span class="n">identifier</span><span class="p">,</span>
+        <span class="s1">&#39;location&#39;</span><span class="p">:</span> <span class="n">location</span><span class="p">,</span>
+        <span class="s1">&#39;night_count&#39;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">nights</span><span class="p">),</span>
+        <span class="s1">&#39;week_count&#39;</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">weeks</span><span class="p">)</span>
+    <span class="p">}])</span></div>
+
+
+
+<div class="viewcode-block" id="night_stops">
+<a class="viewcode-back" href="../../../api/generated/nomad.visit_attribution.visit_attribution.html#nomad.visit_attribution.visit_attribution.night_stops">[docs]</a>
+<span class="k">def</span> <span class="nf">night_stops</span><span class="p">(</span><span class="n">stop_table</span><span class="p">,</span> <span class="n">user</span><span class="o">=</span><span class="s1">&#39;user&#39;</span><span class="p">,</span> <span class="n">dawn_hour</span> <span class="o">=</span> <span class="mi">6</span><span class="p">,</span> <span class="n">dusk_hour</span> <span class="o">=</span> <span class="mi">19</span><span class="p">,</span> <span class="n">min_dwell</span> <span class="o">=</span> <span class="mi">10</span><span class="p">):</span>
+    <span class="c1"># Date range</span>
+    <span class="n">start_date</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">stop_table</span><span class="p">[</span><span class="s1">&#39;start_datetime&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">()</span><span class="o">.</span><span class="n">date</span><span class="p">())</span>
+    <span class="n">weeks</span> <span class="o">=</span> <span class="n">stop_table</span><span class="p">[</span><span class="s1">&#39;start_datetime&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s1">&#39;%Y-%U&#39;</span><span class="p">)</span>
+    <span class="n">num_weeks</span> <span class="o">=</span> <span class="n">weeks</span><span class="o">.</span><span class="n">nunique</span><span class="p">()</span>
+
+    <span class="c1"># turn dates to datetime</span>
+    <span class="n">stop_table</span><span class="p">[</span><span class="s1">&#39;start_datetime&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">stop_table</span><span class="p">[</span><span class="s1">&#39;start_datetime&#39;</span><span class="p">])</span>
+
+    <span class="k">if</span> <span class="s1">&#39;id&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">stop_table</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">stop_table</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">user</span>
+
+    <span class="n">end_date</span> <span class="o">=</span> <span class="p">(</span><span class="n">parse</span><span class="p">(</span><span class="n">start_date</span><span class="p">)</span> <span class="o">+</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">weeks</span><span class="o">=</span><span class="n">num_weeks</span><span class="p">))</span><span class="o">.</span><span class="n">date</span><span class="p">()</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span>
+    <span class="n">dates</span> <span class="o">=</span> <span class="p">(</span><span class="n">start_date</span><span class="p">,</span> <span class="n">end_date</span><span class="p">)</span>
+    <span class="n">df_clipped</span> <span class="o">=</span> <span class="n">clip_stays_date</span><span class="p">(</span><span class="n">stop_table</span><span class="p">,</span> <span class="n">dates</span><span class="p">,</span> <span class="n">dawn_hour</span><span class="p">,</span> <span class="n">dusk_hour</span><span class="p">)</span>
+    <span class="n">df_clipped</span> <span class="o">=</span> <span class="n">df_clipped</span><span class="p">[(</span><span class="n">df_clipped</span><span class="p">[</span><span class="s1">&#39;duration&#39;</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">df_clipped</span><span class="p">[</span><span class="s1">&#39;duration_night&#39;</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="mi">15</span><span class="p">)]</span>
+
+    <span class="k">return</span> <span class="n">df_clipped</span><span class="o">.</span><span class="n">groupby</span><span class="p">([</span><span class="s1">&#39;id&#39;</span><span class="p">,</span> <span class="s1">&#39;location&#39;</span><span class="p">],</span> <span class="n">group_keys</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">count_nights</span><span class="p">(</span><span class="n">dawn_hour</span><span class="p">,</span> <span class="n">dusk_hour</span><span class="p">,</span> <span class="n">min_dwell</span><span class="p">))</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></div>
+
+
+
+<span class="k">def</span> <span class="nf">_detect_locations</span><span class="p">(</span>
+    <span class="n">data</span><span class="p">,</span>
+    <span class="n">epsilon</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span>
+    <span class="n">min_pts</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+    <span class="n">return_locations</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">algorithm</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">algorithm_kwargs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">traj_cols</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Assign location IDs to one user&#39;s coordinate rows.&quot;&quot;&quot;</span>
+    <span class="n">coord_key1</span><span class="p">,</span> <span class="n">coord_key2</span><span class="p">,</span> <span class="n">use_lon_lat</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_fallback_spatial_cols</span><span class="p">(</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">return_locations</span> <span class="ow">and</span> <span class="n">use_lon_lat</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+            <span class="s2">&quot;Location geometry summaries require projected coordinates&quot;</span>
+        <span class="p">)</span>
+
+    <span class="n">parsed_cols</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_parse_traj_cols</span><span class="p">(</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">warn</span><span class="o">=</span><span class="kc">False</span>
+    <span class="p">)</span>
+    <span class="n">location_col</span> <span class="o">=</span> <span class="n">parsed_cols</span><span class="p">[</span><span class="s1">&#39;location_id&#39;</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">data</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="n">location_ids</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="s1">&#39;Int64&#39;</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="n">location_col</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">return_locations</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">location_ids</span>
+
+        <span class="n">locations</span> <span class="o">=</span> <span class="n">gpd</span><span class="o">.</span><span class="n">GeoDataFrame</span><span class="p">(</span>
+            <span class="p">{</span>
+                <span class="n">location_col</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="s1">&#39;Int64&#39;</span><span class="p">),</span>
+                <span class="s1">&#39;n_stops&#39;</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="s1">&#39;Int64&#39;</span><span class="p">),</span>
+                <span class="s1">&#39;center&#39;</span><span class="p">:</span> <span class="n">gpd</span><span class="o">.</span><span class="n">GeoSeries</span><span class="p">([]),</span>
+                <span class="s1">&#39;extent&#39;</span><span class="p">:</span> <span class="n">gpd</span><span class="o">.</span><span class="n">GeoSeries</span><span class="p">([]),</span>
+            <span class="p">},</span>
+            <span class="n">geometry</span><span class="o">=</span><span class="s1">&#39;center&#39;</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">location_ids</span><span class="p">,</span> <span class="n">locations</span>
+
+    <span class="n">coords</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span>
+        <span class="p">[</span><span class="n">parsed_cols</span><span class="p">[</span><span class="n">coord_key1</span><span class="p">],</span> <span class="n">parsed_cols</span><span class="p">[</span><span class="n">coord_key2</span><span class="p">]]</span>
+    <span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="s1">&#39;float64&#39;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">algorithm</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">use_lon_lat</span><span class="p">:</span>
+            <span class="n">cluster_coords</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">radians</span><span class="p">(</span><span class="n">coords</span><span class="p">[:,</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">]])</span>
+            <span class="n">cluster_epsilon</span> <span class="o">=</span> <span class="n">epsilon</span> <span class="o">/</span> <span class="n">EARTH_RADIUS_METERS</span>
+            <span class="n">metric</span> <span class="o">=</span> <span class="s1">&#39;haversine&#39;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">cluster_coords</span> <span class="o">=</span> <span class="n">coords</span>
+            <span class="n">cluster_epsilon</span> <span class="o">=</span> <span class="n">epsilon</span>
+            <span class="n">metric</span> <span class="o">=</span> <span class="s1">&#39;euclidean&#39;</span>
+
+        <span class="n">labels</span> <span class="o">=</span> <span class="n">DBSCAN</span><span class="p">(</span>
+            <span class="n">eps</span><span class="o">=</span><span class="n">cluster_epsilon</span><span class="p">,</span>
+            <span class="n">min_samples</span><span class="o">=</span><span class="n">min_pts</span><span class="p">,</span>
+            <span class="n">metric</span><span class="o">=</span><span class="n">metric</span><span class="p">,</span>
+            <span class="n">algorithm</span><span class="o">=</span><span class="s1">&#39;ball_tree&#39;</span><span class="p">,</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">fit_predict</span><span class="p">(</span><span class="n">cluster_coords</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">options</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">algorithm_kwargs</span> <span class="ow">or</span> <span class="p">{})</span>
+        <span class="n">options</span><span class="p">[</span><span class="s1">&#39;traj_cols&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">parsed_cols</span>
+        <span class="n">labels</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">algorithm</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">,</span> <span class="o">**</span><span class="n">options</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">labels</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">1</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">labels</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;Custom location-detection algorithms must return one label per row&quot;</span>
+            <span class="p">)</span>
+
+    <span class="n">noise</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">isna</span><span class="p">(</span><span class="n">labels</span><span class="p">)</span>
+    <span class="n">noise</span><span class="p">[</span><span class="o">~</span><span class="n">noise</span><span class="p">]</span> <span class="o">=</span> <span class="n">labels</span><span class="p">[</span><span class="o">~</span><span class="n">noise</span><span class="p">]</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span>
+    <span class="n">location_ids</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">labels</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="s1">&#39;int64&#39;</span><span class="p">)</span>
+    <span class="n">location_ids</span><span class="p">[</span><span class="o">~</span><span class="n">noise</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">factorize</span><span class="p">(</span><span class="n">labels</span><span class="p">[</span><span class="o">~</span><span class="n">noise</span><span class="p">],</span> <span class="n">sort</span><span class="o">=</span><span class="kc">False</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">next_location_id</span> <span class="o">=</span> <span class="n">location_ids</span><span class="p">[</span><span class="o">~</span><span class="n">noise</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">+</span> <span class="mi">1</span> <span class="k">if</span> <span class="p">(</span><span class="o">~</span><span class="n">noise</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">()</span> <span class="k">else</span> <span class="mi">0</span>
+    <span class="n">location_ids</span><span class="p">[</span><span class="n">noise</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span>
+        <span class="n">next_location_id</span><span class="p">,</span> <span class="n">next_location_id</span> <span class="o">+</span> <span class="n">noise</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+    <span class="p">)</span>
+    <span class="n">location_ids</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">location_ids</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="n">location_col</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">return_locations</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">location_ids</span>
+
+    <span class="n">locations</span> <span class="o">=</span> <span class="n">_summarize_locations</span><span class="p">(</span>
+        <span class="n">data</span><span class="p">,</span> <span class="n">location_ids</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="n">traj_cols</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">location_ids</span><span class="p">,</span> <span class="n">locations</span>
+
+
+<span class="k">def</span> <span class="nf">_detect_locations_multi_user</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">method</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Validate planned multi-user methods before reporting them unimplemented.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">method</span> <span class="o">==</span> <span class="s1">&#39;infomap&#39;</span><span class="p">:</span>
+        <span class="n">loader</span><span class="o">.</span><span class="n">_has_user_cols</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">)</span>
+        <span class="n">loader</span><span class="o">.</span><span class="n">_has_spatial_cols</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">)</span>
+        <span class="n">loader</span><span class="o">.</span><span class="n">_has_time_cols</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span>
+            <span class="n">loader</span><span class="o">.</span><span class="n">_has_end_cols</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="n">loader</span><span class="o">.</span><span class="n">_has_duration_cols</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">)</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Infomap location detection requires a stop table&quot;</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Infomap location detection is not implemented&quot;</span><span class="p">)</span>
+    <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Multi-user location detection is not implemented&quot;</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="detect_locations">
+<a class="viewcode-back" href="../../../api/generated/nomad.visit_attribution.visit_attribution.html#nomad.visit_attribution.visit_attribution.detect_locations">[docs]</a>
+<span class="k">def</span> <span class="nf">detect_locations</span><span class="p">(</span>
+    <span class="n">data</span><span class="p">,</span>
+    <span class="n">epsilon</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span>
+    <span class="n">min_pts</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+    <span class="n">return_locations</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">method</span><span class="o">=</span><span class="s1">&#39;dbscan&#39;</span><span class="p">,</span>
+    <span class="n">algorithm</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">algorithm_kwargs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">traj_cols</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">kwargs</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Assign recurring-location IDs to coordinate points.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    data : pd.DataFrame</span>
+<span class="sd">        Coordinate points or stop rows with x/y or longitude/latitude columns.</span>
+<span class="sd">    epsilon : float, default 100</span>
+<span class="sd">        Maximum distance between rows in the same location. Units match projected</span>
+<span class="sd">        coordinates or are meters for longitude/latitude coordinates.</span>
+<span class="sd">    min_pts : int, default 1</span>
+<span class="sd">        Minimum number of stops required to form a location</span>
+<span class="sd">    return_locations : bool, default False</span>
+<span class="sd">        If True, also return a GeoDataFrame summarizing each location. Location</span>
+<span class="sd">        summaries currently require projected x/y coordinates.</span>
+<span class="sd">    method : {&#39;dbscan&#39;, &#39;custom&#39;, &#39;infomap&#39;}, default &#39;dbscan&#39;</span>
+<span class="sd">        Location-detection method. Infomap is reserved for future multi-user</span>
+<span class="sd">        stop-table support and currently raises ``NotImplementedError``.</span>
+<span class="sd">    algorithm : callable, optional</span>
+<span class="sd">        Location-detection callable required when ``method=&#39;custom&#39;``. It must</span>
+<span class="sd">        return one label per input row.</span>
+<span class="sd">    algorithm_kwargs : dict, optional</span>
+<span class="sd">        Arguments for a custom location-detection callable.</span>
+<span class="sd">    traj_cols : dict, optional</span>
+<span class="sd">        Column name mappings for coordinates and location_id.</span>
+<span class="sd">    **kwargs</span>
+<span class="sd">        Additional arguments passed to column detection</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.Series or tuple of (pd.Series, gpd.GeoDataFrame)</span>
+<span class="sd">        Location IDs aligned with ``data.index`` and, when requested, location</span>
+<span class="sd">        centers, extents, and row counts.</span>
+
+<span class="sd">    Notes</span>
+<span class="sd">    -----</span>
+<span class="sd">    Each noise row is retained as its own nonnegative location.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">gpd</span><span class="o">.</span><span class="n">GeoDataFrame</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;GeoDataFrame location clustering is not implemented&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;data must be a pandas DataFrame&quot;</span><span class="p">)</span>
+
+    <span class="n">parsed_cols</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_parse_traj_cols</span><span class="p">(</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">warn</span><span class="o">=</span><span class="kc">False</span>
+    <span class="p">)</span>
+    <span class="n">user_col</span> <span class="o">=</span> <span class="n">parsed_cols</span><span class="p">[</span><span class="s1">&#39;user_id&#39;</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">method</span> <span class="o">==</span> <span class="s1">&#39;infomap&#39;</span> <span class="ow">or</span> <span class="p">(</span>
+        <span class="n">user_col</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span>
+        <span class="ow">and</span> <span class="n">data</span><span class="p">[</span><span class="n">user_col</span><span class="p">]</span><span class="o">.</span><span class="n">nunique</span><span class="p">(</span><span class="n">dropna</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span>
+    <span class="p">):</span>
+        <span class="k">return</span> <span class="n">_detect_locations_multi_user</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">method</span><span class="p">,</span> <span class="n">parsed_cols</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">method</span> <span class="o">==</span> <span class="s1">&#39;dbscan&#39;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">algorithm</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">algorithm_kwargs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;algorithm and algorithm_kwargs require method=&#39;custom&#39;&quot;</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">_detect_locations</span><span class="p">(</span>
+            <span class="n">data</span><span class="p">,</span>
+            <span class="n">epsilon</span><span class="o">=</span><span class="n">epsilon</span><span class="p">,</span>
+            <span class="n">min_pts</span><span class="o">=</span><span class="n">min_pts</span><span class="p">,</span>
+            <span class="n">return_locations</span><span class="o">=</span><span class="n">return_locations</span><span class="p">,</span>
+            <span class="n">traj_cols</span><span class="o">=</span><span class="n">traj_cols</span><span class="p">,</span>
+            <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">method</span> <span class="o">!=</span> <span class="s1">&#39;custom&#39;</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;detect_locations method &#39;</span><span class="si">{</span><span class="n">method</span><span class="si">}</span><span class="s2">&#39; is not implemented&quot;</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">algorithm</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;algorithm is required when method=&#39;custom&#39;&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_detect_locations</span><span class="p">(</span>
+        <span class="n">data</span><span class="p">,</span>
+        <span class="n">return_locations</span><span class="o">=</span><span class="n">return_locations</span><span class="p">,</span>
+        <span class="n">algorithm</span><span class="o">=</span><span class="n">algorithm</span><span class="p">,</span>
+        <span class="n">algorithm_kwargs</span><span class="o">=</span><span class="n">algorithm_kwargs</span><span class="p">,</span>
+        <span class="n">traj_cols</span><span class="o">=</span><span class="n">traj_cols</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+
+<span class="k">def</span> <span class="nf">_summarize_locations</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">location_ids</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build center and extent geometries for assigned location IDs.&quot;&quot;&quot;</span>
+    <span class="n">coord_key1</span><span class="p">,</span> <span class="n">coord_key2</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_fallback_spatial_cols</span><span class="p">(</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span>
+    <span class="p">)</span>
+    <span class="n">traj_cols</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_parse_traj_cols</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">warn</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">location_col</span> <span class="o">=</span> <span class="n">location_ids</span><span class="o">.</span><span class="n">name</span>
+    <span class="n">coords</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span>
+        <span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">coord_key1</span><span class="p">],</span> <span class="n">traj_cols</span><span class="p">[</span><span class="n">coord_key2</span><span class="p">]]</span>
+    <span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="s1">&#39;float64&#39;</span><span class="p">)</span>
+    <span class="n">location_rows</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+        <span class="p">{</span>
+            <span class="n">location_col</span><span class="p">:</span> <span class="n">location_ids</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(),</span>
+            <span class="s1">&#39;_coord1&#39;</span><span class="p">:</span> <span class="n">coords</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">],</span>
+            <span class="s1">&#39;_coord2&#39;</span><span class="p">:</span> <span class="n">coords</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">],</span>
+        <span class="p">}</span>
+    <span class="p">)</span>
+    <span class="n">grouped_locations</span> <span class="o">=</span> <span class="n">location_rows</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="n">location_col</span><span class="p">,</span> <span class="n">sort</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">center_values</span> <span class="o">=</span> <span class="n">grouped_locations</span><span class="p">[[</span><span class="s1">&#39;_coord1&#39;</span><span class="p">,</span> <span class="s1">&#39;_coord2&#39;</span><span class="p">]]</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+    <span class="n">locations</span> <span class="o">=</span> <span class="n">gpd</span><span class="o">.</span><span class="n">GeoDataFrame</span><span class="p">(</span>
+        <span class="p">{</span>
+            <span class="n">location_col</span><span class="p">:</span> <span class="n">center_values</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(),</span>
+            <span class="s1">&#39;n_stops&#39;</span><span class="p">:</span> <span class="n">grouped_locations</span><span class="o">.</span><span class="n">size</span><span class="p">()</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(),</span>
+        <span class="p">},</span>
+        <span class="n">geometry</span><span class="o">=</span><span class="n">gpd</span><span class="o">.</span><span class="n">points_from_xy</span><span class="p">(</span>
+            <span class="n">center_values</span><span class="p">[</span><span class="s1">&#39;_coord1&#39;</span><span class="p">],</span> <span class="n">center_values</span><span class="p">[</span><span class="s1">&#39;_coord2&#39;</span><span class="p">]</span>
+        <span class="p">),</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">rename_geometry</span><span class="p">(</span><span class="s1">&#39;center&#39;</span><span class="p">)</span>
+
+    <span class="c1"># The convex hull records the observed spatial extent of each location.</span>
+    <span class="n">point_locations</span> <span class="o">=</span> <span class="n">gpd</span><span class="o">.</span><span class="n">GeoDataFrame</span><span class="p">(</span>
+        <span class="p">{</span><span class="n">location_col</span><span class="p">:</span> <span class="n">location_ids</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()},</span>
+        <span class="n">geometry</span><span class="o">=</span><span class="n">gpd</span><span class="o">.</span><span class="n">points_from_xy</span><span class="p">(</span><span class="n">coords</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">coords</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">]),</span>
+    <span class="p">)</span>
+    <span class="n">extents</span> <span class="o">=</span> <span class="n">point_locations</span><span class="o">.</span><span class="n">dissolve</span><span class="p">(</span><span class="n">by</span><span class="o">=</span><span class="n">location_col</span><span class="p">)</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">convex_hull</span>
+    <span class="n">locations</span><span class="p">[</span><span class="s1">&#39;extent&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">gpd</span><span class="o">.</span><span class="n">GeoSeries</span><span class="p">(</span>
+        <span class="n">extents</span><span class="o">.</span><span class="n">reindex</span><span class="p">(</span><span class="n">locations</span><span class="p">[</span><span class="n">location_col</span><span class="p">])</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(),</span>
+        <span class="n">index</span><span class="o">=</span><span class="n">locations</span><span class="o">.</span><span class="n">index</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">locations</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, CSSLab.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,7 @@
+﻿validation
+==========
+
+.. automodule:: nomad.stop_detection.validation
+   :members:
+   :undoc-members:
+   :show-inheritance:

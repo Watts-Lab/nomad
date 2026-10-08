@@ -1,0 +1,7 @@
+﻿base
+====
+
+.. automodule:: nomad.io.base
+   :members:
+   :undoc-members:
+   :show-inheritance:

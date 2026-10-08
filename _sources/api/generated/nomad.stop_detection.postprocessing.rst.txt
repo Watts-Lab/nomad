@@ -1,0 +1,7 @@
+﻿postprocessing
+==============
+
+.. automodule:: nomad.stop_detection.postprocessing
+   :members:
+   :undoc-members:
+   :show-inheritance:

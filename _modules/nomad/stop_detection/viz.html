@@ -1,0 +1,1123 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nomad.stop_detection.viz &mdash; NOMAD 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-design.min.css?v=95c83b7e" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../../../_static/design-tabs.js?v=f930bc37"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html">
+            
+              <img src="../../../_static/nomad-logo-black.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../data_ingestion.html">Data Ingestion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../filtering.html">Filtering &amp; Completeness</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../tessellation.html">Tessellation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../stop_detection.html">Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../visit_attribution.html">Visit Attribution</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../metrics.html">Mobility Metrics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../colocation.html">Co-location &amp; Contact Networks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../aggregation.html">Aggregation &amp; Debiasing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../synthetic_data_generation.html">Synthetic Data Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/ingesting-data.html">Loading Trajectory Data</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/benchmarking_of_stop_detection_algorithms.html">Comparing runtimes of different stop detection algorithms on toy datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/lachesis_demo.html">Lachesis Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/tadbscan_demo.html">TADBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/hdbscan_demo.html">HDBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/grid_based_demo.html">Grid-Based Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/generate_synthetic_pois.html">Synthetic POI Generation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/download_poi_data_from_OSM.html">Downloading places of interest (POI) Data from OSM</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/generate_synthetic_trajectories.html">Synthetic Trajectory Generation with Nomad</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/random_city.html">Random City Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_reference.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">NOMAD</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">nomad.stop_detection.viz</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nomad.stop_detection.viz</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
+<span class="kn">import</span> <span class="nn">matplotlib.colors</span> <span class="k">as</span> <span class="nn">mcolors</span>
+<span class="kn">import</span> <span class="nn">matplotlib.dates</span> <span class="k">as</span> <span class="nn">mdates</span>
+<span class="kn">import</span> <span class="nn">geopandas</span> <span class="k">as</span> <span class="nn">gpd</span>
+<span class="kn">from</span> <span class="nn">shapely.geometry</span> <span class="kn">import</span> <span class="n">Polygon</span>
+<span class="kn">from</span> <span class="nn">shapely.affinity</span> <span class="kn">import</span> <span class="n">scale</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">import</span> <span class="nn">nomad.io.base</span> <span class="k">as</span> <span class="nn">loader</span>
+<span class="kn">import</span> <span class="nn">h3</span>
+<span class="kn">from</span> <span class="nn">matplotlib.animation</span> <span class="kn">import</span> <span class="n">FuncAnimation</span>
+<span class="n">pd</span><span class="o">.</span><span class="n">plotting</span><span class="o">.</span><span class="n">register_matplotlib_converters</span><span class="p">()</span>
+
+<div class="viewcode-block" id="h3_cell_to_polygon">
+<a class="viewcode-back" href="../../../api/generated/nomad.stop_detection.viz.html#nomad.stop_detection.viz.h3_cell_to_polygon">[docs]</a>
+<span class="k">def</span> <span class="nf">h3_cell_to_polygon</span><span class="p">(</span><span class="n">cell</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return shapely Polygon for H3 cell (lon/lat).&quot;&quot;&quot;</span>
+    <span class="n">coords</span> <span class="o">=</span> <span class="n">h3</span><span class="o">.</span><span class="n">cell_to_boundary</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+    <span class="n">lats</span><span class="p">,</span> <span class="n">lons</span> <span class="o">=</span> <span class="nb">zip</span><span class="p">(</span><span class="o">*</span><span class="n">coords</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">Polygon</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">lons</span><span class="p">,</span> <span class="n">lats</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="clip_spatial_outliers">
+<a class="viewcode-back" href="../../../api/generated/nomad.stop_detection.viz.html#nomad.stop_detection.viz.clip_spatial_outliers">[docs]</a>
+<span class="k">def</span> <span class="nf">clip_spatial_outliers</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">lower_quantile</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="n">upper_quantile</span><span class="o">=</span><span class="mf">0.99</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Remove spatial outliers using quantile-based clipping.</span>
+<span class="sd">    </span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    data : pandas.DataFrame or GeoDataFrame</span>
+<span class="sd">        Data with spatial columns.</span>
+<span class="sd">    lower_quantile : float, default 0.01</span>
+<span class="sd">        Lower quantile threshold (0-1).</span>
+<span class="sd">    upper_quantile : float, default 0.99</span>
+<span class="sd">        Upper quantile threshold (0-1).</span>
+<span class="sd">    traj_cols : dict, optional</span>
+<span class="sd">        Column mappings.</span>
+<span class="sd">    **kwargs : dict</span>
+<span class="sd">        Additional column mappings (e.g., latitude=&#39;lat&#39;).</span>
+<span class="sd">    </span>
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    DataFrame or GeoDataFrame</span>
+<span class="sd">        Data with spatial outliers removed.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">gpd</span><span class="o">.</span><span class="n">GeoDataFrame</span><span class="p">):</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">x</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">y</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">coord_key1</span><span class="p">,</span> <span class="n">coord_key2</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_fallback_spatial_cols</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+        <span class="n">traj_cols</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_parse_traj_cols</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">warn</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">coord_key1</span><span class="p">]]</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">coord_key2</span><span class="p">]]</span>
+    
+    <span class="n">x_min</span><span class="p">,</span> <span class="n">x_max</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">quantile</span><span class="p">(</span><span class="n">lower_quantile</span><span class="p">),</span> <span class="n">x</span><span class="o">.</span><span class="n">quantile</span><span class="p">(</span><span class="n">upper_quantile</span><span class="p">)</span>
+    <span class="n">y_min</span><span class="p">,</span> <span class="n">y_max</span> <span class="o">=</span> <span class="n">y</span><span class="o">.</span><span class="n">quantile</span><span class="p">(</span><span class="n">lower_quantile</span><span class="p">),</span> <span class="n">y</span><span class="o">.</span><span class="n">quantile</span><span class="p">(</span><span class="n">upper_quantile</span><span class="p">)</span>
+    
+    <span class="n">mask</span> <span class="o">=</span> <span class="p">(</span><span class="n">x</span> <span class="o">&gt;=</span> <span class="n">x_min</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">x</span> <span class="o">&lt;=</span> <span class="n">x_max</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">y</span> <span class="o">&gt;=</span> <span class="n">y_min</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">y</span> <span class="o">&lt;=</span> <span class="n">y_max</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">data</span><span class="p">[</span><span class="n">mask</span><span class="p">]</span></div>
+
+
+<span class="k">def</span> <span class="nf">_plot_base_geometry</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">base_geometry</span><span class="p">,</span> <span class="n">gdf_crs</span><span class="p">,</span> <span class="n">base_geom_color</span><span class="o">=</span><span class="s1">&#39;#2c353c&#39;</span><span class="p">,</span> <span class="n">base_geom_background</span><span class="o">=</span><span class="s1">&#39;#0e0e0e&#39;</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Helper to plot base geometry layer.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">base_geometry</span><span class="o">.</span><span class="n">crs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">gdf_crs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">base_geometry</span><span class="o">.</span><span class="n">crs</span> <span class="o">!=</span> <span class="n">gdf_crs</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;CRS mismatch: base_geometry=</span><span class="si">{</span><span class="n">base_geometry</span><span class="o">.</span><span class="n">crs</span><span class="si">}</span><span class="s2">, data=</span><span class="si">{</span><span class="n">gdf_crs</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_facecolor</span><span class="p">(</span><span class="n">base_geom_background</span><span class="p">)</span>
+    
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">base_geom_color</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">base_geom_color</span> <span class="ow">in</span> <span class="n">base_geometry</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">base_geometry</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">ax</span><span class="o">=</span><span class="n">ax</span><span class="p">,</span> <span class="n">column</span><span class="o">=</span><span class="n">base_geom_color</span><span class="p">,</span> <span class="n">edgecolor</span><span class="o">=</span><span class="s1">&#39;white&#39;</span><span class="p">,</span> 
+                          <span class="n">linewidth</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">zorder</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">autolim</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">base_geometry</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">ax</span><span class="o">=</span><span class="n">ax</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">base_geom_color</span><span class="p">,</span> <span class="n">edgecolor</span><span class="o">=</span><span class="s1">&#39;white&#39;</span><span class="p">,</span> 
+                          <span class="n">linewidth</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">zorder</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">autolim</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">_cluster_color_map</span><span class="p">(</span><span class="n">clusters</span><span class="p">,</span> <span class="n">cmap</span><span class="p">,</span> <span class="n">noise_color</span><span class="o">=</span><span class="s1">&#39;#bdbdbd&#39;</span><span class="p">):</span>
+    <span class="n">clusters</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Index</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">clusters</span><span class="p">)</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span><span class="o">.</span><span class="n">unique</span><span class="p">()))</span>
+    <span class="n">non_noise</span> <span class="o">=</span> <span class="n">clusters</span><span class="p">[</span><span class="n">clusters</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">cmap_obj</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">get_cmap</span><span class="p">(</span><span class="n">cmap</span><span class="p">)</span>
+    <span class="n">color_steps</span> <span class="o">=</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">non_noise</span><span class="p">))</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">non_noise</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">color_map</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">cmap_obj</span><span class="p">(</span><span class="n">color_steps</span><span class="p">)),</span> <span class="n">index</span><span class="o">=</span><span class="n">non_noise</span><span class="p">)</span>
+    <span class="k">if</span> <span class="o">-</span><span class="mi">1</span> <span class="ow">in</span> <span class="n">clusters</span><span class="p">:</span>
+        <span class="n">color_map</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">noise_color</span>
+    <span class="k">return</span> <span class="n">color_map</span>
+
+<span class="k">def</span> <span class="nf">_map_cluster_colors</span><span class="p">(</span><span class="n">gdf</span><span class="p">,</span> <span class="n">cmap</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Map cluster IDs to colors, filtering noise.&quot;&quot;&quot;</span>
+    <span class="n">gdf</span> <span class="o">=</span> <span class="n">gdf</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">gdf</span><span class="p">[</span><span class="s1">&#39;cluster&#39;</span><span class="p">]</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">color_map</span> <span class="o">=</span> <span class="n">_cluster_color_map</span><span class="p">(</span><span class="n">gdf</span><span class="p">[</span><span class="s1">&#39;cluster&#39;</span><span class="p">],</span> <span class="n">cmap</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">gdf</span><span class="p">,</span> <span class="n">gdf</span><span class="p">[</span><span class="s1">&#39;cluster&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">color_map</span><span class="p">)</span>
+
+<div class="viewcode-block" id="plot_pings">
+<a class="viewcode-back" href="../../../api/generated/nomad.stop_detection.viz.html#nomad.stop_detection.viz.plot_pings">[docs]</a>
+<span class="k">def</span> <span class="nf">plot_pings</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">ax</span><span class="p">,</span>
+               <span class="n">color</span><span class="o">=</span><span class="s1">&#39;black&#39;</span><span class="p">,</span>
+               <span class="n">cmap</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+               <span class="n">s</span><span class="o">=</span><span class="mi">6</span><span class="p">,</span>
+               <span class="n">marker</span><span class="o">=</span><span class="s1">&#39;o&#39;</span><span class="p">,</span>
+               <span class="n">alpha</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+               <span class="n">base_geometry</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+               <span class="n">base_geom_color</span><span class="o">=</span><span class="s1">&#39;#2c353c&#39;</span><span class="p">,</span>
+               <span class="n">base_geom_background</span><span class="o">=</span><span class="s1">&#39;#0e0e0e&#39;</span><span class="p">,</span>
+               <span class="n">data_crs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+               <span class="n">traj_cols</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+               <span class="n">edgecolor</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> 
+               <span class="n">linewidth</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+               <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Plot trajectory points.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    data : pandas.DataFrame or GeoDataFrame</span>
+<span class="sd">        Data with spatial columns (x/y or lon/lat).</span>
+<span class="sd">    ax : matplotlib.axes.Axes</span>
+<span class="sd">        Axis to draw on.</span>
+<span class="sd">    color : color or str, default &#39;black&#39;</span>
+<span class="sd">        Point color. Can be color string or column name. If column name and values</span>
+<span class="sd">        are integers (e.g., clusters), cmap is required to map to colors.</span>
+<span class="sd">    cmap : str or Colormap, optional</span>
+<span class="sd">        Colormap when color is a column with integer values.</span>
+<span class="sd">    s : float or array-like, default 6</span>
+<span class="sd">        Marker size in points².</span>
+<span class="sd">    marker : str, default &#39;o&#39;</span>
+<span class="sd">        Marker style.</span>
+<span class="sd">    alpha : float, default 1</span>
+<span class="sd">        Opacity.</span>
+<span class="sd">    base_geometry : GeoDataFrame, optional</span>
+<span class="sd">        Base layer to plot underneath.</span>
+<span class="sd">    base_geom_color : str or column name, default &#39;#2c353c&#39;</span>
+<span class="sd">        Color for base geometry.</span>
+<span class="sd">    base_geom_background : color, default &#39;#0e0e0e&#39;</span>
+<span class="sd">        Axes background color.</span>
+<span class="sd">    data_crs : str or CRS, optional</span>
+<span class="sd">        CRS of the data.</span>
+<span class="sd">    traj_cols : dict, optional</span>
+<span class="sd">        Column name mappings.</span>
+<span class="sd">    **kwargs : dict</span>
+<span class="sd">        Additional column mappings.</span>
+<span class="sd">    </span>
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    matplotlib collection</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">gpd</span><span class="o">.</span><span class="n">GeoDataFrame</span><span class="p">):</span>
+        <span class="n">gdf</span> <span class="o">=</span> <span class="n">data</span>
+        <span class="k">if</span> <span class="n">data_crs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">gdf</span><span class="o">.</span><span class="n">crs</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">gdf</span> <span class="o">=</span> <span class="n">gdf</span><span class="o">.</span><span class="n">set_crs</span><span class="p">(</span><span class="n">data_crs</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">coord_key1</span><span class="p">,</span> <span class="n">coord_key2</span><span class="p">,</span> <span class="n">use_lon_lat</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_fallback_spatial_cols</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+        <span class="n">traj_cols</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_parse_traj_cols</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">warn</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="n">xcol</span><span class="p">,</span> <span class="n">ycol</span> <span class="o">=</span> <span class="n">traj_cols</span><span class="p">[</span><span class="n">coord_key1</span><span class="p">],</span> <span class="n">traj_cols</span><span class="p">[</span><span class="n">coord_key2</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">data_crs</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">use_lon_lat</span><span class="p">:</span>
+            <span class="n">data_crs</span> <span class="o">=</span> <span class="s2">&quot;EPSG:4326&quot;</span>
+        <span class="n">gdf</span> <span class="o">=</span> <span class="n">gpd</span><span class="o">.</span><span class="n">GeoDataFrame</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">geometry</span><span class="o">=</span><span class="n">gpd</span><span class="o">.</span><span class="n">points_from_xy</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="n">xcol</span><span class="p">],</span> <span class="n">data</span><span class="p">[</span><span class="n">ycol</span><span class="p">]),</span> <span class="n">crs</span><span class="o">=</span><span class="n">data_crs</span><span class="p">)</span>
+    
+    <span class="k">if</span> <span class="n">base_geometry</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">_plot_base_geometry</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">base_geometry</span><span class="p">,</span> <span class="n">gdf</span><span class="o">.</span><span class="n">crs</span><span class="p">,</span> <span class="n">base_geom_color</span><span class="p">,</span> <span class="n">base_geom_background</span><span class="p">)</span>
+    
+    <span class="c1"># Hide axes elements but keep facecolor</span>
+    <span class="k">for</span> <span class="n">spine</span> <span class="ow">in</span> <span class="n">ax</span><span class="o">.</span><span class="n">spines</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+        <span class="n">spine</span><span class="o">.</span><span class="n">set_visible</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">tick_params</span><span class="p">(</span><span class="n">bottom</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">left</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">labelbottom</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">labelleft</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    
+    <span class="c1"># Color logic: if column name with integer values (clusters), use cmap</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">color</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">color</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">cmap</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">gdf</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">ax</span><span class="o">=</span><span class="n">ax</span><span class="p">,</span> <span class="n">column</span><span class="o">=</span><span class="n">color</span><span class="p">,</span> <span class="n">cmap</span><span class="o">=</span><span class="n">cmap</span><span class="p">,</span> <span class="n">markersize</span><span class="o">=</span><span class="n">s</span><span class="p">,</span>
+                           <span class="n">marker</span><span class="o">=</span><span class="n">marker</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="n">alpha</span><span class="p">,</span> <span class="n">edgecolor</span><span class="o">=</span><span class="n">edgecolor</span><span class="p">,</span>
+                            <span class="n">linewidth</span><span class="o">=</span><span class="n">linewidth</span><span class="p">,</span><span class="n">zorder</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">collections</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Column contains actual colors</span>
+            <span class="k">return</span> <span class="n">gdf</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">ax</span><span class="o">=</span><span class="n">ax</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">data</span><span class="p">[</span><span class="n">color</span><span class="p">],</span> <span class="n">markersize</span><span class="o">=</span><span class="n">s</span><span class="p">,</span>
+                           <span class="n">marker</span><span class="o">=</span><span class="n">marker</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="n">alpha</span><span class="p">,</span> <span class="n">edgecolor</span><span class="o">=</span><span class="n">edgecolor</span><span class="p">,</span>
+                            <span class="n">linewidth</span><span class="o">=</span><span class="n">linewidth</span><span class="p">,</span><span class="n">zorder</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">collections</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    
+    <span class="k">return</span> <span class="n">gdf</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">ax</span><span class="o">=</span><span class="n">ax</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">color</span><span class="p">,</span> <span class="n">markersize</span><span class="o">=</span><span class="n">s</span><span class="p">,</span>
+                   <span class="n">marker</span><span class="o">=</span><span class="n">marker</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="n">alpha</span><span class="p">,</span> <span class="n">edgecolor</span><span class="o">=</span><span class="n">edgecolor</span><span class="p">,</span>
+                    <span class="n">linewidth</span><span class="o">=</span><span class="n">linewidth</span><span class="p">,</span><span class="n">zorder</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">collections</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="plot_circles">
+<a class="viewcode-back" href="../../../api/generated/nomad.stop_detection.viz.html#nomad.stop_detection.viz.plot_circles">[docs]</a>
+<span class="k">def</span> <span class="nf">plot_circles</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">ax</span><span class="p">,</span>
+                 <span class="n">radius</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                 <span class="n">diameter</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                 <span class="n">color</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                 <span class="n">edgecolor</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                 <span class="n">cmap</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                 <span class="n">alpha</span><span class="o">=</span><span class="mf">0.75</span><span class="p">,</span>
+                 <span class="n">linewidth</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                 <span class="n">base_geometry</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                 <span class="n">base_geom_color</span><span class="o">=</span><span class="s1">&#39;#2c353c&#39;</span><span class="p">,</span>
+                 <span class="n">base_geom_background</span><span class="o">=</span><span class="s1">&#39;#0e0e0e&#39;</span><span class="p">,</span>
+                 <span class="n">data_crs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                 <span class="n">traj_cols</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                 <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Plot buffered circles. Automatically projects geographic coordinates to Mercator.</span>
+<span class="sd">    </span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    data : pandas.DataFrame or GeoDataFrame</span>
+<span class="sd">        Data with spatial columns.</span>
+<span class="sd">    ax : matplotlib.axes.Axes</span>
+<span class="sd">        Axis to draw on.</span>
+<span class="sd">    radius : float or str, optional</span>
+<span class="sd">        Circle radius in meters (scalar or column name).</span>
+<span class="sd">    diameter : float or str, optional</span>
+<span class="sd">        Circle diameter in meters (scalar or column name).</span>
+<span class="sd">    color : color, str, or None, default None</span>
+<span class="sd">        Face color. None = edge-only. &#39;cluster&#39; requires cmap.</span>
+<span class="sd">    edgecolor : color, str, or None, default None</span>
+<span class="sd">        Edge color. &#39;cluster&#39; requires cmap.</span>
+<span class="sd">    cmap : str or Colormap, optional</span>
+<span class="sd">        Colormap when coloring by integer column (e.g., &#39;cluster&#39;).</span>
+<span class="sd">    alpha : float, default 0.75</span>
+<span class="sd">        Opacity.</span>
+<span class="sd">    linewidth : float, optional</span>
+<span class="sd">        Edge width (auto: 2 if edge-only, 0.5 otherwise).</span>
+<span class="sd">    base_geometry : GeoDataFrame, optional</span>
+<span class="sd">        Base layer underneath.</span>
+<span class="sd">    base_geom_color : str or column, default &#39;#2c353c&#39;</span>
+<span class="sd">        Base geometry color.</span>
+<span class="sd">    base_geom_background : color, default &#39;#0e0e0e&#39;</span>
+<span class="sd">        Axes background color.</span>
+<span class="sd">    data_crs : str or CRS, optional</span>
+<span class="sd">        Data CRS.</span>
+<span class="sd">    traj_cols : dict, optional</span>
+<span class="sd">        Column mappings.</span>
+<span class="sd">    **kwargs : dict</span>
+<span class="sd">        Additional column mappings.</span>
+<span class="sd">    </span>
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    matplotlib collection</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">radius</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">diameter</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Must provide either radius or diameter&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">radius</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">diameter</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Cannot provide both radius and diameter&quot;</span><span class="p">)</span>
+    
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">gpd</span><span class="o">.</span><span class="n">GeoDataFrame</span><span class="p">):</span>
+        <span class="n">gdf</span> <span class="o">=</span> <span class="n">data</span> <span class="k">if</span> <span class="n">data_crs</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">data</span><span class="o">.</span><span class="n">set_crs</span><span class="p">(</span><span class="n">data_crs</span><span class="p">)</span> <span class="k">if</span> <span class="n">data</span><span class="o">.</span><span class="n">crs</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">data</span>
+        <span class="n">use_lon_lat</span> <span class="o">=</span> <span class="n">gdf</span><span class="o">.</span><span class="n">crs</span> <span class="ow">and</span> <span class="n">gdf</span><span class="o">.</span><span class="n">crs</span><span class="o">.</span><span class="n">is_geographic</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">coord_key1</span><span class="p">,</span> <span class="n">coord_key2</span><span class="p">,</span> <span class="n">use_lon_lat</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_fallback_spatial_cols</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+        <span class="n">traj_cols</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_parse_traj_cols</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">warn</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">data_crs</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">use_lon_lat</span><span class="p">:</span>
+            <span class="n">data_crs</span> <span class="o">=</span> <span class="s2">&quot;EPSG:4326&quot;</span>
+        <span class="n">gdf</span> <span class="o">=</span> <span class="n">gpd</span><span class="o">.</span><span class="n">GeoDataFrame</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> 
+                              <span class="n">geometry</span><span class="o">=</span><span class="n">gpd</span><span class="o">.</span><span class="n">points_from_xy</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">coord_key1</span><span class="p">]],</span> 
+                                                         <span class="n">data</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">coord_key2</span><span class="p">]]),</span>
+                              <span class="n">crs</span><span class="o">=</span><span class="n">data_crs</span><span class="p">)</span>
+    
+    <span class="c1"># Check base_geometry CRS before any projection</span>
+    <span class="n">original_crs</span> <span class="o">=</span> <span class="n">gdf</span><span class="o">.</span><span class="n">crs</span>
+    <span class="k">if</span> <span class="n">base_geometry</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">_plot_base_geometry</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">base_geometry</span><span class="p">,</span> <span class="n">original_crs</span><span class="p">,</span> <span class="n">base_geom_color</span><span class="p">,</span> <span class="n">base_geom_background</span><span class="p">)</span>
+    
+    <span class="c1"># Project to Mercator if geographic coordinates (for accurate buffering in meters)</span>
+    <span class="k">if</span> <span class="n">use_lon_lat</span><span class="p">:</span>
+        <span class="n">gdf</span> <span class="o">=</span> <span class="n">gdf</span><span class="o">.</span><span class="n">to_crs</span><span class="p">(</span><span class="s2">&quot;EPSG:3857&quot;</span><span class="p">)</span>
+    
+    <span class="k">for</span> <span class="n">spine</span> <span class="ow">in</span> <span class="n">ax</span><span class="o">.</span><span class="n">spines</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+        <span class="n">spine</span><span class="o">.</span><span class="n">set_visible</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">tick_params</span><span class="p">(</span><span class="n">bottom</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">left</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">labelbottom</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">labelleft</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    
+    <span class="k">if</span> <span class="n">diameter</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="n">diameter</span><span class="p">]</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">diameter</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">diameter</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span> <span class="k">else</span> <span class="n">diameter</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">radius</span><span class="p">]</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">radius</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">radius</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span> <span class="k">else</span> <span class="n">radius</span>
+    <span class="n">gdf</span> <span class="o">=</span> <span class="n">gdf</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">gdf</span><span class="p">[</span><span class="s1">&#39;geometry&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">gdf</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">buffer</span><span class="p">(</span><span class="n">r</span><span class="p">)</span> <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">isscalar</span><span class="p">(</span><span class="n">r</span><span class="p">)</span> <span class="k">else</span> <span class="p">[</span><span class="n">pt</span><span class="o">.</span><span class="n">buffer</span><span class="p">(</span><span class="n">rv</span><span class="p">)</span> <span class="k">for</span> <span class="n">pt</span><span class="p">,</span> <span class="n">rv</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">gdf</span><span class="o">.</span><span class="n">geometry</span><span class="p">,</span> <span class="n">r</span><span class="p">)]</span>
+    
+    <span class="c1"># Convert back to original CRS if we projected</span>
+    <span class="k">if</span> <span class="n">use_lon_lat</span> <span class="ow">and</span> <span class="n">original_crs</span><span class="p">:</span>
+        <span class="n">gdf</span> <span class="o">=</span> <span class="n">gdf</span><span class="o">.</span><span class="n">to_crs</span><span class="p">(</span><span class="n">original_crs</span><span class="p">)</span>
+    
+    <span class="c1"># Color logic: &#39;cluster&#39; special case requires cmap</span>
+    <span class="k">if</span> <span class="n">color</span> <span class="o">==</span> <span class="s1">&#39;cluster&#39;</span> <span class="ow">and</span> <span class="s1">&#39;cluster&#39;</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">cmap</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;cmap required when color=&#39;cluster&#39;&quot;</span><span class="p">)</span>
+        <span class="n">gdf</span><span class="p">,</span> <span class="n">face_colors</span> <span class="o">=</span> <span class="n">_map_cluster_colors</span><span class="p">(</span><span class="n">gdf</span><span class="p">,</span> <span class="n">cmap</span><span class="p">)</span>
+        <span class="n">edge_colors</span><span class="p">,</span> <span class="n">column</span> <span class="o">=</span> <span class="n">edgecolor</span> <span class="ow">or</span> <span class="s1">&#39;black&#39;</span><span class="p">,</span> <span class="kc">None</span>
+    <span class="k">elif</span> <span class="n">edgecolor</span> <span class="o">==</span> <span class="s1">&#39;cluster&#39;</span> <span class="ow">and</span> <span class="s1">&#39;cluster&#39;</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">cmap</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;cmap required when edgecolor=&#39;cluster&#39;&quot;</span><span class="p">)</span>
+        <span class="n">gdf</span><span class="p">,</span> <span class="n">edge_colors</span> <span class="o">=</span> <span class="n">_map_cluster_colors</span><span class="p">(</span><span class="n">gdf</span><span class="p">,</span> <span class="n">cmap</span><span class="p">)</span>
+        <span class="n">face_colors</span><span class="p">,</span> <span class="n">column</span> <span class="o">=</span> <span class="n">color</span><span class="p">,</span> <span class="kc">None</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">color</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">color</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">cmap</span><span class="p">:</span>
+            <span class="n">face_colors</span><span class="p">,</span> <span class="n">edge_colors</span><span class="p">,</span> <span class="n">column</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">edgecolor</span> <span class="ow">or</span> <span class="s1">&#39;black&#39;</span><span class="p">,</span> <span class="n">color</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">face_colors</span><span class="p">,</span> <span class="n">edge_colors</span><span class="p">,</span> <span class="n">column</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">color</span><span class="p">],</span> <span class="n">edgecolor</span> <span class="ow">or</span> <span class="s1">&#39;black&#39;</span><span class="p">,</span> <span class="kc">None</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">edgecolor</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">edgecolor</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">cmap</span><span class="p">:</span>
+            <span class="n">face_colors</span><span class="p">,</span> <span class="n">edge_colors</span><span class="p">,</span> <span class="n">column</span> <span class="o">=</span> <span class="n">color</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="n">edgecolor</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">face_colors</span><span class="p">,</span> <span class="n">edge_colors</span><span class="p">,</span> <span class="n">column</span> <span class="o">=</span> <span class="n">color</span><span class="p">,</span> <span class="n">data</span><span class="p">[</span><span class="n">edgecolor</span><span class="p">],</span> <span class="kc">None</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">face_colors</span><span class="p">,</span> <span class="n">edge_colors</span><span class="p">,</span> <span class="n">column</span> <span class="o">=</span> <span class="n">color</span><span class="p">,</span> <span class="n">edgecolor</span> <span class="ow">or</span> <span class="p">(</span><span class="s1">&#39;gray&#39;</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">color</span> <span class="k">else</span> <span class="s1">&#39;black&#39;</span><span class="p">),</span> <span class="kc">None</span>
+    
+    <span class="n">lw</span> <span class="o">=</span> <span class="n">linewidth</span> <span class="ow">or</span> <span class="p">(</span><span class="mi">2</span> <span class="k">if</span> <span class="n">face_colors</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">0.5</span><span class="p">)</span>
+    <span class="n">plot_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;ax&#39;</span><span class="p">:</span> <span class="n">ax</span><span class="p">,</span> <span class="s1">&#39;alpha&#39;</span><span class="p">:</span> <span class="n">alpha</span><span class="p">,</span> <span class="s1">&#39;zorder&#39;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s1">&#39;linewidth&#39;</span><span class="p">:</span> <span class="n">lw</span><span class="p">}</span>
+    
+    <span class="k">if</span> <span class="n">column</span><span class="p">:</span>
+        <span class="n">plot_kwargs</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="s1">&#39;column&#39;</span><span class="p">:</span> <span class="n">column</span><span class="p">,</span> <span class="s1">&#39;cmap&#39;</span><span class="p">:</span> <span class="n">cmap</span><span class="p">})</span>
+    
+    <span class="k">if</span> <span class="n">face_colors</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">gdf</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">facecolor</span><span class="o">=</span><span class="s1">&#39;none&#39;</span><span class="p">,</span> <span class="n">edgecolor</span><span class="o">=</span><span class="n">edge_colors</span><span class="p">,</span> <span class="o">**</span><span class="n">plot_kwargs</span><span class="p">)</span><span class="o">.</span><span class="n">collections</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="k">elif</span> <span class="n">column</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">gdf</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">edgecolor</span><span class="o">=</span><span class="n">edge_colors</span><span class="p">,</span> <span class="o">**</span><span class="n">plot_kwargs</span><span class="p">)</span><span class="o">.</span><span class="n">collections</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">gdf</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">color</span><span class="o">=</span><span class="n">face_colors</span><span class="p">,</span> <span class="n">edgecolor</span><span class="o">=</span><span class="n">edge_colors</span><span class="p">,</span> <span class="o">**</span><span class="n">plot_kwargs</span><span class="p">)</span><span class="o">.</span><span class="n">collections</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="plot_hexagons">
+<a class="viewcode-back" href="../../../api/generated/nomad.stop_detection.viz.html#nomad.stop_detection.viz.plot_hexagons">[docs]</a>
+<span class="k">def</span> <span class="nf">plot_hexagons</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">ax</span><span class="p">,</span>
+                  <span class="n">h3_resolution</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                  <span class="n">color</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                  <span class="n">edgecolor</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                  <span class="n">cmap</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                  <span class="n">alpha</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span>
+                  <span class="n">linewidth</span><span class="o">=</span><span class="mf">0.75</span><span class="p">,</span>
+                  <span class="n">stagger</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                  <span class="n">base_geometry</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                  <span class="n">base_geom_color</span><span class="o">=</span><span class="s1">&#39;#2c353c&#39;</span><span class="p">,</span>
+                  <span class="n">base_geom_background</span><span class="o">=</span><span class="s1">&#39;#0e0e0e&#39;</span><span class="p">,</span>
+                  <span class="n">data_crs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                  <span class="n">traj_cols</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                  <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Plot H3 hexagons.</span>
+<span class="sd">    </span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    data : pandas.DataFrame or GeoDataFrame</span>
+<span class="sd">        Data with spatial columns or location_id/h3_cell column.</span>
+<span class="sd">    ax : matplotlib.axes.Axes</span>
+<span class="sd">        Axis to draw on.</span>
+<span class="sd">    h3_resolution : int, optional</span>
+<span class="sd">        H3 resolution. If None, expects location_id column with H3 cells.</span>
+<span class="sd">    color : color, str, or None, default None</span>
+<span class="sd">        Face color. &#39;cluster&#39; requires cmap.</span>
+<span class="sd">    edgecolor : color, str, or None, default None  </span>
+<span class="sd">        Edge color. &#39;cluster&#39; requires cmap.</span>
+<span class="sd">    cmap : str or Colormap, optional</span>
+<span class="sd">        Colormap for integer columns.</span>
+<span class="sd">    alpha : float, default 0.8</span>
+<span class="sd">        Opacity.</span>
+<span class="sd">    linewidth : float, default 0.75</span>
+<span class="sd">        Edge width.</span>
+<span class="sd">    stagger : bool, default True</span>
+<span class="sd">        Stagger duplicate hexagons concentrically.</span>
+<span class="sd">    base_geometry : GeoDataFrame, optional</span>
+<span class="sd">        Base layer underneath.</span>
+<span class="sd">    base_geom_color : str or column, default &#39;#2c353c&#39;</span>
+<span class="sd">        Base geometry color.</span>
+<span class="sd">    base_geom_background : color, default &#39;#0e0e0e&#39;</span>
+<span class="sd">        Axes background.</span>
+<span class="sd">    data_crs : str or CRS, optional</span>
+<span class="sd">        Target CRS (default EPSG:4326).</span>
+<span class="sd">    traj_cols : dict, optional</span>
+<span class="sd">        Column mappings.</span>
+<span class="sd">    **kwargs : dict</span>
+<span class="sd">        Additional column mappings.</span>
+<span class="sd">    </span>
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    matplotlib collection</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">traj_cols</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_parse_traj_cols</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">warn</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">gpd</span><span class="o">.</span><span class="n">GeoDataFrame</span><span class="p">)</span> <span class="k">else</span> <span class="n">traj_cols</span>
+    <span class="n">loc_col</span> <span class="o">=</span> <span class="n">traj_cols</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;location_id&#39;</span><span class="p">,</span> <span class="s1">&#39;location_id&#39;</span><span class="p">)</span> <span class="k">if</span> <span class="n">traj_cols</span> <span class="k">else</span> <span class="s1">&#39;location_id&#39;</span>
+    
+    <span class="k">if</span> <span class="n">h3_resolution</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">coord_key1</span><span class="p">,</span> <span class="n">coord_key2</span><span class="p">,</span> <span class="n">use_lon_lat</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_fallback_spatial_cols</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">use_lon_lat</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;H3 requires geographic coordinates (lat/lon)&quot;</span><span class="p">)</span>
+        <span class="n">traj_cols</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_parse_traj_cols</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">warn</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="n">lat_col</span><span class="p">,</span> <span class="n">lon_col</span> <span class="o">=</span> <span class="n">traj_cols</span><span class="p">[</span><span class="n">coord_key2</span><span class="p">],</span> <span class="n">traj_cols</span><span class="p">[</span><span class="n">coord_key1</span><span class="p">]</span>
+        <span class="n">df</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">df</span><span class="p">[</span><span class="s1">&#39;h3_cell&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">row</span><span class="p">:</span> <span class="n">h3</span><span class="o">.</span><span class="n">latlng_to_cell</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="n">lat_col</span><span class="p">],</span> <span class="n">row</span><span class="p">[</span><span class="n">lon_col</span><span class="p">],</span> <span class="n">h3_resolution</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">loc_col</span> <span class="o">=</span> <span class="s1">&#39;h3_cell&#39;</span>
+    <span class="k">elif</span> <span class="n">loc_col</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Column &#39;</span><span class="si">{</span><span class="n">loc_col</span><span class="si">}</span><span class="s2">&#39; not found and h3_resolution not provided&quot;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">df</span> <span class="o">=</span> <span class="n">data</span>
+    
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">df</span><span class="p">[</span><span class="n">loc_col</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">h3</span><span class="o">.</span><span class="n">is_valid_cell</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Column &#39;</span><span class="si">{</span><span class="n">loc_col</span><span class="si">}</span><span class="s2">&#39; contains invalid H3 cells&quot;</span><span class="p">)</span>
+    
+    <span class="n">gdf</span> <span class="o">=</span> <span class="n">gpd</span><span class="o">.</span><span class="n">GeoDataFrame</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">geometry</span><span class="o">=</span><span class="n">df</span><span class="p">[</span><span class="n">loc_col</span><span class="p">]</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">h3_cell_to_polygon</span><span class="p">),</span> <span class="n">crs</span><span class="o">=</span><span class="s2">&quot;EPSG:4326&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">data_crs</span><span class="p">:</span>
+        <span class="n">gdf</span> <span class="o">=</span> <span class="n">gdf</span><span class="o">.</span><span class="n">to_crs</span><span class="p">(</span><span class="n">data_crs</span><span class="p">)</span>
+    
+    <span class="k">if</span> <span class="n">base_geometry</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">_plot_base_geometry</span><span class="p">(</span><span class="n">ax</span><span class="p">,</span> <span class="n">base_geometry</span><span class="p">,</span> <span class="n">gdf</span><span class="o">.</span><span class="n">crs</span><span class="p">,</span> <span class="n">base_geom_color</span><span class="p">,</span> <span class="n">base_geom_background</span><span class="p">)</span>
+    
+    <span class="k">for</span> <span class="n">spine</span> <span class="ow">in</span> <span class="n">ax</span><span class="o">.</span><span class="n">spines</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+        <span class="n">spine</span><span class="o">.</span><span class="n">set_visible</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">tick_params</span><span class="p">(</span><span class="n">bottom</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">left</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">labelbottom</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">labelleft</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    
+    <span class="k">if</span> <span class="n">stagger</span><span class="p">:</span>
+        <span class="n">dup_mask</span> <span class="o">=</span> <span class="n">gdf</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">duplicated</span><span class="p">(</span><span class="n">keep</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">dup_mask</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+            <span class="n">wkt_series</span> <span class="o">=</span> <span class="n">gdf</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">g</span><span class="p">:</span> <span class="n">g</span><span class="o">.</span><span class="n">wkt</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">wkt_val</span> <span class="ow">in</span> <span class="n">wkt_series</span><span class="p">[</span><span class="n">dup_mask</span><span class="p">]</span><span class="o">.</span><span class="n">unique</span><span class="p">():</span>
+                <span class="n">idx_mask</span> <span class="o">=</span> <span class="n">wkt_series</span> <span class="o">==</span> <span class="n">wkt_val</span>
+                <span class="n">k</span> <span class="o">=</span> <span class="n">idx_mask</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+                <span class="n">factors</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.7</span><span class="p">,</span> <span class="n">k</span><span class="p">)</span>
+                <span class="n">gdf</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">idx_mask</span><span class="p">,</span> <span class="s1">&#39;geometry&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
+                    <span class="n">scale</span><span class="p">(</span><span class="n">poly</span><span class="p">,</span> <span class="n">xfact</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">yfact</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">origin</span><span class="o">=</span><span class="n">poly</span><span class="o">.</span><span class="n">centroid</span><span class="p">)</span>
+                    <span class="k">for</span> <span class="n">poly</span><span class="p">,</span> <span class="n">f</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">gdf</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">idx_mask</span><span class="p">,</span> <span class="s1">&#39;geometry&#39;</span><span class="p">],</span> <span class="n">factors</span><span class="p">)</span>
+                <span class="p">]</span>
+    
+    <span class="c1"># Color logic</span>
+    <span class="k">if</span> <span class="n">color</span> <span class="o">==</span> <span class="s1">&#39;cluster&#39;</span> <span class="ow">and</span> <span class="s1">&#39;cluster&#39;</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">cmap</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;cmap required when color=&#39;cluster&#39;&quot;</span><span class="p">)</span>
+        <span class="n">gdf</span><span class="p">,</span> <span class="n">face_colors</span> <span class="o">=</span> <span class="n">_map_cluster_colors</span><span class="p">(</span><span class="n">gdf</span><span class="p">,</span> <span class="n">cmap</span><span class="p">)</span>
+        <span class="n">edge_colors</span><span class="p">,</span> <span class="n">column</span> <span class="o">=</span> <span class="n">edgecolor</span> <span class="ow">or</span> <span class="s1">&#39;black&#39;</span><span class="p">,</span> <span class="kc">None</span>
+    <span class="k">elif</span> <span class="n">edgecolor</span> <span class="o">==</span> <span class="s1">&#39;cluster&#39;</span> <span class="ow">and</span> <span class="s1">&#39;cluster&#39;</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">cmap</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;cmap required when edgecolor=&#39;cluster&#39;&quot;</span><span class="p">)</span>
+        <span class="n">gdf</span><span class="p">,</span> <span class="n">edge_colors</span> <span class="o">=</span> <span class="n">_map_cluster_colors</span><span class="p">(</span><span class="n">gdf</span><span class="p">,</span> <span class="n">cmap</span><span class="p">)</span>
+        <span class="n">face_colors</span><span class="p">,</span> <span class="n">column</span> <span class="o">=</span> <span class="n">color</span><span class="p">,</span> <span class="kc">None</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">color</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">color</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">cmap</span><span class="p">:</span>
+            <span class="n">face_colors</span><span class="p">,</span> <span class="n">edge_colors</span><span class="p">,</span> <span class="n">column</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">edgecolor</span> <span class="ow">or</span> <span class="s1">&#39;black&#39;</span><span class="p">,</span> <span class="n">color</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">face_colors</span><span class="p">,</span> <span class="n">edge_colors</span><span class="p">,</span> <span class="n">column</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">color</span><span class="p">],</span> <span class="n">edgecolor</span> <span class="ow">or</span> <span class="s1">&#39;black&#39;</span><span class="p">,</span> <span class="kc">None</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">edgecolor</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">edgecolor</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">cmap</span><span class="p">:</span>
+            <span class="n">face_colors</span><span class="p">,</span> <span class="n">edge_colors</span><span class="p">,</span> <span class="n">column</span> <span class="o">=</span> <span class="n">color</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="n">edgecolor</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">face_colors</span><span class="p">,</span> <span class="n">edge_colors</span><span class="p">,</span> <span class="n">column</span> <span class="o">=</span> <span class="n">color</span><span class="p">,</span> <span class="n">df</span><span class="p">[</span><span class="n">edgecolor</span><span class="p">],</span> <span class="kc">None</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">face_colors</span><span class="p">,</span> <span class="n">edge_colors</span><span class="p">,</span> <span class="n">column</span> <span class="o">=</span> <span class="n">color</span><span class="p">,</span> <span class="n">edgecolor</span> <span class="ow">or</span> <span class="s1">&#39;black&#39;</span><span class="p">,</span> <span class="kc">None</span>
+    
+    <span class="n">plot_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;ax&#39;</span><span class="p">:</span> <span class="n">ax</span><span class="p">,</span> <span class="s1">&#39;alpha&#39;</span><span class="p">:</span> <span class="n">alpha</span><span class="p">,</span> <span class="s1">&#39;zorder&#39;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s1">&#39;linewidth&#39;</span><span class="p">:</span> <span class="n">linewidth</span><span class="p">}</span>
+    <span class="k">if</span> <span class="n">column</span><span class="p">:</span>
+        <span class="n">plot_kwargs</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="s1">&#39;column&#39;</span><span class="p">:</span> <span class="n">column</span><span class="p">,</span> <span class="s1">&#39;cmap&#39;</span><span class="p">:</span> <span class="n">cmap</span><span class="p">})</span>
+    
+    <span class="k">if</span> <span class="n">face_colors</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">gdf</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">facecolor</span><span class="o">=</span><span class="s1">&#39;none&#39;</span><span class="p">,</span> <span class="n">edgecolor</span><span class="o">=</span><span class="n">edge_colors</span><span class="p">,</span> <span class="o">**</span><span class="n">plot_kwargs</span><span class="p">)</span><span class="o">.</span><span class="n">collections</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="k">elif</span> <span class="n">column</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">gdf</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">edgecolor</span><span class="o">=</span><span class="n">edge_colors</span><span class="p">,</span> <span class="o">**</span><span class="n">plot_kwargs</span><span class="p">)</span><span class="o">.</span><span class="n">collections</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">gdf</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">color</span><span class="o">=</span><span class="n">face_colors</span><span class="p">,</span> <span class="n">edgecolor</span><span class="o">=</span><span class="n">edge_colors</span><span class="p">,</span> <span class="o">**</span><span class="n">plot_kwargs</span><span class="p">)</span><span class="o">.</span><span class="n">collections</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="plot_stops">
+<a class="viewcode-back" href="../../../api/generated/nomad.stop_detection.viz.html#nomad.stop_detection.viz.plot_stops">[docs]</a>
+<span class="k">def</span> <span class="nf">plot_stops</span><span class="p">(</span><span class="n">stops</span><span class="p">,</span> <span class="n">ax</span><span class="p">,</span>
+               <span class="n">radius</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+               <span class="n">diameter</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+               <span class="n">cmap</span><span class="o">=</span><span class="s1">&#39;Reds&#39;</span><span class="p">,</span>
+               <span class="n">edge_only</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+               <span class="n">stagger</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+               <span class="n">base_geometry</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+               <span class="n">base_geom_color</span><span class="o">=</span><span class="s1">&#39;#2c353c&#39;</span><span class="p">,</span>
+               <span class="n">base_geom_background</span><span class="o">=</span><span class="s1">&#39;#0e0e0e&#39;</span><span class="p">,</span>
+               <span class="n">data_crs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+               <span class="n">traj_cols</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+               <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Plot stop table (circles, hexagons, or points).</span>
+<span class="sd">    </span>
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    stops : pandas.DataFrame or GeoDataFrame</span>
+<span class="sd">        Stop data.</span>
+<span class="sd">    ax : matplotlib.axes.Axes</span>
+<span class="sd">        Axis to draw on.</span>
+<span class="sd">    radius : float or str, optional</span>
+<span class="sd">        Circle radius in meters (scalar or column name).</span>
+<span class="sd">    diameter : float or str, optional</span>
+<span class="sd">        Circle diameter in meters (scalar or column name).</span>
+<span class="sd">    cmap : str or Colormap, default &#39;Reds&#39;</span>
+<span class="sd">        Colormap for cluster coloring.</span>
+<span class="sd">    edge_only : bool, default False</span>
+<span class="sd">        If True, hollow circles/hexagons (edge-only).</span>
+<span class="sd">    stagger : bool, default True</span>
+<span class="sd">        Stagger duplicate hexagons.</span>
+<span class="sd">    base_geometry : GeoDataFrame, optional</span>
+<span class="sd">        Base layer underneath.</span>
+<span class="sd">    base_geom_color : str or column, default &#39;#2c353c&#39;</span>
+<span class="sd">        Base geometry color.</span>
+<span class="sd">    base_geom_background : color, default &#39;#0e0e0e&#39;</span>
+<span class="sd">        Axes background.</span>
+<span class="sd">    data_crs : str or CRS, optional</span>
+<span class="sd">        Data CRS.</span>
+<span class="sd">    traj_cols : dict, optional</span>
+<span class="sd">        Column mappings.</span>
+<span class="sd">    **kwargs : dict</span>
+<span class="sd">        Additional column mappings.</span>
+<span class="sd">    </span>
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    matplotlib collection or None</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">coord_x</span><span class="p">,</span> <span class="n">coord_y</span><span class="p">,</span> <span class="n">use_lonlat</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_fallback_spatial_cols</span><span class="p">(</span><span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+        <span class="n">traj_cols</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_parse_traj_cols</span><span class="p">(</span><span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">warn</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="n">coord_x</span> <span class="o">=</span> <span class="n">coord_y</span> <span class="o">=</span> <span class="n">use_lonlat</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">traj_cols</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_parse_traj_cols</span><span class="p">(</span><span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">warn</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    
+    <span class="c1"># Determine size parameter (prefer explicit args over columns)</span>
+    <span class="n">size_param</span> <span class="o">=</span> <span class="p">(</span><span class="n">radius</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">diameter</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="s1">&#39;diameter&#39;</span> <span class="ow">in</span> <span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">)</span>
+    
+    <span class="c1"># Circles (any coordinates - will auto-project if geographic)</span>
+    <span class="k">if</span> <span class="n">coord_x</span> <span class="ow">and</span> <span class="n">coord_y</span> <span class="ow">and</span> <span class="n">size_param</span><span class="p">:</span>
+        <span class="c1"># Use explicit radius/diameter if provided, otherwise use diameter column</span>
+        <span class="k">if</span> <span class="n">diameter</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">plot_circles</span><span class="p">(</span>
+                <span class="n">stops</span><span class="p">,</span> <span class="n">ax</span><span class="p">,</span>
+                <span class="n">diameter</span><span class="o">=</span><span class="n">diameter</span><span class="p">,</span>
+                <span class="n">color</span><span class="o">=</span><span class="kc">None</span> <span class="k">if</span> <span class="n">edge_only</span> <span class="k">else</span> <span class="s1">&#39;cluster&#39;</span><span class="p">,</span>
+                <span class="n">edgecolor</span><span class="o">=</span><span class="s1">&#39;cluster&#39;</span> <span class="k">if</span> <span class="n">edge_only</span> <span class="k">else</span> <span class="s1">&#39;black&#39;</span><span class="p">,</span>
+                <span class="n">cmap</span><span class="o">=</span><span class="n">cmap</span><span class="p">,</span>
+                <span class="n">alpha</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span>
+                <span class="n">linewidth</span><span class="o">=</span><span class="mi">4</span> <span class="k">if</span> <span class="n">edge_only</span> <span class="k">else</span> <span class="mf">0.75</span><span class="p">,</span>
+                <span class="n">base_geometry</span><span class="o">=</span><span class="n">base_geometry</span><span class="p">,</span>
+                <span class="n">base_geom_color</span><span class="o">=</span><span class="n">base_geom_color</span><span class="p">,</span>
+                <span class="n">base_geom_background</span><span class="o">=</span><span class="n">base_geom_background</span><span class="p">,</span>
+                <span class="n">data_crs</span><span class="o">=</span><span class="n">data_crs</span><span class="p">,</span>
+                <span class="n">traj_cols</span><span class="o">=</span><span class="n">traj_cols</span><span class="p">,</span>
+                <span class="o">**</span><span class="n">kwargs</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>  <span class="c1"># radius provided or diameter column</span>
+            <span class="k">return</span> <span class="n">plot_circles</span><span class="p">(</span>
+                <span class="n">stops</span><span class="p">,</span> <span class="n">ax</span><span class="p">,</span>
+                <span class="n">radius</span><span class="o">=</span><span class="n">radius</span><span class="p">,</span>
+                <span class="n">diameter</span><span class="o">=</span><span class="s1">&#39;diameter&#39;</span> <span class="k">if</span> <span class="n">radius</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="n">color</span><span class="o">=</span><span class="kc">None</span> <span class="k">if</span> <span class="n">edge_only</span> <span class="k">else</span> <span class="s1">&#39;cluster&#39;</span><span class="p">,</span>
+                <span class="n">edgecolor</span><span class="o">=</span><span class="s1">&#39;cluster&#39;</span> <span class="k">if</span> <span class="n">edge_only</span> <span class="k">else</span> <span class="s1">&#39;black&#39;</span><span class="p">,</span>
+                <span class="n">cmap</span><span class="o">=</span><span class="n">cmap</span><span class="p">,</span>
+                <span class="n">alpha</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span>
+                <span class="n">linewidth</span><span class="o">=</span><span class="mi">4</span> <span class="k">if</span> <span class="n">edge_only</span> <span class="k">else</span> <span class="mf">0.75</span><span class="p">,</span>
+                <span class="n">base_geometry</span><span class="o">=</span><span class="n">base_geometry</span><span class="p">,</span>
+                <span class="n">base_geom_color</span><span class="o">=</span><span class="n">base_geom_color</span><span class="p">,</span>
+                <span class="n">base_geom_background</span><span class="o">=</span><span class="n">base_geom_background</span><span class="p">,</span>
+                <span class="n">data_crs</span><span class="o">=</span><span class="n">data_crs</span><span class="p">,</span>
+                <span class="n">traj_cols</span><span class="o">=</span><span class="n">traj_cols</span><span class="p">,</span>
+                <span class="o">**</span><span class="n">kwargs</span>
+            <span class="p">)</span>
+    
+    <span class="c1"># H3 hexagons</span>
+    <span class="n">loc_col</span> <span class="o">=</span> <span class="n">traj_cols</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;location_id&#39;</span><span class="p">,</span> <span class="s1">&#39;location_id&#39;</span><span class="p">)</span> <span class="k">if</span> <span class="n">traj_cols</span> <span class="k">else</span> <span class="s1">&#39;location_id&#39;</span>
+    <span class="k">if</span> <span class="n">loc_col</span> <span class="ow">in</span> <span class="n">stops</span><span class="o">.</span><span class="n">columns</span> <span class="ow">and</span> <span class="n">stops</span><span class="p">[</span><span class="n">loc_col</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">h3</span><span class="o">.</span><span class="n">is_valid_cell</span><span class="p">)</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+        <span class="k">return</span> <span class="n">plot_hexagons</span><span class="p">(</span>
+            <span class="n">stops</span><span class="p">,</span> <span class="n">ax</span><span class="p">,</span>
+            <span class="n">h3_resolution</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">color</span><span class="o">=</span><span class="kc">None</span> <span class="k">if</span> <span class="n">edge_only</span> <span class="k">else</span> <span class="s1">&#39;cluster&#39;</span><span class="p">,</span>
+            <span class="n">edgecolor</span><span class="o">=</span><span class="s1">&#39;cluster&#39;</span> <span class="k">if</span> <span class="n">edge_only</span> <span class="k">else</span> <span class="s1">&#39;black&#39;</span><span class="p">,</span>
+            <span class="n">cmap</span><span class="o">=</span><span class="n">cmap</span><span class="p">,</span>
+            <span class="n">alpha</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span>
+            <span class="n">linewidth</span><span class="o">=</span><span class="mi">4</span> <span class="k">if</span> <span class="n">edge_only</span> <span class="k">else</span> <span class="mf">0.75</span><span class="p">,</span>
+            <span class="n">stagger</span><span class="o">=</span><span class="n">stagger</span><span class="p">,</span>
+            <span class="n">base_geometry</span><span class="o">=</span><span class="n">base_geometry</span><span class="p">,</span>
+            <span class="n">base_geom_color</span><span class="o">=</span><span class="n">base_geom_color</span><span class="p">,</span>
+            <span class="n">base_geom_background</span><span class="o">=</span><span class="n">base_geom_background</span><span class="p">,</span>
+            <span class="n">data_crs</span><span class="o">=</span><span class="n">data_crs</span><span class="p">,</span>
+            <span class="n">traj_cols</span><span class="o">=</span><span class="n">traj_cols</span><span class="p">,</span>
+            <span class="o">**</span><span class="n">kwargs</span>
+        <span class="p">)</span>
+    
+    <span class="c1"># Fallback scatter</span>
+    <span class="k">if</span> <span class="n">coord_x</span> <span class="ow">and</span> <span class="n">coord_y</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">plot_pings</span><span class="p">(</span>
+            <span class="n">stops</span><span class="p">,</span> <span class="n">ax</span><span class="p">,</span>
+            <span class="n">color</span><span class="o">=</span><span class="s1">&#39;cluster&#39;</span><span class="p">,</span>
+            <span class="n">cmap</span><span class="o">=</span><span class="n">cmap</span><span class="p">,</span>
+            <span class="n">s</span><span class="o">=</span><span class="mi">60</span><span class="p">,</span>
+            <span class="n">alpha</span><span class="o">=</span><span class="mf">0.75</span><span class="p">,</span>
+            <span class="n">base_geometry</span><span class="o">=</span><span class="n">base_geometry</span><span class="p">,</span>
+            <span class="n">base_geom_color</span><span class="o">=</span><span class="n">base_geom_color</span><span class="p">,</span>
+            <span class="n">base_geom_background</span><span class="o">=</span><span class="n">base_geom_background</span><span class="p">,</span>
+            <span class="n">data_crs</span><span class="o">=</span><span class="n">data_crs</span><span class="p">,</span>
+            <span class="n">traj_cols</span><span class="o">=</span><span class="n">traj_cols</span><span class="p">,</span>
+            <span class="o">**</span><span class="n">kwargs</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="plot_time_barcode">
+<a class="viewcode-back" href="../../../api/generated/nomad.stop_detection.viz.html#nomad.stop_detection.viz.plot_time_barcode">[docs]</a>
+<span class="k">def</span> <span class="nf">plot_time_barcode</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">ax</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;black&#39;</span><span class="p">,</span> <span class="n">cmap</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">current_idx</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">set_xlim</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Plot a barcode of timestamps on ax. Optionally highlight current_idx in red.</span>
+<span class="sd">    If set_xlim is True, auto-sets x-axis to padded timestamp range.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+        <span class="c1"># color logic</span>
+        <span class="k">if</span> <span class="n">color</span> <span class="o">==</span> <span class="s1">&#39;cluster&#39;</span> <span class="ow">and</span> <span class="s1">&#39;cluster&#39;</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">cmap</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;cmap required when color=&#39;cluster&#39;&quot;</span><span class="p">)</span>
+            <span class="n">data</span><span class="p">,</span> <span class="n">colors</span> <span class="o">=</span> <span class="n">_map_cluster_colors</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">cmap</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">colors</span><span class="o">=</span><span class="s2">&quot;black&quot;</span>
+
+        <span class="n">ts_dt</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s1">&#39;timestamp&#39;</span><span class="p">],</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;s&#39;</span><span class="p">)</span>
+                    
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">):</span>
+        <span class="n">ts_dt</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;s&#39;</span><span class="p">)</span>
+        <span class="n">colors</span><span class="o">=</span><span class="s2">&quot;black&quot;</span>
+    
+    <span class="k">if</span> <span class="n">set_xlim</span><span class="p">:</span>
+        <span class="n">pad</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timedelta</span><span class="p">(</span><span class="n">minutes</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">set_xlim</span><span class="p">(</span><span class="n">ts_dt</span><span class="o">.</span><span class="n">min</span><span class="p">()</span> <span class="o">-</span> <span class="n">pad</span><span class="p">,</span> <span class="n">ts_dt</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">+</span> <span class="n">pad</span><span class="p">)</span>
+
+
+    <span class="n">vlines</span> <span class="o">=</span> <span class="n">ax</span><span class="o">.</span><span class="n">vlines</span><span class="p">(</span><span class="n">ts_dt</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">,</span> <span class="mf">0.8</span><span class="p">,</span> <span class="n">colors</span><span class="o">=</span><span class="n">colors</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="n">lw</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">current_idx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">vlines</span><span class="p">(</span><span class="n">ts_dt</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">current_idx</span><span class="p">],</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">colors</span><span class="o">=</span><span class="s1">&#39;red&#39;</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mf">1.5</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_yticks</span><span class="p">([])</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_yticklabels</span><span class="p">([])</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_ylim</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+    
+    <span class="c1"># Choose appropriate locator and formatter based on time range</span>
+    <span class="n">time_range</span> <span class="o">=</span> <span class="p">(</span><span class="n">ts_dt</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">-</span> <span class="n">ts_dt</span><span class="o">.</span><span class="n">min</span><span class="p">())</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span>
+    
+    <span class="k">if</span> <span class="n">time_range</span> <span class="o">&lt;=</span> <span class="mi">3600</span> <span class="o">*</span> <span class="mi">12</span><span class="p">:</span>  <span class="c1"># Up to 12 hours - hourly major ticks</span>
+        <span class="n">major_locator</span> <span class="o">=</span> <span class="n">mdates</span><span class="o">.</span><span class="n">HourLocator</span><span class="p">(</span><span class="n">interval</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">formatter</span> <span class="o">=</span> <span class="n">mdates</span><span class="o">.</span><span class="n">DateFormatter</span><span class="p">(</span><span class="s1">&#39;%I %p&#39;</span><span class="p">)</span>
+        <span class="n">minor_locator</span> <span class="o">=</span> <span class="kc">None</span>
+        
+    <span class="k">elif</span> <span class="n">time_range</span> <span class="o">&lt;=</span> <span class="mi">3600</span> <span class="o">*</span> <span class="mi">72</span><span class="p">:</span>  <span class="c1"># Up to 3 days - 6-hour major ticks</span>
+        <span class="n">major_locator</span> <span class="o">=</span> <span class="n">mdates</span><span class="o">.</span><span class="n">HourLocator</span><span class="p">(</span><span class="n">interval</span><span class="o">=</span><span class="mi">6</span><span class="p">)</span>
+        <span class="n">formatter</span> <span class="o">=</span> <span class="n">mdates</span><span class="o">.</span><span class="n">DateFormatter</span><span class="p">(</span><span class="s1">&#39;%I %p&#39;</span><span class="p">)</span>
+        <span class="n">minor_locator</span> <span class="o">=</span> <span class="n">mdates</span><span class="o">.</span><span class="n">HourLocator</span><span class="p">(</span><span class="n">interval</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># Hourly minor ticks</span>
+        
+    <span class="k">else</span><span class="p">:</span>  <span class="c1"># Longer than 3 days - daily major ticks with weekday</span>
+        <span class="n">major_locator</span> <span class="o">=</span> <span class="n">mdates</span><span class="o">.</span><span class="n">DayLocator</span><span class="p">()</span>
+        <span class="n">formatter</span> <span class="o">=</span> <span class="n">mdates</span><span class="o">.</span><span class="n">DateFormatter</span><span class="p">(</span><span class="s1">&#39;</span><span class="si">%a</span><span class="se">\n</span><span class="s1">%I %p&#39;</span><span class="p">)</span>  <span class="c1"># Weekday letter + time</span>
+        <span class="n">minor_locator</span> <span class="o">=</span> <span class="n">mdates</span><span class="o">.</span><span class="n">HourLocator</span><span class="p">(</span><span class="n">interval</span><span class="o">=</span><span class="mi">6</span><span class="p">)</span>  <span class="c1"># 6-hour minor ticks</span>
+    
+    <span class="n">ax</span><span class="o">.</span><span class="n">xaxis</span><span class="o">.</span><span class="n">set_major_locator</span><span class="p">(</span><span class="n">major_locator</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">xaxis</span><span class="o">.</span><span class="n">set_major_formatter</span><span class="p">(</span><span class="n">formatter</span><span class="p">)</span>
+    
+    <span class="k">if</span> <span class="n">minor_locator</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">xaxis</span><span class="o">.</span><span class="n">set_minor_locator</span><span class="p">(</span><span class="n">minor_locator</span><span class="p">)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">tick_params</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="s1">&#39;x&#39;</span><span class="p">,</span> <span class="n">which</span><span class="o">=</span><span class="s1">&#39;minor&#39;</span><span class="p">,</span> <span class="n">length</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+    
+    <span class="n">ax</span><span class="o">.</span><span class="n">tick_params</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="s1">&#39;x&#39;</span><span class="p">,</span> <span class="n">which</span><span class="o">=</span><span class="s1">&#39;major&#39;</span><span class="p">,</span> <span class="n">labelsize</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">vlines</span></div>
+
+
+
+<div class="viewcode-block" id="plot_stops_barcode">
+<a class="viewcode-back" href="../../../api/generated/nomad.stop_detection.viz.html#nomad.stop_detection.viz.plot_stops_barcode">[docs]</a>
+<span class="k">def</span> <span class="nf">plot_stops_barcode</span><span class="p">(</span><span class="n">stops</span><span class="p">,</span> <span class="n">ax</span><span class="p">,</span> <span class="n">cmap</span><span class="o">=</span><span class="s1">&#39;Reds&#39;</span><span class="p">,</span> <span class="n">stop_color</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">set_xlim</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">stop_alpha</span><span class="o">=</span><span class="mf">0.75</span><span class="p">,</span> <span class="n">traj_cols</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Plot colored stop intervals as bars on ax using temporal columns and colors by cluster with cmap.</span>
+<span class="sd">    If set_xlim is True, auto-sets x-axis to padded range.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">t_key</span><span class="p">,</span> <span class="n">use_datetime</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_fallback_time_cols_dt</span><span class="p">(</span><span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+    <span class="n">traj_cols</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_parse_traj_cols</span><span class="p">(</span><span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+    <span class="n">start</span> <span class="o">=</span> <span class="n">stops</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]]</span> <span class="k">if</span> <span class="n">use_datetime</span> <span class="k">else</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">stops</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]],</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;s&#39;</span><span class="p">)</span>
+
+    <span class="n">end_col_present</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_has_end_cols</span><span class="p">(</span><span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">)</span>
+    <span class="n">duration_col_present</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_has_duration_cols</span><span class="p">(</span><span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">)</span>
+    
+    <span class="n">end_t_key</span> <span class="o">=</span> <span class="s1">&#39;end_datetime&#39;</span> <span class="k">if</span> <span class="n">use_datetime</span> <span class="k">else</span> <span class="s1">&#39;end_timestamp&#39;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">end_col_present</span> <span class="ow">or</span> <span class="n">duration_col_present</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Missing required (end or duration) temporal columns for true_visits dataframe.&quot;</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="ow">not</span> <span class="n">end_col_present</span><span class="p">:</span>
+        <span class="n">start</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">stops</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]],</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;s&#39;</span><span class="p">)</span>
+        <span class="n">end</span> <span class="o">=</span> <span class="n">start</span> <span class="o">+</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_timedelta</span><span class="p">(</span><span class="n">stops</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="s1">&#39;duration&#39;</span><span class="p">]]</span> <span class="o">*</span> <span class="mi">60</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;s&#39;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">end</span> <span class="o">=</span> <span class="n">stops</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">end_t_key</span><span class="p">]]</span> <span class="k">if</span> <span class="n">use_datetime</span> <span class="k">else</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">stops</span><span class="p">[</span><span class="n">traj_cols</span><span class="p">[</span><span class="n">end_t_key</span><span class="p">]],</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;s&#39;</span><span class="p">)</span>
+    
+    <span class="n">clusters</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">stops</span><span class="p">))</span> <span class="k">if</span> <span class="s1">&#39;cluster&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">stops</span><span class="o">.</span><span class="n">columns</span> <span class="k">else</span> <span class="n">stops</span><span class="p">[</span><span class="s1">&#39;cluster&#39;</span><span class="p">]</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">stops</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">stop_color</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stop_color</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">stop_color</span> <span class="ow">in</span> <span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="n">colors</span> <span class="o">=</span> <span class="n">stops</span><span class="p">[</span><span class="n">stop_color</span><span class="p">]</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stop_color</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="n">colors</span> <span class="o">=</span> <span class="p">[</span><span class="n">stop_color</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">clusters</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">colors</span> <span class="o">=</span> <span class="n">stop_color</span>
+    <span class="k">elif</span> <span class="n">cmap</span><span class="p">:</span>
+        <span class="k">if</span> <span class="s1">&#39;cluster&#39;</span> <span class="ow">in</span> <span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="n">colors</span> <span class="o">=</span> <span class="n">stops</span><span class="p">[</span><span class="s1">&#39;cluster&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">_cluster_color_map</span><span class="p">(</span><span class="n">stops</span><span class="p">[</span><span class="s1">&#39;cluster&#39;</span><span class="p">],</span> <span class="n">cmap</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">colors</span> <span class="o">=</span> <span class="p">[</span><span class="n">plt</span><span class="o">.</span><span class="n">get_cmap</span><span class="p">(</span><span class="n">cmap</span><span class="p">)((</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">n</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">)]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Specify either a color map (cmap) or a solid color (stop_color).&quot;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">color</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">colors</span><span class="p">):</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">fill_betweenx</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">s</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">color</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="n">stop_alpha</span><span class="p">)</span>
+    
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_ylim</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_yticks</span><span class="p">([])</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_yticklabels</span><span class="p">([])</span>
+    
+    <span class="k">if</span> <span class="n">set_xlim</span><span class="p">:</span>
+        <span class="n">pad</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timedelta</span><span class="p">(</span><span class="n">minutes</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">set_xlim</span><span class="p">(</span><span class="n">start</span><span class="o">.</span><span class="n">min</span><span class="p">()</span> <span class="o">-</span> <span class="n">pad</span><span class="p">,</span> <span class="n">end</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">+</span> <span class="n">pad</span><span class="p">)</span>
+        
+        <span class="c1"># Use same tick logic as plot_time_barcode for consistency</span>
+        <span class="n">time_range</span> <span class="o">=</span> <span class="p">(</span><span class="n">end</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">-</span> <span class="n">start</span><span class="o">.</span><span class="n">min</span><span class="p">())</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">time_range</span> <span class="o">&lt;=</span> <span class="mi">3600</span> <span class="o">*</span> <span class="mi">12</span><span class="p">:</span>  <span class="c1"># Up to 12 hours - hourly major ticks</span>
+            <span class="n">major_locator</span> <span class="o">=</span> <span class="n">mdates</span><span class="o">.</span><span class="n">HourLocator</span><span class="p">(</span><span class="n">interval</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">formatter</span> <span class="o">=</span> <span class="n">mdates</span><span class="o">.</span><span class="n">DateFormatter</span><span class="p">(</span><span class="s1">&#39;%I %p&#39;</span><span class="p">)</span>
+            <span class="n">minor_locator</span> <span class="o">=</span> <span class="kc">None</span>
+            
+        <span class="k">elif</span> <span class="n">time_range</span> <span class="o">&lt;=</span> <span class="mi">3600</span> <span class="o">*</span> <span class="mi">72</span><span class="p">:</span>  <span class="c1"># Up to 3 days - 6-hour major ticks</span>
+            <span class="n">major_locator</span> <span class="o">=</span> <span class="n">mdates</span><span class="o">.</span><span class="n">HourLocator</span><span class="p">(</span><span class="n">interval</span><span class="o">=</span><span class="mi">6</span><span class="p">)</span>
+            <span class="n">formatter</span> <span class="o">=</span> <span class="n">mdates</span><span class="o">.</span><span class="n">DateFormatter</span><span class="p">(</span><span class="s1">&#39;%I %p&#39;</span><span class="p">)</span>
+            <span class="n">minor_locator</span> <span class="o">=</span> <span class="n">mdates</span><span class="o">.</span><span class="n">HourLocator</span><span class="p">(</span><span class="n">interval</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># Hourly minor ticks</span>
+            
+        <span class="k">else</span><span class="p">:</span>  <span class="c1"># Longer than 3 days - daily major ticks with weekday</span>
+            <span class="n">major_locator</span> <span class="o">=</span> <span class="n">mdates</span><span class="o">.</span><span class="n">DayLocator</span><span class="p">()</span>
+            <span class="n">formatter</span> <span class="o">=</span> <span class="n">mdates</span><span class="o">.</span><span class="n">DateFormatter</span><span class="p">(</span><span class="s1">&#39;</span><span class="si">%a</span><span class="se">\n</span><span class="s1">%I %p&#39;</span><span class="p">)</span>  <span class="c1"># Weekday letter + time</span>
+            <span class="n">minor_locator</span> <span class="o">=</span> <span class="n">mdates</span><span class="o">.</span><span class="n">HourLocator</span><span class="p">(</span><span class="n">interval</span><span class="o">=</span><span class="mi">6</span><span class="p">)</span>  <span class="c1"># 6-hour minor ticks</span>
+        
+        <span class="n">ax</span><span class="o">.</span><span class="n">xaxis</span><span class="o">.</span><span class="n">set_major_locator</span><span class="p">(</span><span class="n">major_locator</span><span class="p">)</span>
+        <span class="n">ax</span><span class="o">.</span><span class="n">xaxis</span><span class="o">.</span><span class="n">set_major_formatter</span><span class="p">(</span><span class="n">formatter</span><span class="p">)</span>
+        
+        <span class="k">if</span> <span class="n">minor_locator</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">xaxis</span><span class="o">.</span><span class="n">set_minor_locator</span><span class="p">(</span><span class="n">minor_locator</span><span class="p">)</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">tick_params</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="s1">&#39;x&#39;</span><span class="p">,</span> <span class="n">which</span><span class="o">=</span><span class="s1">&#39;minor&#39;</span><span class="p">,</span> <span class="n">length</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+        
+        <span class="n">ax</span><span class="o">.</span><span class="n">tick_params</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="s1">&#39;x&#39;</span><span class="p">,</span> <span class="n">which</span><span class="o">=</span><span class="s1">&#39;major&#39;</span><span class="p">,</span> <span class="n">labelsize</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="animate_stop_dashboard">
+<a class="viewcode-back" href="../../../api/generated/nomad.stop_detection.viz.html#nomad.stop_detection.viz.animate_stop_dashboard">[docs]</a>
+<span class="k">def</span> <span class="nf">animate_stop_dashboard</span><span class="p">(</span>
+    <span class="n">data</span><span class="p">,</span>
+    <span class="n">stops</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">interval</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span>
+    <span class="n">ping_color</span><span class="o">=</span><span class="s1">&#39;black&#39;</span><span class="p">,</span>
+    <span class="n">ping_cmap</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">stop_cmap</span><span class="o">=</span><span class="s1">&#39;Reds&#39;</span><span class="p">,</span>
+    <span class="n">ping_size</span><span class="o">=</span><span class="mi">6</span><span class="p">,</span>
+    <span class="n">base_geometry</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">base_geom_color</span><span class="o">=</span><span class="s1">&#39;#2c353c&#39;</span><span class="p">,</span>
+    <span class="n">base_geom_background</span><span class="o">=</span><span class="s1">&#39;#0e0e0e&#39;</span><span class="p">,</span>
+    <span class="n">data_crs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">traj_cols</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">show_path</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">show_stop_overlays</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">8</span><span class="p">),</span>
+    <span class="n">ax_map</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">ax_barcode</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">kwargs</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Animate pings over space with a synchronized time barcode below.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;data must contain at least one row&quot;</span><span class="p">)</span>
+
+    <span class="n">inactive_ping_color</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;inactive_ping_color&quot;</span><span class="p">,</span> <span class="s2">&quot;black&quot;</span><span class="p">)</span>
+    <span class="n">inactive_ping_alpha</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;inactive_ping_alpha&quot;</span><span class="p">,</span> <span class="mf">0.15</span><span class="p">)</span>
+
+    <span class="n">t_key</span><span class="p">,</span> <span class="n">use_datetime</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_fallback_time_cols_dt</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+    <span class="n">parsed_cols</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_parse_traj_cols</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">,</span> <span class="n">warn</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">time_col</span> <span class="o">=</span> <span class="n">parsed_cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">ax_map</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ax_barcode</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">fig</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="n">figsize</span><span class="p">)</span>
+        <span class="n">gs</span> <span class="o">=</span> <span class="n">fig</span><span class="o">.</span><span class="n">add_gridspec</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">height_ratios</span><span class="o">=</span><span class="p">[</span><span class="mi">10</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">hspace</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span>
+        <span class="n">ax_map</span> <span class="o">=</span> <span class="n">fig</span><span class="o">.</span><span class="n">add_subplot</span><span class="p">(</span><span class="n">gs</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">ax_time</span> <span class="o">=</span> <span class="n">fig</span><span class="o">.</span><span class="n">add_subplot</span><span class="p">(</span><span class="n">gs</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+        <span class="n">close_fig</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">fig</span> <span class="o">=</span> <span class="n">ax_map</span><span class="o">.</span><span class="n">figure</span>
+        <span class="n">ax_time</span> <span class="o">=</span> <span class="n">ax_barcode</span>
+        <span class="n">close_fig</span> <span class="o">=</span> <span class="kc">False</span>
+
+    <span class="n">end_t_key</span> <span class="o">=</span> <span class="s2">&quot;end_datetime&quot;</span> <span class="k">if</span> <span class="n">use_datetime</span> <span class="k">else</span> <span class="s2">&quot;end_timestamp&quot;</span>
+    <span class="n">stop_cols</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">t_key</span><span class="p">:</span> <span class="n">time_col</span><span class="p">,</span>
+        <span class="n">end_t_key</span><span class="p">:</span> <span class="n">parsed_cols</span><span class="p">[</span><span class="n">end_t_key</span><span class="p">]</span>
+    <span class="p">}</span>
+
+    <span class="k">if</span> <span class="n">stops</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="s2">&quot;x&quot;</span> <span class="ow">in</span> <span class="n">stops</span><span class="o">.</span><span class="n">columns</span> <span class="ow">and</span> <span class="s2">&quot;y&quot;</span> <span class="ow">in</span> <span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="n">stop_cols</span><span class="p">[</span><span class="s2">&quot;x&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;x&quot;</span>
+            <span class="n">stop_cols</span><span class="p">[</span><span class="s2">&quot;y&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;y&quot;</span>
+        <span class="k">if</span> <span class="s2">&quot;h3_cell&quot;</span> <span class="ow">in</span> <span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="n">stop_cols</span><span class="p">[</span><span class="s2">&quot;location_id&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;h3_cell&quot;</span>
+
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">gpd</span><span class="o">.</span><span class="n">GeoDataFrame</span><span class="p">):</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">x</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">y</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">coord_key1</span><span class="p">,</span> <span class="n">coord_key2</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">_fallback_spatial_cols</span><span class="p">(</span>
+            <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="n">traj_cols</span><span class="p">,</span> <span class="n">kwargs</span>
+        <span class="p">)</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">parsed_cols</span><span class="p">[</span><span class="n">coord_key1</span><span class="p">]]</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">parsed_cols</span><span class="p">[</span><span class="n">coord_key2</span><span class="p">]]</span>
+
+    <span class="n">stop_barcode_cmap</span> <span class="o">=</span> <span class="n">stop_cmap</span>
+    <span class="n">stop_barcode_colors</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">cluster_collection</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">if</span> <span class="n">ping_color</span> <span class="o">==</span> <span class="s2">&quot;cluster&quot;</span> <span class="ow">and</span> <span class="s2">&quot;cluster&quot;</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">cluster_cmap</span> <span class="o">=</span> <span class="n">ping_cmap</span> <span class="k">if</span> <span class="n">ping_cmap</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">&quot;tab10&quot;</span>
+        <span class="n">cluster_data</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;cluster&quot;</span><span class="p">]</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">stop_barcode_cmap</span> <span class="o">=</span> <span class="n">cluster_cmap</span>
+        <span class="k">if</span> <span class="n">stops</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="s2">&quot;cluster&quot;</span> <span class="ow">in</span> <span class="n">stops</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="n">stop_barcode_colors</span> <span class="o">=</span> <span class="n">stops</span><span class="p">[</span><span class="s2">&quot;cluster&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">_cluster_color_map</span><span class="p">(</span><span class="n">stops</span><span class="p">[</span><span class="s2">&quot;cluster&quot;</span><span class="p">],</span> <span class="n">cluster_cmap</span><span class="p">))</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">cluster_data</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">cluster_colors</span> <span class="o">=</span> <span class="n">cluster_data</span><span class="p">[</span><span class="s2">&quot;cluster&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">_cluster_color_map</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;cluster&quot;</span><span class="p">],</span> <span class="n">cluster_cmap</span><span class="p">))</span>
+            <span class="n">cluster_collection</span> <span class="o">=</span> <span class="n">plot_pings</span><span class="p">(</span>
+                <span class="n">cluster_data</span><span class="o">.</span><span class="n">assign</span><span class="p">(</span><span class="n">cluster_color</span><span class="o">=</span><span class="n">cluster_colors</span><span class="p">),</span>
+                <span class="n">ax_map</span><span class="p">,</span>
+                <span class="n">color</span><span class="o">=</span><span class="s2">&quot;cluster_color&quot;</span><span class="p">,</span>
+                <span class="n">s</span><span class="o">=</span><span class="n">ping_size</span><span class="p">,</span>
+                <span class="n">edgecolor</span><span class="o">=</span><span class="s2">&quot;black&quot;</span><span class="p">,</span>
+                <span class="n">linewidth</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span>
+                <span class="n">data_crs</span><span class="o">=</span><span class="n">data_crs</span><span class="p">,</span>
+                <span class="n">base_geometry</span><span class="o">=</span><span class="n">base_geometry</span><span class="p">,</span>
+                <span class="n">base_geom_color</span><span class="o">=</span><span class="n">base_geom_color</span><span class="p">,</span>
+                <span class="n">base_geom_background</span><span class="o">=</span><span class="n">base_geom_background</span><span class="p">,</span>
+                <span class="n">traj_cols</span><span class="o">=</span><span class="n">traj_cols</span><span class="p">,</span>
+                <span class="o">**</span><span class="n">kwargs</span>
+            <span class="p">)</span>
+            <span class="n">cluster_rgba</span> <span class="o">=</span> <span class="n">mcolors</span><span class="o">.</span><span class="n">to_rgba_array</span><span class="p">(</span><span class="n">cluster_colors</span><span class="p">)</span>
+            <span class="n">cluster_rgba</span><span class="p">[:,</span> <span class="mi">3</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="n">cluster_collection</span><span class="o">.</span><span class="n">set_alpha</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+            <span class="n">cluster_collection</span><span class="o">.</span><span class="n">set_sizes</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">cluster_data</span><span class="p">)))</span>
+            <span class="n">cluster_collection</span><span class="o">.</span><span class="n">set_facecolors</span><span class="p">(</span><span class="n">cluster_rgba</span><span class="p">)</span>
+            <span class="n">cluster_collection</span><span class="o">.</span><span class="n">set_edgecolors</span><span class="p">(</span><span class="n">cluster_rgba</span><span class="p">)</span>
+            <span class="n">cluster_collection</span><span class="o">.</span><span class="n">set_zorder</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+
+    <span class="n">ping_rgba</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">tile</span><span class="p">(</span>
+        <span class="n">mcolors</span><span class="o">.</span><span class="n">to_rgba</span><span class="p">(</span><span class="n">inactive_ping_color</span><span class="p">,</span> <span class="n">inactive_ping_alpha</span><span class="p">),</span>
+        <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">ping_collection</span> <span class="o">=</span> <span class="n">plot_pings</span><span class="p">(</span>
+        <span class="n">data</span><span class="p">,</span>
+        <span class="n">ax_map</span><span class="p">,</span>
+        <span class="n">color</span><span class="o">=</span><span class="n">inactive_ping_color</span><span class="p">,</span>
+        <span class="n">alpha</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+        <span class="c1">## base_geometry=base_geometry, # this resets the zoom level</span>
+        <span class="c1">## base_geom_color=base_geom_color, # we want to zoom on cluster pings</span>
+        <span class="c1">## base_geom_background=base_geom_background, # to discard outlier noise pings</span>
+        <span class="n">data_crs</span><span class="o">=</span><span class="n">data_crs</span><span class="p">,</span>
+        <span class="n">traj_cols</span><span class="o">=</span><span class="n">traj_cols</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span>
+    <span class="p">)</span>
+    <span class="n">ping_collection</span><span class="o">.</span><span class="n">set_alpha</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+    <span class="n">ping_collection</span><span class="o">.</span><span class="n">set_facecolors</span><span class="p">(</span><span class="n">ping_rgba</span><span class="p">)</span>
+    <span class="n">ping_collection</span><span class="o">.</span><span class="n">set_edgecolors</span><span class="p">(</span><span class="n">ping_rgba</span><span class="p">)</span>
+    <span class="n">ping_collection</span><span class="o">.</span><span class="n">set_zorder</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+    <span class="n">ping_size_base</span> <span class="o">=</span> <span class="n">ping_collection</span><span class="o">.</span><span class="n">get_sizes</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">ping_sizes_base</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">ping_size_base</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+    <span class="n">frame_positions</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)),</span> <span class="n">index</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+    <span class="n">bounce_window</span> <span class="o">=</span> <span class="mi">7</span>
+
+    <span class="n">fixed_xlim</span> <span class="o">=</span> <span class="n">ax_map</span><span class="o">.</span><span class="n">get_xlim</span><span class="p">()</span>
+    <span class="n">fixed_ylim</span> <span class="o">=</span> <span class="n">ax_map</span><span class="o">.</span><span class="n">get_ylim</span><span class="p">()</span>
+
+    <span class="n">path_line</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">show_path</span><span class="p">:</span>
+        <span class="n">path_line</span><span class="p">,</span> <span class="o">=</span> <span class="n">ax_map</span><span class="o">.</span><span class="n">plot</span><span class="p">([],</span> <span class="p">[],</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;black&#39;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.08</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span> <span class="n">zorder</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="n">stop_overlay_artists</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="n">ts_dt</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">time_col</span><span class="p">]</span> <span class="k">if</span> <span class="n">use_datetime</span> <span class="k">else</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="n">time_col</span><span class="p">],</span> <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;s&quot;</span><span class="p">)</span>
+    <span class="n">diffs</span> <span class="o">=</span> <span class="n">ts_dt</span><span class="o">.</span><span class="n">diff</span><span class="p">()</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="n">positive_diffs</span> <span class="o">=</span> <span class="n">diffs</span><span class="p">[</span><span class="n">diffs</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">]</span>
+    <span class="n">typical_gap</span> <span class="o">=</span> <span class="n">positive_diffs</span><span class="o">.</span><span class="n">median</span><span class="p">()</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">positive_diffs</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="mi">1</span>
+
+    <span class="n">frame_sequence</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">gap</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">diffs</span><span class="p">):</span>
+        <span class="n">hold</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="nb">round</span><span class="p">(</span><span class="n">gap</span> <span class="o">/</span> <span class="n">typical_gap</span><span class="p">),</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">))</span>
+        <span class="n">frame_sequence</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">i</span><span class="p">]</span> <span class="o">*</span> <span class="n">hold</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">update</span><span class="p">(</span><span class="n">frame</span><span class="p">):</span>
+        <span class="n">ax_time</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+
+        <span class="n">n</span> <span class="o">=</span> <span class="n">frame</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="n">current_time</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">time_col</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">frame</span><span class="p">]</span>
+
+        <span class="n">stops_visible</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">stops</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">stops_visible</span> <span class="o">=</span> <span class="n">stops</span><span class="p">[</span><span class="n">stops</span><span class="p">[</span><span class="n">stop_cols</span><span class="p">[</span><span class="n">t_key</span><span class="p">]]</span> <span class="o">&lt;=</span> <span class="n">current_time</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">path_line</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">path_line</span><span class="o">.</span><span class="n">set_data</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">iloc</span><span class="p">[:</span><span class="n">n</span><span class="p">],</span> <span class="n">y</span><span class="o">.</span><span class="n">iloc</span><span class="p">[:</span><span class="n">n</span><span class="p">])</span>
+
+        <span class="n">ping_frame_rgba</span> <span class="o">=</span> <span class="n">ping_rgba</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">ping_frame_rgba</span><span class="p">[:</span><span class="n">n</span><span class="p">,</span> <span class="mi">3</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span>
+        <span class="n">ping_collection</span><span class="o">.</span><span class="n">set_facecolors</span><span class="p">(</span><span class="n">ping_frame_rgba</span><span class="p">)</span>
+        <span class="n">ping_collection</span><span class="o">.</span><span class="n">set_edgecolors</span><span class="p">(</span><span class="n">ping_frame_rgba</span><span class="p">)</span>
+
+        <span class="n">recent</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">index</span><span class="p">[</span><span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span> <span class="o">-</span> <span class="n">bounce_window</span><span class="p">):</span><span class="n">n</span><span class="p">]</span>
+        <span class="n">bounce</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="n">bounce</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">recent</span><span class="p">]</span> <span class="o">+=</span> <span class="mf">0.85</span> <span class="o">*</span> <span class="p">(</span>
+            <span class="n">frame_positions</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">recent</span><span class="p">]</span> <span class="o">-</span> <span class="n">frame_positions</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">recent</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">()</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="p">)</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">recent</span><span class="p">)</span>
+        <span class="n">ping_collection</span><span class="o">.</span><span class="n">set_sizes</span><span class="p">((</span><span class="n">ping_sizes_base</span> <span class="o">*</span> <span class="n">bounce</span><span class="p">)</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">())</span>
+
+        <span class="k">if</span> <span class="n">cluster_collection</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">visible</span> <span class="o">=</span> <span class="n">cluster_data</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">index</span><span class="p">[:</span><span class="n">n</span><span class="p">])</span>
+            <span class="n">current</span> <span class="o">=</span> <span class="n">cluster_data</span><span class="o">.</span><span class="n">index</span> <span class="o">==</span> <span class="n">data</span><span class="o">.</span><span class="n">index</span><span class="p">[</span><span class="n">frame</span><span class="p">]</span>
+            <span class="n">sizes</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">cluster_data</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+            <span class="n">facecolors</span> <span class="o">=</span> <span class="n">cluster_rgba</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+            <span class="n">edgecolors</span> <span class="o">=</span> <span class="n">facecolors</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+            <span class="n">sizes</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">visible</span><span class="p">]</span> <span class="o">=</span> <span class="n">ping_size</span> <span class="o">*</span> <span class="n">bounce</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">cluster_data</span><span class="o">.</span><span class="n">index</span><span class="p">[</span><span class="n">visible</span><span class="p">]]</span>
+            <span class="n">facecolors</span><span class="p">[</span><span class="n">visible</span><span class="p">,</span> <span class="mi">3</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.9</span>
+            <span class="n">facecolors</span><span class="p">[</span><span class="n">current</span><span class="p">,</span> <span class="mi">3</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span>
+            <span class="n">edgecolors</span><span class="p">[</span><span class="n">visible</span><span class="p">]</span> <span class="o">=</span> <span class="n">mcolors</span><span class="o">.</span><span class="n">to_rgba</span><span class="p">(</span><span class="s2">&quot;black&quot;</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+
+            <span class="n">cluster_collection</span><span class="o">.</span><span class="n">set_sizes</span><span class="p">(</span><span class="n">sizes</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">())</span>
+            <span class="n">cluster_collection</span><span class="o">.</span><span class="n">set_facecolors</span><span class="p">(</span><span class="n">facecolors</span><span class="p">)</span>
+            <span class="n">cluster_collection</span><span class="o">.</span><span class="n">set_edgecolors</span><span class="p">(</span><span class="n">edgecolors</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">artist</span> <span class="ow">in</span> <span class="n">stop_overlay_artists</span><span class="p">:</span>
+            <span class="n">artist</span><span class="o">.</span><span class="n">remove</span><span class="p">()</span>
+        <span class="n">stop_overlay_artists</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">show_stop_overlays</span> <span class="ow">and</span> <span class="n">stops_visible</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">stops_visible</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">if</span> <span class="s2">&quot;h3_cell&quot;</span> <span class="ow">in</span> <span class="n">stops_visible</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+                <span class="n">artist</span> <span class="o">=</span> <span class="n">plot_hexagons</span><span class="p">(</span>
+                    <span class="n">stops_visible</span><span class="p">,</span>
+                    <span class="n">ax</span><span class="o">=</span><span class="n">ax_map</span><span class="p">,</span>
+                    <span class="n">color</span><span class="o">=</span><span class="s1">&#39;cluster&#39;</span><span class="p">,</span>
+                    <span class="n">cmap</span><span class="o">=</span><span class="n">stop_cmap</span><span class="p">,</span>
+                    <span class="n">data_crs</span><span class="o">=</span><span class="n">data_crs</span><span class="p">,</span>
+                    <span class="n">traj_cols</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;location_id&quot;</span><span class="p">:</span> <span class="s2">&quot;h3_cell&quot;</span><span class="p">}</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">artist</span> <span class="o">=</span> <span class="n">plot_stops</span><span class="p">(</span>
+                    <span class="n">stops_visible</span><span class="p">,</span>
+                    <span class="n">ax_map</span><span class="p">,</span>
+                    <span class="n">cmap</span><span class="o">=</span><span class="n">stop_cmap</span><span class="p">,</span>
+                    <span class="n">edge_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                    <span class="n">base_geometry</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                    <span class="n">data_crs</span><span class="o">=</span><span class="n">data_crs</span><span class="p">,</span>
+                    <span class="n">traj_cols</span><span class="o">=</span><span class="n">stop_cols</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="n">artist</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">stop_overlay_artists</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">artist</span><span class="p">)</span>
+
+        <span class="n">plot_time_barcode</span><span class="p">(</span>
+            <span class="n">data</span><span class="p">[</span><span class="n">time_col</span><span class="p">],</span>
+            <span class="n">ax_time</span><span class="p">,</span>
+            <span class="n">current_idx</span><span class="o">=</span><span class="n">frame</span><span class="p">,</span>
+            <span class="n">set_xlim</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">lw</span><span class="o">=</span><span class="mf">1.2</span>
+        <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">stops_visible</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">stops_visible</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">visible_stop_colors</span> <span class="o">=</span> <span class="n">stop_barcode_colors</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">stops_visible</span><span class="o">.</span><span class="n">index</span><span class="p">]</span> <span class="k">if</span> <span class="n">stop_barcode_colors</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+            <span class="n">plot_stops_barcode</span><span class="p">(</span>
+                <span class="n">stops_visible</span><span class="p">,</span>
+                <span class="n">ax_time</span><span class="p">,</span>
+                <span class="n">stop_color</span><span class="o">=</span><span class="n">visible_stop_colors</span><span class="p">,</span>
+                <span class="n">cmap</span><span class="o">=</span><span class="kc">None</span> <span class="k">if</span> <span class="n">visible_stop_colors</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">stop_barcode_cmap</span><span class="p">,</span>
+                <span class="n">stop_alpha</span><span class="o">=</span><span class="mf">0.4</span><span class="p">,</span>
+                <span class="n">set_xlim</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                <span class="n">traj_cols</span><span class="o">=</span><span class="n">stop_cols</span>
+            <span class="p">)</span>
+
+        <span class="n">artists</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">cluster_collection</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">artists</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cluster_collection</span><span class="p">)</span>
+        <span class="n">artists</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ping_collection</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">path_line</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">artists</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">path_line</span><span class="p">)</span>
+        <span class="n">artists</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">stop_overlay_artists</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">artists</span>
+
+    <span class="n">anim</span> <span class="o">=</span> <span class="n">FuncAnimation</span><span class="p">(</span>
+        <span class="n">fig</span><span class="p">,</span>
+        <span class="n">update</span><span class="p">,</span>
+        <span class="n">frames</span><span class="o">=</span><span class="n">frame_sequence</span><span class="p">,</span>
+        <span class="n">interval</span><span class="o">=</span><span class="n">interval</span><span class="p">,</span>
+        <span class="n">blit</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">repeat</span><span class="o">=</span><span class="kc">False</span>
+    <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">close_fig</span><span class="p">:</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">fig</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">anim</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, CSSLab.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

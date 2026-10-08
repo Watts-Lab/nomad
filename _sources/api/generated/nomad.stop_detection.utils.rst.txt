@@ -1,0 +1,7 @@
+﻿utils
+=====
+
+.. automodule:: nomad.stop_detection.utils
+   :members:
+   :undoc-members:
+   :show-inheritance:

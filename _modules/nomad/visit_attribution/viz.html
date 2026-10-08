@@ -1,0 +1,261 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nomad.visit_attribution.viz &mdash; NOMAD 0.0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-design.min.css?v=95c83b7e" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=d45e8c67"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../../../_static/design-tabs.js?v=f930bc37"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html">
+            
+              <img src="../../../_static/nomad-logo-black.png" class="logo" alt="Logo"/>
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../data_ingestion.html">Data Ingestion</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../filtering.html">Filtering &amp; Completeness</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../tessellation.html">Tessellation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../stop_detection.html">Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../visit_attribution.html">Visit Attribution</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../metrics.html">Mobility Metrics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../colocation.html">Co-location &amp; Contact Networks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../aggregation.html">Aggregation &amp; Debiasing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../synthetic_data_generation.html">Synthetic Data Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Examples</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/ingesting-data.html">Loading Trajectory Data</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/benchmarking_of_stop_detection_algorithms.html">Comparing runtimes of different stop detection algorithms on toy datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/lachesis_demo.html">Lachesis Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/tadbscan_demo.html">TADBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/hdbscan_demo.html">HDBSCAN Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/grid_based_demo.html">Grid-Based Stop Detection</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/generate_synthetic_pois.html">Synthetic POI Generation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/download_poi_data_from_OSM.html">Downloading places of interest (POI) Data from OSM</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/generate_synthetic_trajectories.html">Synthetic Trajectory Generation with Nomad</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../source/random_city.html">Random City Generation</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_reference.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">NOMAD</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">nomad.visit_attribution.viz</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for nomad.visit_attribution.viz</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">json</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">import</span> <span class="nn">geopandas</span> <span class="k">as</span> <span class="nn">gpd</span>
+<span class="kn">import</span> <span class="nn">pydeck</span> <span class="k">as</span> <span class="nn">pdk</span>
+<span class="kn">from</span> <span class="nn">pyproj</span> <span class="kn">import</span> <span class="n">CRS</span>
+<span class="kn">from</span> <span class="nn">pydeck.data_utils</span> <span class="kn">import</span> <span class="n">compute_view</span>
+<span class="kn">from</span> <span class="nn">matplotlib</span> <span class="kn">import</span> <span class="n">cm</span><span class="p">,</span> <span class="n">colors</span> <span class="k">as</span> <span class="n">mcolors</span>
+
+<span class="c1"># --- HELPERS (to_rgba, _create_arc_layer are unchanged) ---</span>
+
+<div class="viewcode-block" id="to_rgba">
+<a class="viewcode-back" href="../../../api/generated/nomad.visit_attribution.viz.html#nomad.visit_attribution.viz.to_rgba">[docs]</a>
+<span class="k">def</span> <span class="nf">to_rgba</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">1.0</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Converts a color to an RGBA list [0-255], applying a specific alpha.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="p">(</span><span class="nb">tuple</span><span class="p">,</span> <span class="nb">list</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)):</span>
+        <span class="n">arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="nb">float</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">arr</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="o">&lt;=</span> <span class="mf">1.0</span><span class="p">:</span> <span class="n">arr</span> <span class="o">*=</span> <span class="mi">255</span>
+        <span class="k">if</span> <span class="n">arr</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span> <span class="n">arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">arr</span><span class="p">,</span> <span class="n">alpha</span> <span class="o">*</span> <span class="mi">255</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span> <span class="n">arr</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span> <span class="o">=</span> <span class="n">alpha</span> <span class="o">*</span> <span class="mi">255</span>
+        <span class="k">return</span> <span class="n">arr</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+    <span class="n">r</span><span class="p">,</span> <span class="n">g</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">a_float</span> <span class="o">=</span> <span class="n">mcolors</span><span class="o">.</span><span class="n">to_rgba</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
+    <span class="n">final_alpha</span> <span class="o">=</span> <span class="n">a_float</span> <span class="k">if</span> <span class="n">alpha</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">alpha</span>
+    <span class="k">return</span> <span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="mi">255</span> <span class="o">*</span> <span class="n">r</span><span class="p">),</span> <span class="nb">int</span><span class="p">(</span><span class="mi">255</span> <span class="o">*</span> <span class="n">g</span><span class="p">),</span> <span class="nb">int</span><span class="p">(</span><span class="mi">255</span> <span class="o">*</span> <span class="n">b</span><span class="p">),</span> <span class="nb">int</span><span class="p">(</span><span class="mi">255</span> <span class="o">*</span> <span class="n">final_alpha</span><span class="p">)]</span></div>
+
+
+<span class="k">def</span> <span class="nf">_create_geojson_layer</span><span class="p">(</span><span class="n">gdf</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Internal helper to create a GeoJsonLayer.</span>
+<span class="sd">    Passing the GeoDataFrame directly is the key fix.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># THE FIX: Pass the GeoDataFrame directly, not its GeoJSON representation.</span>
+    <span class="k">return</span> <span class="n">pdk</span><span class="o">.</span><span class="n">Layer</span><span class="p">(</span><span class="s2">&quot;GeoJsonLayer&quot;</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="n">gdf</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">_create_arc_layer</span><span class="p">(</span><span class="n">od_df</span><span class="p">,</span> <span class="n">points_gdf</span><span class="p">,</span> <span class="n">origin_col</span><span class="p">,</span> <span class="n">dest_col</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Internal helper to create an ArcLayer, ensuring data integrity.&quot;&quot;&quot;</span>
+    <span class="n">od_df</span> <span class="o">=</span> <span class="n">od_df</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">points_gdf</span> <span class="o">=</span> <span class="n">points_gdf</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">CRS</span><span class="p">(</span><span class="n">points_gdf</span><span class="o">.</span><span class="n">crs</span><span class="p">)</span><span class="o">.</span><span class="n">equals</span><span class="p">(</span><span class="n">CRS</span><span class="p">(</span><span class="mi">4326</span><span class="p">)):</span>
+        <span class="n">points_gdf</span> <span class="o">=</span> <span class="n">points_gdf</span><span class="o">.</span><span class="n">to_crs</span><span class="p">(</span><span class="mi">4326</span><span class="p">)</span>
+    <span class="n">coords</span> <span class="o">=</span> <span class="n">points_gdf</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="p">[</span><span class="n">p</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">p</span><span class="o">.</span><span class="n">y</span><span class="p">])</span>
+    <span class="n">od_df</span><span class="p">[</span><span class="s2">&quot;source&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">od_df</span><span class="p">[</span><span class="n">origin_col</span><span class="p">]</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">coords</span><span class="p">)</span>
+    <span class="n">od_df</span><span class="p">[</span><span class="s2">&quot;target&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">od_df</span><span class="p">[</span><span class="n">dest_col</span><span class="p">]</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">coords</span><span class="p">)</span>
+    <span class="n">od_df</span><span class="o">.</span><span class="n">dropna</span><span class="p">(</span><span class="n">subset</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;source&quot;</span><span class="p">,</span> <span class="s2">&quot;target&quot;</span><span class="p">],</span> <span class="n">inplace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">pdk</span><span class="o">.</span><span class="n">Layer</span><span class="p">(</span><span class="s2">&quot;ArcLayer&quot;</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="n">od_df</span><span class="p">,</span> <span class="n">get_source_position</span><span class="o">=</span><span class="s2">&quot;source&quot;</span><span class="p">,</span> <span class="n">get_target_position</span><span class="o">=</span><span class="s2">&quot;target&quot;</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+<span class="c1"># --- HIGH-LEVEL PLOTTING FUNCTION (Unchanged from last version) ---</span>
+
+<div class="viewcode-block" id="plot_od_map">
+<a class="viewcode-back" href="../../../api/generated/nomad.visit_attribution.viz.html#nomad.visit_attribution.viz.plot_od_map">[docs]</a>
+<span class="k">def</span> <span class="nf">plot_od_map</span><span class="p">(</span>
+    <span class="n">od_df</span><span class="p">,</span>
+    <span class="n">region_gdf</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">points_gdf</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">background_gdf</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">origin_col</span><span class="o">=</span><span class="s2">&quot;origin&quot;</span><span class="p">,</span>
+    <span class="n">dest_col</span><span class="o">=</span><span class="s2">&quot;destination&quot;</span><span class="p">,</span>
+    <span class="n">weight_col</span><span class="o">=</span><span class="s2">&quot;weight&quot;</span><span class="p">,</span>
+    <span class="n">id_col</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">w_min</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span>
+    <span class="n">edge_alpha</span><span class="o">=</span><span class="mf">0.4</span><span class="p">,</span>
+    <span class="n">edge_color</span><span class="o">=</span><span class="s2">&quot;red&quot;</span><span class="p">,</span>
+    <span class="n">edge_cmap</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">fill_cmap</span><span class="o">=</span><span class="s2">&quot;Reds&quot;</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Generates an origin-destination map using PyDeck with optional layers.&quot;&quot;&quot;</span>
+    <span class="n">od_df</span> <span class="o">=</span> <span class="n">od_df</span><span class="p">[</span><span class="n">od_df</span><span class="p">[</span><span class="n">weight_col</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">w_min</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">od_df</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;No flows with weight &gt;= w_min found.&quot;</span><span class="p">)</span>
+
+    <span class="n">layers</span> <span class="o">=</span> <span class="p">[]</span>
+    
+    <span class="k">if</span> <span class="n">points_gdf</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">region_gdf</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">points_gdf</span> <span class="o">=</span> <span class="n">region_gdf</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">points_gdf</span><span class="p">[</span><span class="s1">&#39;geometry&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">points_gdf</span><span class="o">.</span><span class="n">geometry</span><span class="o">.</span><span class="n">centroid</span>
+    <span class="k">if</span> <span class="n">points_gdf</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Cannot draw arcs without points_gdf or region_gdf to derive it.&quot;</span><span class="p">)</span>
+
+    <span class="c1"># 1. Background Layer</span>
+    <span class="k">if</span> <span class="n">background_gdf</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">bg</span> <span class="o">=</span> <span class="n">background_gdf</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">CRS</span><span class="p">(</span><span class="n">bg</span><span class="o">.</span><span class="n">crs</span><span class="p">)</span><span class="o">.</span><span class="n">equals</span><span class="p">(</span><span class="n">CRS</span><span class="p">(</span><span class="mi">4326</span><span class="p">)):</span> <span class="n">bg</span> <span class="o">=</span> <span class="n">bg</span><span class="o">.</span><span class="n">to_crs</span><span class="p">(</span><span class="mi">4326</span><span class="p">)</span>
+        <span class="k">if</span> <span class="s2">&quot;color&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">bg</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span> <span class="n">bg</span><span class="p">[</span><span class="s2">&quot;color&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;#0e0e0e&quot;</span>
+        <span class="n">bg</span><span class="p">[</span><span class="s2">&quot;fill_color&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">bg</span><span class="p">[</span><span class="s2">&quot;color&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">c</span><span class="p">:</span> <span class="n">to_rgba</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">1.0</span><span class="p">))</span>
+        <span class="n">layers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_create_geojson_layer</span><span class="p">(</span>
+            <span class="n">bg</span><span class="p">,</span> <span class="n">stroked</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">filled</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">get_fill_color</span><span class="o">=</span><span class="s2">&quot;fill_color&quot;</span><span class="p">,</span>
+            <span class="n">get_line_color</span><span class="o">=</span><span class="p">[</span><span class="mi">255</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="mi">200</span><span class="p">],</span> <span class="n">line_width_min_pixels</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+            <span class="n">parameters</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;depthTest&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">}</span>
+        <span class="p">))</span>
+
+    <span class="c1"># 2. Region Layer</span>
+    <span class="k">if</span> <span class="n">region_gdf</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">regs</span> <span class="o">=</span> <span class="n">region_gdf</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span><span class="n">id_col</span><span class="p">)</span> <span class="k">if</span> <span class="n">id_col</span> <span class="k">else</span> <span class="n">region_gdf</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">CRS</span><span class="p">(</span><span class="n">regs</span><span class="o">.</span><span class="n">crs</span><span class="p">)</span><span class="o">.</span><span class="n">equals</span><span class="p">(</span><span class="n">CRS</span><span class="p">(</span><span class="mi">4326</span><span class="p">)):</span> <span class="n">regs</span> <span class="o">=</span> <span class="n">regs</span><span class="o">.</span><span class="n">to_crs</span><span class="p">(</span><span class="mi">4326</span><span class="p">)</span>
+        <span class="n">inflow</span> <span class="o">=</span> <span class="n">od_df</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="n">dest_col</span><span class="p">)[</span><span class="n">weight_col</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+        <span class="n">max_in</span> <span class="o">=</span> <span class="n">inflow</span><span class="o">.</span><span class="n">max</span><span class="p">()</span> <span class="ow">or</span> <span class="mi">1</span>
+        <span class="n">cmap</span> <span class="o">=</span> <span class="n">cm</span><span class="o">.</span><span class="n">get_cmap</span><span class="p">(</span><span class="n">fill_cmap</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">fill_cmap</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="n">fill_cmap</span>
+        <span class="n">norm</span> <span class="o">=</span> <span class="n">mcolors</span><span class="o">.</span><span class="n">Normalize</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">max_in</span><span class="p">)</span>
+        <span class="n">touched</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">hstack</span><span class="p">([</span><span class="n">od_df</span><span class="p">[</span><span class="n">origin_col</span><span class="p">]</span><span class="o">.</span><span class="n">unique</span><span class="p">(),</span> <span class="n">od_df</span><span class="p">[</span><span class="n">dest_col</span><span class="p">]</span><span class="o">.</span><span class="n">unique</span><span class="p">()])</span>
+        <span class="n">regs</span> <span class="o">=</span> <span class="n">regs</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">regs</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">touched</span><span class="p">)]</span>
+        <span class="n">regs</span><span class="p">[</span><span class="s2">&quot;fill_color&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">inflow</span><span class="o">.</span><span class="n">reindex</span><span class="p">(</span><span class="n">regs</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">fill_value</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>\
+                                 <span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">v</span><span class="p">:</span> <span class="n">to_rgba</span><span class="p">(</span><span class="n">cmap</span><span class="p">(</span><span class="n">norm</span><span class="p">(</span><span class="n">v</span><span class="p">)),</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.6</span><span class="p">))</span>
+        <span class="n">layers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_create_geojson_layer</span><span class="p">(</span>
+            <span class="n">regs</span><span class="p">,</span> <span class="n">pickable</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">auto_highlight</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">stroked</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">filled</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">get_fill_color</span><span class="o">=</span><span class="s2">&quot;fill_color&quot;</span><span class="p">,</span> <span class="n">get_line_color</span><span class="o">=</span><span class="p">[</span><span class="mi">255</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="mi">255</span><span class="p">,</span> <span class="mi">255</span><span class="p">],</span>
+            <span class="n">line_width_min_pixels</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">parameters</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;depthTest&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">}</span>
+        <span class="p">))</span>
+
+    <span class="c1"># 3. Arc Layer</span>
+    <span class="n">max_w</span> <span class="o">=</span> <span class="n">od_df</span><span class="p">[</span><span class="n">weight_col</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+    <span class="n">od_df</span><span class="p">[</span><span class="s2">&quot;width&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">od_df</span><span class="p">[</span><span class="n">weight_col</span><span class="p">]</span> <span class="o">/</span> <span class="n">max_w</span><span class="p">)</span> <span class="o">*</span> <span class="mi">15</span>
+    <span class="k">if</span> <span class="n">edge_cmap</span><span class="p">:</span>
+        <span class="n">cmap</span> <span class="o">=</span> <span class="n">cm</span><span class="o">.</span><span class="n">get_cmap</span><span class="p">(</span><span class="n">edge_cmap</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">edge_cmap</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="n">edge_cmap</span>
+        <span class="n">norm</span> <span class="o">=</span> <span class="n">mcolors</span><span class="o">.</span><span class="n">Normalize</span><span class="p">(</span><span class="n">od_df</span><span class="p">[</span><span class="n">weight_col</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">(),</span> <span class="n">max_w</span><span class="p">)</span>
+        <span class="n">od_df</span><span class="p">[</span><span class="s2">&quot;color&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">od_df</span><span class="p">[</span><span class="n">weight_col</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">v</span><span class="p">:</span> <span class="n">to_rgba</span><span class="p">(</span><span class="n">cmap</span><span class="p">(</span><span class="n">norm</span><span class="p">(</span><span class="n">v</span><span class="p">)),</span> <span class="n">alpha</span><span class="o">=</span><span class="n">edge_alpha</span><span class="p">))</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">od_df</span><span class="p">[</span><span class="s2">&quot;color&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">to_rgba</span><span class="p">(</span><span class="n">edge_color</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="n">edge_alpha</span><span class="p">)]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">od_df</span><span class="p">)</span>
+    <span class="n">layers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_create_arc_layer</span><span class="p">(</span>
+        <span class="n">od_df</span><span class="p">,</span> <span class="n">points_gdf</span><span class="p">,</span> <span class="n">origin_col</span><span class="p">,</span> <span class="n">dest_col</span><span class="p">,</span> <span class="n">get_width</span><span class="o">=</span><span class="s2">&quot;width&quot;</span><span class="p">,</span>
+        <span class="n">get_source_color</span><span class="o">=</span><span class="s2">&quot;color&quot;</span><span class="p">,</span> <span class="n">get_target_color</span><span class="o">=</span><span class="s2">&quot;color&quot;</span><span class="p">,</span>
+        <span class="n">pickable</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">auto_highlight</span><span class="o">=</span><span class="kc">True</span>
+    <span class="p">))</span>
+
+    <span class="n">bounds_provider</span> <span class="o">=</span> <span class="n">region_gdf</span> <span class="k">if</span> <span class="n">region_gdf</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">points_gdf</span>
+    <span class="n">bounds</span> <span class="o">=</span> <span class="n">bounds_provider</span><span class="o">.</span><span class="n">to_crs</span><span class="p">(</span><span class="mi">4326</span><span class="p">)</span><span class="o">.</span><span class="n">total_bounds</span>
+    <span class="n">view</span> <span class="o">=</span> <span class="n">compute_view</span><span class="p">([[</span><span class="n">bounds</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">bounds</span><span class="p">[</span><span class="mi">1</span><span class="p">]],</span> <span class="p">[</span><span class="n">bounds</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">bounds</span><span class="p">[</span><span class="mi">3</span><span class="p">]]])</span>
+    <span class="n">view</span><span class="o">.</span><span class="n">pitch</span> <span class="o">=</span> <span class="mi">30</span>
+    
+    <span class="k">return</span> <span class="n">pdk</span><span class="o">.</span><span class="n">Deck</span><span class="p">(</span><span class="n">layers</span><span class="o">=</span><span class="n">layers</span><span class="p">,</span> <span class="n">initial_view_state</span><span class="o">=</span><span class="n">view</span><span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2025, CSSLab.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

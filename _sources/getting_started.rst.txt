@@ -63,8 +63,13 @@ Here's a simple example to get started with NOMAD:
    df = loader.read_data('data/sample.csv')
    
    # Perform stop detection
-   from nomad.stop_detection import dbscan
-   stops = dbscan.detect_stops(df, eps=100, min_samples=3)
+   from nomad.stop_detection import density_algs
+   stops = density_algs.ta_dbscan(
+       df,
+       dist_thresh=100,
+       min_pts=3,
+       time_thresh=15,
+   )
    
    # Compute mobility metrics
    from nomad.metrics import metrics
@@ -96,4 +101,3 @@ License
 MIT © University of Pennsylvania 2025
 
 For more information, visit `nomad.seas.upenn.edu <https://nomad.seas.upenn.edu>`_.
-
