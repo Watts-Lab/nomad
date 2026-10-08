@@ -1,7 +1,13 @@
 ﻿stop_detection
 ==============
 
-.. automodule:: nomad.stop_detection
-   :members:
-   :undoc-members:
-   :show-inheritance:
+.. autosummary::
+   :toctree: generated
+
+   nomad.stop_detection.density_algs
+   nomad.stop_detection.postprocessing
+   nomad.stop_detection.preprocessing
+   nomad.stop_detection.sequential_algs
+   nomad.stop_detection.utils
+   nomad.stop_detection.validation
+   nomad.stop_detection.viz
