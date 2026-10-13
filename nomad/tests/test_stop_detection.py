@@ -34,7 +34,10 @@ from nomad.stop_detection.sequential_algs import (
     lachesis_labels,
     lachesis_labels_per_user,
     lachesis_per_user,
+    soc,
     soc_labels,
+    soc_labels_per_user,
+    soc_per_user,
 )
 from nomad.stop_detection import utils
 from nomad.stop_detection.preprocessing import _find_neighbors
@@ -97,6 +100,10 @@ def coordinate_label_case_registry(stop_test_params):
             "fn": lachesis_labels,
             "single_kwargs": {"dt_max": dt_max, "delta_roam": dist_thresh, "dur_min": 5},
             "two_stop_kwargs": {"dt_max": 5, "delta_roam": dist_thresh, "dur_min": 5},
+        },
+        "soc": {
+            "fn": soc_labels,
+            "two_stop_kwargs": {"delta_roam": dist_thresh, "dur_min": 5},
         },
         "dbstop": {
             "fn": dbstop_labels,
@@ -181,6 +188,10 @@ def latlon_xy_consistency_case_registry():
                 # Required argument; other behavior uses implementation defaults.
                 "delta_roam": 100,
             },
+        },
+        "soc": {
+            "fn": soc,
+            "kwargs": {"delta_roam": 50},
         },
         "dbstop": {
             "fn": dbstop,
@@ -268,6 +279,12 @@ def label_concat_case_registry(stop_test_params):
             "traj_cols": {"timestamp": "timestamp", "x": "x", "y": "y"},
             "supports_return_cores": False,
         },
+        "soc": {
+            "fn": soc_labels,
+            "kwargs": {"delta_roam": dist_thresh, "dur_min": 5},
+            "traj_cols": {"timestamp": "timestamp", "x": "x", "y": "y"},
+            "supports_return_cores": False,
+        },
         "sequential": {
             "fn": detect_stops_labels,
             "kwargs": {"delta_roam": dist_thresh, "dt_max": dt_max, "dur_min": 5, "method": "sliding"},
@@ -299,6 +316,10 @@ def stop_df_schema_case_registry():
         "lachesis": {
             "fn": lachesis,
             "kwargs": {"delta_roam": 100},
+        },
+        "soc": {
+            "fn": soc,
+            "kwargs": {"delta_roam": 50},
         },
         "dbstop": {
             "fn": dbstop,
@@ -351,6 +372,12 @@ def per_user_wrapper_case_registry():
             "label_fn": lachesis_labels_per_user,
             "single_user_label_fn": lachesis_labels,
             "kwargs": {"dt_max": 60, "delta_roam": 100, "dur_min": 5},
+        },
+        "soc": {
+            "stop_fn": soc_per_user,
+            "label_fn": soc_labels_per_user,
+            "single_user_label_fn": soc_labels,
+            "kwargs": {"delta_roam": 50, "dur_min": 5},
         },
         "sequential": {
             "stop_fn": detect_stops_per_user,
@@ -521,6 +548,7 @@ def _assert_two_stops(labels):
     [
         pytest.param("sequential", id="sequential"),
         pytest.param("lachesis", id="lachesis"),
+        pytest.param("soc", id="soc"),
         pytest.param("dbstop", id="dbstop"),
         pytest.param("tadbscan", id="tadbscan"),
         pytest.param("seqscan", id="seqscan"),
@@ -595,6 +623,7 @@ def test_coordinate_label_algorithms_single_stop_fixture(
         pytest.param("tadbscan", id="tadbscan"),
         pytest.param("seqscan", id="seqscan"),
         pytest.param("hdbscan", id="hdbscan"),
+        pytest.param("soc", id="soc"),
     ],
 )
 def test_coordinate_label_algorithms_two_stop_fixture(
@@ -865,6 +894,20 @@ def test_soc_reachability_uses_immediately_preceding_core():
     assert labels.tolist() == [0, 0, 0, -1, 1, 1, -1]
 
 
+def test_soc_adjacent_core_pings_outside_circle_split_stops():
+    data = pd.DataFrame(
+        {
+            "timestamp": [0, 60, 120, 180, 240, 300],
+            "x": [0.0, 0.0, 0.0, 100.0, 100.0, 100.0],
+            "y": [0.0] * 6,
+        }
+    )
+
+    labels = soc_labels(data, delta_roam=1, dur_min=2)
+
+    assert labels.tolist() == [0, 0, 0, 1, 1, 1]
+
+
 def test_soc_return_anchors_uses_active_core_ping():
     data = pd.DataFrame(
         {
@@ -920,6 +963,7 @@ def test_sequential_ground_truth(agent_traj_ground_truth):
         pytest.param("seqscan", id="seqscan"),
         pytest.param("hdbscan", id="hdbscan"),
         pytest.param("lachesis", id="lachesis"),
+        pytest.param("soc", id="soc"),
         pytest.param("sequential", id="sequential"),
     ],
 )
@@ -955,6 +999,7 @@ def test_per_user_wrapper_outputs_valid_stop_df(per_user_test_data, per_user_wra
         pytest.param("seqscan", id="seqscan"),
         pytest.param("hdbscan", id="hdbscan"),
         pytest.param("lachesis", id="lachesis"),
+        pytest.param("soc", id="soc"),
         pytest.param("sequential", id="sequential"),
     ],
 )
@@ -1039,6 +1084,7 @@ def test_sequential_temporal_gap_breaks_stop(simple_traj, stop_test_params):
         pytest.param("tadbscan", id="tadbscan"),
         pytest.param("seqscan", id="seqscan"),
         pytest.param("hdbscan", id="hdbscan"),
+        pytest.param("soc", id="soc"),
     ],
 )
 def test_stop_detection_latlon_vs_xy_consistency(base_df, latlon_xy_consistency_case_registry, algo_name):
@@ -1120,6 +1166,7 @@ def test_density_label_algorithms_latlon_vs_xy_consistency(base_df, latlon_xy_la
         pytest.param("seqscan", False, id="seqscan-series"),
         pytest.param("seqscan", True, id="seqscan-cores"),
         pytest.param("lachesis", False, id="lachesis-series"),
+        pytest.param("soc", False, id="soc-series"),
         pytest.param("sequential", False, id="sequential-series"),
         pytest.param("hdbscan", False, id="hdbscan-series"),
         pytest.param("hdbscan", True, id="hdbscan-cores"),
@@ -1389,6 +1436,21 @@ def empty_complete_case_registry():
             },
             "expected_cols": {'longitude', 'latitude', 'timestamp', 'diameter', 'n_pings', 'end_timestamp', 'duration', 'max_gap'},
         },
+        "soc": {
+            "fn": soc,
+            "kwargs": {
+                "delta_roam": 50,
+                "dur_min": 5,
+                "complete_output": True,
+                "traj_cols": {
+                    'timestamp': 'timestamp',
+                    'longitude': 'longitude',
+                    'latitude': 'latitude',
+                    'user_id': 'user_id',
+                },
+            },
+            "expected_cols": {'longitude', 'latitude', 'timestamp', 'diameter', 'n_pings', 'end_timestamp', 'duration', 'max_gap'},
+        },
         "tadbscan": {
             "fn": ta_dbscan,
             "kwargs": {
@@ -1513,6 +1575,21 @@ def empty_xy_case_registry():
             },
             "expected_cols": {'x', 'y', 'timestamp', 'duration'},
         },
+        "soc": {
+            "fn": soc,
+            "kwargs": {
+                "delta_roam": 50,
+                "dur_min": 5,
+                "complete_output": False,
+                "traj_cols": {
+                    'timestamp': 'timestamp',
+                    'x': 'x',
+                    'y': 'y',
+                    'user_id': 'user_id',
+                },
+            },
+            "expected_cols": {'x', 'y', 'timestamp', 'duration'},
+        },
         "tadbscan": {
             "fn": ta_dbscan,
             "kwargs": {
@@ -1574,6 +1651,7 @@ def empty_xy_case_registry():
         pytest.param("sequential", id="sequential"),
         pytest.param("hdbscan", id="hdbscan"),
         pytest.param("lachesis", id="lachesis"),
+        pytest.param("soc", id="soc"),
         pytest.param("tadbscan", id="tadbscan"),
         pytest.param("dbstop", id="dbstop"),
         pytest.param("seqscan", id="seqscan"),
@@ -1595,6 +1673,7 @@ def test_empty_dataframe_complete_output(empty_traj, empty_complete_case_registr
         pytest.param("sequential", id="sequential"),
         pytest.param("hdbscan", id="hdbscan"),
         pytest.param("lachesis", id="lachesis"),
+        pytest.param("soc", id="soc"),
         pytest.param("tadbscan", id="tadbscan"),
         pytest.param("dbstop", id="dbstop"),
         pytest.param("seqscan", id="seqscan"),
