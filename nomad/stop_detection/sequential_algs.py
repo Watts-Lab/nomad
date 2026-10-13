@@ -696,6 +696,128 @@ def lachesis_labels_per_user(
     return pd.concat(results).reindex(data.index)
 
 
+def soc_labels(
+    data,
+    delta_roam,
+    dur_min=5,
+    traj_cols=None,
+    return_anchors=False,
+    **kwargs
+):
+    """
+    Scan a trajectory with SOC (Sequence Oriented Clustering) and assign each
+    ping to a stop-cluster index or -1 for noise.
+
+    A ping is core when its Eps-sequence, the maximal contiguous run of pings
+    within ``delta_roam`` of it, spans at least ``dur_min``. The span runs from
+    the first ping of the run to the ping after the run, so a ping followed by
+    a long gap can be core. A ping is reachable when it lies in the forward
+    Eps-sequence of the most recent core ping. A stop is a maximal run of core
+    or reachable pings, pruned to end at its last core ping.
+
+    Parameters
+    ----------
+    data : pd.DataFrame or GeoDataFrame
+        Input trajectory with spatial and temporal columns.
+    delta_roam : float
+        Radius of the Eps-sequence around each ping (Eps).
+    dur_min : int
+        Minimum span in minutes of the Eps-sequence of a core ping (Tau).
+    traj_cols : dict, optional
+        Mapping for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'.
+    return_anchors : bool, default False
+        Return the time of the active core ping of each stop ping as
+        ``anchor_time``. Core pings are their own anchor.
+    **kwargs
+        Passed along to the column‐detection helper.
+
+    Returns
+    -------
+    pd.Series or pd.DataFrame
+        Labels, or labels with aligned ``anchor_time``.
+    """
+    if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
+         raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
+
+    t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)
+    traj_cols = loader._parse_traj_cols(
+        data.columns, traj_cols, kwargs, warn=False
+    )
+    user_col = traj_cols['user_id']
+    if user_col in data.columns and data[user_col].nunique(dropna=False) > 1:
+        raise ValueError(
+            "Multi-user data? Use soc_labels_per_user instead."
+        )
+
+    loader._has_spatial_cols(data.columns, traj_cols)
+    loader._has_time_cols(data.columns, traj_cols)
+
+    if data.empty:
+        return utils._get_empty_aux_df(
+            data[traj_cols[t_key]], return_anchors=return_anchors
+        )
+
+    coords = data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy(dtype='float64')
+    # haversine expects [lat, lon] in radians
+    lat_lon = np.radians(coords[:, ::-1])
+    times = (to_timestamp(data[traj_cols[t_key]]) if use_datetime else data[traj_cols[t_key]]).to_numpy()
+
+    def dist(i, j):
+        if use_lon_lat:
+            return _haversine_distance(lat_lon[i].T, lat_lon[j].T)
+        return np.linalg.norm(coords[i] - coords[j], axis=1)
+
+    n = len(data)
+    idx = np.arange(n)
+
+    # Eps-sequence [first, last] of every ping, grown one offset at a time.
+    # A ping stops growing once it is core or its run hits a ping outside its circle.
+    first, last = idx.copy(), idx.copy()
+    is_core = times[np.minimum(last + 1, n - 1)] - times[first] >= dur_min * 60
+    grow_back, grow_fwd = (idx > 0) & ~is_core, (idx < n - 1) & ~is_core
+    offset = 1
+    while grow_back.any() or grow_fwd.any():
+        i = idx[grow_back]
+        within = dist(i, i - offset) <= delta_roam
+        first[i[within]] = i[within] - offset
+        grow_back[i] = within & (i - offset > 0)
+
+        i = idx[grow_fwd]
+        within = dist(i, i + offset) <= delta_roam
+        last[i[within]] = i[within] + offset
+        grow_fwd[i] = within & (i + offset < n - 1)
+
+        is_core = times[np.minimum(last + 1, n - 1)] - times[first] >= dur_min * 60
+        grow_back &= ~is_core
+        grow_fwd &= ~is_core
+        offset += 1
+
+    # anchor: most recent core ping; reach ends at the first ping outside its circle
+    core_pos = pd.Series(np.where(is_core, idx, np.nan))
+    anchor = core_pos.ffill()
+    has_anchor = anchor.notna().to_numpy()
+    within = np.zeros(n, dtype=int)
+    within[has_anchor] = dist(idx[has_anchor], anchor[has_anchor].to_numpy(dtype=int)) <= delta_roam
+    reachable = pd.Series(within).groupby(anchor).cummin().fillna(0).astype(bool)
+
+    # prune each run of reachable pings to end at its last core ping
+    run_id = (reachable & ~reachable.shift(fill_value=False)).cumsum()
+    in_stop = reachable & (idx <= core_pos.groupby(run_id).transform('max'))
+
+    starts = in_stop & ~in_stop.shift(fill_value=False)
+    labels = np.where(in_stop, starts.cumsum() - 1, -1)
+
+    result = pd.Series(labels, index=data.index, name='cluster')
+    if return_anchors:
+        anchor_times = pd.Series(
+            data[traj_cols[t_key]].to_numpy()[anchor.fillna(0).to_numpy(dtype=int)],
+            index=data.index,
+            dtype=data[traj_cols[t_key]].dtype if use_datetime else 'Int64',
+        ).where(in_stop.to_numpy())
+        return pd.DataFrame({"cluster": result, "anchor_time": anchor_times})
+    return result
+
+
 def grid_based_labels(data, time_thresh=np.inf, min_cluster_size=1, dur_min=0, traj_cols=None, **kwargs):
     """
     Detects stops in trajectory data based on time and each ping's location.
