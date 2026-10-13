@@ -34,6 +34,7 @@ from nomad.stop_detection.sequential_algs import (
     lachesis_labels,
     lachesis_labels_per_user,
     lachesis_per_user,
+    soc_labels,
 )
 from nomad.stop_detection import utils
 from nomad.stop_detection.preprocessing import _find_neighbors
@@ -807,6 +808,85 @@ def test_lachesis_does_not_recheck_initial_window_endpoint(monkeypatch):
 
     assert len(calls) == 1
     assert calls[0].tolist() == [0.2, 0.0]
+
+def test_soc_stationary_then_move():
+    data = pd.DataFrame(
+        {
+            "timestamp": [0, 60, 120, 180, 240, 300],
+            "x": [0.0, 0.0, 0.0, 0.0, 100.0, 200.0],
+            "y": [0.0] * 6,
+        }
+    )
+
+    labels = soc_labels(data, delta_roam=1, dur_min=2)
+
+    assert labels.tolist() == [0, 0, 0, 0, -1, -1]
+
+
+def test_soc_big_point_is_core():
+    data = pd.DataFrame(
+        {
+            "timestamp": [0, 60, 1260, 1320],
+            "x": [0.0, 10.0, 20.0, 30.0],
+            "y": [0.0] * 4,
+        }
+    )
+
+    labels = soc_labels(data, delta_roam=1, dur_min=10)
+
+    assert labels.tolist() == [-1, 0, -1, -1]
+
+
+def test_soc_prunes_trailing_reachable_pings():
+    data = pd.DataFrame(
+        {
+            "timestamp": [0, 100, 130, 160, 190],
+            "x": [-0.8, 0.0, 0.0, 0.9, 5.0],
+            "y": [0.0] * 5,
+        }
+    )
+
+    labels = soc_labels(data, delta_roam=1, dur_min=2)
+
+    assert labels.tolist() == [0, 0, 0, -1, -1]
+
+
+def test_soc_reachability_uses_immediately_preceding_core():
+    data = pd.DataFrame(
+        {
+            "timestamp": [0, 60, 120, 180, 200, 260, 360],
+            "x": [0.0, 0.0, 0.9, -0.5, -1.3, -2.0, 10.0],
+            "y": [0.0] * 7,
+        }
+    )
+
+    labels = soc_labels(data, delta_roam=1, dur_min=2)
+
+    assert labels.tolist() == [0, 0, 0, -1, 1, 1, -1]
+
+
+def test_soc_return_anchors_uses_active_core_ping():
+    data = pd.DataFrame(
+        {
+            "timestamp": [0, 100, 110, 120, 220, 320],
+            "x": [-0.5, 0.0, 0.9, -0.5, -0.5, 10.0],
+            "y": [0.0] * 6,
+        }
+    )
+
+    output = soc_labels(data, delta_roam=1, dur_min=2, return_anchors=True)
+
+    assert output["cluster"].tolist() == [-1, 0, 0, 0, 0, -1]
+    assert output["anchor_time"].tolist() == [pd.NA, 100, 100, 120, 220, pd.NA]
+
+
+def test_soc_return_anchors_empty_schema():
+    data = pd.DataFrame({"timestamp": [0], "x": [0.0], "y": [0.0]}).iloc[:0]
+
+    output = soc_labels(data, delta_roam=1, return_anchors=True)
+
+    assert list(output.columns) == ["cluster", "anchor_time"]
+    assert output.empty
 
 ##########################################
 ####        SEQUENTIAL TESTS          #### 
