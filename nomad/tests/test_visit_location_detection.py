@@ -1,8 +1,11 @@
 import geopandas as gpd
+import h3
 import pandas as pd
 import pytest
+from shapely.geometry import LineString, Point
 
-from nomad.visit_attribution.visit_attribution import detect_locations
+import nomad.visit_attribution.visit_attribution as visit_attribution
+from nomad.visit_attribution.visit_attribution import detect_locations, poi_map
 
 
 @pytest.fixture
@@ -218,3 +221,148 @@ def test_detect_locations_does_not_mutate_input(cartesian_points):
     detect_locations(cartesian_points, epsilon=2)
 
     pd.testing.assert_frame_equal(cartesian_points, original)
+
+
+def test_poi_map_attributes_unique_h3_cells_and_preserves_alignment(monkeypatch):
+    poi_cell = h3.latlng_to_cell(39.95, -75.16, 10)
+    adjacent_cell = next(iter(h3.grid_ring(poi_cell, 1)))
+    unmatched_cell = next(iter(h3.grid_ring(poi_cell, 2)))
+    latitude, longitude = h3.cell_to_latlng(poi_cell)
+    stops = pd.DataFrame(
+        {"h3_cell": [poi_cell, poi_cell, adjacent_cell, unmatched_cell, pd.NA]},
+        index=[3, 3, 7, 9, 11],
+    )
+    pois = gpd.GeoDataFrame(
+        {"building_id": ["library"]},
+        geometry=[Point(longitude, latitude).buffer(0.000001)],
+        crs="EPSG:4326",
+    )
+    batch_sizes = []
+    grid_disk_distances = visit_attribution.h3ronpy.grid_disk_distances
+
+    def record_batch_size(cells, max_distance):
+        batch_sizes.append(len(cells))
+        return grid_disk_distances(cells, max_distance)
+
+    monkeypatch.setattr(
+        visit_attribution.h3ronpy,
+        "grid_disk_distances",
+        record_batch_size,
+    )
+
+    locations = poi_map(
+        stops,
+        pois,
+        max_distance=1,
+        location_id="building_id",
+    )
+
+    assert batch_sizes == [3]
+    assert locations.index.tolist() == [3, 3, 7, 9, 11]
+    assert locations.name == "building_id"
+    assert locations.iloc[:3].tolist() == ["library", "library", "library"]
+    assert locations.iloc[3:].isna().all()
+
+
+def test_poi_map_h3_supports_projected_pois_and_column_overrides():
+    h3_cell = h3.latlng_to_cell(39.95, -75.16, 10)
+    latitude, longitude = h3.cell_to_latlng(h3_cell)
+    stops = pd.DataFrame({"containment_area": [h3_cell]})
+    pois = gpd.GeoDataFrame(
+        {"place": [42]},
+        geometry=[Point(longitude, latitude).buffer(0.000001)],
+        crs="EPSG:4326",
+    ).to_crs("EPSG:3857")
+
+    with pytest.warns(UserWarning, match="Reprojecting for H3 attribution"):
+        locations = poi_map(
+            stops,
+            pois,
+            location_id="place",
+            traj_cols={"h3_cell": "containment_area"},
+        )
+
+    assert locations.tolist() == [42]
+    assert locations.name == "place"
+
+
+def test_poi_map_h3_breaks_equidistant_ties_by_poi_order():
+    stop_cell = h3.latlng_to_cell(39.95, -75.16, 10)
+    poi_cells = list(h3.grid_ring(stop_cell, 1))[:2]
+    centers = [h3.cell_to_latlng(cell) for cell in poi_cells]
+    pois = gpd.GeoDataFrame(
+        {"location_id": ["first", "second"]},
+        geometry=[
+            Point(longitude, latitude).buffer(0.000001)
+            for latitude, longitude in centers
+        ],
+        crs="EPSG:4326",
+    )
+
+    locations = poi_map(
+        pd.DataFrame({"h3_cell": [stop_cell]}),
+        pois,
+        max_distance=1,
+        location_id="location_id",
+    )
+
+    assert locations.tolist() == ["first"]
+
+
+def test_poi_map_h3_returns_aligned_empty_result():
+    pois = gpd.GeoDataFrame(
+        {"location_id": ["unused"]},
+        geometry=[Point(-75.16, 39.95).buffer(0.000001)],
+        crs="EPSG:4326",
+    )
+    stops = pd.DataFrame({"cell": pd.Series(dtype="string")})
+
+    locations = poi_map(
+        stops,
+        pois,
+        location_id="location_id",
+        traj_cols={"h3_cell": "cell"},
+    )
+
+    assert locations.empty
+    assert locations.index.equals(stops.index)
+    assert locations.name == "location_id"
+
+
+def test_poi_map_h3_maps_multi_cell_poi_and_falls_back_to_index():
+    first_cell = h3.latlng_to_cell(39.95, -75.16, 10)
+    second_cell = next(iter(h3.grid_ring(first_cell, 1)))
+    centers = [h3.cell_to_latlng(cell) for cell in [first_cell, second_cell]]
+    poi = gpd.GeoDataFrame(
+        geometry=[
+            LineString([
+                (longitude, latitude) for latitude, longitude in centers
+            ]).buffer(0.000001)
+        ],
+        index=pd.Index(["building-a"]),
+        crs="EPSG:4326",
+    )
+
+    with pytest.warns(UserWarning, match="using poi_table.index"):
+        locations = poi_map(
+            pd.DataFrame({"h3_cell": [first_cell, second_cell]}),
+            poi,
+        )
+
+    assert locations.tolist() == ["building-a", "building-a"]
+    assert locations.name == "location_id"
+
+
+def test_poi_map_h3_requires_one_resolution_per_call():
+    cells = [
+        h3.latlng_to_cell(39.95, -75.16, 9),
+        h3.latlng_to_cell(39.95, -75.16, 10),
+    ]
+    poi = gpd.GeoDataFrame(
+        geometry=[Point(-75.16, 39.95).buffer(0.000001)],
+        crs="EPSG:4326",
+    )
+
+    with pytest.warns(UserWarning, match="using poi_table.index"):
+        with pytest.raises(ValueError, match="same resolution"):
+            poi_map(pd.DataFrame({"h3_cell": cells}), poi)

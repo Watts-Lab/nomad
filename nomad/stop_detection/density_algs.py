@@ -206,6 +206,7 @@ def ta_dbscan(
     passthrough_cols=None,
     keep_col_names=True,
     traj_cols=None,
+    passthrough_agg=None,
     **kwargs
 ):
     """
@@ -227,6 +228,8 @@ def ta_dbscan(
         Include extra stats if True (default: False).
     passthrough_cols : list, optional
         Columns to retain per stop.
+    passthrough_agg : dict, optional
+        Aggregation functions for selected passthrough columns.
     traj_cols : dict, optional
         Mapping for column names.
     **kwargs
@@ -279,6 +282,7 @@ def ta_dbscan(
         complete_output=complete_output,
         dur_min=dur_min,
         passthrough_cols=passthrough_cols,
+        passthrough_agg=passthrough_agg,
         keep_col_names=keep_col_names,
         traj_cols=traj_cols,
         **kwargs,
@@ -295,6 +299,7 @@ def ta_dbscan_per_user(
     traj_cols=None,
     n_jobs=1,
     print_progress=False,
+    passthrough_agg=None,
     **kwargs
 ):
     """
@@ -320,6 +325,7 @@ def ta_dbscan_per_user(
             "dur_min": dur_min,
             "complete_output": complete_output,
             "passthrough_cols": pt_cols,
+            "passthrough_agg": passthrough_agg,
             "traj_cols": traj_cols,
             **kwargs,
         },
@@ -536,6 +542,7 @@ def dbstop(
     passthrough_cols=None,
     keep_col_names=True,
     traj_cols=None,
+    passthrough_agg=None,
     **kwargs
 ):
     """
@@ -557,6 +564,8 @@ def dbstop(
         Include extra stats if True (default: False).
     passthrough_cols : list, optional
         Columns to retain per stop.
+    passthrough_agg : dict, optional
+        Aggregation functions for selected passthrough columns.
     traj_cols : dict, optional
         Mapping for column names.
     **kwargs
@@ -609,6 +618,7 @@ def dbstop(
         complete_output=complete_output,
         dur_min=dur_min,
         passthrough_cols=passthrough_cols,
+        passthrough_agg=passthrough_agg,
         keep_col_names=keep_col_names,
         traj_cols=traj_cols,
         **kwargs,
@@ -626,6 +636,7 @@ def dbstop_per_user(
     traj_cols=None,
     n_jobs=1,
     print_progress=False,
+    passthrough_agg=None,
     **kwargs
 ):
     """
@@ -651,6 +662,7 @@ def dbstop_per_user(
             "dur_min": dur_min,
             "complete_output": complete_output,
             "passthrough_cols": pt_cols,
+            "passthrough_agg": passthrough_agg,
             "keep_col_names": keep_col_names,
             "traj_cols": traj_cols,
             **kwargs,
@@ -967,6 +979,7 @@ def seqscan(
     passthrough_cols=None,
     keep_col_names=True,
     traj_cols=None,
+    passthrough_agg=None,
     **kwargs
 ):
     """
@@ -988,6 +1001,8 @@ def seqscan(
         Include extra stats if True (default: False).
     passthrough_cols : list, optional
         Columns to retain per stop.
+    passthrough_agg : dict, optional
+        Aggregation functions for selected passthrough columns.
     traj_cols : dict, optional
         Mapping for column names.
     **kwargs
@@ -1039,6 +1054,7 @@ def seqscan(
         labels,
         complete_output=complete_output,
         passthrough_cols=passthrough_cols,
+        passthrough_agg=passthrough_agg,
         keep_col_names=keep_col_names,
         traj_cols=traj_cols,
         **kwargs,
@@ -1057,6 +1073,7 @@ def seqscan_per_user(
     traj_cols=None,
     n_jobs=1,
     print_progress=False,
+    passthrough_agg=None,
     **kwargs
 ):
     """
@@ -1082,6 +1099,7 @@ def seqscan_per_user(
             "dur_min": dur_min,
             "complete_output": complete_output,
             "passthrough_cols": pt_cols,
+            "passthrough_agg": passthrough_agg,
             "keep_col_names": keep_col_names,
             "traj_cols": traj_cols,
             **kwargs,
@@ -1932,6 +1950,7 @@ def st_hdbscan(
     complete_output=False,
     passthrough_cols=None,
     traj_cols=None,
+    passthrough_agg=None,
     **kwargs
 ):
     """
@@ -1953,6 +1972,8 @@ def st_hdbscan(
         If True, include extra stats.
     passthrough_cols : list, optional
         Columns to passthrough to final stop table
+    passthrough_agg : dict, optional
+        Aggregation functions for selected passthrough columns.
     traj_cols : dict, optional
         Mapping for key columns.
     **kwargs
@@ -1989,6 +2010,7 @@ def st_hdbscan(
         labels,
         complete_output=complete_output,
         passthrough_cols=passthrough_cols,
+        passthrough_agg=passthrough_agg,
         keep_col_names=True,
         traj_cols=traj_cols,
         **kwargs,
@@ -2005,6 +2027,7 @@ def st_hdbscan_per_user(
     traj_cols=None,
     n_jobs=1,
     print_progress=False,
+    passthrough_agg=None,
     **kwargs
 ):
     """
@@ -2031,6 +2054,7 @@ def st_hdbscan_per_user(
             "dur_min": dur_min,
             "complete_output": complete_output,
             "passthrough_cols": pt_cols,
+            "passthrough_agg": passthrough_agg,
             "traj_cols": traj_cols,
             **kwargs,
         },

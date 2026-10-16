@@ -402,6 +402,7 @@ def summarize_stop_grid(
     keep_col_names=True,
     passthrough_cols=None,
     traj_cols=None,
+    passthrough_agg=None,
     **kwargs
 ):
     """
@@ -418,6 +419,9 @@ def summarize_stop_grid(
         if True, they use the user's time‐column name.
     passthrough_cols : list[str], optional
         Additional columns (e.g. 'user_id') to carry through.
+    passthrough_agg : dict, optional
+        Pandas-compatible aggregation function for each passthrough column that
+        should not use its first value.
     traj_cols : dict, optional
         Column‐name overrides.
 
@@ -432,6 +436,8 @@ def summarize_stop_grid(
     """
     if passthrough_cols is None:
         passthrough_cols = []
+    if passthrough_agg is None:
+        passthrough_agg = {}
 
     # 1) pick time key
     t_key, use_datetime = loader._fallback_time_cols_dt(grouped_data.columns, traj_cols, kwargs)
@@ -486,7 +492,11 @@ def summarize_stop_grid(
 
     for c in to_pass:
         if c in grouped_data.columns:
-            out[c] = grouped_data[c].iloc[0]
+            out[c] = (
+                grouped_data[c].agg(passthrough_agg[c])
+                if c in passthrough_agg
+                else grouped_data[c].iloc[0]
+            )
 
     return pd.Series(out, dtype='object')
 
