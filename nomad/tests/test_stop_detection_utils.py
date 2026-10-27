@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 import pytest
 import nomad.stop_detection.utils as utils
@@ -456,3 +457,30 @@ def test_has_overlapping_stops_raises_without_end_or_duration():
 
     with pytest.raises(ValueError, match=r"Missing required \(end or duration\)"):
         utils.has_overlapping_stops(stops)
+
+
+def test_haversine_degree_and_radian_inputs_agree():
+    anchor = np.array([60.0, 10.0])
+    neighbor = np.array([60.0, 10.001])
+    degrees = utils._haversine_distance(anchor, neighbor, radians=False)
+    radians = utils._haversine_distance(np.radians(anchor), np.radians(neighbor))
+    assert degrees == pytest.approx(55.5974633, abs=0.001)
+    assert degrees == pytest.approx(radians)
+
+
+def test_shared_distance_broadcasting_and_diameter_update():
+    anchor = np.array([10.0, 60.0])
+    neighbors = np.array([[10.001, 60.0], [10.002, 60.0]])
+    distances = utils._distance(anchor, neighbors, metric='haversine')
+    np.testing.assert_allclose(distances, [55.5974633, 111.1949266], atol=0.001)
+    assert utils._update_diameter(anchor, neighbors, 0, metric='haversine') == pytest.approx(
+        distances.max()
+    )
+    assert utils._distance(np.array([0, 0]), np.array([3, 4])) == 5
+
+
+def test_geographic_medoid_respects_coordinate_order():
+    # Longitude distances shrink at latitude 60; swapping axes selects the
+    # middle row instead of the first row for this asymmetric triangle.
+    coords = np.array([[10.0, 60.0], [10.0018, 60.002], [10.004, 60.0]])
+    np.testing.assert_array_equal(utils._medoid(coords, metric='haversine'), coords[0])

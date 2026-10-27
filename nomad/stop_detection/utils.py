@@ -13,6 +13,20 @@ from nomad.filters import to_timestamp
 from joblib import Parallel, delayed
 from tqdm import tqdm
 
+def _distance(anchor_coords, neighbor_coords, metric='euclidean'):
+    """Return scalar or row-wise distances between coordinate arrays.
+
+    Euclidean inputs are [x, y] in map units. Haversine inputs are
+    [longitude, latitude] in degrees; the returned distances are meters.
+    A single anchor can be broadcast against an array of neighbors.
+    """
+    if metric == 'haversine':
+        anchor_lat_lon = np.radians(anchor_coords[..., ::-1])
+        neighbor_lat_lon = np.radians(neighbor_coords[..., ::-1])
+        return _haversine_distance(anchor_lat_lon.T, neighbor_lat_lon.T)
+    return np.linalg.norm(neighbor_coords - anchor_coords, axis=-1)
+
+
 def _diameter(coords, metric='euclidean', witness=False):
     """
     Calculate the diameter of a set of coordinates, defined as the maximum pairwise distance.
@@ -23,7 +37,7 @@ def _diameter(coords, metric='euclidean', witness=False):
         Array of coordinates, where each row represents a point in space.
     metric : str, optional
         Distance metric to use. Supported metrics include 'euclidean' (default) 
-        and 'haversine'. If 'haversine' is used, coordinates should be in degrees.
+        and 'haversine'. Haversine coordinates are [longitude, latitude] in degrees.
     witness : bool, default False
         Return the earliest endpoint of a maximum-diameter pair.
     
@@ -36,7 +50,7 @@ def _diameter(coords, metric='euclidean', witness=False):
         return (0, None) if witness else 0
    
     if metric == 'haversine':
-        radians = np.radians(coords)
+        radians = np.radians(coords[:, ::-1])
         pairwise_dists = pdist(
             radians, metric=lambda u, v: _haversine_distance(u, v)
         )
@@ -62,7 +76,7 @@ def _medoid(coords, metric='euclidean'):
         Array of coordinates, where each row represents a point in space.
     metric : str, optional
         Distance metric to use. Supported metrics include 'euclidean' (default) 
-        and 'haversine'. If 'haversine' is used, coordinates should be in degrees.
+        and 'haversine'. Haversine coordinates are [longitude, latitude] in degrees.
     
     Returns
     -------
@@ -74,7 +88,7 @@ def _medoid(coords, metric='euclidean'):
         return coords[0]
     
     if metric == 'haversine':
-        distances = _pairwise_haversine(np.radians(coords))
+        distances = _pairwise_haversine(np.radians(coords[:, ::-1]))
     else:
         distances = cdist(coords, coords, metric=metric)
 
@@ -97,11 +111,8 @@ def _haversine_distance(coord1, coord2, radians=True):
     if not radians:
         coord1 = np.radians(coord1)
         coord2 = np.radians(coord2)
-        delta_lat = np.radians(coord2[0] - coord1[0])
-        delta_lon = np.radians(coord2[1] - coord1[1])
-    else:
-        delta_lat = coord2[0] - coord1[0]
-        delta_lon = coord2[1] - coord1[1]
+    delta_lat = coord2[0] - coord1[0]
+    delta_lon = coord2[1] - coord1[1]
     a = np.sin(delta_lat / 2.0) ** 2 + np.cos(coord1[0]) * np.cos(
         coord2[0]) * np.sin(delta_lon / 2.0) ** 2
     c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
@@ -147,7 +158,7 @@ def _update_diameter(c_j, coords_prev, D_prev, metric='euclidean', witness=False
         The previous diameter of the coordinate set, before adding the new point.
     metric : str, optional
         Distance metric to use. Supported metrics are 'euclidean' (default) and 'haversine'.
-        If 'haversine' is used, coordinates should be in degrees.
+        Haversine coordinates are [longitude, latitude] in degrees.
     witness_index : int, optional
         Earliest endpoint of a previous maximum-diameter pair.
     witness : bool, default False
@@ -158,24 +169,10 @@ def _update_diameter(c_j, coords_prev, D_prev, metric='euclidean', witness=False
     float or tuple
         The updated diameter, or the diameter and witness row offset.
     """
-    if metric == 'euclidean':
-        X_prev = coords_prev[:, 0]
-        Y_prev = coords_prev[:, 1]
-        x_j, y_j = c_j[0], c_j[1]
-        new_dists = np.sqrt((X_prev - x_j) ** 2 + (Y_prev - y_j) ** 2)
-
-    elif metric == 'haversine':
-        coords_prev = np.radians(coords_prev)
-        c_j = np.radians(c_j)
-
-        lat_j, lon_j = c_j[0], c_j[1]
-        new_dists = np.array([
-            _haversine_distance([lat_j, lon_j], [lat_i, lon_i])
-            for lat_i, lon_i in coords_prev
-        ])
-
-    else:
+    if metric not in {'euclidean', 'haversine'}:
         raise ValueError("metric must be 'euclidean' or 'haversine'")
+
+    new_dists = _distance(c_j, coords_prev, metric=metric)
 
     new_diameter = np.max(new_dists)
     D_i_jp1 = np.max([D_prev, new_diameter])
