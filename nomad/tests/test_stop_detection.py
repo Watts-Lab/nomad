@@ -852,7 +852,7 @@ def test_soc_stationary_then_move():
     assert labels.tolist() == [0, 0, 0, 0, -1, -1]
 
 
-def test_soc_big_point_is_core():
+def test_soc_isolated_pings_are_not_core_despite_long_gaps():
     data = pd.DataFrame(
         {
             "timestamp": [0, 60, 1260, 1320],
@@ -863,7 +863,7 @@ def test_soc_big_point_is_core():
 
     labels = soc_labels(data, delta_roam=1, dur_min=10)
 
-    assert labels.tolist() == [-1, 0, -1, -1]
+    assert labels.tolist() == [-1, -1, -1, -1]
 
 
 def test_soc_prunes_trailing_reachable_pings():
@@ -883,7 +883,8 @@ def test_soc_prunes_trailing_reachable_pings():
 def test_soc_reachability_uses_immediately_preceding_core():
     data = pd.DataFrame(
         {
-            "timestamp": [0, 60, 120, 180, 200, 260, 360],
+            # The second stop needs 120 seconds between its observed endpoints.
+            "timestamp": [0, 60, 120, 180, 200, 320, 420],
             "x": [0.0, 0.0, 0.9, -0.5, -1.3, -2.0, 10.0],
             "y": [0.0] * 7,
         }
@@ -911,7 +912,8 @@ def test_soc_adjacent_core_pings_outside_circle_split_stops():
 def test_soc_return_anchors_uses_active_core_ping():
     data = pd.DataFrame(
         {
-            "timestamp": [0, 100, 110, 120, 220, 320],
+            # The later core sequence spans exactly 120 seconds (120 to 240).
+            "timestamp": [0, 100, 110, 120, 240, 340],
             "x": [-0.5, 0.0, 0.9, -0.5, -0.5, 10.0],
             "y": [0.0] * 6,
         }
@@ -920,7 +922,7 @@ def test_soc_return_anchors_uses_active_core_ping():
     output = soc_labels(data, delta_roam=1, dur_min=2, return_anchors=True)
 
     assert output["cluster"].tolist() == [-1, 0, 0, 0, 0, -1]
-    assert output["anchor_time"].tolist() == [pd.NA, 100, 100, 120, 220, pd.NA]
+    assert output["anchor_time"].tolist() == [pd.NA, 100, 100, 120, 240, pd.NA]
 
 
 def test_soc_return_anchors_empty_schema():

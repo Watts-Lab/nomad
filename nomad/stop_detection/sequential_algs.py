@@ -5,7 +5,6 @@ import nomad.io.base as loader
 from nomad.filters import to_timestamp
 from nomad.stop_detection.postprocessing import _merge_stops_from_agg
 from nomad.stop_detection import utils
-from nomad.stop_detection.utils import _haversine_distance
 from nomad.visit_attribution.visit_attribution import _detect_locations
 
 
@@ -55,19 +54,27 @@ def detect_stops_labels(
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(
         data.columns, traj_cols, kwargs
     )
-    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    traj_cols = loader._parse_traj_cols(
+        data.columns, traj_cols, kwargs, warn=False
+    )
+    user_col = traj_cols['user_id']
+    if user_col in data.columns and data[user_col].nunique(dropna=False) > 1:
+        raise ValueError(
+            "Multi-user data? Use detect_stops_labels_per_user instead."
+        )
     
     # Validate spatial and temporal columns
     loader._has_spatial_cols(data.columns, traj_cols)
     loader._has_time_cols(data.columns, traj_cols)
 
     if data.empty:
-        return utils._get_empty_aux_df()
+        return utils._get_empty_aux_df(data[traj_cols[t_key]])
     if method not in {"sliding", "centroid"}:
         raise ValueError(f"Unknown method: {method}")
 
     # Extract coordinates and time
     coords = data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy(dtype='float64')
+    metric = 'haversine' if use_lon_lat else 'euclidean'
     times = to_timestamp(data[traj_cols[t_key]]) if use_datetime else data[traj_cols[t_key]]
     
     # Initialize all labels as noise (-1)
@@ -88,10 +95,7 @@ def detect_stops_labels(
             if time_gap > dt_max:
                 break
 
-            if use_lon_lat:
-                dist = _haversine_distance(anchor_coords, coords[j], radians=False)
-            else:
-                dist = np.linalg.norm(coords[j] - anchor_coords)
+            dist = utils._distance(anchor_coords, coords[j], metric=metric)
             
             # Check if moved beyond distance threshold
             if dist > delta_roam:
@@ -169,16 +173,16 @@ def detect_stops(
     ValueError if multiple users found; use detect_stops_per_user instead.
     """
     passthrough_cols = [] if passthrough_cols is None else passthrough_cols
-    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
-    if 'user_id' in traj_cols_temp and traj_cols_temp['user_id'] in data.columns:
-        uid_col = data[traj_cols_temp['user_id']]
-        arr = uid_col.values
-        if len(arr) > 0:
-            first = arr[0]
-            if any(x != first for x in arr[1:]):
-                raise ValueError("Multi-user data? Use detect_stops_per_user instead.")
-            if traj_cols_temp['user_id'] not in passthrough_cols:
-                passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
+    traj_cols_temp = loader._parse_traj_cols(
+        data.columns, traj_cols, kwargs, warn=False
+    )
+    user_col = traj_cols_temp['user_id']
+    if (
+        not data.empty
+        and user_col in data.columns
+        and user_col not in passthrough_cols
+    ):
+        passthrough_cols = passthrough_cols + [user_col]
     labels = detect_stops_labels(
         data=data,
         delta_roam=delta_roam,
@@ -367,7 +371,7 @@ def lachesis_labels(
         Labels, or labels with aligned diameter-witness ``anchor_time``.
     """
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
-         raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
+        raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
 
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)        
     traj_cols = loader._parse_traj_cols(
@@ -710,8 +714,8 @@ def soc_labels(
 
     A ping is core when its Eps-sequence, the maximal contiguous run of pings
     within ``delta_roam`` of it, spans at least ``dur_min``. The span runs from
-    the first ping of the run to the ping after the run, so a ping followed by
-    a long gap can be core. A ping is reachable when it lies in the forward
+    the first to the last observed ping of the run, excluding the gap after
+    the run. A ping is reachable when it lies in the forward
     Eps-sequence of the most recent core ping. A stop is a maximal run of core
     or reachable pings, pruned to end at its last core ping.
 
@@ -737,7 +741,7 @@ def soc_labels(
         Labels, or labels with aligned ``anchor_time``.
     """
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
-         raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
+        raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
 
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)
     traj_cols = loader._parse_traj_cols(
@@ -749,23 +753,14 @@ def soc_labels(
             "Multi-user data? Use soc_labels_per_user instead."
         )
 
-    loader._has_spatial_cols(data.columns, traj_cols)
-    loader._has_time_cols(data.columns, traj_cols)
-
     if data.empty:
         return utils._get_empty_aux_df(
             data[traj_cols[t_key]], return_anchors=return_anchors
         )
 
     coords = data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy(dtype='float64')
-    # haversine expects [lat, lon] in radians
-    lat_lon = np.radians(coords[:, ::-1])
+    metric = 'haversine' if use_lon_lat else 'euclidean'
     times = (to_timestamp(data[traj_cols[t_key]]) if use_datetime else data[traj_cols[t_key]]).to_numpy()
-
-    def dist(i, j):
-        if use_lon_lat:
-            return _haversine_distance(lat_lon[i].T, lat_lon[j].T)
-        return np.linalg.norm(coords[i] - coords[j], axis=1)
 
     n = len(data)
     idx = np.arange(n)
@@ -773,21 +768,27 @@ def soc_labels(
     # Eps-sequence [first, last] of every ping, grown one offset at a time.
     # A ping stops growing once it is core or its run hits a ping outside its circle.
     first, last = idx.copy(), idx.copy()
-    is_core = times[np.minimum(last + 1, n - 1)] - times[first] >= dur_min * 60
+    is_core = np.full(n, dur_min <= 0, dtype=bool)
     grow_back, grow_fwd = (idx > 0) & ~is_core, (idx < n - 1) & ~is_core
     offset = 1
     while grow_back.any() or grow_fwd.any():
-        i = idx[grow_back]
-        within = dist(i, i - offset) <= delta_roam
-        first[i[within]] = i[within] - offset
-        grow_back[i] = within & (i - offset > 0)
+        # Each pair serves the earlier anchor's forward search and the later
+        # anchor's backward search. Slicing excludes wraparound at both ends.
+        active_pairs = grow_fwd[:-offset] | grow_back[offset:]
+        anchor_positions = idx[:-offset][active_pairs]
+        neighbor_positions = idx[offset:][active_pairs]
+        within = utils._distance(
+            coords[anchor_positions], coords[neighbor_positions], metric=metric
+        ) <= delta_roam
 
-        i = idx[grow_fwd]
-        within = dist(i, i + offset) <= delta_roam
-        last[i[within]] = i[within] + offset
-        grow_fwd[i] = within & (i + offset < n - 1)
+        extend_forward = grow_fwd[anchor_positions] & within
+        extend_backward = grow_back[neighbor_positions] & within
+        last[anchor_positions[extend_forward]] = neighbor_positions[extend_forward]
+        first[neighbor_positions[extend_backward]] = anchor_positions[extend_backward]
+        grow_fwd[anchor_positions] &= within & (neighbor_positions < n - 1)
+        grow_back[neighbor_positions] &= within & (anchor_positions > 0)
 
-        is_core = times[np.minimum(last + 1, n - 1)] - times[first] >= dur_min * 60
+        is_core = times[last] - times[first] >= dur_min * 60
         grow_back &= ~is_core
         grow_fwd &= ~is_core
         offset += 1
@@ -798,7 +799,11 @@ def soc_labels(
     prev_anchor = core_pos.shift().ffill()
     has_anchor = prev_anchor.notna().to_numpy()
     within = np.zeros(n, dtype=int)
-    within[has_anchor] = dist(idx[has_anchor], prev_anchor[has_anchor].to_numpy(dtype=int)) <= delta_roam
+    within[has_anchor] = utils._distance(
+        coords[has_anchor],
+        coords[prev_anchor[has_anchor].to_numpy(dtype=int)],
+        metric=metric,
+    ) <= delta_roam
     reachable = pd.Series(within).groupby(prev_anchor).cummin().fillna(0).astype(bool)
 
     # a core ping that is not reachable starts a new stop;
@@ -853,7 +858,7 @@ def soc(
     -------
     pd.DataFrame
         One row per detected stop. Durations run from the first to the last
-        ping of the stop, so they exclude the gap that can make a ping core.
+        retained ping of the stop.
 
     Raises
     ------
@@ -936,7 +941,7 @@ def soc_per_user(
     traj_cols_temp = loader._parse_traj_cols(
         data.columns, traj_cols, kwargs, warn=False
     )
-    if 'user_id' not in traj_cols_temp or traj_cols_temp['user_id'] not in data.columns:
+    if traj_cols_temp['user_id'] not in data.columns:
         raise ValueError("soc_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
     uid = traj_cols_temp['user_id']
 
@@ -978,7 +983,7 @@ def soc_labels_per_user(
     Raises if 'user_id' not in traj_cols or missing from data.
     """
     traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
-    if 'user_id' not in traj_cols_temp or traj_cols_temp['user_id'] not in data.columns:
+    if traj_cols_temp['user_id'] not in data.columns:
         raise ValueError("soc_labels_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
     uid = traj_cols_temp['user_id']
 
@@ -1025,24 +1030,24 @@ def grid_based_labels(data, time_thresh=np.inf, min_cluster_size=1, dur_min=0, t
     """
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
         raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
-    if data.empty:
-        return utils._get_empty_aux_df()
     # Decide on temporal column to use
     t_key, use_datetime = loader._fallback_time_cols_dt(data.columns, traj_cols, kwargs)
     traj_cols = loader._parse_traj_cols(
         data.columns, traj_cols, kwargs, warn=False
     )
+    user_col = traj_cols['user_id']
+    if user_col in data.columns and data[user_col].nunique(dropna=False) > 1:
+        raise ValueError(
+            "Multi-user data? Use grid_based_labels_per_user instead."
+        )
 
     if traj_cols['location_id'] not in data.columns:
             raise ValueError(f"Missing {traj_cols['location_id']} column in {data.columns}."
                             "pass `location_id` as keyword argument or in traj_cols."
                             )
 
-    if traj_cols['user_id'] in data.columns:
-        arr = data[traj_cols['user_id']].values
-        first = arr[0]
-        if any(x != first for x in arr[1:]):
-            raise ValueError("grid_based cannot be run on multi-user data. Use grid_based_per_user instead.")
+    if data.empty:
+        return utils._get_empty_aux_df(data[traj_cols[t_key]])
 
     ts = to_timestamp(data[traj_cols[t_key]]) if use_datetime else data[traj_cols[t_key]]
     loc = data[traj_cols['location_id']]
