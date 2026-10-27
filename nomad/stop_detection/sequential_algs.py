@@ -5,7 +5,6 @@ import nomad.io.base as loader
 from nomad.filters import to_timestamp
 from nomad.stop_detection.postprocessing import _merge_stops_from_agg
 from nomad.stop_detection import utils
-from nomad.stop_detection.utils import _haversine_distance
 from nomad.visit_attribution.visit_attribution import _detect_locations
 
 
@@ -55,19 +54,27 @@ def detect_stops_labels(
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(
         data.columns, traj_cols, kwargs
     )
-    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    traj_cols = loader._parse_traj_cols(
+        data.columns, traj_cols, kwargs, warn=False
+    )
+    user_col = traj_cols['user_id']
+    if user_col in data.columns and data[user_col].nunique(dropna=False) > 1:
+        raise ValueError(
+            "Multi-user data? Use detect_stops_labels_per_user instead."
+        )
     
     # Validate spatial and temporal columns
     loader._has_spatial_cols(data.columns, traj_cols)
     loader._has_time_cols(data.columns, traj_cols)
 
     if data.empty:
-        return utils._get_empty_aux_df()
+        return utils._get_empty_aux_df(data[traj_cols[t_key]])
     if method not in {"sliding", "centroid"}:
         raise ValueError(f"Unknown method: {method}")
 
     # Extract coordinates and time
     coords = data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy(dtype='float64')
+    metric = 'haversine' if use_lon_lat else 'euclidean'
     times = to_timestamp(data[traj_cols[t_key]]) if use_datetime else data[traj_cols[t_key]]
     
     # Initialize all labels as noise (-1)
@@ -88,10 +95,7 @@ def detect_stops_labels(
             if time_gap > dt_max:
                 break
 
-            if use_lon_lat:
-                dist = _haversine_distance(anchor_coords, coords[j], radians=False)
-            else:
-                dist = np.linalg.norm(coords[j] - anchor_coords)
+            dist = utils._distance(anchor_coords, coords[j], metric=metric)
             
             # Check if moved beyond distance threshold
             if dist > delta_roam:
@@ -169,16 +173,16 @@ def detect_stops(
     ValueError if multiple users found; use detect_stops_per_user instead.
     """
     passthrough_cols = [] if passthrough_cols is None else passthrough_cols
-    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
-    if 'user_id' in traj_cols_temp and traj_cols_temp['user_id'] in data.columns:
-        uid_col = data[traj_cols_temp['user_id']]
-        arr = uid_col.values
-        if len(arr) > 0:
-            first = arr[0]
-            if any(x != first for x in arr[1:]):
-                raise ValueError("Multi-user data? Use detect_stops_per_user instead.")
-            if traj_cols_temp['user_id'] not in passthrough_cols:
-                passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
+    traj_cols_temp = loader._parse_traj_cols(
+        data.columns, traj_cols, kwargs, warn=False
+    )
+    user_col = traj_cols_temp['user_id']
+    if (
+        not data.empty
+        and user_col in data.columns
+        and user_col not in passthrough_cols
+    ):
+        passthrough_cols = passthrough_cols + [user_col]
     labels = detect_stops_labels(
         data=data,
         delta_roam=delta_roam,
@@ -367,7 +371,7 @@ def lachesis_labels(
         Labels, or labels with aligned diameter-witness ``anchor_time``.
     """
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
-         raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
+        raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
 
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)        
     traj_cols = loader._parse_traj_cols(
@@ -696,6 +700,311 @@ def lachesis_labels_per_user(
     return pd.concat(results).reindex(data.index)
 
 
+def soc_labels(
+    data,
+    delta_roam,
+    dur_min=5,
+    traj_cols=None,
+    return_anchors=False,
+    **kwargs
+):
+    """
+    Scan a trajectory with SOC (Sequence Oriented Clustering) and assign each
+    ping to a stop-cluster index or -1 for noise.
+
+    A ping is core when its Eps-sequence, the maximal contiguous run of pings
+    within ``delta_roam`` of it, spans at least ``dur_min``. The span runs from
+    the first to the last observed ping of the run, excluding the gap after
+    the run. A ping is reachable when it lies in the forward
+    Eps-sequence of the most recent core ping. A stop is a maximal run of core
+    or reachable pings, pruned to end at its last core ping.
+
+    Parameters
+    ----------
+    data : pd.DataFrame or GeoDataFrame
+        Input trajectory with spatial and temporal columns.
+    delta_roam : float
+        Radius of the Eps-sequence around each ping (Eps).
+    dur_min : int
+        Minimum span in minutes of the Eps-sequence of a core ping (Tau).
+    traj_cols : dict, optional
+        Mapping for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'.
+    return_anchors : bool, default False
+        Return the time of the active core ping of each stop ping as
+        ``anchor_time``. Core pings are their own anchor.
+    **kwargs
+        Passed along to the column‐detection helper.
+
+    Returns
+    -------
+    pd.Series or pd.DataFrame
+        Labels, or labels with aligned ``anchor_time``.
+    """
+    if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
+        raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
+
+    t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)
+    traj_cols = loader._parse_traj_cols(
+        data.columns, traj_cols, kwargs, warn=False
+    )
+    user_col = traj_cols['user_id']
+    if user_col in data.columns and data[user_col].nunique(dropna=False) > 1:
+        raise ValueError(
+            "Multi-user data? Use soc_labels_per_user instead."
+        )
+
+    if data.empty:
+        return utils._get_empty_aux_df(
+            data[traj_cols[t_key]], return_anchors=return_anchors
+        )
+
+    coords = data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy(dtype='float64')
+    metric = 'haversine' if use_lon_lat else 'euclidean'
+    times = (to_timestamp(data[traj_cols[t_key]]) if use_datetime else data[traj_cols[t_key]]).to_numpy()
+
+    n = len(data)
+    idx = np.arange(n)
+
+    # Eps-sequence [first, last] of every ping, grown one offset at a time.
+    # A ping stops growing once it is core or its run hits a ping outside its circle.
+    first, last = idx.copy(), idx.copy()
+    is_core = np.full(n, dur_min <= 0, dtype=bool)
+    grow_back, grow_fwd = (idx > 0) & ~is_core, (idx < n - 1) & ~is_core
+    offset = 1
+    while grow_back.any() or grow_fwd.any():
+        # Each pair serves the earlier anchor's forward search and the later
+        # anchor's backward search. Slicing excludes wraparound at both ends.
+        active_pairs = grow_fwd[:-offset] | grow_back[offset:]
+        anchor_positions = idx[:-offset][active_pairs]
+        neighbor_positions = idx[offset:][active_pairs]
+        within = utils._distance(
+            coords[anchor_positions], coords[neighbor_positions], metric=metric
+        ) <= delta_roam
+
+        extend_forward = grow_fwd[anchor_positions] & within
+        extend_backward = grow_back[neighbor_positions] & within
+        last[anchor_positions[extend_forward]] = neighbor_positions[extend_forward]
+        first[neighbor_positions[extend_backward]] = anchor_positions[extend_backward]
+        grow_fwd[anchor_positions] &= within & (neighbor_positions < n - 1)
+        grow_back[neighbor_positions] &= within & (anchor_positions > 0)
+
+        is_core = times[last] - times[first] >= dur_min * 60
+        grow_back &= ~is_core
+        grow_fwd &= ~is_core
+        offset += 1
+
+    # reachable: inside the forward Eps-sequence of the previous core ping,
+    # whose reach ends at the first ping outside its circle
+    core_pos = pd.Series(np.where(is_core, idx, np.nan))
+    prev_anchor = core_pos.shift().ffill()
+    has_anchor = prev_anchor.notna().to_numpy()
+    within = np.zeros(n, dtype=int)
+    within[has_anchor] = utils._distance(
+        coords[has_anchor],
+        coords[prev_anchor[has_anchor].to_numpy(dtype=int)],
+        metric=metric,
+    ) <= delta_roam
+    reachable = pd.Series(within).groupby(prev_anchor).cummin().fillna(0).astype(bool)
+
+    # a core ping that is not reachable starts a new stop;
+    # each stop is pruned to end at its last core ping
+    in_run = reachable | is_core
+    run_id = (in_run & ~reachable).cumsum()
+    in_stop = in_run & (idx <= core_pos.groupby(run_id).transform('max'))
+    labels = np.where(in_stop, run_id - 1, -1)
+
+    result = pd.Series(labels, index=data.index, name='cluster')
+    if return_anchors:
+        anchor_times = pd.Series(
+            data[traj_cols[t_key]].to_numpy()[core_pos.ffill().fillna(0).to_numpy(dtype=int)],
+            index=data.index,
+            dtype=data[traj_cols[t_key]].dtype if use_datetime else 'Int64',
+        ).where(in_stop.to_numpy())
+        return pd.DataFrame({"cluster": result, "anchor_time": anchor_times})
+    return result
+
+
+def soc(
+    data,
+    delta_roam,
+    dur_min=5,
+    complete_output=False,
+    passthrough_cols=None,
+    keep_col_names=True,
+    traj_cols=None,
+    **kwargs
+):
+    """
+    SOC (Sequence Oriented Clustering) stop detection.
+
+    Parameters
+    ----------
+    data : pd.DataFrame or GeoDataFrame
+        Input trajectory with spatial and temporal columns.
+    delta_roam : float
+        Radius of the Eps-sequence around each ping (Eps).
+    dur_min : int
+        Minimum span in minutes of the Eps-sequence of a core ping (Tau).
+    complete_output : bool, default False
+        If True, include additional summary statistics in output.
+    passthrough_cols : list, optional
+        Columns to retain (and summarize/propagate) per stop.
+    traj_cols : dict, optional
+        Mapping for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'.
+    **kwargs
+        Passed along to the column‐detection helper.
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per detected stop. Durations run from the first to the last
+        retained ping of the stop.
+
+    Raises
+    ------
+    ValueError if multiple users found; use soc_per_user instead.
+    """
+    passthrough_cols = [] if passthrough_cols is None else passthrough_cols
+    traj_cols_temp = loader._parse_traj_cols(
+        data.columns, traj_cols, kwargs, warn=False
+    )
+    user_col = traj_cols_temp['user_id']
+    if (
+        not data.empty
+        and user_col in data.columns
+        and user_col not in passthrough_cols
+    ):
+        passthrough_cols = passthrough_cols + [user_col]
+    labels = soc_labels(
+        data=data,
+        delta_roam=delta_roam,
+        dur_min=dur_min,
+        traj_cols=traj_cols,
+        **kwargs
+    )
+    return utils.summarize_stops(
+        data,
+        labels,
+        complete_output=complete_output,
+        passthrough_cols=passthrough_cols,
+        keep_col_names=keep_col_names,
+        traj_cols=traj_cols,
+        **kwargs,
+    )
+
+
+def soc_per_user(
+    data,
+    delta_roam,
+    dur_min=5,
+    complete_output=False,
+    passthrough_cols=None,
+    traj_cols=None,
+    n_jobs=1,
+    print_progress=False,
+    **kwargs
+):
+    """
+    Run soc on each user separately, then concatenate results.
+
+    Parameters
+    ----------
+    data : pd.DataFrame or GeoDataFrame
+        Input trajectory with spatial and temporal columns.
+    delta_roam : float
+        Radius of the Eps-sequence around each ping (Eps).
+    dur_min : int
+        Minimum span in minutes of the Eps-sequence of a core ping (Tau).
+    complete_output : bool, default False
+        If True, include additional summary statistics in output.
+    passthrough_cols : list, optional
+        Columns to retain (and summarize/propagate) per stop.
+    traj_cols : dict, optional
+        Mapping for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'.
+    n_jobs : int, default 1
+        Number of parallel jobs to use. 1 means sequential processing.
+    print_progress : bool, default False
+        Whether to show progress bar during processing.
+    **kwargs
+        Passed along to column detection helper.
+
+    Returns
+    -------
+    pd.DataFrame
+        Concatenated stop table with stops from all users.
+
+    Raises
+    ------
+    ValueError if 'user_id' not in traj_cols or missing from data.
+    """
+    passthrough_cols = [] if passthrough_cols is None else passthrough_cols
+    traj_cols_temp = loader._parse_traj_cols(
+        data.columns, traj_cols, kwargs, warn=False
+    )
+    if traj_cols_temp['user_id'] not in data.columns:
+        raise ValueError("soc_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
+    uid = traj_cols_temp['user_id']
+
+    pt_cols = passthrough_cols if uid in passthrough_cols else passthrough_cols + [uid]
+
+    grouped = data.groupby(uid, sort=False)
+    results = utils.applyParallel(
+        grouped,
+        soc,
+        {
+            "delta_roam": delta_roam,
+            "dur_min": dur_min,
+            "complete_output": complete_output,
+            "passthrough_cols": pt_cols,
+            "traj_cols": traj_cols,
+            **kwargs,
+        },
+        reset_index=True,
+        n_jobs=n_jobs,
+        print_progress=print_progress
+    )
+
+    return pd.concat(results, ignore_index=True)
+
+
+def soc_labels_per_user(
+    data,
+    delta_roam,
+    dur_min=5,
+    traj_cols=None,
+    return_anchors=False,
+    n_jobs=1,
+    print_progress=False,
+    **kwargs
+):
+    """
+    Run soc_labels on each user separately and concatenate labels.
+
+    Raises if 'user_id' not in traj_cols or missing from data.
+    """
+    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    if traj_cols_temp['user_id'] not in data.columns:
+        raise ValueError("soc_labels_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
+    uid = traj_cols_temp['user_id']
+
+    grouped = data.groupby(uid, sort=False)
+    results = utils.applyParallel(
+        grouped,
+        soc_labels,
+        {
+            "delta_roam": delta_roam,
+            "dur_min": dur_min,
+            "return_anchors": return_anchors,
+            "traj_cols": traj_cols,
+            **kwargs,
+        },
+        n_jobs=n_jobs,
+        print_progress=print_progress,
+    )
+
+    return pd.concat(results).reindex(data.index)
+
+
 def grid_based_labels(data, time_thresh=np.inf, min_cluster_size=1, dur_min=0, traj_cols=None, **kwargs):
     """
     Detects stops in trajectory data based on time and each ping's location.
@@ -721,24 +1030,24 @@ def grid_based_labels(data, time_thresh=np.inf, min_cluster_size=1, dur_min=0, t
     """
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
         raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
-    if data.empty:
-        return utils._get_empty_aux_df()
     # Decide on temporal column to use
     t_key, use_datetime = loader._fallback_time_cols_dt(data.columns, traj_cols, kwargs)
     traj_cols = loader._parse_traj_cols(
         data.columns, traj_cols, kwargs, warn=False
     )
+    user_col = traj_cols['user_id']
+    if user_col in data.columns and data[user_col].nunique(dropna=False) > 1:
+        raise ValueError(
+            "Multi-user data? Use grid_based_labels_per_user instead."
+        )
 
     if traj_cols['location_id'] not in data.columns:
             raise ValueError(f"Missing {traj_cols['location_id']} column in {data.columns}."
                             "pass `location_id` as keyword argument or in traj_cols."
                             )
 
-    if traj_cols['user_id'] in data.columns:
-        arr = data[traj_cols['user_id']].values
-        first = arr[0]
-        if any(x != first for x in arr[1:]):
-            raise ValueError("grid_based cannot be run on multi-user data. Use grid_based_per_user instead.")
+    if data.empty:
+        return utils._get_empty_aux_df(data[traj_cols[t_key]])
 
     ts = to_timestamp(data[traj_cols[t_key]]) if use_datetime else data[traj_cols[t_key]]
     loc = data[traj_cols['location_id']]
