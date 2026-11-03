@@ -710,8 +710,8 @@ def soc_labels(
 
     A ping is core when its Eps-sequence, the maximal contiguous run of pings
     within ``delta_roam`` of it, spans at least ``dur_min``. The span runs from
-    the first ping of the run to the ping after the run, so a ping followed by
-    a long gap can be core. A ping is reachable when it lies in the forward
+    the first to the last observed ping of the run, excluding the gap after
+    the run. A ping is reachable when it lies in the forward
     Eps-sequence of the most recent core ping. A stop is a maximal run of core
     or reachable pings, pruned to end at its last core ping.
 
@@ -737,7 +737,7 @@ def soc_labels(
         Labels, or labels with aligned ``anchor_time``.
     """
     if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
-         raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
+        raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
 
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)
     traj_cols = loader._parse_traj_cols(
@@ -748,9 +748,6 @@ def soc_labels(
         raise ValueError(
             "Multi-user data? Use soc_labels_per_user instead."
         )
-
-    loader._has_spatial_cols(data.columns, traj_cols)
-    loader._has_time_cols(data.columns, traj_cols)
 
     if data.empty:
         return utils._get_empty_aux_df(
@@ -773,21 +770,25 @@ def soc_labels(
     # Eps-sequence [first, last] of every ping, grown one offset at a time.
     # A ping stops growing once it is core or its run hits a ping outside its circle.
     first, last = idx.copy(), idx.copy()
-    is_core = times[np.minimum(last + 1, n - 1)] - times[first] >= dur_min * 60
+    is_core = np.full(n, dur_min <= 0, dtype=bool)
     grow_back, grow_fwd = (idx > 0) & ~is_core, (idx < n - 1) & ~is_core
     offset = 1
     while grow_back.any() or grow_fwd.any():
-        i = idx[grow_back]
-        within = dist(i, i - offset) <= delta_roam
-        first[i[within]] = i[within] - offset
-        grow_back[i] = within & (i - offset > 0)
+        # Each pair serves the earlier anchor's forward search and the later
+        # anchor's backward search. Slicing excludes wraparound at both ends.
+        active_pairs = grow_fwd[:-offset] | grow_back[offset:]
+        anchor_positions = idx[:-offset][active_pairs]
+        neighbor_positions = idx[offset:][active_pairs]
+        within = dist(anchor_positions, neighbor_positions) <= delta_roam
 
-        i = idx[grow_fwd]
-        within = dist(i, i + offset) <= delta_roam
-        last[i[within]] = i[within] + offset
-        grow_fwd[i] = within & (i + offset < n - 1)
+        extend_forward = grow_fwd[anchor_positions] & within
+        extend_backward = grow_back[neighbor_positions] & within
+        last[anchor_positions[extend_forward]] = neighbor_positions[extend_forward]
+        first[neighbor_positions[extend_backward]] = anchor_positions[extend_backward]
+        grow_fwd[anchor_positions] &= within & (neighbor_positions < n - 1)
+        grow_back[neighbor_positions] &= within & (anchor_positions > 0)
 
-        is_core = times[np.minimum(last + 1, n - 1)] - times[first] >= dur_min * 60
+        is_core = times[last] - times[first] >= dur_min * 60
         grow_back &= ~is_core
         grow_fwd &= ~is_core
         offset += 1
@@ -853,7 +854,7 @@ def soc(
     -------
     pd.DataFrame
         One row per detected stop. Durations run from the first to the last
-        ping of the stop, so they exclude the gap that can make a ping core.
+        retained ping of the stop.
 
     Raises
     ------
@@ -936,7 +937,7 @@ def soc_per_user(
     traj_cols_temp = loader._parse_traj_cols(
         data.columns, traj_cols, kwargs, warn=False
     )
-    if 'user_id' not in traj_cols_temp or traj_cols_temp['user_id'] not in data.columns:
+    if traj_cols_temp['user_id'] not in data.columns:
         raise ValueError("soc_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
     uid = traj_cols_temp['user_id']
 
@@ -978,7 +979,7 @@ def soc_labels_per_user(
     Raises if 'user_id' not in traj_cols or missing from data.
     """
     traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
-    if 'user_id' not in traj_cols_temp or traj_cols_temp['user_id'] not in data.columns:
+    if traj_cols_temp['user_id'] not in data.columns:
         raise ValueError("soc_labels_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
     uid = traj_cols_temp['user_id']
 

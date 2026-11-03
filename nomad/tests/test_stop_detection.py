@@ -852,7 +852,7 @@ def test_soc_stationary_then_move():
     assert labels.tolist() == [0, 0, 0, 0, -1, -1]
 
 
-def test_soc_big_point_is_core():
+def test_soc_isolated_pings_are_not_core_despite_long_gaps():
     data = pd.DataFrame(
         {
             "timestamp": [0, 60, 1260, 1320],
@@ -863,7 +863,7 @@ def test_soc_big_point_is_core():
 
     labels = soc_labels(data, delta_roam=1, dur_min=10)
 
-    assert labels.tolist() == [-1, 0, -1, -1]
+    assert labels.tolist() == [-1, -1, -1, -1]
 
 
 def test_soc_prunes_trailing_reachable_pings():
@@ -883,7 +883,8 @@ def test_soc_prunes_trailing_reachable_pings():
 def test_soc_reachability_uses_immediately_preceding_core():
     data = pd.DataFrame(
         {
-            "timestamp": [0, 60, 120, 180, 200, 260, 360],
+            # The second stop needs 120 seconds between its observed endpoints.
+            "timestamp": [0, 60, 120, 180, 200, 320, 420],
             "x": [0.0, 0.0, 0.9, -0.5, -1.3, -2.0, 10.0],
             "y": [0.0] * 7,
         }
@@ -911,7 +912,8 @@ def test_soc_adjacent_core_pings_outside_circle_split_stops():
 def test_soc_return_anchors_uses_active_core_ping():
     data = pd.DataFrame(
         {
-            "timestamp": [0, 100, 110, 120, 220, 320],
+            # The later core sequence spans exactly 120 seconds (120 to 240).
+            "timestamp": [0, 100, 110, 120, 240, 340],
             "x": [-0.5, 0.0, 0.9, -0.5, -0.5, 10.0],
             "y": [0.0] * 6,
         }
@@ -920,7 +922,7 @@ def test_soc_return_anchors_uses_active_core_ping():
     output = soc_labels(data, delta_roam=1, dur_min=2, return_anchors=True)
 
     assert output["cluster"].tolist() == [-1, 0, 0, 0, 0, -1]
-    assert output["anchor_time"].tolist() == [pd.NA, 100, 100, 120, 220, pd.NA]
+    assert output["anchor_time"].tolist() == [pd.NA, 100, 100, 120, 240, pd.NA]
 
 
 def test_soc_return_anchors_empty_schema():
@@ -1830,3 +1832,68 @@ def test_st_hdbscan_delta_roam(hdbscan_traj):
         delta_roam=50, traj_cols=traj_cols
     )
     assert isinstance(stops, pd.DataFrame)
+
+
+def _soc_reference(data, radius, duration):
+    """Full scalar neighborhood search, independent of the batched expansion."""
+    coords = data[['x', 'y']].to_numpy()
+    times = data['timestamp'].to_numpy()
+    core = np.zeros(len(data), dtype=bool)
+    for anchor in range(len(data)):
+        first = last = anchor
+        while first > 0 and np.linalg.norm(coords[first - 1] - coords[anchor]) <= radius:
+            first -= 1
+        while last + 1 < len(data) and np.linalg.norm(coords[last + 1] - coords[anchor]) <= radius:
+            last += 1
+        core[anchor] = times[last] - times[first] >= duration * 60
+
+    labels = np.full(len(data), -1)
+    anchors = np.full(len(data), -1)
+    active_core = None
+    cluster = -1
+    for position in range(len(data)):
+        reachable = active_core is not None and np.linalg.norm(
+            coords[position] - coords[active_core]
+        ) <= radius
+        if core[position]:
+            if not reachable:
+                cluster += 1
+            active_core = position
+        elif not reachable:
+            active_core = None
+        if active_core is not None:
+            labels[position] = cluster
+            anchors[position] = active_core
+    for stop in range(cluster + 1):
+        last_core = np.flatnonzero(core & (labels == stop))[-1]
+        labels[(labels == stop) & (np.arange(len(data)) > last_core)] = -1
+    return labels, anchors, core
+
+
+@pytest.mark.parametrize('duration', [0, 0.5, 2, 100])
+def test_soc_matches_full_neighborhood_reference(duration):
+    rng = np.random.default_rng(440)
+    for size in [1, 2, 5, 20, 50]:
+        # Discrete coordinates exercise exact radius boundaries and repeated pings.
+        data = pd.DataFrame({
+            'timestamp': np.cumsum(rng.integers(0, 120, size)),
+            'x': rng.integers(-2, 3, size) / 2,
+            'y': rng.integers(-2, 3, size) / 2,
+        })
+        expected, anchors, core = _soc_reference(data, 1, duration)
+        result = soc_labels(data, delta_roam=1, dur_min=duration, return_anchors=True)
+        np.testing.assert_array_equal(result['cluster'], expected)
+        retained = expected >= 0
+        np.testing.assert_array_equal(
+            result.loc[retained, 'anchor_time'].to_numpy(dtype=int),
+            data['timestamp'].to_numpy()[anchors[retained]],
+        )
+        assert result.loc[~retained, 'anchor_time'].isna().all()
+        assert (expected[core] >= 0).all()
+
+
+def test_soc_short_sequence_does_not_include_following_gap():
+    data = pd.DataFrame({
+        'timestamp': [0, 30, 3600], 'x': [0.0, 0.0, 100.0], 'y': [0.0] * 3,
+    })
+    assert soc_labels(data, delta_roam=1, dur_min=1).tolist() == [-1, -1, -1]
