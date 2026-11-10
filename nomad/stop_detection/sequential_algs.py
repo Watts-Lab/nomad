@@ -701,6 +701,7 @@ def soc_labels(
     delta_roam,
     dur_min=5,
     look_back=True,
+    reach_back=False,
     traj_cols=None,
     return_anchors=False,
     **kwargs
@@ -712,10 +713,12 @@ def soc_labels(
     A ping is core when its Eps-sequence, the maximal contiguous run of pings
     within ``delta_roam`` of it, spans at least ``dur_min``. The span runs from
     the first to the last observed ping of the run, excluding the gap after
-    the run. Without ``look_back``, the run only extends forward. A ping is
-    reachable when it lies in the forward Eps-sequence of the most recent core
-    ping. A stop is a maximal run of core or reachable pings, pruned to end at
-    its last core ping.
+    the run. Without ``look_back``, the run only extends forward. Two
+    consecutive pings are linked when the Eps-sequence of one core ping holds
+    both; that core ping comes at or before them unless ``reach_back`` is set.
+    A stop is a maximal run of linked pings, trimmed to start and end at core
+    pings, so a core ping that no core ping links to its predecessor starts a
+    new stop.
 
     Parameters
     ----------
@@ -728,11 +731,13 @@ def soc_labels(
     look_back : bool, default True
         Extend the Eps-sequence of each ping backward as well as forward when
         labeling core pings.
+    reach_back : bool, default False
+        Also link pings through the backward Eps-sequence of later core pings.
     traj_cols : dict, optional
         Mapping for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'.
     return_anchors : bool, default False
-        Return the time of the active core ping of each stop ping as
-        ``anchor_time``. Core pings are their own anchor.
+        Return the time of the most recent core ping of the stop at or before
+        each stop ping as ``anchor_time``. Core pings are their own anchor.
     **kwargs
         Passed along to the column‐detection helper.
 
@@ -772,11 +777,15 @@ def soc_labels(
     n = len(data)
     idx = np.arange(n)
 
-    # Eps-sequence [first, last] of every ping, grown one offset at a time.
-    # A ping stops growing once it is core or its run hits a ping outside its circle.
+    # Eps-sequence [first, last] of every ping, grown one offset at a time
+    # until its run hits a ping outside its circle. Forward runs always grow
+    # fully since they link pings; backward runs stop at core status unless
+    # reach_back links through them.
     first, last = idx.copy(), idx.copy()
+    start = first if look_back else idx
     is_core = np.full(n, dur_min <= 0, dtype=bool)
-    grow_back, grow_fwd = (idx > 0) & ~is_core & look_back, (idx < n - 1) & ~is_core
+    grow_back = (idx > 0) & (look_back | reach_back) & (reach_back | ~is_core)
+    grow_fwd = idx < n - 1
     offset = 1
     while grow_back.any() or grow_fwd.any():
         # Each pair serves the earlier anchor's forward search and the later
@@ -793,26 +802,22 @@ def soc_labels(
         grow_fwd[anchor_positions] &= within & (neighbor_positions < n - 1)
         grow_back[neighbor_positions] &= within & (anchor_positions > 0)
 
-        is_core = times[last] - times[first] >= dur_min * 60
-        grow_back &= ~is_core
-        grow_fwd &= ~is_core
+        is_core = times[last] - times[start] >= dur_min * 60
+        grow_back &= reach_back | ~is_core
         offset += 1
 
-    # reachable: inside the forward Eps-sequence of the previous core ping,
-    # whose reach ends at the first ping outside its circle
-    core_pos = pd.Series(np.where(is_core, idx, np.nan))
-    prev_anchor = core_pos.shift().ffill()
-    has_anchor = prev_anchor.notna().to_numpy()
-    within = np.zeros(n, dtype=int)
-    within[has_anchor] = dist(idx[has_anchor], prev_anchor[has_anchor].to_numpy(dtype=int)) <= delta_roam
-    reachable = pd.Series(within).groupby(prev_anchor).cummin().fillna(0).astype(bool)
+    # pings i and i + 1 are linked when a core ping at or before i reaches
+    # forward past i, or with reach_back, a core ping after i reaches back to i
+    linked = np.maximum.accumulate(np.where(is_core, last, -1))[:-1] > idx[:-1]
+    if reach_back:
+        linked |= np.minimum.accumulate(np.where(is_core, first, n)[::-1])[::-1][1:] <= idx[:-1]
 
-    # a core ping that is not reachable starts a new stop;
-    # each stop is pruned to end at its last core ping
-    in_run = reachable | is_core
-    run_id = (in_run & ~reachable).cumsum()
-    in_stop = in_run & (idx <= core_pos.groupby(run_id).transform('max'))
-    labels = np.where(in_stop, run_id - 1, -1)
+    # a stop is a run of linked pings, trimmed to its first and last core ping
+    run_id = pd.Series(np.concatenate([[0], np.cumsum(~linked)]))
+    core_pos = pd.Series(np.where(is_core, idx, np.nan))
+    run_cores = core_pos.groupby(run_id)
+    in_stop = (idx >= run_cores.transform('min')) & (idx <= run_cores.transform('max'))
+    labels = run_id.where(in_stop).rank(method='dense').sub(1).fillna(-1).astype(int).to_numpy()
 
     result = pd.Series(labels, index=data.index, name='cluster')
     if return_anchors:
@@ -830,6 +835,7 @@ def soc(
     delta_roam,
     dur_min=5,
     look_back=True,
+    reach_back=False,
     complete_output=False,
     passthrough_cols=None,
     keep_col_names=True,
@@ -850,6 +856,8 @@ def soc(
     look_back : bool, default True
         Extend the Eps-sequence of each ping backward as well as forward when
         labeling core pings.
+    reach_back : bool, default False
+        Also link pings through the backward Eps-sequence of later core pings.
     complete_output : bool, default False
         If True, include additional summary statistics in output.
     passthrough_cols : list, optional
@@ -885,6 +893,7 @@ def soc(
         delta_roam=delta_roam,
         dur_min=dur_min,
         look_back=look_back,
+        reach_back=reach_back,
         traj_cols=traj_cols,
         **kwargs
     )
@@ -904,6 +913,7 @@ def soc_per_user(
     delta_roam,
     dur_min=5,
     look_back=True,
+    reach_back=False,
     complete_output=False,
     passthrough_cols=None,
     traj_cols=None,
@@ -925,6 +935,8 @@ def soc_per_user(
     look_back : bool, default True
         Extend the Eps-sequence of each ping backward as well as forward when
         labeling core pings.
+    reach_back : bool, default False
+        Also link pings through the backward Eps-sequence of later core pings.
     complete_output : bool, default False
         If True, include additional summary statistics in output.
     passthrough_cols : list, optional
@@ -965,6 +977,7 @@ def soc_per_user(
             "delta_roam": delta_roam,
             "dur_min": dur_min,
             "look_back": look_back,
+            "reach_back": reach_back,
             "complete_output": complete_output,
             "passthrough_cols": pt_cols,
             "traj_cols": traj_cols,
@@ -983,6 +996,7 @@ def soc_labels_per_user(
     delta_roam,
     dur_min=5,
     look_back=True,
+    reach_back=False,
     traj_cols=None,
     return_anchors=False,
     n_jobs=1,
@@ -1007,6 +1021,7 @@ def soc_labels_per_user(
             "delta_roam": delta_roam,
             "dur_min": dur_min,
             "look_back": look_back,
+            "reach_back": reach_back,
             "return_anchors": return_anchors,
             "traj_cols": traj_cols,
             **kwargs,

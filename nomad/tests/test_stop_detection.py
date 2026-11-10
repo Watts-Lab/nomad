@@ -867,6 +867,35 @@ def test_soc_look_back_controls_core_labeling():
     assert soc(data, delta_roam=1, dur_min=2, look_back=False)['duration'].tolist() == [1]
 
 
+def test_soc_reachability_uses_any_covering_core():
+    data = pd.DataFrame(
+        {
+            "timestamp": np.arange(16) * 60,
+            "x": [0.0] * 5 + [0.9] * 5 + [-0.5] + [0.0] * 5,
+            "y": [0.0] * 16,
+        }
+    )
+
+    # Ping 10 leaves the circle of the latest core ping (x=0.9) but stays in
+    # the circle of the earlier core pings (x=0).
+    assert soc_labels(data, delta_roam=1, dur_min=3).tolist() == [0] * 16
+
+
+def test_soc_reach_back_links_cores_through_backward_sequences():
+    data = pd.DataFrame(
+        {
+            "timestamp": [0, 60, 120, 180, 200, 320, 420],
+            "x": [0.0, 0.0, 0.9, -0.5, -1.3, -2.0, 10.0],
+            "y": [0.0] * 7,
+        }
+    )
+
+    # Ping 3 lies in the backward Eps-sequence of core ping 4.
+    assert soc_labels(data, delta_roam=1, dur_min=2).tolist() == [0, 0, 0, -1, 1, 1, -1]
+    assert soc_labels(data, delta_roam=1, dur_min=2, reach_back=True).tolist() == [0, 0, 0, 0, 0, 0, -1]
+    assert len(soc(data, delta_roam=1, dur_min=2, reach_back=True)) == 1
+
+
 def test_soc_isolated_pings_are_not_core_despite_long_gaps():
     data = pd.DataFrame(
         {
@@ -1849,45 +1878,44 @@ def test_st_hdbscan_delta_roam(hdbscan_traj):
     assert isinstance(stops, pd.DataFrame)
 
 
-def _soc_reference(data, radius, duration, look_back=True):
-    """Full scalar neighborhood search, independent of the batched expansion."""
+def _soc_reference(data, radius, duration, look_back=True, reach_back=False):
+    """Full scalar Eps-sequences and pairwise links, independent of the batched expansion."""
     coords = data[['x', 'y']].to_numpy()
     times = data['timestamp'].to_numpy()
-    core = np.zeros(len(data), dtype=bool)
-    for anchor in range(len(data)):
-        first = last = anchor
-        while look_back and first > 0 and np.linalg.norm(coords[first - 1] - coords[anchor]) <= radius:
-            first -= 1
-        while last + 1 < len(data) and np.linalg.norm(coords[last + 1] - coords[anchor]) <= radius:
-            last += 1
-        core[anchor] = times[last] - times[first] >= duration * 60
+    n = len(data)
+    first, last = np.arange(n), np.arange(n)
+    for anchor in range(n):
+        while first[anchor] > 0 and np.linalg.norm(coords[first[anchor] - 1] - coords[anchor]) <= radius:
+            first[anchor] -= 1
+        while last[anchor] + 1 < n and np.linalg.norm(coords[last[anchor] + 1] - coords[anchor]) <= radius:
+            last[anchor] += 1
+    core = times[last] - times[first if look_back else np.arange(n)] >= duration * 60
 
-    labels = np.full(len(data), -1)
-    anchors = np.full(len(data), -1)
-    active_core = None
+    # linked[i]: pings i and i + 1 share the Eps-sequence of one core ping
+    linked = np.zeros(max(n - 1, 0), dtype=bool)
+    for anchor in np.flatnonzero(core):
+        linked[anchor:last[anchor]] = True
+        if reach_back:
+            linked[first[anchor]:anchor] = True
+
+    labels = np.full(n, -1)
+    anchors = np.full(n, -1)
+    run = np.concatenate([[0], np.cumsum(~linked)])
     cluster = -1
-    for position in range(len(data)):
-        reachable = active_core is not None and np.linalg.norm(
-            coords[position] - coords[active_core]
-        ) <= radius
-        if core[position]:
-            if not reachable:
-                cluster += 1
-            active_core = position
-        elif not reachable:
-            active_core = None
-        if active_core is not None:
-            labels[position] = cluster
-            anchors[position] = active_core
-    for stop in range(cluster + 1):
-        last_core = np.flatnonzero(core & (labels == stop))[-1]
-        labels[(labels == stop) & (np.arange(len(data)) > last_core)] = -1
+    for run_id in np.unique(run):
+        run_cores = np.flatnonzero(core & (run == run_id))
+        if len(run_cores):
+            cluster += 1
+            for position in range(run_cores[0], run_cores[-1] + 1):
+                labels[position] = cluster
+                anchors[position] = run_cores[run_cores <= position][-1]
     return labels, anchors, core
 
 
+@pytest.mark.parametrize('reach_back', [False, True])
 @pytest.mark.parametrize('look_back', [True, False])
 @pytest.mark.parametrize('duration', [0, 0.5, 2, 100])
-def test_soc_matches_full_neighborhood_reference(duration, look_back):
+def test_soc_matches_full_neighborhood_reference(duration, look_back, reach_back):
     rng = np.random.default_rng(440)
     for size in [1, 2, 5, 20, 50]:
         # Discrete coordinates exercise exact radius boundaries and repeated pings.
@@ -1896,9 +1924,10 @@ def test_soc_matches_full_neighborhood_reference(duration, look_back):
             'x': rng.integers(-2, 3, size) / 2,
             'y': rng.integers(-2, 3, size) / 2,
         })
-        expected, anchors, core = _soc_reference(data, 1, duration, look_back)
+        expected, anchors, core = _soc_reference(data, 1, duration, look_back, reach_back)
         result = soc_labels(
-            data, delta_roam=1, dur_min=duration, look_back=look_back, return_anchors=True
+            data, delta_roam=1, dur_min=duration, look_back=look_back,
+            reach_back=reach_back, return_anchors=True,
         )
         np.testing.assert_array_equal(result['cluster'], expected)
         retained = expected >= 0
