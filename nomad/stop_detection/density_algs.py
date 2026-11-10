@@ -10,6 +10,14 @@ from nomad.stop_detection import utils
 from nomad.stop_detection.preprocessing import _find_neighbors
 
 
+def _zero_duration_cluster_mask(labels, times):
+    """Identify zero-duration cluster members using positionally aligned times."""
+    members = pd.DataFrame({'cluster': labels.to_numpy(), 'time': times.to_numpy()})
+    spans = members.loc[members['cluster'] >= 0].groupby('cluster')['time'].agg(['min', 'max'])
+    excluded = spans.index[spans['min'] == spans['max']]
+    return members['cluster'].isin(excluded).to_numpy()
+
+
 ##########################################
 ########         DBSCAN           ########
 ##########################################
@@ -21,12 +29,16 @@ def ta_dbscan_labels(data,
                      return_cores=False,
                      remove_overlaps=True,
                      traj_cols=None,
+                     remove_dur_zero_stops=False,
                      **kwargs):
     """
     Return temporal DBSCAN labels.
 
     Parameters
     ----------
+    remove_dur_zero_stops : bool, default False
+        Relabel zero-duration clusters as noise and clear their core metadata.
+        Positive-duration clusters are retained, including sub-minute stops.
     return_cores : bool, default False
         Return core labels and ``promotion_time`` with cluster labels. Core
         pings use their own time; border pings use their propagating core time.
@@ -183,6 +195,13 @@ def ta_dbscan_labels(data,
             max_assigned = run_end
         prev_run_end = max_assigned
             
+    if remove_dur_zero_stops:
+        excluded = _zero_duration_cluster_mask(cluster_df, data[traj_cols[t_key]])
+        cluster_df.loc[excluded] = -1
+        core_df.loc[excluded] = -1
+        if return_cores:
+            promotion_time.loc[excluded] = np.nan
+
     if not return_cores:
         return cluster_df.set_axis(data.index)
 
@@ -379,12 +398,16 @@ def dbstop_labels(data,
                  time_thresh,
                  return_cores=False,
                  traj_cols=None,
+                 remove_dur_zero_stops=False,
                  **kwargs):
     """
     Return density-based stop labels.
 
     Parameters
     ----------
+    remove_dur_zero_stops : bool, default False
+        Relabel zero-duration clusters as noise and clear their core metadata.
+        Positive-duration clusters are retained, including sub-minute stops.
     return_cores : bool, default False
         Return core labels and ``promotion_time`` with cluster labels.
         ``promotion_time`` is the sweep time that propagates final membership.
@@ -513,6 +536,13 @@ def dbstop_labels(data,
                     cluster_df.at[curr_time] = -1
                     if return_cores:
                         promotion_time.at[curr_time] = np.nan
+
+    if remove_dur_zero_stops:
+        excluded = _zero_duration_cluster_mask(cluster_df, data[traj_cols[t_key]])
+        cluster_df.loc[excluded] = -1
+        core_df.loc[excluded] = -1
+        if return_cores:
+            promotion_time.loc[excluded] = np.nan
 
     if not return_cores:
         return cluster_df.set_axis(data.index)
@@ -715,6 +745,7 @@ def seqscan_labels(
     return_cores=False,
     traj_cols=None,
     back_merge=False,
+    remove_dur_zero_stops=False,
     **kwargs
 ):
     """
@@ -722,6 +753,10 @@ def seqscan_labels(
 
     Parameters
     ----------
+    remove_dur_zero_stops : bool, default False
+        Relabel zero-duration clusters as noise and clear their core metadata.
+        Positive-duration clusters are retained; this does not change the
+        algorithm's existing ``dur_min`` eligibility threshold.
     return_cores : bool, default False
         Return core labels and ``promotion_time`` with cluster labels.
         ``promotion_time`` is the scan time when final membership is retained.
@@ -944,6 +979,13 @@ def seqscan_labels(
     core_df.loc[core_df > active_cid] = -1
     if return_cores:
         promotion_time.loc[temporary_mask] = np.nan
+
+    if remove_dur_zero_stops:
+        excluded = _zero_duration_cluster_mask(cluster_df, data[traj_cols[t_key]])
+        cluster_df.loc[excluded] = -1
+        core_df.loc[excluded] = -1
+        if return_cores:
+            promotion_time.loc[excluded] = np.nan
 
     if not return_cores:
         return cluster_df.set_axis(data.index)

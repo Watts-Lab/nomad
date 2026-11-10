@@ -60,6 +60,16 @@ The TA-DBSCAN (Temporal-Augmented DBSCAN) algorithm is an adaptation of DBSCAN. 
 
 Notice that this method also works with **geographic coordinates** (lon, lat), using Haversine distance.
 
+The label functions ``ta_dbscan_labels``, ``dbstop_labels``, and
+``seqscan_labels`` accept ``remove_dur_zero_stops=False``. When enabled, a
+lightweight final timestamp check marks zero-duration clusters as noise
+(``-1``) and clears their core and promotion-time metadata. Ping rows and
+surviving cluster IDs remain aligned with the input. Every positive-duration
+cluster is retained, including sub-minute clusters. This option does not
+change SeqScan's existing ``dur_min`` eligibility threshold or the duration
+filter used by stop-table summarization. Per-user label wrappers also accept
+the option through keyword arguments.
+
 **Source:** Ester, M., Kriegel, H. P., Sander, J., & Xu, X. (1996). A density-based algorithm for discovering clusters in large spatial databases with noise. *Proceedings of the Second International Conference on Knowledge Discovery and Data Mining (KDD-96)*, 226-231.
 
 .. figure:: _static/stop_detection/tadbscan_demo.png
