@@ -1,11 +1,21 @@
+from numbers import Real
+
 import geopandas as gpd
 import warnings
 import pandas as pd
 import pyproj
 import numpy as np
 from sklearn.cluster import DBSCAN
+from sklearn.neighbors import BallTree
 import nomad.io.base as loader
 from nomad.constants import EARTH_RADIUS_METERS
+
+try:
+    import infomap
+except ModuleNotFoundError as error:
+    if error.name != 'infomap':
+        raise
+    infomap = None
 
 # TO DO: change to stops_to_poi
 def point_in_polygon(data, poi_table, method='centroid', data_crs=None, max_distance=0,
@@ -517,19 +527,41 @@ def _detect_locations(
     return location_ids, locations
 
 
-def _detect_locations_multi_user(data, method, traj_cols):
-    """Validate planned multi-user methods before reporting them unimplemented."""
-    if method == 'infomap':
-        loader._has_user_cols(data.columns, traj_cols)
-        loader._has_spatial_cols(data.columns, traj_cols)
-        loader._has_time_cols(data.columns, traj_cols)
-        if not (
-            loader._has_end_cols(data.columns, traj_cols)
-            or loader._has_duration_cols(data.columns, traj_cols)
-        ):
-            raise ValueError("Infomap location detection requires a stop table")
-        raise NotImplementedError("Infomap location detection is not implemented")
-    raise NotImplementedError("Multi-user location detection is not implemented")
+def _infomap_labels(data, epsilon, sigma, options, traj_cols):
+    """Partition one user's spatial stop graph, retaining isolated singletons."""
+    key1, key2, use_lon_lat = loader._fallback_spatial_cols(
+        data.columns, traj_cols, {}
+    )
+    coords = data[[traj_cols[key1], traj_cols[key2]]].to_numpy(dtype='float64')
+    if use_lon_lat:
+        coords = np.radians(coords[:, [1, 0]])
+    distance_scale = EARTH_RADIUS_METERS if use_lon_lat else 1
+    tree = BallTree(coords, metric='haversine' if use_lon_lat else 'euclidean')
+    neighbors, distances = tree.query_radius(
+        coords, r=epsilon / distance_scale, return_distance=True
+    )
+
+    network = infomap.Network()
+    connected = np.zeros(len(data), dtype=bool)
+    for source, (targets, lengths) in enumerate(zip(neighbors, distances)):
+        network.add_node(source)
+        with np.errstate(over='ignore', under='ignore'):
+            weights = np.exp(-0.5 * (lengths * distance_scale / sigma) ** 2)
+        for target, weight in zip(targets, weights):
+            if target > source and weight > 0:
+                network.add_link(source, int(target), float(weight))
+                connected[source] = connected[target] = True
+
+    labels = np.arange(len(data), dtype='int64')
+    if connected.any():
+        result = infomap.run(
+            network, directed=False, two_level=True, markov_time=1,
+            options=options,
+        )
+        for node, module in result.modules().items():
+            if connected[node]:
+                labels[node] = module + len(data)
+    return labels
 
 
 def detect_locations(
@@ -541,6 +573,10 @@ def detect_locations(
     algorithm=None,
     algorithm_kwargs=None,
     traj_cols=None,
+    *,
+    sigma=None,
+    seed=123,
+    num_trials=10,
     **kwargs
 ):
     """
@@ -551,16 +587,20 @@ def detect_locations(
     data : pd.DataFrame
         Coordinate points or stop rows with x/y or longitude/latitude columns.
     epsilon : float, default 100
-        Maximum distance between rows in the same location. Units match projected
-        coordinates or are meters for longitude/latitude coordinates.
+        Maximum distance between neighboring rows for DBSCAN. Units match
+        projected coordinates or are meters for longitude/latitude coordinates.
+        For Infomap, maximum distance for an edge in the spatial stop graph.
+        Neither method uses this as a bound on the full location diameter.
     min_pts : int, default 1
-        Minimum number of stops required to form a location
+        Minimum number of stops required to form a location.
+        Used by DBSCAN only; Infomap retains isolated stops as individual locations.
     return_locations : bool, default False
         If True, also return a GeoDataFrame summarizing each location. Location
         summaries currently require projected x/y coordinates.
     method : {'dbscan', 'custom', 'infomap'}, default 'dbscan'
-        Location-detection method. Infomap is reserved for future multi-user
-        stop-table support and currently raises ``NotImplementedError``.
+        Location-detection method. DBSCAN clusters coordinate rows; custom uses
+        the supplied algorithm. Infomap partitions a Gaussian-weighted spatial
+        graph of stops per user and requires the optional ``nomad[infomap]`` extra.
     algorithm : callable, optional
         Location-detection callable required when ``method='custom'``. It must
         return one label per input row.
@@ -568,6 +608,16 @@ def detect_locations(
         Arguments for a custom location-detection callable.
     traj_cols : dict, optional
         Column name mappings for coordinates and location_id.
+    sigma : float, optional
+        Positive Gaussian distance-decay scale, required for Infomap, in the same
+        units as epsilon. Smaller values weaken connections more quickly with
+        distance; larger values give more similar weights within the radius.
+        Edge weight is exp(-distance**2 / (2 * sigma**2)).
+        At distance sigma the edge weight is about 0.61, and at 2*sigma about 0.14.
+    seed : int, default 123
+        Random seed for Infomap. Matches its default for repeatable searches.
+    num_trials : int, default 10
+        Number of Infomap search trials. The best partition is retained.
     **kwargs
         Additional arguments passed to column detection
 
@@ -580,6 +630,12 @@ def detect_locations(
     Notes
     -----
     Each noise row is retained as its own nonnegative location.
+    Infomap uses an undirected radius graph without self-links and a two-level
+    partition at Markov time 1. Location IDs are numbered by first occurrence;
+    multi-user Infomap IDs are distinct across users. Multi-user geometry
+    summaries also include the user column. Geometry summaries require projected
+    coordinates. Infomap's temporal columns identify stop rows but do not create
+    graph edges; this graph models spatial similarity, not observed travel.
     """
     if isinstance(data, gpd.GeoDataFrame):
         raise NotImplementedError("GeoDataFrame location clustering is not implemented")
@@ -590,11 +646,63 @@ def detect_locations(
         data.columns, traj_cols, kwargs, warn=False
     )
     user_col = parsed_cols['user_id']
-    if method == 'infomap' or (
+    if method == 'infomap':
+        if algorithm is not None or algorithm_kwargs is not None:
+            raise ValueError("algorithm and algorithm_kwargs require method='custom'")
+        for name, value in [('epsilon', epsilon), ('sigma', sigma)]:
+            if (
+                isinstance(value, bool) or not isinstance(value, Real)
+                or not np.isfinite(value) or value <= 0
+            ):
+                raise ValueError(f"{name} must be a finite positive number for Infomap")
+        loader._has_time_cols(data.columns, parsed_cols)
+        if not (
+            loader._has_end_cols(data.columns, parsed_cols)
+            or loader._has_duration_cols(data.columns, parsed_cols)
+        ):
+            raise ValueError("Infomap location detection requires a stop table")
+        if infomap is None:
+            raise ImportError('Infomap requires the optional extra: pip install "nomad[infomap]"')
+        options = {
+            'epsilon': epsilon, 'sigma': sigma,
+            'options': infomap.Options(seed=seed, num_trials=num_trials),
+        }
+        if user_col not in data.columns or data[user_col].nunique(dropna=False) <= 1:
+            return _detect_locations(
+                data, return_locations=return_locations,
+                algorithm=_infomap_labels, algorithm_kwargs=options,
+                traj_cols=parsed_cols,
+            )
+
+        # Assign by position, since different users may share index values.
+        labels = np.empty(len(data), dtype='int64')
+        offset = 0
+        for positions in data.groupby(user_col, sort=False, dropna=False, observed=True).indices.values():
+            user_ids = _detect_locations(
+                data.iloc[positions], algorithm=_infomap_labels,
+                algorithm_kwargs=options, traj_cols=parsed_cols,
+            ).to_numpy()
+            labels[positions] = user_ids + offset
+            offset += user_ids.max() + 1
+        location_ids = pd.Series(
+            pd.factorize(labels, sort=False)[0], index=data.index,
+            name=parsed_cols['location_id'],
+        )
+        if not return_locations:
+            return location_ids
+        _, _, use_lon_lat = loader._fallback_spatial_cols(data.columns, parsed_cols, {})
+        if use_lon_lat:
+            raise NotImplementedError("Location geometry summaries require projected coordinates")
+        locations = _summarize_locations(data, location_ids, traj_cols=parsed_cols)
+        users = pd.Series(data[user_col].to_numpy(), index=location_ids.to_numpy())
+        locations[user_col] = locations[location_ids.name].map(users[~users.index.duplicated()])
+        return location_ids, locations
+
+    if (
         user_col in data.columns
         and data[user_col].nunique(dropna=False) > 1
     ):
-        return _detect_locations_multi_user(data, method, parsed_cols)
+        raise NotImplementedError("Multi-user location detection is not implemented")
 
     if method == 'dbscan':
         if algorithm is not None or algorithm_kwargs is not None:

@@ -6,7 +6,7 @@ from nomad.filters import to_timestamp
 from nomad.stop_detection.postprocessing import _merge_stops_from_agg
 from nomad.stop_detection import utils
 from nomad.stop_detection.utils import _haversine_distance
-from nomad.visit_attribution.visit_attribution import _detect_locations
+from nomad.visit_attribution.visit_attribution import _detect_locations, detect_locations
 
 
 def detect_stops_labels(
@@ -333,6 +333,8 @@ def lachesis_labels(
     return_anchors=False,
     postprocessing=None,
     eps=None,
+    *,
+    infomap_kwargs=None,
     **kwargs
 ):
     """
@@ -353,11 +355,15 @@ def lachesis_labels(
     return_anchors : bool, default False
         Return the earliest endpoint of each accepted prefix's maximum-diameter
         pair as ``anchor_time``.
-    postprocessing : {None, 'dbscan'}, optional
+    postprocessing : {None, 'dbscan', 'infomap'}, optional
         Optional stop postprocessing method.
     eps : float, optional
-        DBSCAN neighborhood distance. Required when
-        ``postprocessing='dbscan'``.
+        Spatial neighborhood radius, required for either postprocessing method.
+        Units match projected coordinates or are meters for longitude/latitude.
+    infomap_kwargs : dict, optional
+        Infomap options: required positive ``sigma`` (distance-decay scale),
+        ``seed`` (default 123), and ``num_trials`` (default 10). Used only with
+        ``postprocessing='infomap'``. See ``detect_locations`` for graph details.
     **kwargs
         Passed along to the column‐detection helper.
 
@@ -378,6 +384,13 @@ def lachesis_labels(
         raise ValueError(
             "Multi-user data? Use lachesis_labels_per_user instead."
         )
+
+    if infomap_kwargs is not None:
+        if postprocessing != 'infomap':
+            raise ValueError("infomap_kwargs requires postprocessing='infomap'")
+        unknown = set(infomap_kwargs) - {'sigma', 'seed', 'num_trials'}
+        if unknown:
+            raise ValueError(f"Unknown Infomap options: {sorted(unknown)}")
 
     # Tests to check for spatial and temporal columns
     loader._has_spatial_cols(data.columns, traj_cols)
@@ -451,12 +464,12 @@ def lachesis_labels(
 
     result = pd.Series(labels, index=data.index, name='cluster')
     if postprocessing is not None:
-        if postprocessing != 'dbscan':
+        if postprocessing not in ('dbscan', 'infomap'):
             raise NotImplementedError(
                 f"Lachesis postprocessing method '{postprocessing}' is not implemented"
             )
         if eps is None:
-            raise ValueError("eps is required when postprocessing='dbscan'")
+            raise ValueError(f"eps is required when postprocessing='{postprocessing}'")
 
         stop_table = utils.summarize_stops(
             data,
@@ -465,12 +478,15 @@ def lachesis_labels(
             traj_cols=traj_cols,
         )
         location_col = traj_cols['location_id']
-        stop_table[location_col] = _detect_locations(
-            stop_table,
-            epsilon=eps,
-            min_pts=2,
-            traj_cols=traj_cols,
-        )
+        if postprocessing == 'infomap':
+            stop_table[location_col] = detect_locations(
+                stop_table, method='infomap', epsilon=eps,
+                traj_cols=traj_cols, **(infomap_kwargs or {}),
+            )
+        else:
+            stop_table[location_col] = _detect_locations(
+                stop_table, epsilon=eps, min_pts=2, traj_cols=traj_cols,
+            )
         relabeling = _merge_stops_from_agg(
             stop_table,
             traj_cols=traj_cols,
@@ -497,6 +513,8 @@ def lachesis(
     postprocessing=None,
     eps=None,
     traj_cols=None,
+    *,
+    infomap_kwargs=None,
     **kwargs
 ):
     """
@@ -518,11 +536,15 @@ def lachesis(
         Passed along to the column‐detection helper.
     passthrough_cols : list, optional
         Columns to retain (and summarize/propagate) per stop.
-    postprocessing : {None, 'dbscan'}, optional
+    postprocessing : {None, 'dbscan', 'infomap'}, optional
         Optional stop postprocessing method.
     eps : float, optional
-        DBSCAN neighborhood distance. Required when
-        ``postprocessing='dbscan'``.
+        Spatial neighborhood radius, required for either postprocessing method.
+        Units match projected coordinates or are meters for longitude/latitude.
+    infomap_kwargs : dict, optional
+        Infomap options: required positive ``sigma`` (distance-decay scale),
+        ``seed`` (default 123), and ``num_trials`` (default 10). Used only with
+        ``postprocessing='infomap'``. See ``detect_locations`` for graph details.
 
     Returns
     -------
@@ -551,6 +573,7 @@ def lachesis(
         delta_roam=delta_roam,
         postprocessing=postprocessing,
         eps=eps,
+        infomap_kwargs=infomap_kwargs,
         traj_cols=traj_cols,
         **kwargs
     )
@@ -577,6 +600,8 @@ def lachesis_per_user(
     traj_cols=None,
     n_jobs=1,
     print_progress=False,
+    *,
+    infomap_kwargs=None,
     **kwargs
 ):
     """
@@ -596,11 +621,15 @@ def lachesis_per_user(
         If True, include additional summary statistics in output.
     passthrough_cols : list, optional
         Columns to retain (and summarize/propagate) per stop.
-    postprocessing : {None, 'dbscan'}, optional
+    postprocessing : {None, 'dbscan', 'infomap'}, optional
         Optional stop postprocessing method applied separately to each user.
     eps : float, optional
-        DBSCAN neighborhood distance. Required when
-        ``postprocessing='dbscan'``.
+        Spatial neighborhood radius, required for either postprocessing method.
+        Units match projected coordinates or are meters for longitude/latitude.
+    infomap_kwargs : dict, optional
+        Infomap options: required positive ``sigma`` (distance-decay scale),
+        ``seed`` (default 123), and ``num_trials`` (default 10). Used only with
+        ``postprocessing='infomap'``. See ``detect_locations`` for graph details.
     traj_cols : dict, optional
         Mapping for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'.
     n_jobs : int, default 1
@@ -641,6 +670,7 @@ def lachesis_per_user(
             "passthrough_cols": pt_cols,
             "postprocessing": postprocessing,
             "eps": eps,
+            "infomap_kwargs": infomap_kwargs,
             "traj_cols": traj_cols,
             **kwargs,
         },
@@ -663,10 +693,15 @@ def lachesis_labels_per_user(
     eps=None,
     n_jobs=1,
     print_progress=False,
+    *,
+    infomap_kwargs=None,
     **kwargs
 ):
     """
     Run lachesis_labels on each user separately and concatenate labels.
+
+    ``postprocessing``, ``eps``, and ``infomap_kwargs`` have the same meaning as
+    in ``lachesis_labels`` and are applied independently to each user.
 
     Raises if 'user_id' not in traj_cols or missing from data.
     """
@@ -686,6 +721,7 @@ def lachesis_labels_per_user(
             "return_anchors": return_anchors,
             "postprocessing": postprocessing,
             "eps": eps,
+            "infomap_kwargs": infomap_kwargs,
             "traj_cols": traj_cols,
             **kwargs,
         },
