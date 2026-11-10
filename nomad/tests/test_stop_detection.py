@@ -852,6 +852,21 @@ def test_soc_stationary_then_move():
     assert labels.tolist() == [0, 0, 0, 0, -1, -1]
 
 
+def test_soc_look_back_controls_core_labeling():
+    data = pd.DataFrame(
+        {
+            "timestamp": [0, 60, 120, 180, 240],
+            "x": [0.0, 0.0, 0.0, 0.0, 10.0],
+            "y": [0.0] * 5,
+        }
+    )
+
+    # Pings 2 and 3 are core only through the pings behind them.
+    assert soc_labels(data, delta_roam=1, dur_min=2).tolist() == [0, 0, 0, 0, -1]
+    assert soc_labels(data, delta_roam=1, dur_min=2, look_back=False).tolist() == [0, 0, -1, -1, -1]
+    assert soc(data, delta_roam=1, dur_min=2, look_back=False)['duration'].tolist() == [1]
+
+
 def test_soc_isolated_pings_are_not_core_despite_long_gaps():
     data = pd.DataFrame(
         {
@@ -1834,14 +1849,14 @@ def test_st_hdbscan_delta_roam(hdbscan_traj):
     assert isinstance(stops, pd.DataFrame)
 
 
-def _soc_reference(data, radius, duration):
+def _soc_reference(data, radius, duration, look_back=True):
     """Full scalar neighborhood search, independent of the batched expansion."""
     coords = data[['x', 'y']].to_numpy()
     times = data['timestamp'].to_numpy()
     core = np.zeros(len(data), dtype=bool)
     for anchor in range(len(data)):
         first = last = anchor
-        while first > 0 and np.linalg.norm(coords[first - 1] - coords[anchor]) <= radius:
+        while look_back and first > 0 and np.linalg.norm(coords[first - 1] - coords[anchor]) <= radius:
             first -= 1
         while last + 1 < len(data) and np.linalg.norm(coords[last + 1] - coords[anchor]) <= radius:
             last += 1
@@ -1870,8 +1885,9 @@ def _soc_reference(data, radius, duration):
     return labels, anchors, core
 
 
+@pytest.mark.parametrize('look_back', [True, False])
 @pytest.mark.parametrize('duration', [0, 0.5, 2, 100])
-def test_soc_matches_full_neighborhood_reference(duration):
+def test_soc_matches_full_neighborhood_reference(duration, look_back):
     rng = np.random.default_rng(440)
     for size in [1, 2, 5, 20, 50]:
         # Discrete coordinates exercise exact radius boundaries and repeated pings.
@@ -1880,8 +1896,10 @@ def test_soc_matches_full_neighborhood_reference(duration):
             'x': rng.integers(-2, 3, size) / 2,
             'y': rng.integers(-2, 3, size) / 2,
         })
-        expected, anchors, core = _soc_reference(data, 1, duration)
-        result = soc_labels(data, delta_roam=1, dur_min=duration, return_anchors=True)
+        expected, anchors, core = _soc_reference(data, 1, duration, look_back)
+        result = soc_labels(
+            data, delta_roam=1, dur_min=duration, look_back=look_back, return_anchors=True
+        )
         np.testing.assert_array_equal(result['cluster'], expected)
         retained = expected >= 0
         np.testing.assert_array_equal(

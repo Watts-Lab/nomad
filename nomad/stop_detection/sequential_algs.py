@@ -700,6 +700,7 @@ def soc_labels(
     data,
     delta_roam,
     dur_min=5,
+    look_back=True,
     traj_cols=None,
     return_anchors=False,
     **kwargs
@@ -711,9 +712,10 @@ def soc_labels(
     A ping is core when its Eps-sequence, the maximal contiguous run of pings
     within ``delta_roam`` of it, spans at least ``dur_min``. The span runs from
     the first to the last observed ping of the run, excluding the gap after
-    the run. A ping is reachable when it lies in the forward
-    Eps-sequence of the most recent core ping. A stop is a maximal run of core
-    or reachable pings, pruned to end at its last core ping.
+    the run. Without ``look_back``, the run only extends forward. A ping is
+    reachable when it lies in the forward Eps-sequence of the most recent core
+    ping. A stop is a maximal run of core or reachable pings, pruned to end at
+    its last core ping.
 
     Parameters
     ----------
@@ -723,6 +725,9 @@ def soc_labels(
         Radius of the Eps-sequence around each ping (Eps).
     dur_min : int
         Minimum span in minutes of the Eps-sequence of a core ping (Tau).
+    look_back : bool, default True
+        Extend the Eps-sequence of each ping backward as well as forward when
+        labeling core pings.
     traj_cols : dict, optional
         Mapping for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'.
     return_anchors : bool, default False
@@ -771,7 +776,7 @@ def soc_labels(
     # A ping stops growing once it is core or its run hits a ping outside its circle.
     first, last = idx.copy(), idx.copy()
     is_core = np.full(n, dur_min <= 0, dtype=bool)
-    grow_back, grow_fwd = (idx > 0) & ~is_core, (idx < n - 1) & ~is_core
+    grow_back, grow_fwd = (idx > 0) & ~is_core & look_back, (idx < n - 1) & ~is_core
     offset = 1
     while grow_back.any() or grow_fwd.any():
         # Each pair serves the earlier anchor's forward search and the later
@@ -824,6 +829,7 @@ def soc(
     data,
     delta_roam,
     dur_min=5,
+    look_back=True,
     complete_output=False,
     passthrough_cols=None,
     keep_col_names=True,
@@ -841,6 +847,9 @@ def soc(
         Radius of the Eps-sequence around each ping (Eps).
     dur_min : int
         Minimum span in minutes of the Eps-sequence of a core ping (Tau).
+    look_back : bool, default True
+        Extend the Eps-sequence of each ping backward as well as forward when
+        labeling core pings.
     complete_output : bool, default False
         If True, include additional summary statistics in output.
     passthrough_cols : list, optional
@@ -875,6 +884,7 @@ def soc(
         data=data,
         delta_roam=delta_roam,
         dur_min=dur_min,
+        look_back=look_back,
         traj_cols=traj_cols,
         **kwargs
     )
@@ -893,6 +903,7 @@ def soc_per_user(
     data,
     delta_roam,
     dur_min=5,
+    look_back=True,
     complete_output=False,
     passthrough_cols=None,
     traj_cols=None,
@@ -911,6 +922,9 @@ def soc_per_user(
         Radius of the Eps-sequence around each ping (Eps).
     dur_min : int
         Minimum span in minutes of the Eps-sequence of a core ping (Tau).
+    look_back : bool, default True
+        Extend the Eps-sequence of each ping backward as well as forward when
+        labeling core pings.
     complete_output : bool, default False
         If True, include additional summary statistics in output.
     passthrough_cols : list, optional
@@ -950,6 +964,7 @@ def soc_per_user(
         {
             "delta_roam": delta_roam,
             "dur_min": dur_min,
+            "look_back": look_back,
             "complete_output": complete_output,
             "passthrough_cols": pt_cols,
             "traj_cols": traj_cols,
@@ -967,6 +982,7 @@ def soc_labels_per_user(
     data,
     delta_roam,
     dur_min=5,
+    look_back=True,
     traj_cols=None,
     return_anchors=False,
     n_jobs=1,
@@ -990,6 +1006,7 @@ def soc_labels_per_user(
         {
             "delta_roam": delta_roam,
             "dur_min": dur_min,
+            "look_back": look_back,
             "return_anchors": return_anchors,
             "traj_cols": traj_cols,
             **kwargs,
