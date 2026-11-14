@@ -2,6 +2,21 @@ import pandas as pd
 import pytest
 import nomad.stop_detection.utils as utils
 
+
+@pytest.mark.parametrize("use_datetime", [False, True])
+def test_summarize_stop_durations_preserves_precision(use_datetime):
+    times = pd.Series([0, 0, 10, 100.5, 200, 300])
+    if use_datetime:
+        times = pd.to_datetime(times, unit="s", utc=True)
+    data = pd.DataFrame({"when": times})
+    labels = pd.Series([4, 4, 7, 7, 12, -1], name="cluster")
+    mapping = {"datetime" if use_datetime else "timestamp": "when"}
+
+    durations = utils.summarize_stop_durations(data, labels, traj_cols=mapping)
+
+    assert durations.to_dict() == {4: 0, 7: 90.5 / 60, 12: 0}
+
+
 def _assert_empty_stop_df(empty_df, expected_columns, expected_dtypes):
     assert empty_df.empty
     # Stop tables produced by NOMAD's detection algorithms retain the cluster label.

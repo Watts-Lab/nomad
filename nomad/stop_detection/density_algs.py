@@ -21,12 +21,16 @@ def ta_dbscan_labels(data,
                      return_cores=False,
                      remove_overlaps=True,
                      traj_cols=None,
+                     dur_min=5,
                      **kwargs):
     """
     Return temporal DBSCAN labels.
 
     Parameters
     ----------
+    dur_min : float, default 5
+        Minimum elapsed stop duration in minutes, without rounding. Zero retains
+        all durations. Shorter clusters become noise, including core metadata.
     return_cores : bool, default False
         Return core labels and ``promotion_time`` with cluster labels. Core
         pings use their own time; border pings use their propagating core time.
@@ -183,6 +187,15 @@ def ta_dbscan_labels(data,
             max_assigned = run_end
         prev_run_end = max_assigned
             
+    durations = utils.summarize_stop_durations(
+        data, cluster_df.set_axis(data.index), traj_cols=traj_cols, **kwargs
+    )
+    excluded = cluster_df.isin(durations.index[durations < dur_min])
+    cluster_df.loc[excluded] = -1
+    core_df.loc[excluded] = -1
+    if return_cores:
+        promotion_time.loc[excluded] = np.nan
+
     if not return_cores:
         return cluster_df.set_axis(data.index)
 
@@ -264,6 +277,7 @@ def ta_dbscan(
             passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
 
     labels = ta_dbscan_labels(
+        dur_min=dur_min,
         data=data,
         dist_thresh=dist_thresh,
         min_pts=min_pts,
@@ -277,7 +291,6 @@ def ta_dbscan(
         data,
         labels,
         complete_output=complete_output,
-        dur_min=dur_min,
         passthrough_cols=passthrough_cols,
         keep_col_names=keep_col_names,
         traj_cols=traj_cols,
@@ -340,10 +353,13 @@ def ta_dbscan_labels_per_user(
     traj_cols=None,
     n_jobs=1,
     print_progress=False,
+    dur_min=5,
     **kwargs
 ):
     """
     Run ta_dbscan_labels on each user separately and concatenate labels.
+
+    ``dur_min`` defaults to 5 elapsed minutes and is forwarded to the label function.
 
     Raises if 'user_id' not in traj_cols or missing from data.
     """
@@ -360,6 +376,7 @@ def ta_dbscan_labels_per_user(
             "dist_thresh": dist_thresh,
             "min_pts": min_pts,
             "time_thresh": time_thresh,
+            "dur_min": dur_min,
             "return_cores": return_cores,
             "remove_overlaps": remove_overlaps,
             "traj_cols": traj_cols,
@@ -379,12 +396,16 @@ def dbstop_labels(data,
                  time_thresh,
                  return_cores=False,
                  traj_cols=None,
+                 dur_min=5,
                  **kwargs):
     """
     Return density-based stop labels.
 
     Parameters
     ----------
+    dur_min : float, default 5
+        Minimum elapsed stop duration in minutes, without rounding. Zero retains
+        all durations. Shorter clusters become noise, including core metadata.
     return_cores : bool, default False
         Return core labels and ``promotion_time`` with cluster labels.
         ``promotion_time`` is the sweep time that propagates final membership.
@@ -514,6 +535,15 @@ def dbstop_labels(data,
                     if return_cores:
                         promotion_time.at[curr_time] = np.nan
 
+    durations = utils.summarize_stop_durations(
+        data, cluster_df.set_axis(data.index), traj_cols=traj_cols, **kwargs
+    )
+    excluded = cluster_df.isin(durations.index[durations < dur_min])
+    cluster_df.loc[excluded] = -1
+    core_df.loc[excluded] = -1
+    if return_cores:
+        promotion_time.loc[excluded] = np.nan
+
     if not return_cores:
         return cluster_df.set_axis(data.index)
 
@@ -595,6 +625,7 @@ def dbstop(
             passthrough_cols = passthrough_cols + [traj_cols_temp['user_id']]
 
     labels = dbstop_labels(
+        dur_min=dur_min,
         data=data,
         dist_thresh=dist_thresh,
         min_pts=min_pts,
@@ -607,7 +638,6 @@ def dbstop(
         data,
         labels,
         complete_output=complete_output,
-        dur_min=dur_min,
         passthrough_cols=passthrough_cols,
         keep_col_names=keep_col_names,
         traj_cols=traj_cols,
@@ -671,10 +701,13 @@ def dbstop_labels_per_user(
     traj_cols=None,
     n_jobs=1,
     print_progress=False,
+    dur_min=5,
     **kwargs
 ):
     """
     Run dbstop_labels on each user separately and concatenate labels.
+
+    ``dur_min`` defaults to 5 elapsed minutes and is forwarded to the label function.
 
     Raises if 'user_id' not in traj_cols or missing from data.
     """
@@ -691,6 +724,7 @@ def dbstop_labels_per_user(
             "dist_thresh": dist_thresh,
             "min_pts": min_pts,
             "time_thresh": time_thresh,
+            "dur_min": dur_min,
             "return_cores": return_cores,
             "traj_cols": traj_cols,
             **kwargs,

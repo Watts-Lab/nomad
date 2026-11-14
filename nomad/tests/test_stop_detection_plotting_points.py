@@ -189,8 +189,8 @@ def test_density_return_cores_returns_label_metadata(
 @pytest.mark.parametrize(
     ("label_function", "kwargs", "expected_promotion_times"),
     [
-        (density_algs.ta_dbscan_labels, {}, [120, 120, 120]),
-        (density_algs.dbstop_labels, {}, [120, 120, 240]),
+        (density_algs.ta_dbscan_labels, {"dur_min": 0}, [120, 120, 120]),
+        (density_algs.dbstop_labels, {"dur_min": 0}, [120, 120, 240]),
         (density_algs.seqscan_labels, {"dur_min": 0}, [240, 240, 240]),
     ],
 )
@@ -324,6 +324,7 @@ def test_density_promotion_time_uses_original_datetime_values():
         dist_thresh=0.5,
         min_pts=2,
         time_thresh=5,
+        dur_min=0,
         return_cores=True,
         traj_cols=traj_cols,
     )

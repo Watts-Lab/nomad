@@ -41,6 +41,38 @@ from nomad.stop_detection.utils import has_overlapping_stops
 from pandas.api.types import is_integer_dtype
 import numpy as np
 
+
+@pytest.mark.parametrize("labeler", [ta_dbscan_labels, dbstop_labels])
+def test_density_labels_filter_short_stops(two_stop_traj, labeler):
+    # Keep a 90-second stop followed by a 9.5-minute stop, preserving input indices.
+    data = pd.concat([two_stop_traj.iloc[:4], two_stop_traj.iloc[20:]])
+    kwargs = dict(dist_thresh=30, min_pts=2, time_thresh=5)
+    result = labeler(data, return_cores=True, **kwargs)
+
+    assert result.index.equals(data.index)
+    assert result["cluster"].tolist() == [-1] * 4 + [1] * 20
+    assert (result["core"].iloc[:4] == -1).all()
+    assert result["promotion_time"].iloc[:4].isna().all()
+    pd.testing.assert_series_equal(labeler(data, **kwargs), result["cluster"])
+    assert labeler(data, dur_min=0, **kwargs).tolist() == [0] * 4 + [1] * 20
+    assert (labeler(data, dur_min=10, **kwargs) == -1).all()
+
+
+@pytest.mark.parametrize("stopper,stop_wrapper,label_wrapper", [
+    (ta_dbscan, ta_dbscan_per_user, ta_dbscan_labels_per_user),
+    (dbstop, dbstop_per_user, dbstop_labels_per_user),
+])
+def test_density_duration_forwarding(two_stop_traj, stopper, stop_wrapper, label_wrapper):
+    data = two_stop_traj.iloc[:4].assign(uid="a")
+    kwargs = dict(dist_thresh=30, min_pts=2, time_thresh=5, dur_min=1.5,
+                  traj_cols={"user_id": "uid"})
+
+    # The exact 1.5-minute threshold passes, although summaries report whole minutes.
+    assert stopper(data, **kwargs)["duration"].tolist() == [1]
+    assert stop_wrapper(data, **kwargs)["duration"].tolist() == [1]
+    assert label_wrapper(data, **kwargs).tolist() == [0] * 4
+
+
 @pytest.fixture
 def stop_test_params():
     gap_minutes = 10
