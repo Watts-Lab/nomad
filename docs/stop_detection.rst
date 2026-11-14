@@ -60,6 +60,15 @@ The TA-DBSCAN (Temporal-Augmented DBSCAN) algorithm is an adaptation of DBSCAN. 
 
 Notice that this method also works with **geographic coordinates** (lon, lat), using Haversine distance.
 
+``ta_dbscan_labels`` and ``dbstop_labels`` filter final clusters using
+``dur_min=5`` by default. Duration is the elapsed time between the earliest and
+latest ping, compared in minutes without rounding. Clusters shorter than the
+threshold become noise (``-1``), with their core and promotion-time metadata
+cleared. Input rows and surviving cluster IDs are preserved. Set ``dur_min=0``
+to retain all durations. Stop-table and per-user wrappers forward this parameter,
+so direct label consumers and summarized stops use the same duration rule.
+Reported stop-summary durations continue to use whole minutes.
+
 **Source:** Ester, M., Kriegel, H. P., Sander, J., & Xu, X. (1996). A density-based algorithm for discovering clusters in large spatial databases with noise. *Proceedings of the Second International Conference on Knowledge Discovery and Data Mining (KDD-96)*, 226-231.
 
 .. figure:: _static/stop_detection/tadbscan_demo.png

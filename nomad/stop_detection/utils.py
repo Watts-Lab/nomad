@@ -321,6 +321,37 @@ def summarize_stop(
     return pd.Series(stop_attr, dtype="object")
 
 
+def summarize_stop_durations(data, labels, traj_cols=None, **kwargs):
+    """Calculate exact elapsed minutes for each non-noise cluster.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Input trajectory containing numeric seconds or datetime values.
+    labels : pd.Series
+        Cluster labels aligned with the trajectory index; negative labels are noise.
+    traj_cols : dict, optional
+        Canonical-to-actual column mapping.
+    **kwargs
+        Additional column mappings.
+
+    Returns
+    -------
+    pd.Series
+        Duration in fractional minutes, indexed by cluster ID and named
+        ``duration``. Only timestamps are needed; no spatial statistics are calculated.
+    """
+    t_key, use_datetime = loader._fallback_time_cols_dt(data.columns, traj_cols, kwargs)
+    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
+    spans = data.loc[labels >= 0, traj_cols[t_key]].groupby(
+        labels, sort=False
+    ).agg(['min', 'max'])
+    durations = spans['max'] - spans['min']
+    if use_datetime:
+        durations = durations.dt.total_seconds()
+    return (durations / 60).rename('duration')
+
+
 def summarize_stops(
     data,
     labels,
