@@ -452,7 +452,7 @@ def _detect_locations(
     parsed_cols = loader._parse_traj_cols(
         data.columns, traj_cols, kwargs, warn=False
     )
-    location_col = parsed_cols['location_id']
+    location_col = parsed_cols['location_cluster']
     if data.empty:
         location_ids = pd.Series(index=data.index, dtype='Int64', name=location_col)
         if not return_locations:
@@ -517,21 +517,6 @@ def _detect_locations(
     return location_ids, locations
 
 
-def _detect_locations_multi_user(data, method, traj_cols):
-    """Validate planned multi-user methods before reporting them unimplemented."""
-    if method == 'infomap':
-        loader._has_user_cols(data.columns, traj_cols)
-        loader._has_spatial_cols(data.columns, traj_cols)
-        loader._has_time_cols(data.columns, traj_cols)
-        if not (
-            loader._has_end_cols(data.columns, traj_cols)
-            or loader._has_duration_cols(data.columns, traj_cols)
-        ):
-            raise ValueError("Infomap location detection requires a stop table")
-        raise NotImplementedError("Infomap location detection is not implemented")
-    raise NotImplementedError("Multi-user location detection is not implemented")
-
-
 def detect_locations(
     data,
     epsilon=100,
@@ -551,23 +536,22 @@ def detect_locations(
     data : pd.DataFrame
         Coordinate points or stop rows with x/y or longitude/latitude columns.
     epsilon : float, default 100
-        Maximum distance between rows in the same location. Units match projected
+        Maximum distance between neighboring rows. Units match projected
         coordinates or are meters for longitude/latitude coordinates.
     min_pts : int, default 1
         Minimum number of stops required to form a location
     return_locations : bool, default False
         If True, also return a GeoDataFrame summarizing each location. Location
         summaries currently require projected x/y coordinates.
-    method : {'dbscan', 'custom', 'infomap'}, default 'dbscan'
-        Location-detection method. Infomap is reserved for future multi-user
-        stop-table support and currently raises ``NotImplementedError``.
+    method : {'dbscan', 'custom'}, default 'dbscan'
+        Location-detection method. For Infostop, use the stop detection module.
     algorithm : callable, optional
         Location-detection callable required when ``method='custom'``. It must
         return one label per input row.
     algorithm_kwargs : dict, optional
         Arguments for a custom location-detection callable.
     traj_cols : dict, optional
-        Column name mappings for coordinates and location_id.
+        Column name mappings for coordinates and location_cluster.
     **kwargs
         Additional arguments passed to column detection
 
@@ -579,6 +563,7 @@ def detect_locations(
 
     Notes
     -----
+    Results are named location_cluster (customizable through traj_cols).
     Each noise row is retained as its own nonnegative location.
     """
     if isinstance(data, gpd.GeoDataFrame):
@@ -590,11 +575,11 @@ def detect_locations(
         data.columns, traj_cols, kwargs, warn=False
     )
     user_col = parsed_cols['user_id']
-    if method == 'infomap' or (
+    if (
         user_col in data.columns
         and data[user_col].nunique(dropna=False) > 1
     ):
-        return _detect_locations_multi_user(data, method, parsed_cols)
+        raise NotImplementedError("Multi-user location detection is not implemented")
 
     if method == 'dbscan':
         if algorithm is not None or algorithm_kwargs is not None:

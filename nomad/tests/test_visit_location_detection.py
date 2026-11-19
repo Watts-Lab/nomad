@@ -18,7 +18,7 @@ def test_detect_locations_returns_aligned_location_ids(cartesian_points):
 
     assert location_ids.tolist() == [0, 0, 1]
     assert location_ids.index.equals(cartesian_points.index)
-    assert location_ids.name == "location_id"
+    assert location_ids.name == "location_cluster"
 
 
 def test_detect_locations_accepts_stop_table():
@@ -135,7 +135,7 @@ def test_detect_locations_supports_custom_column_mappings():
         traj_cols={
             "x": "east",
             "y": "north",
-            "location_id": "destination_id",
+            "location_cluster": "destination_id",
         },
     )
 
@@ -153,7 +153,7 @@ def test_detect_locations_optionally_returns_location_geometries(
     )
 
     assert location_ids.tolist() == [0, 0, 1]
-    assert locations["location_id"].tolist() == [0, 1]
+    assert locations["location_cluster"].tolist() == [0, 1]
     assert locations["n_stops"].tolist() == [2, 1]
     assert locations.center.x.tolist() == [0.5, 20.0]
     assert locations.center.y.tolist() == [0.5, 20.0]
@@ -173,7 +173,7 @@ def test_detect_locations_summarizes_noise_location():
         min_pts=2,
         return_locations=True,
     )
-    locations = locations.set_index("location_id")
+    locations = locations.set_index("location_cluster")
 
     assert location_ids.tolist() == [0, 0, 1]
     assert locations["n_stops"].to_dict() == {0: 2, 1: 1}
@@ -200,16 +200,16 @@ def test_detect_locations_returns_empty_schema():
     location_ids, locations = detect_locations(points, return_locations=True)
 
     assert location_ids.empty
-    assert location_ids.name == "location_id"
+    assert location_ids.name == "location_cluster"
     assert location_ids.dtype == "Int64"
     assert locations.empty
     assert locations.columns.tolist() == [
-        "location_id",
+        "location_cluster",
         "n_stops",
         "center",
         "extent",
     ]
-    assert locations["location_id"].dtype == "Int64"
+    assert locations["location_cluster"].dtype == "Int64"
 
 
 def test_detect_locations_does_not_mutate_input(cartesian_points):

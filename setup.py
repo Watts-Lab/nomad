@@ -38,6 +38,7 @@ setup(
     ],
 
     extras_require={
+        'infomap': ['infomap>=2.16,<3'],
         'spark': [
             'pyspark>=3.4.4,<4',
             'sedona>=1.4.1'

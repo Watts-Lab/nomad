@@ -5,6 +5,7 @@
    :toctree: generated
 
    nomad.stop_detection.density_algs
+   nomad.stop_detection.infostop
    nomad.stop_detection.postprocessing
    nomad.stop_detection.preprocessing
    nomad.stop_detection.sequential_algs

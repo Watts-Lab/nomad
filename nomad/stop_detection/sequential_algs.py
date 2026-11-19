@@ -464,7 +464,7 @@ def lachesis_labels(
             complete_output=True,
             traj_cols=traj_cols,
         )
-        location_col = traj_cols['location_id']
+        location_col = traj_cols['location_cluster']
         stop_table[location_col] = _detect_locations(
             stop_table,
             epsilon=eps,
@@ -478,6 +478,7 @@ def lachesis_labels(
             use_datetime=use_datetime,
             time_thresh=dt_max,
             return_relabeling=True,
+            location_col=location_col,
         )
         result = result.map(relabeling)
 

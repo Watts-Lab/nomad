@@ -38,6 +38,7 @@ def _merge_stops_from_agg(
     use_datetime,
     time_thresh=60,
     return_relabeling=False,
+    location_col=None,
 ):
     """Merge a chronological single-user stop table or return its relabeling."""
     start_col = traj_cols[t_key]
@@ -61,7 +62,7 @@ def _merge_stops_from_agg(
         pd.to_timedelta(time_thresh, unit='min')
         if use_datetime else time_thresh * 60
     )
-    location_col = traj_cols['location_id']
+    location_col = location_col or traj_cols['location_id']
     location_codes = pd.Series(pd.factorize(stop_rows[location_col], sort=False)[0])
     same_location = location_codes.eq(location_codes.shift()) & location_codes.ne(-1)
     sequence_id = (~same_location).cumsum()

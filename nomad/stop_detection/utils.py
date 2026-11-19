@@ -1,5 +1,6 @@
 import pandas as pd
 from scipy.spatial.distance import pdist, cdist
+from sklearn.metrics.pairwise import haversine_distances
 import numpy as np
 import datetime as dt
 import itertools
@@ -69,18 +70,41 @@ def _medoid(coords, metric='euclidean'):
     numpy.ndarray
         The medoid of the coordinate set, represented as a single point. If there
         is only one point, returns that point.
+
+    Notes
+    -----
+    Exact selection over unique coordinates, weighted by occurrence counts.
+    Distance blocks bound working memory; time remains quadratic in the number
+    of unique coordinates. Ties retain the earliest input point.
     """
     if len(coords) < 2:
         return coords[0]
     
+    # Repeated coordinates contribute their frequency, not additional candidates.
+    points, first, counts = np.unique(
+        coords, axis=0, return_index=True, return_counts=True,
+    )
+    order = np.argsort(first)
+    points, first, counts = points[order], first[order], counts[order]
+    if len(points) == 1:
+        return coords[first[0]]
     if metric == 'haversine':
-        distances = _pairwise_haversine(np.radians(coords))
-    else:
-        distances = cdist(coords, coords, metric=metric)
+        points = np.radians(points)
 
-    sum_distances = np.sum(distances, axis=1)
-    medoid_index = np.argmin(sum_distances)
-    return coords[medoid_index, :]
+    # Keep distance blocks near 8 MiB (or one row for very large inputs).
+    block_size = max(1, (8 * 1024 * 1024) // (8 * len(points)))
+    sum_distances = np.empty(len(points))
+    for start in range(0, len(points), block_size):
+        block = points[start:start + block_size]
+        if metric == 'haversine':
+            # Angular distances suffice: the Earth-radius factor is constant.
+            distances = haversine_distances(block, points)
+        else:
+            distances = cdist(block, points, metric=metric)
+        sum_distances[start:start + len(block)] = distances @ counts
+        del distances
+    # Candidates remain in input order, preserving the first occurrence on ties.
+    return coords[first[np.argmin(sum_distances)]]
 
 def _haversine_distance(coord1, coord2, radians=True):
     """
@@ -268,6 +292,7 @@ def summarize_stop(
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = _fallback_st_cols(grouped_data.columns, traj_cols, kwargs)
     traj_cols = loader._parse_traj_cols(grouped_data.columns, traj_cols, kwargs, warn=False)
     metric = 'haversine' if use_lon_lat else 'euclidean'    
+    coords = grouped_data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
     start_t_key = 'start_datetime' if use_datetime else 'start_timestamp'
     end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
     
@@ -281,8 +306,11 @@ def summarize_stop(
         traj_cols[start_t_key] = traj_cols[t_key]
     
     # Compute stop statistics
-    coords = grouped_data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
-    medoid = _medoid(coords, metric=metric)
+    # Spatial columns are lon/lat; the distance helpers expect lat/lon.
+    distance_coords = coords[:, ::-1] if use_lon_lat else coords
+    medoid = _medoid(distance_coords, metric=metric)
+    if use_lon_lat:
+        medoid = medoid[::-1]
     end_time = grouped_data[traj_cols[t_key]].iloc[-1]
 
     stop_attr = {} # the pandas series for the output
@@ -293,7 +321,7 @@ def summarize_stop(
     if complete_output:
         if traj_cols['ha'] in grouped_data.columns:
             stop_attr[traj_cols['ha']] = grouped_data[traj_cols['ha']].mean()
-        stop_attr['diameter'] = _diameter(coords, metric=metric)
+        stop_attr['diameter'] = _diameter(distance_coords, metric=metric)
         stop_attr['n_pings'] = len(grouped_data)
         stop_attr[traj_cols[end_t_key]] = end_time
         

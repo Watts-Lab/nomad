@@ -136,3 +136,51 @@ This algorithm has the following parameters, which determine the size of the res
    :width: 80%
 
    Lachesis stops. See the :doc:`full example <source/lachesis_demo>`.
+
+.. _infostop:
+
+Infostop
+========
+
+Infostop groups consecutive pings into stationary events, then clusters their
+median coordinates with Infomap. It is implemented in Nomad; only the Infomap
+engine is an optional dependency. This extra requires Python 3.11 or newer.
+Install it from a checkout with:
+
+.. code-block:: bash
+
+   python -m pip install -e '.[infomap]'
+
+.. code-block:: python
+
+   from nomad.stop_detection.infostop import infostop
+
+   stops = infostop(trajectory, r1=20, r2=30, dur_min=5, dt_max=60)
+
+* ``r1``: Maximum distance from a ping to the preceding event's running median.
+* ``r2``: Maximum distance between event medians for a graph edge.
+* ``dur_min`` and ``min_pts``: Minimum event duration in minutes and ping count
+  (defaults: 5 and 2).
+* ``dt_max``: Maximum consecutive-ping gap in minutes (default: 60).
+
+Spatial thresholds use projected coordinate units, or meters for geographic
+coordinates. Geographic medians account for longitude wrapping across the
+antimeridian. Identical event coordinates become one graph node; each undirected
+edge is weighted by the larger endpoint event count. There are no self-links or
+Gaussian distance weights. Isolated stationary locations are retained.
+
+``infostop_labels`` returns chronological visit labels, with noise marked -1.
+``return_location_clusters=True`` also returns recurring-location membership.
+``infostop`` returns the standard stop table with ``location_cluster``; separate
+visits can share that cluster. Noise, a different location, or a gap exceeding
+``dt_max`` separates visits. ``location_id`` remains available for polygon IDs.
+
+Inputs contain one user in chronological order; group multi-user data before
+calling. Column mappings and summary options follow the other detectors.
+Infomap uses a two-level partition with ``seed=123`` and ``num_trials=50`` by
+default. Labels are numbered by first occurrence; partitions can vary across
+dependency versions on ambiguous graphs. Radius searches avoid a dense distance
+matrix, though a large ``r2`` can still create a dense graph.
+
+See the :doc:`short example <source/infostop_demo>` and the
+`Infostop paper <https://arxiv.org/abs/2003.14370>`_ for the underlying method.
