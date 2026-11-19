@@ -268,6 +268,7 @@ def summarize_stop(
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = _fallback_st_cols(grouped_data.columns, traj_cols, kwargs)
     traj_cols = loader._parse_traj_cols(grouped_data.columns, traj_cols, kwargs, warn=False)
     metric = 'haversine' if use_lon_lat else 'euclidean'    
+    coords = grouped_data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
     start_t_key = 'start_datetime' if use_datetime else 'start_timestamp'
     end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
     
@@ -281,8 +282,11 @@ def summarize_stop(
         traj_cols[start_t_key] = traj_cols[t_key]
     
     # Compute stop statistics
-    coords = grouped_data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
-    medoid = _medoid(coords, metric=metric)
+    # Spatial columns are lon/lat; the distance helpers expect lat/lon.
+    distance_coords = coords[:, ::-1] if use_lon_lat else coords
+    medoid = _medoid(distance_coords, metric=metric)
+    if use_lon_lat:
+        medoid = medoid[::-1]
     end_time = grouped_data[traj_cols[t_key]].iloc[-1]
 
     stop_attr = {} # the pandas series for the output
@@ -293,7 +297,7 @@ def summarize_stop(
     if complete_output:
         if traj_cols['ha'] in grouped_data.columns:
             stop_attr[traj_cols['ha']] = grouped_data[traj_cols['ha']].mean()
-        stop_attr['diameter'] = _diameter(coords, metric=metric)
+        stop_attr['diameter'] = _diameter(distance_coords, metric=metric)
         stop_attr['n_pings'] = len(grouped_data)
         stop_attr[traj_cols[end_t_key]] = end_time
         
