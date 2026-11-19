@@ -1,5 +1,6 @@
 import pandas as pd
 from scipy.spatial.distance import pdist, cdist
+from sklearn.metrics.pairwise import haversine_distances
 import numpy as np
 import datetime as dt
 import itertools
@@ -69,18 +70,41 @@ def _medoid(coords, metric='euclidean'):
     numpy.ndarray
         The medoid of the coordinate set, represented as a single point. If there
         is only one point, returns that point.
+
+    Notes
+    -----
+    Exact selection over unique coordinates, weighted by occurrence counts.
+    Distance blocks bound working memory; time remains quadratic in the number
+    of unique coordinates. Ties retain the earliest input point.
     """
     if len(coords) < 2:
         return coords[0]
     
+    # Repeated coordinates contribute their frequency, not additional candidates.
+    points, first, counts = np.unique(
+        coords, axis=0, return_index=True, return_counts=True,
+    )
+    order = np.argsort(first)
+    points, first, counts = points[order], first[order], counts[order]
+    if len(points) == 1:
+        return coords[first[0]]
     if metric == 'haversine':
-        distances = _pairwise_haversine(np.radians(coords))
-    else:
-        distances = cdist(coords, coords, metric=metric)
+        points = np.radians(points)
 
-    sum_distances = np.sum(distances, axis=1)
-    medoid_index = np.argmin(sum_distances)
-    return coords[medoid_index, :]
+    # Keep distance blocks near 8 MiB (or one row for very large inputs).
+    block_size = max(1, (8 * 1024 * 1024) // (8 * len(points)))
+    sum_distances = np.empty(len(points))
+    for start in range(0, len(points), block_size):
+        block = points[start:start + block_size]
+        if metric == 'haversine':
+            # Angular distances suffice: the Earth-radius factor is constant.
+            distances = haversine_distances(block, points)
+        else:
+            distances = cdist(block, points, metric=metric)
+        sum_distances[start:start + len(block)] = distances @ counts
+        del distances
+    # Candidates remain in input order, preserving the first occurrence on ties.
+    return coords[first[np.argmin(sum_distances)]]
 
 def _haversine_distance(coord1, coord2, radians=True):
     """
