@@ -68,6 +68,8 @@ def detect_stops_labels(
 
     # Extract coordinates and time
     coords = data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy(dtype='float64')
+    if use_lon_lat:
+        coords = coords[:, ::-1]  # haversine helpers expect [lat, lon]
     times = to_timestamp(data[traj_cols[t_key]]) if use_datetime else data[traj_cols[t_key]]
     
     # Initialize all labels as noise (-1)
@@ -390,6 +392,8 @@ def lachesis_labels(
 
     metric = 'haversine' if use_lon_lat else 'euclidean'    
     coords = data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy(dtype='float64')
+    if use_lon_lat:
+        coords = coords[:, ::-1]  # haversine helpers expect [lat, lon]
     
     # Parse if necessary
     time_series = to_timestamp(data[traj_cols[t_key]]) if use_datetime else data[traj_cols[t_key]]

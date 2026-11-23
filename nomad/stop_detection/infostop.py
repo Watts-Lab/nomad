@@ -1,256 +1,366 @@
-"""Median-based stationary events clustered into recurring locations with Infomap."""
+"""Infostop: stationary events clustered into recurring locations with Infomap."""
 
 from heapq import heappop, heappush
-from math import hypot
-from numbers import Integral, Real
 
+import geopandas as gpd
 import numpy as np
 import pandas as pd
 from sklearn.neighbors import BallTree
 
 import nomad.io.base as loader
 from nomad.constants import EARTH_RADIUS_METERS
+from nomad.filters import to_timestamp
 from nomad.stop_detection import utils
 
 
 class _RunningMedian:
-    """Insertion-only median with O(log n) updates and O(1) lookup."""
+    """Coordinate-wise median of a growing point set with O(log n) insertion."""
 
-    def __init__(self):
-        self.lower = []
-        self.upper = []
+    def __init__(self, point):
+        self.heaps = [([], []) for _ in point]
+        self.add(point)
 
-    def add(self, value):
-        heappush(self.lower, -value)
-        heappush(self.upper, -heappop(self.lower))
-        if len(self.upper) > len(self.lower):
-            heappush(self.lower, -heappop(self.upper))
+    def add(self, point):
+        for (lower, upper), value in zip(self.heaps, point):
+            heappush(lower, -value)
+            heappush(upper, -heappop(lower))
+            if len(upper) > len(lower):
+                heappush(lower, -heappop(upper))
 
     @property
     def value(self):
-        if len(self.lower) == len(self.upper):
-            return (-self.lower[0] + self.upper[0]) / 2
-        return -self.lower[0]
+        return np.array([
+            -lower[0] if len(lower) > len(upper) else (upper[0] - lower[0]) / 2
+            for lower, upper in self.heaps
+        ])
 
 
-class _EventMedian:
-    """Coordinate medians, choosing the shorter longitude span across +/-pi."""
-
-    def __init__(self, geographic):
-        self.first = _RunningMedian()
-        self.second = _RunningMedian()
-        self.shifted = _RunningMedian() if geographic else None
-        self.bounds = [np.inf, -np.inf, np.inf, -np.inf]
-
-    def add(self, point):
-        first, second = point
-        self.first.add(first)
-        self.second.add(second)
-        if self.shifted is not None:
-            shifted = second % (2 * np.pi)
-            self.shifted.add(shifted)
-            lo, hi, shifted_lo, shifted_hi = self.bounds
-            self.bounds = [min(lo, second), max(hi, second),
-                           min(shifted_lo, shifted), max(shifted_hi, shifted)]
-
-    @property
-    def center(self):
-        second = self.second.value
-        if self.shifted is not None:
-            lo, hi, shifted_lo, shifted_hi = self.bounds
-            if hi - lo > np.pi and shifted_hi - shifted_lo < hi - lo:
-                second = self.shifted.value
-            second = (second + np.pi) % (2 * np.pi) - np.pi
-        return np.array([self.first.value, second])
+def _wrap_longitude(lon):
+    """Wrap a longitude in radians into [-pi, pi)."""
+    return (lon + np.pi) % (2 * np.pi) - np.pi
 
 
-def _stationary_events(coords, times, r1, dur_min, dt_max, min_pts, geographic):
-    """Return event centers and positional ping-to-event IDs; geo inputs are radians."""
-    events = np.full(len(coords), -1, dtype=np.int64)
+def _stationary_events(coords, times, r1, dur_min, dt_max, min_pts, use_lon_lat):
+    """Return event medians and per-ping event ids (-1 outside events).
+
+    Geographic coordinates must be [lat, lon] in radians.
+    """
+    events = np.full(len(coords), -1, dtype=int)
     centers = []
-    if not len(coords):
-        return np.empty((0, 2)), events
     start = 0
-    median = _EventMedian(geographic)
-    median.add(coords[0])
-    center = median.center
-    for end in range(1, len(coords) + 1):
-        if end < len(coords) and times[end] - times[end - 1] <= dt_max * 60:
-            distance = (utils._haversine_distance(coords[end], center)
-                        if geographic else hypot(*(coords[end] - center)))
-            if distance <= r1:
-                median.add(coords[end])
-                center = median.center
+    for end in range(len(coords) + 1):
+        # The current event, started at `start`, grows while pings stay near its median.
+        if 0 < end < len(coords) and times[end] - times[end - 1] <= dt_max * 60:
+            point = coords[end]
+            if use_lon_lat:
+                # Unwrap longitude next to the event's first ping, so medians of
+                # events crossing the antimeridian stay circular as in Infostop.
+                point = np.array([point[0], coords[start, 1] + _wrap_longitude(point[1] - coords[start, 1])])
+                dist = utils._haversine_distance(point, median.value)
+            else:
+                dist = np.linalg.norm(point - median.value)
+            if dist <= r1:
+                median.add(point)
                 continue
-        if end - start >= min_pts and times[end - 1] - times[start] >= dur_min * 60:
+        if end > 0 and end - start >= min_pts and times[end - 1] - times[start] >= dur_min * 60:
             events[start:end] = len(centers)
+            center = median.value
+            if use_lon_lat:
+                center[1] = _wrap_longitude(center[1])
             centers.append(center)
         if end < len(coords):
-            start = end
-            median = _EventMedian(geographic)
-            median.add(coords[end])
-            center = median.center
-    return np.asarray(centers).reshape(-1, 2), events
+            start, median = end, _RunningMedian(coords[end])
+    return np.array(centers).reshape(-1, 2), events
 
 
-def _cluster_events(centers, r2, geographic, seed, num_trials):
-    """Cluster unique event coordinates, weighting edges by endpoint event counts."""
+def _cluster_events(centers, r2, use_lon_lat, seed, num_trials):
+    """Cluster unique event medians with Infomap; edges join medians within r2."""
     try:
         import infomap
-    except ModuleNotFoundError as error:
-        if error.name != 'infomap':
-            raise
+    except ImportError as error:
         raise ImportError('Infostop requires: pip install "nomad[infomap]"') from error
 
-    points, inverse, counts = np.unique(
-        centers, axis=0, return_inverse=True, return_counts=True,
-    )
-    tree = BallTree(points, metric='haversine' if geographic else 'euclidean')
-    radius = r2 / EARTH_RADIUS_METERS if geographic else r2
+    points, inverse, counts = np.unique(centers, axis=0, return_inverse=True, return_counts=True)
+    tree = BallTree(points, metric='haversine' if use_lon_lat else 'euclidean')
+    radius = r2 / EARTH_RADIUS_METERS if use_lon_lat else r2
+
+    # Isolated medians keep their node id; linked ones take their module id,
+    # offset past the node ids so the two cannot collide.
+    labels = np.arange(len(points))
     network = infomap.Network()
-    connected = np.zeros(len(points), dtype=bool)
-    # Limit temporary neighbor storage; the graph itself still requires O(edges).
-    for start in range(0, len(points), 4096):
-        neighbors = tree.query_radius(points[start:start + 4096], r=radius)
-        for source, targets in enumerate(neighbors, start):
-            for target in targets[targets > source]:
-                network.add_link(source, int(target), float(max(counts[source], counts[target])))
-                connected[source] = connected[target] = True
-    labels = np.arange(len(points), dtype=np.int64)
-    if connected.any():
+    has_links = False
+    for source, targets in enumerate(tree.query_radius(points, r=radius)):
+        for target in targets[targets > source]:
+            network.add_link(source, int(target), float(max(counts[source], counts[target])))
+            has_links = True
+    if has_links:
         result = infomap.run(
             network, directed=False, two_level=True,
-            options=infomap.Options(seed=int(seed), num_trials=int(num_trials)),
+            options=infomap.Options(seed=seed, num_trials=num_trials),
         )
         for node, module in result.modules().items():
-            labels[node] = module + len(points)
-    return pd.factorize(labels[inverse], sort=False)[0]
+            labels[node] = len(points) + module
+    return pd.factorize(labels[inverse])[0]
 
 
 def infostop_labels(
-    data, r1, r2, dur_min=5, dt_max=60, min_pts=2, traj_cols=None, *,
-    seed=123, num_trials=50, return_location_clusters=False, **kwargs,
+    data,
+    r1,
+    r2,
+    dur_min=5,
+    dt_max=60,
+    min_pts=2,
+    traj_cols=None,
+    return_location_clusters=False,
+    seed=123,
+    num_trials=50,
+    **kwargs
 ):
-    """Detect stationary events, cluster their medians, and label chronological visits.
+    """
+    Scan a trajectory into stationary events, cluster them into recurring
+    locations with Infomap, and label each ping with a visit index or -1 for noise.
 
     Parameters
     ----------
-    data : pandas.DataFrame
-        A single user's trajectory in chronological order; equal timestamps are allowed.
+    data : pd.DataFrame or GeoDataFrame
+        Input trajectory with spatial and temporal columns.
     r1 : float
-        Maximum distance from a new ping to the median of the current event's preceding pings.
+        Maximum distance from a ping to the running median of its event.
     r2 : float
-        Maximum distance between event medians for a spatial graph edge.
-        Both radii use projected coordinate units, or meters for longitude/latitude.
-    dur_min : float, default 5
-        Minimum stationary-event duration in minutes.
-    dt_max : float, default 60
-        Maximum consecutive-ping gap in minutes, including within a visit.
+        Maximum distance between event medians for an Infomap graph edge.
+    dur_min : int, default 5
+        Minimum duration in minutes for a stationary event.
+    dt_max : int, default 60
+        Maximum allowed gap in minutes between consecutive pings in a visit.
     min_pts : int, default 2
         Minimum number of pings in a stationary event.
     traj_cols : dict, optional
-        Nomad column mappings, including location_cluster for recurring locations.
+        Mapping for 'x', 'y', 'longitude', 'latitude', 'timestamp', 'datetime',
+        or 'location_cluster'.
+    return_location_clusters : bool, default False
+        Also return each ping's recurring location as ``location_cluster``.
     seed : int, default 123
         Infomap random seed.
     num_trials : int, default 50
-        Number of two-level Infomap searches; retain the shortest description.
-    return_location_clusters : bool, default False
-        Also return recurring location membership as a location_cluster column.
+        Number of Infomap trials; the best partition is kept.
     **kwargs
-        Additional trajectory column mappings.
+        Passed along to the column-detection helper.
 
     Returns
     -------
-    pandas.Series or pandas.DataFrame
-        Aligned chronological visit labels named cluster, or a table with cluster
-        and location_cluster. Noise is -1 in both columns. Separate visits can
-        share a location_cluster. Isolated stationary locations are retained.
+    pd.Series or pd.DataFrame
+        Visit labels, or labels with aligned ``location_cluster``. Separate
+        visits can share a location cluster.
 
     Notes
     -----
-    Each unique stationary-event median is a node. Edges are undirected, have no
-    self-links, and have weight max(event_count_at_source, event_count_at_target).
-    There is no Gaussian distance weighting. Locations and visits are numbered
-    by first occurrence. The optional nomad[infomap] extra supplies Infomap.
+    Distances are in projected units, or meters for longitude/latitude. Each
+    unique event median is a graph node; undirected edges are weighted by the
+    larger endpoint event count. A visit ends at noise, a change of location,
+    or a gap longer than ``dt_max``. Requires ``pip install "nomad[infomap]"``.
     """
-    if not isinstance(data, pd.DataFrame):
-        raise TypeError('data must be a pandas DataFrame')
-    for name, value in [('r1', r1), ('r2', r2), ('dur_min', dur_min), ('dt_max', dt_max)]:
-        if isinstance(value, bool) or not isinstance(value, Real) or not np.isfinite(value) or value <= 0:
-            raise ValueError(f'{name} must be a finite positive number')
-    for name, value, minimum in [('min_pts', min_pts, 2), ('num_trials', num_trials, 1), ('seed', seed, 1)]:
-        if isinstance(value, bool) or not isinstance(value, Integral) or value < minimum:
-            raise ValueError(f'{name} must be an integer >= {minimum}')
-    t_key, key1, key2, use_datetime, geographic = utils._fallback_st_cols(data.columns, traj_cols, kwargs)
-    cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
-    user_col = cols['user_id']
-    if user_col in data and data[user_col].nunique(dropna=False) > 1:
-        raise ValueError('Infostop expects one user; group input by user_id before calling')
-    if cols['location_cluster'] == 'cluster':
-        raise ValueError('location_cluster must differ from the visit label column cluster')
-    coords = data[[cols[key1], cols[key2]]].to_numpy(dtype=float)
-    time_col = data[cols[t_key]]
-    if time_col.isna().any():
-        raise ValueError('timestamps must be finite and chronologically ordered')
-    times = ((time_col - time_col.iloc[0]).dt.total_seconds().to_numpy()
-             if use_datetime and len(data) else time_col.to_numpy(dtype=float))
-    if not np.isfinite(times).all() or (np.diff(times) < 0).any():
-        raise ValueError('timestamps must be finite and chronologically ordered')
-    if not np.isfinite(coords).all():
-        raise ValueError('coordinates must be finite')
-    if geographic:
-        # Public column parsing returns longitude, latitude; BallTree expects lat, lon.
-        coords = coords[:, [1, 0]]
-        if (np.abs(coords) > [90, 180]).any():
-            raise ValueError('latitude and longitude must be within geographic bounds')
-        coords[:, 1] = (coords[:, 1] + 180) % 360 - 180
-        coords[np.abs(coords[:, 0]) == 90, 1] = 0
-        coords = np.radians(coords)
-    centers, events = _stationary_events(coords, times, r1, dur_min, dt_max, min_pts, geographic)
-    locations = np.full(len(data), -1, dtype=np.int64)
-    valid = events >= 0
+    if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
+        raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
+
+    t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)
+    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
+    user_col = traj_cols['user_id']
+    if user_col in data.columns and data[user_col].nunique(dropna=False) > 1:
+        raise ValueError("Multi-user data? Use infostop_labels_per_user instead.")
+
+    loader._has_spatial_cols(data.columns, traj_cols)
+    loader._has_time_cols(data.columns, traj_cols)
+
+    coords = data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy(dtype='float64')
+    if use_lon_lat:
+        coords = np.radians(coords[:, ::-1])  # haversine helpers expect [lat, lon]
+    time_col = data[traj_cols[t_key]]
+    times = (to_timestamp(time_col) if use_datetime else time_col).to_numpy(dtype='float64')
+
+    centers, events = _stationary_events(coords, times, r1, dur_min, dt_max, min_pts, use_lon_lat)
+    in_event = events >= 0
+    locations = np.full(len(data), -1)
     if len(centers):
-        locations[valid] = _cluster_events(centers, r2, geographic, seed, num_trials)[events[valid]]
-    visits = np.full(len(data), -1, dtype=np.int64)
-    if valid.any():
-        starts = np.r_[True, (locations[1:] != locations[:-1]) | (np.diff(times) > dt_max * 60)]
-        visits[valid] = np.cumsum(starts & valid)[valid] - 1
-    labels = pd.Series(visits, index=data.index, name='cluster')
+        locations[in_event] = _cluster_events(centers, r2, use_lon_lat, seed, num_trials)[events[in_event]]
+
+    new_visit = np.r_[True, (locations[1:] != locations[:-1]) | (np.diff(times) > dt_max * 60)]
+    visits = np.where(in_event, np.cumsum(new_visit & in_event) - 1, -1)
+
+    result = pd.Series(visits, index=data.index, name='cluster')
     if return_location_clusters:
-        return pd.DataFrame({'cluster': visits, cols['location_cluster']: locations}, index=data.index)
-    return labels
+        return pd.DataFrame({'cluster': result, traj_cols['location_cluster']: locations}, index=data.index)
+    return result
 
 
 def infostop(
-    data, r1, r2, dur_min=5, dt_max=60, min_pts=2, complete_output=False,
-    passthrough_cols=None, keep_col_names=True, traj_cols=None, *,
-    seed=123, num_trials=50, **kwargs,
+    data,
+    r1,
+    r2,
+    dur_min=5,
+    dt_max=60,
+    min_pts=2,
+    complete_output=False,
+    passthrough_cols=None,
+    keep_col_names=True,
+    traj_cols=None,
+    seed=123,
+    num_trials=50,
+    **kwargs
 ):
-    """Return one standard Nomad stop row per Infostop visit.
-
-    Detection parameters and units match :func:`infostop_labels`. Standard
-    summary options are passed to ``utils.summarize_stops``. Recurring location
-    membership is retained in ``location_cluster`` (customizable in ``traj_cols``);
-    polygon ``location_id`` is only retained when requested in ``passthrough_cols``.
     """
+    Infostop stop detection with summarization.
+
+    Parameters
+    ----------
+    data : pd.DataFrame or GeoDataFrame
+        Input trajectory with spatial and temporal columns.
+    r1, r2, dur_min, dt_max, min_pts, seed, num_trials
+        See :func:`infostop_labels`.
+    complete_output : bool, default False
+        If True, include additional summary statistics in output.
+    passthrough_cols : list, optional
+        Columns to retain (and summarize/propagate) per stop.
+    traj_cols : dict, optional
+        Mapping for column names.
+    **kwargs
+        Passed along to the column-detection helper.
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per visit, including its ``location_cluster``.
+
+    Raises
+    ------
+    ValueError if multiple users found; use infostop_per_user instead.
+    """
+    passthrough_cols = [] if passthrough_cols is None else passthrough_cols
+    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
+    location_col = traj_cols_temp['location_cluster']
     labels = infostop_labels(
-        data, r1, r2, dur_min, dt_max, min_pts, traj_cols,
-        seed=seed, num_trials=num_trials, return_location_clusters=True, **kwargs,
-    ).reset_index(drop=True)
-    cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
-    location_col = cols['location_cluster']
-    # Summarization joins on index; normalize it to avoid duplicate-index expansion.
-    pings = data.reset_index(drop=True).copy()
-    pings[location_col] = pd.array(labels[location_col], dtype='Int64')
-    passthrough = list(passthrough_cols or [])
-    for column in (location_col, cols['user_id']):
-        if column in pings and column not in passthrough:
-            passthrough.append(column)
+        data=data,
+        r1=r1,
+        r2=r2,
+        dur_min=dur_min,
+        dt_max=dt_max,
+        min_pts=min_pts,
+        return_location_clusters=True,
+        seed=seed,
+        num_trials=num_trials,
+        traj_cols=traj_cols,
+        **kwargs
+    )
+    data = data.assign(**{location_col: labels[location_col].astype('Int64')})
+    for col in (location_col, traj_cols_temp['user_id']):
+        if col in data.columns and col not in passthrough_cols:
+            passthrough_cols = passthrough_cols + [col]
     return utils.summarize_stops(
-        pings, labels['cluster'], complete_output=complete_output,
-        passthrough_cols=passthrough, keep_col_names=keep_col_names,
-        traj_cols=traj_cols, **kwargs,
+        data,
+        labels['cluster'],
+        complete_output=complete_output,
+        passthrough_cols=passthrough_cols,
+        keep_col_names=keep_col_names,
+        traj_cols=traj_cols,
+        **kwargs,
     )
 
 
-__all__ = ['infostop_labels', 'infostop']
+def infostop_per_user(
+    data,
+    r1,
+    r2,
+    dur_min=5,
+    dt_max=60,
+    min_pts=2,
+    complete_output=False,
+    passthrough_cols=None,
+    keep_col_names=True,
+    traj_cols=None,
+    n_jobs=1,
+    print_progress=False,
+    **kwargs
+):
+    """
+    Run infostop on each user separately, then concatenate results.
+    Raises if 'user_id' not in traj_cols or missing from data.
+    """
+    passthrough_cols = [] if passthrough_cols is None else passthrough_cols
+    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
+    if 'user_id' not in traj_cols_temp or traj_cols_temp['user_id'] not in data.columns:
+        raise ValueError("infostop_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
+    uid = traj_cols_temp['user_id']
+
+    pt_cols = passthrough_cols if uid in passthrough_cols else passthrough_cols + [uid]
+
+    grouped = data.groupby(uid, sort=False)
+    results = utils.applyParallel(
+        grouped,
+        infostop,
+        {
+            "r1": r1,
+            "r2": r2,
+            "dur_min": dur_min,
+            "dt_max": dt_max,
+            "min_pts": min_pts,
+            "complete_output": complete_output,
+            "passthrough_cols": pt_cols,
+            "keep_col_names": keep_col_names,
+            "traj_cols": traj_cols,
+            **kwargs,
+        },
+        reset_index=True,
+        n_jobs=n_jobs,
+        print_progress=print_progress
+    )
+    return pd.concat(results, ignore_index=True)
+
+
+def infostop_labels_per_user(
+    data,
+    r1,
+    r2,
+    dur_min=5,
+    dt_max=60,
+    min_pts=2,
+    traj_cols=None,
+    return_location_clusters=False,
+    n_jobs=1,
+    print_progress=False,
+    **kwargs
+):
+    """
+    Run infostop_labels on each user separately and concatenate labels.
+
+    Raises if 'user_id' not in traj_cols or missing from data.
+    """
+    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
+    if 'user_id' not in traj_cols_temp or traj_cols_temp['user_id'] not in data.columns:
+        raise ValueError("infostop_labels_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
+    uid = traj_cols_temp['user_id']
+
+    grouped = data.groupby(uid, sort=False)
+    results = utils.applyParallel(
+        grouped,
+        infostop_labels,
+        {
+            "r1": r1,
+            "r2": r2,
+            "dur_min": dur_min,
+            "dt_max": dt_max,
+            "min_pts": min_pts,
+            "return_location_clusters": return_location_clusters,
+            "traj_cols": traj_cols,
+            **kwargs,
+        },
+        n_jobs=n_jobs,
+        print_progress=print_progress,
+    )
+    return pd.concat(results).reindex(data.index)
+
+
+__all__ = [
+    "infostop_labels",
+    "infostop",
+    "infostop_per_user",
+    "infostop_labels_per_user",
+]

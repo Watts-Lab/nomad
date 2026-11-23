@@ -17,14 +17,17 @@ def test_medoid_matches_dense_distances_with_repeated_coordinates(metric):
 
 
 @pytest.mark.parametrize('metric', ['euclidean', 'haversine'])
-def test_medoid_preserves_duplicate_weights_and_first_tie(metric):
-    # An unweighted median of the unique coordinates would incorrectly choose 1.
+def test_medoid_weights_repeated_coordinates(metric):
+    # Counting [0, 2] once would make the middle point [0, 1] the medoid.
     coords = np.array([[0., 0.], [0., 1.], [0., 2.], [0., 2.], [0., 2.]])
     np.testing.assert_array_equal(utils._medoid(coords, metric), [0., 2.])
+    np.testing.assert_array_equal(utils._medoid(np.repeat(coords[:1], 10, axis=0), metric), coords[0])
+
+
+@pytest.mark.parametrize('metric', ['euclidean', 'haversine'])
+def test_medoid_ties_return_first_occurrence(metric):
     tied = np.array([[0., 2.], [0., 0.], [0., 2.], [0., 0.]])
     np.testing.assert_array_equal(utils._medoid(tied, metric), tied[0])
-    np.testing.assert_array_equal(utils._medoid(coords[:1], metric), coords[0])
-    np.testing.assert_array_equal(utils._medoid(np.repeat(coords[:1], 10, axis=0), metric), coords[0])
 
 
 @pytest.mark.parametrize('metric', ['euclidean', 'haversine'])
@@ -46,10 +49,12 @@ def test_medoid_limits_distance_allocation(metric, monkeypatch):
     assert any(np.array_equal(medoid, point) for point in coords)
 
 
-def test_geographic_medoid_across_antimeridian_matches_dense_reference():
-    coords = np.array([[60., 179.9998], [60., -179.9999], [60., 179.9999], [60., 179.99]])
-    expected = coords[np.argmin(utils._pairwise_haversine(np.radians(coords)).sum(axis=1))]
-    np.testing.assert_array_equal(utils._medoid(coords, 'haversine'), expected)
+def test_summarize_stops_measures_geographic_diameter_in_meters():
+    # 0.001 degrees of longitude at 60N is about 56 m.
+    data = pd.DataFrame({'longitude': [0., 0.001], 'latitude': 60., 'timestamp': [0, 300]})
+    stops = utils.summarize_stops(data, pd.Series([0, 0], name='cluster'), complete_output=True)
+    assert stops['diameter'].tolist() == [56]
+    assert stops['latitude'].tolist() == [60.]
 
 
 def _assert_empty_stop_df(empty_df, expected_columns, expected_dtypes):

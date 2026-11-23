@@ -454,9 +454,9 @@ def _detect_locations(
     )
     location_col = parsed_cols['location_cluster']
     if data.empty:
-        location_ids = pd.Series(index=data.index, dtype='Int64', name=location_col)
+        location_clusters = pd.Series(index=data.index, dtype='Int64', name=location_col)
         if not return_locations:
-            return location_ids
+            return location_clusters
 
         locations = gpd.GeoDataFrame(
             {
@@ -467,7 +467,7 @@ def _detect_locations(
             },
             geometry='center',
         )
-        return location_ids, locations
+        return location_clusters, locations
 
     coords = data[
         [parsed_cols[coord_key1], parsed_cols[coord_key2]]
@@ -500,21 +500,21 @@ def _detect_locations(
 
     noise = pd.isna(labels)
     noise[~noise] = labels[~noise] == -1
-    location_ids = np.empty(len(labels), dtype='int64')
-    location_ids[~noise] = pd.factorize(labels[~noise], sort=False)[0]
-    next_location_id = location_ids[~noise].max() + 1 if (~noise).any() else 0
-    location_ids[noise] = np.arange(
-        next_location_id, next_location_id + noise.sum()
+    location_clusters = np.empty(len(labels), dtype='int64')
+    location_clusters[~noise] = pd.factorize(labels[~noise], sort=False)[0]
+    next_cluster = location_clusters[~noise].max() + 1 if (~noise).any() else 0
+    location_clusters[noise] = np.arange(
+        next_cluster, next_cluster + noise.sum()
     )
-    location_ids = pd.Series(location_ids, index=data.index, name=location_col)
+    location_clusters = pd.Series(location_clusters, index=data.index, name=location_col)
 
     if not return_locations:
-        return location_ids
+        return location_clusters
 
     locations = _summarize_locations(
-        data, location_ids, traj_cols=traj_cols, **kwargs
+        data, location_clusters, traj_cols=traj_cols, **kwargs
     )
-    return location_ids, locations
+    return location_clusters, locations
 
 
 def detect_locations(
@@ -544,7 +544,7 @@ def detect_locations(
         If True, also return a GeoDataFrame summarizing each location. Location
         summaries currently require projected x/y coordinates.
     method : {'dbscan', 'custom'}, default 'dbscan'
-        Location-detection method. For Infostop, use the stop detection module.
+        Location-detection method.
     algorithm : callable, optional
         Location-detection callable required when ``method='custom'``. It must
         return one label per input row.
@@ -610,19 +610,19 @@ def detect_locations(
     )
 
 
-def _summarize_locations(data, location_ids, traj_cols=None, **kwargs):
+def _summarize_locations(data, location_clusters, traj_cols=None, **kwargs):
     """Build center and extent geometries for assigned location IDs."""
     coord_key1, coord_key2, _ = loader._fallback_spatial_cols(
         data.columns, traj_cols, kwargs
     )
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
-    location_col = location_ids.name
+    location_col = location_clusters.name
     coords = data[
         [traj_cols[coord_key1], traj_cols[coord_key2]]
     ].to_numpy(dtype='float64')
     location_rows = pd.DataFrame(
         {
-            location_col: location_ids.to_numpy(),
+            location_col: location_clusters.to_numpy(),
             '_coord1': coords[:, 0],
             '_coord2': coords[:, 1],
         }
@@ -641,7 +641,7 @@ def _summarize_locations(data, location_ids, traj_cols=None, **kwargs):
 
     # The convex hull records the observed spatial extent of each location.
     point_locations = gpd.GeoDataFrame(
-        {location_col: location_ids.to_numpy()},
+        {location_col: location_clusters.to_numpy()},
         geometry=gpd.points_from_xy(coords[:, 0], coords[:, 1]),
     )
     extents = point_locations.dissolve(by=location_col).geometry.convex_hull

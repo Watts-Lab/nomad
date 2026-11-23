@@ -84,15 +84,14 @@ def _medoid(coords, metric='euclidean'):
     points, first, counts = np.unique(
         coords, axis=0, return_index=True, return_counts=True,
     )
+    # Keep candidates in input order so ties resolve to the first occurrence.
     order = np.argsort(first)
     points, first, counts = points[order], first[order], counts[order]
-    if len(points) == 1:
-        return coords[first[0]]
     if metric == 'haversine':
         points = np.radians(points)
 
-    # Keep distance blocks near 8 MiB (or one row for very large inputs).
-    block_size = max(1, (8 * 1024 * 1024) // (8 * len(points)))
+    # Blocks of about 2**20 float64 distances (8 MiB), at least one row each.
+    block_size = max(1, 2**20 // len(points))
     sum_distances = np.empty(len(points))
     for start in range(0, len(points), block_size):
         block = points[start:start + block_size]
@@ -102,8 +101,6 @@ def _medoid(coords, metric='euclidean'):
         else:
             distances = cdist(block, points, metric=metric)
         sum_distances[start:start + len(block)] = distances @ counts
-        del distances
-    # Candidates remain in input order, preserving the first occurrence on ties.
     return coords[first[np.argmin(sum_distances)]]
 
 def _haversine_distance(coord1, coord2, radians=True):
@@ -121,11 +118,8 @@ def _haversine_distance(coord1, coord2, radians=True):
     if not radians:
         coord1 = np.radians(coord1)
         coord2 = np.radians(coord2)
-        delta_lat = np.radians(coord2[0] - coord1[0])
-        delta_lon = np.radians(coord2[1] - coord1[1])
-    else:
-        delta_lat = coord2[0] - coord1[0]
-        delta_lon = coord2[1] - coord1[1]
+    delta_lat = coord2[0] - coord1[0]
+    delta_lon = coord2[1] - coord1[1]
     a = np.sin(delta_lat / 2.0) ** 2 + np.cos(coord1[0]) * np.cos(
         coord2[0]) * np.sin(delta_lon / 2.0) ** 2
     c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
@@ -292,7 +286,6 @@ def summarize_stop(
     t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = _fallback_st_cols(grouped_data.columns, traj_cols, kwargs)
     traj_cols = loader._parse_traj_cols(grouped_data.columns, traj_cols, kwargs, warn=False)
     metric = 'haversine' if use_lon_lat else 'euclidean'    
-    coords = grouped_data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
     start_t_key = 'start_datetime' if use_datetime else 'start_timestamp'
     end_t_key = 'end_datetime' if use_datetime else 'end_timestamp'
     
@@ -306,7 +299,8 @@ def summarize_stop(
         traj_cols[start_t_key] = traj_cols[t_key]
     
     # Compute stop statistics
-    # Spatial columns are lon/lat; the distance helpers expect lat/lon.
+    coords = grouped_data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
+    # haversine helpers expect [lat, lon]; output keeps [lon, lat]
     distance_coords = coords[:, ::-1] if use_lon_lat else coords
     medoid = _medoid(distance_coords, metric=metric)
     if use_lon_lat:
