@@ -103,3 +103,50 @@ def test_median_scan_does_not_rescan_failed_event():
     labels = detect_stops_labels(data, delta_roam=2, dur_min=5, dt_max=10, method="median")
 
     assert labels.tolist() == [-1, -1, 0, 0]
+
+
+@pytest.fixture
+def buildings():
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    return gpd.GeoDataFrame(
+        {"building_id": ["home", "work"]},
+        geometry=[box(-5, -5, 5, 5), box(95, -5, 105, 5)],
+        crs="EPSG:3857",
+    )
+
+
+def test_majority_maps_stop_clusters_to_polygons(buildings):
+    from nomad.visit_attribution.visit_attribution import point_in_polygon
+
+    # Cluster 0 has two stops in "home" and one outside; cluster 1 falls in no polygon.
+    stops = pd.DataFrame({
+        "x": [0., 1., 50., 300.],
+        "y": 0.,
+        "timestamp": np.arange(4) * 3600,
+        "duration": 10,
+        "location_cluster": [0, 0, 0, 1],
+    })
+    location = point_in_polygon(
+        stops, buildings, method="majority", cluster_label="location_cluster",
+        location_id="building_id", data_crs="EPSG:3857",
+    )
+
+    assert location.tolist()[:3] == ["home"] * 3
+    assert pd.isna(location.iloc[3])
+
+    with pytest.raises(ValueError, match="cluster_label"):
+        point_in_polygon(stops, buildings, method="majority", data_crs="EPSG:3857")
+
+
+def test_infostop_location_clusters_map_to_buildings(home_work_home, buildings):
+    from nomad.visit_attribution.visit_attribution import point_in_polygon
+
+    stops = infostop(home_work_home, r1=5, r2=10, complete_output=True)
+    location = point_in_polygon(
+        stops, buildings, method="majority", cluster_label="location_cluster",
+        location_id="building_id", data_crs="EPSG:3857",
+    )
+
+    assert location.tolist() == ["home", "work", "home"]
