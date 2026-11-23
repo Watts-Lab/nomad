@@ -302,14 +302,19 @@ def summarize_stop(
     coords = grouped_data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy()
     # haversine helpers expect [lat, lon]; output keeps [lon, lat]
     distance_coords = coords[:, ::-1] if use_lon_lat else coords
-    medoid = _medoid(distance_coords, metric=metric)
-    if use_lon_lat:
-        medoid = medoid[::-1]
+    if method == 'median':
+        center = np.median(coords, axis=0)
+    elif method == 'medoid':
+        center = _medoid(distance_coords, metric=metric)
+        if use_lon_lat:
+            center = center[::-1]
+    else:
+        raise ValueError(f"Unknown method: {method}")
     end_time = grouped_data[traj_cols[t_key]].iloc[-1]
 
     stop_attr = {} # the pandas series for the output
-    stop_attr[traj_cols[coord_key1]] = medoid[0]
-    stop_attr[traj_cols[coord_key2]] = medoid[1]
+    stop_attr[traj_cols[coord_key1]] = center[0]
+    stop_attr[traj_cols[coord_key2]] = center[1]
     stop_attr[traj_cols[start_t_key]]  = grouped_data[traj_cols[t_key]].iloc[0]
 
     if complete_output:
@@ -348,6 +353,7 @@ def summarize_stops(
     labels,
     complete_output=False,
     dur_min=None,
+    method='medoid',
     passthrough_cols=None,
     passthrough_agg=None,
     keep_col_names=True,
@@ -367,6 +373,8 @@ def summarize_stops(
         Whether to include extended stop statistics.
     dur_min : number, optional
         Minimum summarized stop duration to retain.
+    method : {'medoid', 'median'}, default 'medoid'
+        Stop location: the medoid ping, or the coordinate-wise median.
     passthrough_cols : list, optional
         Columns copied into each stop summary. The first value is used by default.
     passthrough_agg : dict, optional
@@ -405,6 +413,7 @@ def summarize_stops(
     stops = merged.groupby('cluster', as_index=False, sort=False).apply(
         lambda group: summarize_stop(
             group,
+            method=method,
             complete_output=complete_output,
             traj_cols=traj_cols,
             keep_col_names=keep_col_names,

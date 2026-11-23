@@ -142,7 +142,7 @@ This algorithm has the following parameters, which determine the size of the res
 Infostop
 ========
 
-Infostop is a sequential algorithm followed by a network clustering step. Consecutive pings that stay within a distance ``r1`` of their running median form stationary events. Event medians within ``r2`` of each other are linked into a network, and Infomap groups that network into recurring locations. Separate visits to the same place share a ``location_cluster``.
+Infostop is a sequential algorithm followed by a network clustering step. Consecutive pings that stay within a distance ``r1`` of their running median form stationary events (``detect_stops_labels(method='median')``). Event medians within ``r2`` of each other are linked into a network, and Infomap groups that network into recurring locations (``detect_locations(method='infomap')``). Separate visits to the same place share a ``location_cluster``.
 
 This algorithm has the following parameters:
 
@@ -150,9 +150,8 @@ This algorithm has the following parameters:
 * ``r2``: Maximum distance in meters between event medians that can belong to the same location.
 * ``dur_min``: Minimum duration of a stationary event in minutes.
 * ``dt_max``: Maximum time gap permitted between consecutive pings in a visit in minutes.
-* ``min_pts``: Minimum number of pings in a stationary event.
 
-Infomap is an optional dependency: ``pip install "nomad[infomap]"`` (Python 3.11 or newer).
+Two details differ from the original implementation: longitude medians are not wrapped at the antimeridian, and each user gets a separate network instead of one network pooled across users.
 
 **Source:** Aslak, U., & Alessandretti, L. (2020). Infostop: Scalable stop-location detection in multi-user mobility data. *arXiv:2003.14370*.
 

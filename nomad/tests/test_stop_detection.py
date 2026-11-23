@@ -46,11 +46,6 @@ from nomad.stop_detection.preprocessing import _find_neighbors
 from nomad.stop_detection.utils import has_overlapping_stops
 from pandas.api.types import is_integer_dtype
 import numpy as np
-import importlib.util
-
-needs_infomap = pytest.mark.skipif(
-    importlib.util.find_spec("infomap") is None, reason="requires nomad[infomap]"
-)
 
 @pytest.fixture
 def stop_test_params():
@@ -84,6 +79,11 @@ def shared_algo_registry():
             "stop_fn": detect_stops,
             "extra_kwargs": {"method": "centroid"},
         },
+        "sequential-median": {
+            "label_fn": detect_stops_labels,
+            "stop_fn": detect_stops,
+            "extra_kwargs": {"method": "median"},
+        },
     }
 
 
@@ -102,6 +102,11 @@ def coordinate_label_case_registry(stop_test_params):
             "fn": detect_stops_labels,
             "single_kwargs": {"dt_max": dt_max, "delta_roam": dist_thresh, "dur_min": 5, "method": "centroid"},
             "two_stop_kwargs": {"dt_max": 5, "delta_roam": dist_thresh, "dur_min": 5, "method": "centroid"},
+        },
+        "sequential-median": {
+            "fn": detect_stops_labels,
+            "single_kwargs": {"dt_max": dt_max, "delta_roam": dist_thresh, "dur_min": 5, "method": "median"},
+            "two_stop_kwargs": {"dt_max": 5, "delta_roam": dist_thresh, "dur_min": 5, "method": "median"},
         },
         "lachesis": {
             "fn": lachesis_labels,
@@ -560,7 +565,7 @@ def _assert_two_stops(labels):
         pytest.param("tadbscan", id="tadbscan"),
         pytest.param("seqscan", id="seqscan"),
         pytest.param("hdbscan", id="hdbscan"),
-        pytest.param("infostop", id="infostop", marks=needs_infomap),
+        pytest.param("infostop", id="infostop"),
     ],
 )
 @pytest.mark.parametrize(
@@ -599,12 +604,13 @@ def test_stop_output_is_valid_stop_df(base_df, stop_df_schema_case_registry, sto
     [
         pytest.param("sequential-sliding", id="sequential-sliding"),
         pytest.param("sequential-centroid", id="sequential-centroid"),
+        pytest.param("sequential-median", id="sequential-median"),
         pytest.param("lachesis", id="lachesis"),
         pytest.param("dbstop", id="dbstop"),
         pytest.param("tadbscan", id="tadbscan"),
         pytest.param("seqscan", id="seqscan"),
         pytest.param("hdbscan", id="hdbscan"),
-        pytest.param("infostop", id="infostop", marks=needs_infomap),
+        pytest.param("infostop", id="infostop"),
     ],
 )
 def test_coordinate_label_algorithms_single_stop_fixture(
@@ -627,12 +633,13 @@ def test_coordinate_label_algorithms_single_stop_fixture(
     [
         pytest.param("sequential-sliding", id="sequential-sliding"),
         pytest.param("sequential-centroid", id="sequential-centroid"),
+        pytest.param("sequential-median", id="sequential-median"),
         pytest.param("lachesis", id="lachesis"),
         pytest.param("dbstop", id="dbstop"),
         pytest.param("tadbscan", id="tadbscan"),
         pytest.param("seqscan", id="seqscan"),
         pytest.param("hdbscan", id="hdbscan"),
-        pytest.param("infostop", id="infostop", marks=needs_infomap),
+        pytest.param("infostop", id="infostop"),
     ],
 )
 def test_coordinate_label_algorithms_two_stop_fixture(
@@ -675,6 +682,7 @@ def test_hdbscan_respects_explicit_xy_column_names(two_stop_traj):
         pytest.param("lachesis", id="lachesis"),
         pytest.param("sequential-sliding", id="sequential-sliding"),
         pytest.param("sequential-centroid", id="sequential-centroid"),
+        pytest.param("sequential-median", id="sequential-median"),
     ],
 )
 def test_labels_single_stop_shared(simple_traj, stop_test_params, shared_algo_registry, algo_name):
@@ -697,6 +705,7 @@ def test_labels_single_stop_shared(simple_traj, stop_test_params, shared_algo_re
         pytest.param("lachesis", id="lachesis"),
         pytest.param("sequential-sliding", id="sequential-sliding"),
         pytest.param("sequential-centroid", id="sequential-centroid"),
+        pytest.param("sequential-median", id="sequential-median"),
     ],
 )
 def test_labels_too_sparse_shared(simple_traj, stop_test_params, shared_algo_registry, algo_name):
@@ -718,6 +727,7 @@ def test_labels_too_sparse_shared(simple_traj, stop_test_params, shared_algo_reg
         pytest.param("lachesis", id="lachesis"),
         pytest.param("sequential-sliding", id="sequential-sliding"),
         pytest.param("sequential-centroid", id="sequential-centroid"),
+        pytest.param("sequential-median", id="sequential-median"),
     ],
 )
 def test_labels_insufficient_duration_shared(simple_traj, stop_test_params, shared_algo_registry, algo_name):
@@ -739,6 +749,7 @@ def test_labels_insufficient_duration_shared(simple_traj, stop_test_params, shar
         pytest.param("lachesis", id="lachesis"),
         pytest.param("sequential-sliding", id="sequential-sliding"),
         pytest.param("sequential-centroid", id="sequential-centroid"),
+        pytest.param("sequential-median", id="sequential-median"),
     ],
 )
 def test_number_labels_matches_stop_count_shared(single_user_df, shared_algo_registry, algo_name):
@@ -822,7 +833,7 @@ def test_lachesis_measures_lon_lat_distances_in_meters():
     assert lachesis_labels(data, dt_max=60, delta_roam=50).tolist() == [0] * 10
 
 
-@pytest.mark.parametrize("method", ["sliding", "centroid"])
+@pytest.mark.parametrize("method", ["sliding", "centroid", "median"])
 def test_detect_stops_measures_lon_lat_distances_in_meters(method):
     # Alternating pings 39 m apart form a stop; 1 km apart they do not.
     near, far = [pd.DataFrame({
@@ -903,7 +914,7 @@ def test_sequential_ground_truth(agent_traj_ground_truth):
         pytest.param("hdbscan", id="hdbscan"),
         pytest.param("lachesis", id="lachesis"),
         pytest.param("sequential", id="sequential"),
-        pytest.param("infostop", id="infostop", marks=needs_infomap),
+        pytest.param("infostop", id="infostop"),
     ],
 )
 @pytest.mark.parametrize(
@@ -939,7 +950,7 @@ def test_per_user_wrapper_outputs_valid_stop_df(per_user_test_data, per_user_wra
         pytest.param("hdbscan", id="hdbscan"),
         pytest.param("lachesis", id="lachesis"),
         pytest.param("sequential", id="sequential"),
-        pytest.param("infostop", id="infostop", marks=needs_infomap),
+        pytest.param("infostop", id="infostop"),
     ],
 )
 @pytest.mark.parametrize(
@@ -1023,7 +1034,7 @@ def test_sequential_temporal_gap_breaks_stop(simple_traj, stop_test_params):
         pytest.param("tadbscan", id="tadbscan"),
         pytest.param("seqscan", id="seqscan"),
         pytest.param("hdbscan", id="hdbscan"),
-        pytest.param("infostop", id="infostop", marks=needs_infomap),
+        pytest.param("infostop", id="infostop"),
     ],
 )
 def test_stop_detection_latlon_vs_xy_consistency(base_df, latlon_xy_consistency_case_registry, algo_name):
@@ -1109,7 +1120,7 @@ def test_density_label_algorithms_latlon_vs_xy_consistency(base_df, latlon_xy_la
         pytest.param("hdbscan", False, id="hdbscan-series"),
         pytest.param("hdbscan", True, id="hdbscan-cores"),
         pytest.param("grid-based", False, id="grid-based-series"),
-        pytest.param("infostop", False, id="infostop-series", marks=needs_infomap),
+        pytest.param("infostop", False, id="infostop-series"),
     ],
 )
 def test_label_concat_with_empty_input_preserves_schema(
@@ -1595,7 +1606,7 @@ def empty_xy_case_registry():
         pytest.param("tadbscan", id="tadbscan"),
         pytest.param("dbstop", id="dbstop"),
         pytest.param("seqscan", id="seqscan"),
-        pytest.param("infostop", id="infostop", marks=needs_infomap),
+        pytest.param("infostop", id="infostop"),
     ],
 )
 def test_empty_dataframe_complete_output(empty_traj, empty_complete_case_registry, algo_name):
@@ -1617,7 +1628,7 @@ def test_empty_dataframe_complete_output(empty_traj, empty_complete_case_registr
         pytest.param("tadbscan", id="tadbscan"),
         pytest.param("dbstop", id="dbstop"),
         pytest.param("seqscan", id="seqscan"),
-        pytest.param("infostop", id="infostop", marks=needs_infomap),
+        pytest.param("infostop", id="infostop"),
     ],
 )
 def test_empty_dataframe_xy_output(empty_traj_xy, empty_xy_case_registry, algo_name):

@@ -49,6 +49,14 @@ def test_medoid_limits_distance_allocation(metric, monkeypatch):
     assert any(np.array_equal(medoid, point) for point in coords)
 
 
+def test_summarize_stops_median_location():
+    data = pd.DataFrame({"x": [0.0, 1.0, 10.0], "y": [0.0, 4.0, 2.0], "timestamp": [0, 60, 120]})
+
+    stops = utils.summarize_stops(data, pd.Series([0, 0, 0], name="cluster"), method="median")
+
+    assert stops[["x", "y"]].iloc[0].tolist() == [1.0, 2.0]
+
+
 def test_summarize_stops_measures_geographic_diameter_in_meters():
     # 0.001 degrees of longitude at 60N is about 56 m.
     data = pd.DataFrame({'longitude': [0., 0.001], 'latitude': 60., 'timestamp': [0, 300]})

@@ -28,9 +28,6 @@
 # * `r2`: Maximum distance between two event medians in the same location in meters.
 # * `dur_min`: Minimum duration for a stationary event in minutes.
 # * `dt_max`: Maximum time gap permitted between consecutive pings in a visit in minutes.
-# * `min_pts`: Minimum number of pings in a stationary event.
-#
-# Infomap is an optional dependency, which can be installed with `pip install "nomad[infomap]"`.
 
 # %%
 # %matplotlib inline

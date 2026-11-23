@@ -162,17 +162,6 @@ def test_lachesis_dbscan_requires_eps(interrupted_destination_trajectory):
         )
 
 
-def test_lachesis_infomap_reports_unimplemented(
-    interrupted_destination_trajectory,
-):
-    with pytest.raises(NotImplementedError, match='infomap'):
-        lachesis(
-            interrupted_destination_trajectory,
-            postprocessing='infomap',
-            **lachesis_options(),
-        )
-
-
 def test_lachesis_rejects_unknown_postprocessing(
     interrupted_destination_trajectory,
 ):

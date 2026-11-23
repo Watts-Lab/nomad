@@ -1,7 +1,10 @@
+from types import SimpleNamespace
+
 import geopandas as gpd
 import pandas as pd
 import pytest
 
+import nomad.visit_attribution.visit_attribution as visit_attribution
 from nomad.visit_attribution.visit_attribution import detect_locations
 
 
@@ -218,3 +221,44 @@ def test_detect_locations_does_not_mutate_input(cartesian_points):
     detect_locations(cartesian_points, epsilon=2)
 
     pd.testing.assert_frame_equal(cartesian_points, original)
+
+
+def test_infomap_locations_link_rows_within_epsilon():
+    points = pd.DataFrame({"x": [0.0, 1.0, 2.0, 50.0, 51.0, 200.0], "y": 0.0})
+
+    location_clusters = detect_locations(points, epsilon=1.5, method="infomap")
+
+    assert location_clusters.tolist() == [0, 0, 0, 1, 1, 2]
+
+
+def test_infomap_isolated_rows_keep_separate_locations():
+    # Infomap could put a flowless isolated node in any module, so isolated
+    # coordinates must not be passed to it. Rows sharing one still share a location.
+    points = pd.DataFrame({"x": [0.0, 0.0, 100.0, 101.0, 102.0, 500.0], "y": 0.0})
+
+    location_clusters = detect_locations(points, epsilon=5, method="infomap")
+
+    assert location_clusters.tolist() == [0, 0, 1, 1, 1, 2]
+
+
+def test_infomap_deduplicates_coordinates_and_weights_by_count(monkeypatch):
+    links = []
+    network = SimpleNamespace(add_links=lambda edges: links.extend(map(tuple, edges)))
+    result = SimpleNamespace(modules=lambda: {0: 1, 1: 1})
+    monkeypatch.setattr(visit_attribution.infomap, "Network", lambda: network)
+    monkeypatch.setattr(visit_attribution.infomap, "run", lambda network, **options: result)
+    points = pd.DataFrame({"x": [0.0, 0.0, 1.0, 20.0], "y": 0.0})
+
+    location_clusters = detect_locations(points, epsilon=2, method="infomap")
+
+    # One edge between the two unique nearby points, weighted by the larger count.
+    assert links == [(0.0, 1.0, 2.0)]
+    assert location_clusters.tolist() == [0, 0, 0, 1]
+
+
+def test_infomap_epsilon_is_meters_for_lon_lat():
+    # 0.001 degrees of longitude at 60N is about 56 m.
+    points = pd.DataFrame({"longitude": [0.0, 0.001], "latitude": 60.0})
+
+    assert detect_locations(points, epsilon=60, method="infomap").nunique() == 1
+    assert detect_locations(points, epsilon=50, method="infomap").nunique() == 2
