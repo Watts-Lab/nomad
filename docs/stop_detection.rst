@@ -136,3 +136,28 @@ This algorithm has the following parameters, which determine the size of the res
    :width: 80%
 
    Lachesis stops. See the :doc:`full example <source/lachesis_demo>`.
+
+.. _infostop:
+
+Infostop
+========
+
+Infostop is a sequential algorithm followed by a network clustering step. Consecutive pings that stay within a distance ``r1`` of their running median form stationary events (``detect_stops_labels(method='median')``). Event medians within ``r2`` of each other are linked into a network, and Infomap groups that network into recurring locations (``detect_locations(method='infomap')``). Separate visits to the same place share a ``location_cluster``.
+
+This algorithm has the following parameters:
+
+* ``r1``: Maximum distance in meters from a ping to the median of its stationary event.
+* ``r2``: Maximum distance in meters between event medians that can belong to the same location.
+* ``dur_min``: Minimum duration of a stationary event in minutes.
+* ``dt_max``: Maximum time gap permitted between consecutive pings in a visit in minutes.
+
+Two details differ from the original implementation: longitude medians are not wrapped at the antimeridian, and each user gets a separate network instead of one network pooled across users.
+
+**Source:** Aslak, U., & Alessandretti, L. (2020). Infostop: Scalable stop-location detection in multi-user mobility data. *arXiv:2003.14370*.
+
+.. figure:: _static/stop_detection/infostop_demo.png
+   :target: source/infostop_demo.html
+   :align: center
+   :width: 80%
+
+   Infostop stops, colored by location cluster. See the :doc:`full example <source/infostop_demo>`.

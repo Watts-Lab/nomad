@@ -1,6 +1,69 @@
 import pandas as pd
+import numpy as np
 import pytest
 import nomad.stop_detection.utils as utils
+
+
+@pytest.mark.parametrize('metric', ['euclidean', 'haversine'])
+def test_medoid_matches_dense_distances_with_repeated_coordinates(metric):
+    rng = np.random.default_rng(71)
+    points = rng.normal(scale=0.01, size=(25, 2)) + [40., -73.]
+    coords = np.repeat(points, rng.integers(1, 5, len(points)), axis=0)
+    rng.shuffle(coords)
+    distances = (utils._pairwise_haversine(np.radians(coords))
+                 if metric == 'haversine' else utils.cdist(coords, coords))
+    expected = coords[np.argmin(distances.sum(axis=1))]
+    np.testing.assert_array_equal(utils._medoid(coords, metric), expected)
+
+
+@pytest.mark.parametrize('metric', ['euclidean', 'haversine'])
+def test_medoid_weights_repeated_coordinates(metric):
+    # Counting [0, 2] once would make the middle point [0, 1] the medoid.
+    coords = np.array([[0., 0.], [0., 1.], [0., 2.], [0., 2.], [0., 2.]])
+    np.testing.assert_array_equal(utils._medoid(coords, metric), [0., 2.])
+    np.testing.assert_array_equal(utils._medoid(np.repeat(coords[:1], 10, axis=0), metric), coords[0])
+
+
+@pytest.mark.parametrize('metric', ['euclidean', 'haversine'])
+def test_medoid_ties_return_first_occurrence(metric):
+    tied = np.array([[0., 2.], [0., 0.], [0., 2.], [0., 0.]])
+    np.testing.assert_array_equal(utils._medoid(tied, metric), tied[0])
+
+
+@pytest.mark.parametrize('metric', ['euclidean', 'haversine'])
+def test_medoid_limits_distance_allocation(metric, monkeypatch):
+    coords = np.column_stack((np.linspace(40., 40.1, 1200), np.full(1200, -73.)))
+    distance_function = 'haversine_distances' if metric == 'haversine' else 'cdist'
+    original = getattr(utils, distance_function)
+    shapes = []
+
+    def bounded_distances(left, right, **kwargs):
+        shapes.append((len(left), len(right)))
+        assert len(left) * len(right) * 8 <= 8 * 1024 * 1024
+        return original(left, right, **kwargs)
+
+    monkeypatch.setattr(utils, distance_function, bounded_distances)
+    medoid = utils._medoid(coords, metric)
+    assert len(shapes) > 1
+    assert sum(rows for rows, _ in shapes) == len(coords)
+    assert any(np.array_equal(medoid, point) for point in coords)
+
+
+def test_summarize_stops_median_location():
+    data = pd.DataFrame({"x": [0.0, 1.0, 10.0], "y": [0.0, 4.0, 2.0], "timestamp": [0, 60, 120]})
+
+    stops = utils.summarize_stops(data, pd.Series([0, 0, 0], name="cluster"), method="median")
+
+    assert stops[["x", "y"]].iloc[0].tolist() == [1.0, 2.0]
+
+
+def test_summarize_stops_measures_geographic_diameter_in_meters():
+    # 0.001 degrees of longitude at 60N is about 56 m.
+    data = pd.DataFrame({'longitude': [0., 0.001], 'latitude': 60., 'timestamp': [0, 300]})
+    stops = utils.summarize_stops(data, pd.Series([0, 0], name='cluster'), complete_output=True)
+    assert stops['diameter'].tolist() == [56]
+    assert stops['latitude'].tolist() == [60.]
+
 
 def _assert_empty_stop_df(empty_df, expected_columns, expected_dtypes):
     assert empty_df.empty

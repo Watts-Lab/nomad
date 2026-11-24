@@ -15,7 +15,7 @@ setup(
     long_description_content_type='text/markdown',
 
     packages=find_packages(include=['nomad', 'nomad.*']),
-    python_requires='>=3.9',
+    python_requires='>=3.11',
 
     install_requires=[
         'pandas',
@@ -34,7 +34,8 @@ setup(
         'pyarrow',
         's3fs',
         'h3',
-        'pydeck'
+        'pydeck',
+        'infomap>=2.16,<3'
     ],
 
     extras_require={

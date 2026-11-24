@@ -53,7 +53,7 @@ def test_lachesis_dbscan_clusters_and_merges_interrupted_visits(
     assert result['duration'].tolist() == [40]
     assert result['x'].tolist() == [0.0]
     assert result['y'].tolist() == [0.0]
-    assert 'location_id' not in result.columns
+    assert 'location_cluster' not in result.columns
 
 
 def test_lachesis_labels_applies_postprocessing(
@@ -101,7 +101,7 @@ def test_lachesis_per_user_postprocesses_each_user_separately(
 
     assert result['user_id'].tolist() == ['a', 'b']
     assert result['cluster'].tolist() == [0, 0]
-    assert 'location_id' not in result.columns
+    assert 'location_cluster' not in result.columns
 
 
 def test_lachesis_dbscan_supports_custom_columns():
@@ -116,7 +116,7 @@ def test_lachesis_dbscan_supports_custom_columns():
         'timestamp': 'seconds',
         'x': 'east',
         'y': 'north',
-        'location_id': 'destination_id',
+        'location_cluster': 'destination_id',
     }
 
     result = lachesis(
@@ -150,7 +150,7 @@ def test_lachesis_dbscan_handles_no_detected_stops():
     )
 
     assert result.empty
-    assert 'location_id' not in result.columns
+    assert 'location_cluster' not in result.columns
 
 
 def test_lachesis_dbscan_requires_eps(interrupted_destination_trajectory):
@@ -158,17 +158,6 @@ def test_lachesis_dbscan_requires_eps(interrupted_destination_trajectory):
         lachesis(
             interrupted_destination_trajectory,
             postprocessing='dbscan',
-            **lachesis_options(),
-        )
-
-
-def test_lachesis_infomap_reports_unimplemented(
-    interrupted_destination_trajectory,
-):
-    with pytest.raises(NotImplementedError, match='infomap'):
-        lachesis(
-            interrupted_destination_trajectory,
-            postprocessing='infomap',
             **lachesis_options(),
         )
 

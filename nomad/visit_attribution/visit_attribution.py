@@ -2,8 +2,11 @@ import geopandas as gpd
 import warnings
 import pandas as pd
 import pyproj
+import infomap
 import numpy as np
+from scipy import sparse
 from sklearn.cluster import DBSCAN
+from sklearn.neighbors import radius_neighbors_graph
 import nomad.io.base as loader
 from nomad.constants import EARTH_RADIUS_METERS
 
@@ -430,11 +433,33 @@ def night_stops(stop_table, user='user', dawn_hour = 6, dusk_hour = 19, min_dwel
     return df_clipped.groupby(['id', 'location'], group_keys=False).apply(count_nights(dawn_hour, dusk_hour, min_dwell)).reset_index(drop=True)
 
 
+def _infomap_labels(coords, radius, metric, seed=123, num_trials=50):
+    """Infostop's location clustering: Infomap on a radius graph of coordinates."""
+    # Nodes: unique coordinates; counts = how many rows share each one.
+    points, inverse, counts = np.unique(coords, axis=0, return_inverse=True, return_counts=True)
+    # Edges: one per pair of nodes within `radius`. Weight: the larger count of
+    # the pair, so often-visited places pull in their neighbours.
+    edges = sparse.triu(radius_neighbors_graph(points, radius, metric=metric), k=1).tocoo()
+    weights = np.maximum(counts[edges.row], counts[edges.col])
+    # Isolated nodes stay out of the network, since Infomap could put a node
+    # without flow in any module, and keep their node id as their location.
+    # Linked nodes take their module id, offset so the two cannot collide.
+    labels = np.arange(len(points))
+    if edges.nnz:  # Infomap cannot run on an empty network
+        network = infomap.Network()
+        network.add_links(np.column_stack([edges.row, edges.col, weights]).astype(float))
+        result = infomap.run(network, directed=False, two_level=True, seed=seed, num_trials=num_trials)
+        for node, module in result.modules().items():
+            labels[node] = len(points) + module
+    return labels[inverse.ravel()]
+
+
 def _detect_locations(
     data,
     epsilon=100,
     min_pts=1,
     return_locations=False,
+    method='dbscan',
     algorithm=None,
     algorithm_kwargs=None,
     traj_cols=None,
@@ -452,11 +477,11 @@ def _detect_locations(
     parsed_cols = loader._parse_traj_cols(
         data.columns, traj_cols, kwargs, warn=False
     )
-    location_col = parsed_cols['location_id']
+    location_col = parsed_cols['location_cluster']
     if data.empty:
-        location_ids = pd.Series(index=data.index, dtype='Int64', name=location_col)
+        location_clusters = pd.Series(index=data.index, dtype='Int64', name=location_col)
         if not return_locations:
-            return location_ids
+            return location_clusters
 
         locations = gpd.GeoDataFrame(
             {
@@ -467,13 +492,21 @@ def _detect_locations(
             },
             geometry='center',
         )
-        return location_ids, locations
+        return location_clusters, locations
 
     coords = data[
         [parsed_cols[coord_key1], parsed_cols[coord_key2]]
     ].to_numpy(dtype='float64')
 
-    if algorithm is None:
+    if method == 'custom':
+        options = dict(algorithm_kwargs or {})
+        options['traj_cols'] = parsed_cols
+        labels = np.asarray(algorithm(data=data, **options))
+        if labels.ndim != 1 or len(labels) != len(data):
+            raise ValueError(
+                "Custom location-detection algorithms must return one label per row"
+            )
+    else:
         if use_lon_lat:
             cluster_coords = np.radians(coords[:, [1, 0]])
             cluster_epsilon = epsilon / EARTH_RADIUS_METERS
@@ -483,53 +516,35 @@ def _detect_locations(
             cluster_epsilon = epsilon
             metric = 'euclidean'
 
-        labels = DBSCAN(
-            eps=cluster_epsilon,
-            min_samples=min_pts,
-            metric=metric,
-            algorithm='ball_tree',
-        ).fit_predict(cluster_coords)
-    else:
-        options = dict(algorithm_kwargs or {})
-        options['traj_cols'] = parsed_cols
-        labels = np.asarray(algorithm(data=data, **options))
-        if labels.ndim != 1 or len(labels) != len(data):
-            raise ValueError(
-                "Custom location-detection algorithms must return one label per row"
+        if method == 'infomap':
+            labels = _infomap_labels(
+                cluster_coords, cluster_epsilon, metric, **(algorithm_kwargs or {})
             )
+        else:
+            labels = DBSCAN(
+                eps=cluster_epsilon,
+                min_samples=min_pts,
+                metric=metric,
+                algorithm='ball_tree',
+            ).fit_predict(cluster_coords)
 
     noise = pd.isna(labels)
     noise[~noise] = labels[~noise] == -1
-    location_ids = np.empty(len(labels), dtype='int64')
-    location_ids[~noise] = pd.factorize(labels[~noise], sort=False)[0]
-    next_location_id = location_ids[~noise].max() + 1 if (~noise).any() else 0
-    location_ids[noise] = np.arange(
-        next_location_id, next_location_id + noise.sum()
+    location_clusters = np.empty(len(labels), dtype='int64')
+    location_clusters[~noise] = pd.factorize(labels[~noise], sort=False)[0]
+    next_cluster = location_clusters[~noise].max() + 1 if (~noise).any() else 0
+    location_clusters[noise] = np.arange(
+        next_cluster, next_cluster + noise.sum()
     )
-    location_ids = pd.Series(location_ids, index=data.index, name=location_col)
+    location_clusters = pd.Series(location_clusters, index=data.index, name=location_col)
 
     if not return_locations:
-        return location_ids
+        return location_clusters
 
     locations = _summarize_locations(
-        data, location_ids, traj_cols=traj_cols, **kwargs
+        data, location_clusters, traj_cols=traj_cols, **kwargs
     )
-    return location_ids, locations
-
-
-def _detect_locations_multi_user(data, method, traj_cols):
-    """Validate planned multi-user methods before reporting them unimplemented."""
-    if method == 'infomap':
-        loader._has_user_cols(data.columns, traj_cols)
-        loader._has_spatial_cols(data.columns, traj_cols)
-        loader._has_time_cols(data.columns, traj_cols)
-        if not (
-            loader._has_end_cols(data.columns, traj_cols)
-            or loader._has_duration_cols(data.columns, traj_cols)
-        ):
-            raise ValueError("Infomap location detection requires a stop table")
-        raise NotImplementedError("Infomap location detection is not implemented")
-    raise NotImplementedError("Multi-user location detection is not implemented")
+    return location_clusters, locations
 
 
 def detect_locations(
@@ -551,23 +566,25 @@ def detect_locations(
     data : pd.DataFrame
         Coordinate points or stop rows with x/y or longitude/latitude columns.
     epsilon : float, default 100
-        Maximum distance between rows in the same location. Units match projected
+        Maximum distance between neighboring rows. Units match projected
         coordinates or are meters for longitude/latitude coordinates.
     min_pts : int, default 1
         Minimum number of stops required to form a location
     return_locations : bool, default False
         If True, also return a GeoDataFrame summarizing each location. Location
         summaries currently require projected x/y coordinates.
-    method : {'dbscan', 'custom', 'infomap'}, default 'dbscan'
-        Location-detection method. Infomap is reserved for future multi-user
-        stop-table support and currently raises ``NotImplementedError``.
+    method : {'dbscan', 'infomap', 'custom'}, default 'dbscan'
+        Location-detection method. ``'infomap'`` is Infostop's clustering:
+        rows within ``epsilon`` are linked, and Infomap splits that network
+        into locations; ``min_pts`` is ignored.
     algorithm : callable, optional
         Location-detection callable required when ``method='custom'``. It must
         return one label per input row.
     algorithm_kwargs : dict, optional
-        Arguments for a custom location-detection callable.
+        Arguments for a custom location-detection callable, or ``seed`` and
+        ``num_trials`` for ``method='infomap'``.
     traj_cols : dict, optional
-        Column name mappings for coordinates and location_id.
+        Column name mappings for coordinates and location_cluster.
     **kwargs
         Additional arguments passed to column detection
 
@@ -579,6 +596,7 @@ def detect_locations(
 
     Notes
     -----
+    Results are named location_cluster (customizable through traj_cols).
     Each noise row is retained as its own nonnegative location.
     """
     if isinstance(data, gpd.GeoDataFrame):
@@ -590,34 +608,32 @@ def detect_locations(
         data.columns, traj_cols, kwargs, warn=False
     )
     user_col = parsed_cols['user_id']
-    if method == 'infomap' or (
+    if (
         user_col in data.columns
         and data[user_col].nunique(dropna=False) > 1
     ):
-        return _detect_locations_multi_user(data, method, parsed_cols)
+        raise NotImplementedError("Multi-user location detection is not implemented")
 
-    if method == 'dbscan':
-        if algorithm is not None or algorithm_kwargs is not None:
-            raise ValueError(
-                "algorithm and algorithm_kwargs require method='custom'"
-            )
-        return _detect_locations(
-            data,
-            epsilon=epsilon,
-            min_pts=min_pts,
-            return_locations=return_locations,
-            traj_cols=traj_cols,
-            **kwargs,
-        )
-    if method != 'custom':
+    if method not in ('dbscan', 'infomap', 'custom'):
         raise NotImplementedError(
             f"detect_locations method '{method}' is not implemented"
         )
-    if algorithm is None:
+    if method == 'custom' and algorithm is None:
         raise ValueError("algorithm is required when method='custom'")
+    # Infomap takes its options through algorithm_kwargs.
+    if method != 'custom' and (
+        algorithm is not None
+        or (method == 'dbscan' and algorithm_kwargs is not None)
+    ):
+        raise ValueError(
+            "algorithm and algorithm_kwargs require method='custom'"
+        )
     return _detect_locations(
         data,
+        epsilon=epsilon,
+        min_pts=min_pts,
         return_locations=return_locations,
+        method=method,
         algorithm=algorithm,
         algorithm_kwargs=algorithm_kwargs,
         traj_cols=traj_cols,
@@ -625,19 +641,19 @@ def detect_locations(
     )
 
 
-def _summarize_locations(data, location_ids, traj_cols=None, **kwargs):
+def _summarize_locations(data, location_clusters, traj_cols=None, **kwargs):
     """Build center and extent geometries for assigned location IDs."""
     coord_key1, coord_key2, _ = loader._fallback_spatial_cols(
         data.columns, traj_cols, kwargs
     )
     traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, warn=False)
-    location_col = location_ids.name
+    location_col = location_clusters.name
     coords = data[
         [traj_cols[coord_key1], traj_cols[coord_key2]]
     ].to_numpy(dtype='float64')
     location_rows = pd.DataFrame(
         {
-            location_col: location_ids.to_numpy(),
+            location_col: location_clusters.to_numpy(),
             '_coord1': coords[:, 0],
             '_coord2': coords[:, 1],
         }
@@ -656,7 +672,7 @@ def _summarize_locations(data, location_ids, traj_cols=None, **kwargs):
 
     # The convex hull records the observed spatial extent of each location.
     point_locations = gpd.GeoDataFrame(
-        {location_col: location_ids.to_numpy()},
+        {location_col: location_clusters.to_numpy()},
         geometry=gpd.points_from_xy(coords[:, 0], coords[:, 1]),
     )
     extents = point_locations.dissolve(by=location_col).geometry.convex_hull
