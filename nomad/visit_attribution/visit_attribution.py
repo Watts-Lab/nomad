@@ -25,15 +25,17 @@ def point_in_polygon(data, poi_table, method='centroid', data_crs=None, max_dist
     poi_table : gpd.GeoDataFrame
         Polygons to match against, with CRS set and optional ID column.
     method : {'centroid', 'majority'}, default 'centroid'
-        ‘centroid’ uses each cluster’s mean point; ‘majority’ picks the polygon 
-        most often visited within each cluster (only for ping data).
+        ‘centroid’ uses each cluster’s mean point; ‘majority’ picks the polygon
+        most often visited within each cluster. For stop tables, ‘majority’
+        requires `cluster_label` (e.g. 'location_cluster') and votes over stops.
     data_crs : str or pyproj.CRS, optional
         CRS for `data` when it is a plain DataFrame; ignored if `data` is a GeoDataFrame.
     max_distance : float, default 0
         Search radius for nearest‐neighbor fall-back; zero triggers strict 
         point-in-polygon matching.
     cluster_label : str, optional
-        Column name holding cluster IDs in ping data; inferred from `data` if absent.
+        Column name holding cluster IDs. Inferred for ping data if absent; required
+        for ``method='majority'`` on stop tables.
     location_id : str, optional
         Column in `poi_table` containing the output ID; uses the GeoDataFrame index if None.
     recompute_location : bool, default True
@@ -62,24 +64,24 @@ def point_in_polygon(data, poi_table, method='centroid', data_crs=None, max_dist
 
     if is_stop_table:
         # is stop table
-        if method=='majority':
-            raise TypeError("Method `majority' requires ping data with cluster labels,\
-                            but a stop table was provided")
-        elif method=='centroid':
-            stop_table = data.copy()
-            location = poi_map(
-                data=stop_table,
-                poi_table=poi_table,
-                max_distance=max_distance,
-                data_crs=data_crs,
-                location_id=location_id,
-                traj_cols=traj_cols,
-                **kwargs)
-
-            return location
-            
-        else:
+        if method not in ('centroid', 'majority'):
             raise ValueError(f"Method {method} not among implemented methods: `centroid' and `majority'")
+        if method == 'majority' and cluster_label is None:
+            raise ValueError("Method `majority' on a stop table requires `cluster_label`, e.g. 'location_cluster'.")
+
+        location = poi_map(
+            data=data,
+            poi_table=poi_table,
+            max_distance=max_distance,
+            data_crs=data_crs,
+            location_id=location_id,
+            traj_cols=traj_cols,
+            **kwargs)
+        if method == 'centroid':
+            return location
+
+        major = _majority_location(location, data[cluster_label])
+        return data[[cluster_label]].join(major, on=cluster_label)[location.name]
 
     else:
         # is labeled pings
@@ -107,9 +109,8 @@ def point_in_polygon(data, poi_table, method='centroid', data_crs=None, max_dist
                 loc_col = location.name
                 clustered_pings = clustered_pings.join(location)
             
-            major = clustered_pings.groupby(cluster_label)[loc_col].agg(
-                lambda x: x.mode().iloc[0] if not x.mode().empty else None) 
-            
+            major = _majority_location(clustered_pings[loc_col], clustered_pings[cluster_label])
+
             return data[[cluster_label]].join(major, on=cluster_label)[loc_col]
             
         elif method=='centroid': # should be medoid?
@@ -137,6 +138,12 @@ def point_in_polygon(data, poi_table, method='centroid', data_crs=None, max_dist
 
     return None
     
+def _majority_location(locations, clusters):
+    """Most frequent non-missing location per cluster (None if a cluster has none)."""
+    return locations.groupby(clusters).agg(
+        lambda x: x.mode().iloc[0] if not x.mode().empty else None)
+
+
 # change to point_in_polygon, move to filters.py
 def poi_map(data, poi_table, max_distance=0, data_crs=None, location_id=None, traj_cols=None, **kwargs):
     """
@@ -168,7 +175,7 @@ def poi_map(data, poi_table, max_distance=0, data_crs=None, location_id=None, tr
         yield NaN. When multiple polygons overlap a point, only the first match is kept.
     """
     # column name handling
-    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs, defaults={})
+    traj_cols = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
         
     if poi_table.crs is None:
         raise ValueError(f"poi_table must have crs attribute for spatial join.")

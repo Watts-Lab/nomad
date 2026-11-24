@@ -153,6 +153,18 @@ This algorithm has the following parameters:
 
 Two details differ from the original implementation: longitude medians are not wrapped at the antimeridian, and each user gets a separate network instead of one network pooled across users.
 
+To give location clusters real-world meaning, map them to your own polygons (e.g. building footprints). Each cluster takes the polygon that most of its stops fall in; clusters outside every polygon get a missing ``location_id``.
+
+.. code-block:: python
+
+   from nomad.visit_attribution.visit_attribution import point_in_polygon
+
+   stops = infostop(traj, r1=20, r2=30, traj_cols=tc)
+   stops['location_id'] = point_in_polygon(
+       stops, buildings, method='majority', cluster_label='location_cluster',
+       location_id='building_id', data_crs='EPSG:3857', traj_cols=tc,
+   )
+
 **Source:** Aslak, U., & Alessandretti, L. (2020). Infostop: Scalable stop-location detection in multi-user mobility data. *arXiv:2003.14370*.
 
 .. figure:: _static/stop_detection/infostop_demo.png
