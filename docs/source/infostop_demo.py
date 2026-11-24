@@ -7,7 +7,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.19.3
+#       jupytext_version: 1.19.6
 #   kernelspec:
 #     display_name: Python 3
 #     language: python
@@ -57,19 +57,25 @@ traj = loader.sample_from_file(filepath_root, format='parquet', users=users, fil
 # Infostop (stationary events clustered with Infomap)
 stops = infostop(traj, r1=20, r2=30, dt_max=60, dur_min=5, complete_output=True, keep_col_names=True, traj_cols=tc)
 
+# %% [markdown]
+# Each circle is one visit: consecutive event pings at the same location, drawn at their medoid and sized by their diameter. Each colored band in the barcode is a visit's time span. Colors show the Infomap `location_cluster`, so separate visits to the same place share a color.
+
 # %%
+# Color by location so separate visits to the same place share a color
+locations = stops.assign(cluster=stops['location_cluster'])
+
 fig, (ax_map, ax_barcode) = plt.subplots(2, 1, figsize=(6,6.5),
                                          gridspec_kw={'height_ratios':[10,1]})
 
 gpd.GeoDataFrame(geometry=[outer_box], crs='EPSG:3857').plot(ax=ax_map, color='#d3d3d3')
 city.plot(ax=ax_map, edgecolor='white', linewidth=1, color='#8c8c8c')
 
-plot_stops(stops, ax=ax_map, cmap='Purples')
+plot_stops(locations, ax=ax_map, cmap='Purples', traj_cols=tc)
 plot_pings(traj, ax=ax_map, s=6, color='black', alpha=0.5, traj_cols=tc)
 ax_map.set_axis_off()
 
 plot_time_barcode(traj['unix_ts'], ax=ax_barcode, set_xlim=True)
-plot_stops_barcode(stops, ax=ax_barcode, cmap='Purples', set_xlim=False, timestamp='unix_ts')
+plot_stops_barcode(locations, ax=ax_barcode, cmap='Purples', set_xlim=False, timestamp='unix_ts')
 
 plt.tight_layout(pad=0.1)
 plt.show()

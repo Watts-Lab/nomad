@@ -160,4 +160,4 @@ Two details differ from the original implementation: longitude medians are not w
    :align: center
    :width: 80%
 
-   Infostop stops. See the :doc:`full example <source/infostop_demo>`.
+   Infostop stops, colored by location cluster. See the :doc:`full example <source/infostop_demo>`.
