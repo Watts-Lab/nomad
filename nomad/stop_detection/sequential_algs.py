@@ -696,6 +696,343 @@ def lachesis_labels_per_user(
     return pd.concat(results).reindex(data.index)
 
 
+def soc_labels(
+    data,
+    delta_roam,
+    dur_min=5,
+    look_back=True,
+    reach_back=False,
+    traj_cols=None,
+    return_anchors=False,
+    **kwargs
+):
+    """
+    Scan a trajectory with SOC (Sequence Oriented Clustering) and assign each
+    ping to a stop-cluster index or -1 for noise.
+
+    A ping is core when its Eps-sequence, the maximal contiguous run of pings
+    within ``delta_roam`` of it, spans at least ``dur_min``. The span runs from
+    the first to the last observed ping of the run, excluding the gap after
+    the run. Without ``look_back``, the run only extends forward. Two
+    consecutive pings are linked when the Eps-sequence of one core ping holds
+    both; that core ping comes at or before them unless ``reach_back`` is set.
+    A stop is a maximal run of linked pings, trimmed to start and end at core
+    pings, so a core ping that no core ping links to its predecessor starts a
+    new stop.
+
+    Parameters
+    ----------
+    data : pd.DataFrame or GeoDataFrame
+        Input trajectory with spatial and temporal columns.
+    delta_roam : float
+        Radius of the Eps-sequence around each ping (Eps).
+    dur_min : int
+        Minimum span in minutes of the Eps-sequence of a core ping (Tau).
+    look_back : bool, default True
+        Extend the Eps-sequence of each ping backward as well as forward when
+        labeling core pings.
+    reach_back : bool, default False
+        Also link pings through the backward Eps-sequence of later core pings.
+    traj_cols : dict, optional
+        Mapping for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'.
+    return_anchors : bool, default False
+        Return the time of the most recent core ping of the stop at or before
+        each stop ping as ``anchor_time``. Core pings are their own anchor.
+    **kwargs
+        Passed along to the column‐detection helper.
+
+    Returns
+    -------
+    pd.Series or pd.DataFrame
+        Labels, or labels with aligned ``anchor_time``.
+    """
+    if not isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
+        raise TypeError("Input 'data' must be a pandas DataFrame or GeoDataFrame.")
+
+    t_key, coord_key1, coord_key2, use_datetime, use_lon_lat = utils._fallback_st_cols(data.columns, traj_cols, kwargs)
+    traj_cols = loader._parse_traj_cols(
+        data.columns, traj_cols, kwargs, warn=False
+    )
+    user_col = traj_cols['user_id']
+    if user_col in data.columns and data[user_col].nunique(dropna=False) > 1:
+        raise ValueError(
+            "Multi-user data? Use soc_labels_per_user instead."
+        )
+
+    if data.empty:
+        return utils._get_empty_aux_df(
+            data[traj_cols[t_key]], return_anchors=return_anchors
+        )
+
+    coords = data[[traj_cols[coord_key1], traj_cols[coord_key2]]].to_numpy(dtype='float64')
+    # haversine expects [lat, lon] in radians
+    lat_lon = np.radians(coords[:, ::-1])
+    times = (to_timestamp(data[traj_cols[t_key]]) if use_datetime else data[traj_cols[t_key]]).to_numpy()
+
+    def dist(i, j):
+        if use_lon_lat:
+            return _haversine_distance(lat_lon[i].T, lat_lon[j].T)
+        return np.linalg.norm(coords[i] - coords[j], axis=1)
+
+    n = len(data)
+    idx = np.arange(n)
+
+    # Eps-sequence [first, last] of every ping, grown one offset at a time
+    # until its run hits a ping outside its circle. Forward runs always grow
+    # fully since they link pings; backward runs stop at core status unless
+    # reach_back links through them.
+    first, last = idx.copy(), idx.copy()
+    start = first if look_back else idx
+    is_core = np.full(n, dur_min <= 0, dtype=bool)
+    grow_back = (idx > 0) & (look_back | reach_back) & (reach_back | ~is_core)
+    grow_fwd = idx < n - 1
+    offset = 1
+    while grow_back.any() or grow_fwd.any():
+        # Each pair serves the earlier anchor's forward search and the later
+        # anchor's backward search. Slicing excludes wraparound at both ends.
+        active_pairs = grow_fwd[:-offset] | grow_back[offset:]
+        anchor_positions = idx[:-offset][active_pairs]
+        neighbor_positions = idx[offset:][active_pairs]
+        within = dist(anchor_positions, neighbor_positions) <= delta_roam
+
+        extend_forward = grow_fwd[anchor_positions] & within
+        extend_backward = grow_back[neighbor_positions] & within
+        last[anchor_positions[extend_forward]] = neighbor_positions[extend_forward]
+        first[neighbor_positions[extend_backward]] = anchor_positions[extend_backward]
+        grow_fwd[anchor_positions] &= within & (neighbor_positions < n - 1)
+        grow_back[neighbor_positions] &= within & (anchor_positions > 0)
+
+        is_core = times[last] - times[start] >= dur_min * 60
+        grow_back &= reach_back | ~is_core
+        offset += 1
+
+    # pings i and i + 1 are linked when a core ping at or before i reaches
+    # forward past i, or with reach_back, a core ping after i reaches back to i
+    linked = np.maximum.accumulate(np.where(is_core, last, -1))[:-1] > idx[:-1]
+    if reach_back:
+        linked |= np.minimum.accumulate(np.where(is_core, first, n)[::-1])[::-1][1:] <= idx[:-1]
+
+    # a stop is a run of linked pings, trimmed to its first and last core ping
+    run_id = pd.Series(np.concatenate([[0], np.cumsum(~linked)]))
+    core_pos = pd.Series(np.where(is_core, idx, np.nan))
+    run_cores = core_pos.groupby(run_id)
+    in_stop = (idx >= run_cores.transform('min')) & (idx <= run_cores.transform('max'))
+    labels = run_id.where(in_stop).rank(method='dense').sub(1).fillna(-1).astype(int).to_numpy()
+
+    result = pd.Series(labels, index=data.index, name='cluster')
+    if return_anchors:
+        anchor_times = pd.Series(
+            data[traj_cols[t_key]].to_numpy()[core_pos.ffill().fillna(0).to_numpy(dtype=int)],
+            index=data.index,
+            dtype=data[traj_cols[t_key]].dtype if use_datetime else 'Int64',
+        ).where(in_stop.to_numpy())
+        return pd.DataFrame({"cluster": result, "anchor_time": anchor_times})
+    return result
+
+
+def soc(
+    data,
+    delta_roam,
+    dur_min=5,
+    look_back=True,
+    reach_back=False,
+    complete_output=False,
+    passthrough_cols=None,
+    keep_col_names=True,
+    traj_cols=None,
+    **kwargs
+):
+    """
+    SOC (Sequence Oriented Clustering) stop detection.
+
+    Parameters
+    ----------
+    data : pd.DataFrame or GeoDataFrame
+        Input trajectory with spatial and temporal columns.
+    delta_roam : float
+        Radius of the Eps-sequence around each ping (Eps).
+    dur_min : int
+        Minimum span in minutes of the Eps-sequence of a core ping (Tau).
+    look_back : bool, default True
+        Extend the Eps-sequence of each ping backward as well as forward when
+        labeling core pings.
+    reach_back : bool, default False
+        Also link pings through the backward Eps-sequence of later core pings.
+    complete_output : bool, default False
+        If True, include additional summary statistics in output.
+    passthrough_cols : list, optional
+        Columns to retain (and summarize/propagate) per stop.
+    traj_cols : dict, optional
+        Mapping for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'.
+    **kwargs
+        Passed along to the column‐detection helper.
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per detected stop. Durations run from the first to the last
+        retained ping of the stop.
+
+    Raises
+    ------
+    ValueError if multiple users found; use soc_per_user instead.
+    """
+    passthrough_cols = [] if passthrough_cols is None else passthrough_cols
+    traj_cols_temp = loader._parse_traj_cols(
+        data.columns, traj_cols, kwargs, warn=False
+    )
+    user_col = traj_cols_temp['user_id']
+    if (
+        not data.empty
+        and user_col in data.columns
+        and user_col not in passthrough_cols
+    ):
+        passthrough_cols = passthrough_cols + [user_col]
+    labels = soc_labels(
+        data=data,
+        delta_roam=delta_roam,
+        dur_min=dur_min,
+        look_back=look_back,
+        reach_back=reach_back,
+        traj_cols=traj_cols,
+        **kwargs
+    )
+    return utils.summarize_stops(
+        data,
+        labels,
+        complete_output=complete_output,
+        passthrough_cols=passthrough_cols,
+        keep_col_names=keep_col_names,
+        traj_cols=traj_cols,
+        **kwargs,
+    )
+
+
+def soc_per_user(
+    data,
+    delta_roam,
+    dur_min=5,
+    look_back=True,
+    reach_back=False,
+    complete_output=False,
+    passthrough_cols=None,
+    traj_cols=None,
+    n_jobs=1,
+    print_progress=False,
+    **kwargs
+):
+    """
+    Run soc on each user separately, then concatenate results.
+
+    Parameters
+    ----------
+    data : pd.DataFrame or GeoDataFrame
+        Input trajectory with spatial and temporal columns.
+    delta_roam : float
+        Radius of the Eps-sequence around each ping (Eps).
+    dur_min : int
+        Minimum span in minutes of the Eps-sequence of a core ping (Tau).
+    look_back : bool, default True
+        Extend the Eps-sequence of each ping backward as well as forward when
+        labeling core pings.
+    reach_back : bool, default False
+        Also link pings through the backward Eps-sequence of later core pings.
+    complete_output : bool, default False
+        If True, include additional summary statistics in output.
+    passthrough_cols : list, optional
+        Columns to retain (and summarize/propagate) per stop.
+    traj_cols : dict, optional
+        Mapping for 'x', 'y', 'longitude', 'latitude', 'timestamp', or 'datetime'.
+    n_jobs : int, default 1
+        Number of parallel jobs to use. 1 means sequential processing.
+    print_progress : bool, default False
+        Whether to show progress bar during processing.
+    **kwargs
+        Passed along to column detection helper.
+
+    Returns
+    -------
+    pd.DataFrame
+        Concatenated stop table with stops from all users.
+
+    Raises
+    ------
+    ValueError if 'user_id' not in traj_cols or missing from data.
+    """
+    passthrough_cols = [] if passthrough_cols is None else passthrough_cols
+    traj_cols_temp = loader._parse_traj_cols(
+        data.columns, traj_cols, kwargs, warn=False
+    )
+    if traj_cols_temp['user_id'] not in data.columns:
+        raise ValueError("soc_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
+    uid = traj_cols_temp['user_id']
+
+    pt_cols = passthrough_cols if uid in passthrough_cols else passthrough_cols + [uid]
+
+    grouped = data.groupby(uid, sort=False)
+    results = utils.applyParallel(
+        grouped,
+        soc,
+        {
+            "delta_roam": delta_roam,
+            "dur_min": dur_min,
+            "look_back": look_back,
+            "reach_back": reach_back,
+            "complete_output": complete_output,
+            "passthrough_cols": pt_cols,
+            "traj_cols": traj_cols,
+            **kwargs,
+        },
+        reset_index=True,
+        n_jobs=n_jobs,
+        print_progress=print_progress
+    )
+
+    return pd.concat(results, ignore_index=True)
+
+
+def soc_labels_per_user(
+    data,
+    delta_roam,
+    dur_min=5,
+    look_back=True,
+    reach_back=False,
+    traj_cols=None,
+    return_anchors=False,
+    n_jobs=1,
+    print_progress=False,
+    **kwargs
+):
+    """
+    Run soc_labels on each user separately and concatenate labels.
+
+    Raises if 'user_id' not in traj_cols or missing from data.
+    """
+    traj_cols_temp = loader._parse_traj_cols(data.columns, traj_cols, kwargs)
+    if traj_cols_temp['user_id'] not in data.columns:
+        raise ValueError("soc_labels_per_user requires a 'user_id' column specified in traj_cols or kwargs.")
+    uid = traj_cols_temp['user_id']
+
+    grouped = data.groupby(uid, sort=False)
+    results = utils.applyParallel(
+        grouped,
+        soc_labels,
+        {
+            "delta_roam": delta_roam,
+            "dur_min": dur_min,
+            "look_back": look_back,
+            "reach_back": reach_back,
+            "return_anchors": return_anchors,
+            "traj_cols": traj_cols,
+            **kwargs,
+        },
+        n_jobs=n_jobs,
+        print_progress=print_progress,
+    )
+
+    return pd.concat(results).reindex(data.index)
+
+
 def grid_based_labels(data, time_thresh=np.inf, min_cluster_size=1, dur_min=0, traj_cols=None, **kwargs):
     """
     Detects stops in trajectory data based on time and each ping's location.
